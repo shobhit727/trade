@@ -877,7 +877,7 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [x] Monte Carlo robustness testing (`backtest/validation.py`)
 - [x] Deflated Sharpe ratio
 - [x] Tearsheet generation (`backtest/reporting.py`)
-- [ ] Historical data replay from TimescaleDB / Parquet (backtest loads only synthetic today)
+- [x] Historical data replay from CSV / Parquet / TimescaleDB (`backtest/data.py`)
 
 ### Phase 3: Strategy Framework
 - [x] Base strategy class with lifecycle hooks (`strategies/base.py`)
