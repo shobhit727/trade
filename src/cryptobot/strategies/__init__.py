@@ -1,24 +1,17 @@
-from cryptobot.strategies.base import BaseStrategy, MeanReversionStrategy as MeanReversionStrategyPlaceholder, StrategyRegistry, registry
-
-try:
-    from cryptobot.strategies.mean_reversion import MeanReversionConfig, MeanReversionStrategy
-except Exception:
-    MeanReversionConfig = None
-    MeanReversionStrategy = None
-
-try:
-    from cryptobot.strategies.trend_following import TrendFollowingConfig, TrendFollowingStrategy
-except Exception:
-    TrendFollowingConfig = None
-    TrendFollowingStrategy = None
+from cryptobot.strategies.funding_arb import (
+    FundingArbConfig,
+    FundingArbState,
+    FundingArbStrategy,
+)
+from cryptobot.strategies.market_making import MarketMakingConfig, MarketMakingStrategy
+from cryptobot.strategies.stat_arb import StatArbConfig, StatArbStrategy
 
 __all__ = [
-    "BaseStrategy",
-    "MeanReversionStrategyPlaceholder",
-    "StrategyRegistry",
-    "TrendFollowingConfig",
-    "TrendFollowingStrategy",
-    "MeanReversionConfig",
-    "MeanReversionStrategy",
-    "registry",
+    "FundingArbConfig",
+    "FundingArbState",
+    "FundingArbStrategy",
+    "MarketMakingConfig",
+    "MarketMakingStrategy",
+    "StatArbConfig",
+    "StatArbStrategy",
 ]

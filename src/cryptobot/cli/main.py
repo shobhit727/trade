@@ -12,15 +12,45 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cryptobot")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    backtest = sub.add_parser("backtest", help="Run a backtest from synthetic, CSV, Parquet, or TimescaleDB data")
-    backtest.add_argument("--strategy", choices=["mean_reversion", "trend_following"], default="mean_reversion")
+    backtest = sub.add_parser(
+        "backtest", help="Run a backtest from synthetic, CSV, Parquet, or TimescaleDB data"
+    )
+    backtest.add_argument("--strategy", choices=["mean_reversion", "trend_following", "stat_arb"], default="mean_reversion")
     backtest.add_argument("--source", choices=["synthetic", "csv", "parquet", "timescale"], default="synthetic")
-    backtest.add_argument("--path", default=None, help="Path to CSV or Parquet when --source requires it")
-    backtest.add_argument("--bars", type=int, default=200, help="Bars for synthetic source")
+    backtest.add_argument("--path", default=None)
+    backtest.add_argument("--bars", type=int, default=200)
     backtest.add_argument("--seed", type=int, default=42)
     backtest.add_argument("--vol", type=float, default=0.01)
     backtest.add_argument("--capital", type=Decimal, default=Decimal("10000"))
     backtest.add_argument("--json", action="store_true")
+
+    market_maker = sub.add_parser("mm", help="Run the market-making strategy against order book")
+    market_maker.add_argument("--symbol", default="BTCUSDT")
+    market_maker.add_argument("--bars", type=int, default=300)
+    market_maker.add_argument("--source", choices=["synthetic"], default="synthetic")
+    market_maker.add_argument("--vol", type=float, default=0.005)
+    market_maker.add_argument("--gamma", type=float, default=0.5)
+    market_maker.add_argument("--sigma", type=float, default=0.01)
+    market_maker.add_argument("--kappa", type=float, default=1.5)
+    market_maker.add_argument("--max-inventory", type=Decimal, default=Decimal("5"))
+    market_maker.add_argument("--json", action="store_true")
+
+    predict = sub.add_parser("ml", help="Train a direction classifier and emit predictions")
+    predict.add_argument("--source", choices=["synthetic"], default="synthetic")
+    predict.add_argument("--bars", type=int, default=400)
+    predict.add_argument("--horizon", type=int, default=5)
+    predict.add_argument("--json", action="store_true")
+
+    serve = sub.add_parser("serve", help="Run the health/metrics HTTP server only")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8080)
+
+    bot = sub.add_parser(
+        "bot",
+        help="Long-running bot stub: starts the health server and keeps the process alive",
+    )
+    bot.add_argument("--host", default="127.0.0.1")
+    bot.add_argument("--port", type=int, default=8080)
 
     sub.add_parser("validate", help="Validate latest backtest artifact placeholder")
     sub.add_parser("paper", help="Start paper trading dry-run placeholder")
@@ -32,20 +62,14 @@ async def _run(args: argparse.Namespace) -> int:
         from cryptobot.backtest.data import load_bars
         from cryptobot.backtest.runner import make_strategy, run_backtest
 
+        ds = load_bars(
+            source=args.source,
+            path=args.path,
+            symbol="BTCUSDT",
+            timeframe="1h",
+        )
         if args.source == "synthetic":
-            ds = load_bars(
-                source="synthetic",
-                symbol="BTCUSDT",
-                timeframe="1h",
-            )
             ds.bars = ds.bars[: args.bars]
-        else:
-            ds = load_bars(
-                source=args.source,
-                path=args.path,
-                symbol="BTCUSDT",
-                timeframe="1h",
-            )
         strategy = make_strategy(args.strategy)
         result = await run_backtest(
             ds.bars,
@@ -55,20 +79,109 @@ async def _run(args: argparse.Namespace) -> int:
         )
         if args.json:
             json.dump(
+                {"source": ds.source, "n_bars": len(ds.bars), **result.to_dict()},
+                sys.stdout,
+                default=str,
+            )
+            sys.stdout.write("\n")
+        else:
+            print(
+                f"strategy={args.strategy} source={ds.source} symbol={ds.symbol} "
+                f"bars={len(ds.bars)} trades={result.n_trades}"
+            )
+            print(f"initial_capital={result.initial_capital} final_equity={result.final_equity}")
+            print(f"total_return={result.total_return:.4%}")
+        return 0
+
+    if args.command == "mm":
+        from cryptobot.backtest.data import load_bars
+        from cryptobot.execution.engine import ExecutionEngine
+        from cryptobot.execution.venue.simulated import SimulatedVenue
+        from cryptobot.risk.manager import RiskManager
+        from cryptobot.strategies.market_making import MarketMakingStrategy, MarketMakingConfig
+
+        ds = load_bars(source=args.source, symbol=args.symbol, timeframe="1h")
+        ds.bars = ds.bars[: args.bars]
+        venue = SimulatedVenue()
+        engine = ExecutionEngine(venue=venue, risk_manager=RiskManager())
+        cfg = MarketMakingConfig(
+            symbol=args.symbol,
+            gamma=args.gamma,
+            sigma=args.sigma,
+            kappa=args.kappa,
+            max_inventory=args.max_inventory,
+        )
+        strategy = MarketMakingStrategy(cfg)
+        strategy.attach_execution(engine)
+        fills = strategy.run_on_history(ds.bars)
+        if args.json:
+            json.dump(
                 {
-                    "source": ds.source,
-                    "n_bars": len(ds.bars),
-                    **result.to_dict(),
+                    "symbol": args.symbol,
+                    "bars": len(ds.bars),
+                    "fills": [
+                        {
+                            "timestamp": f.timestamp.isoformat(),
+                            "side": f.side.value,
+                            "quantity": str(f.filled_quantity),
+                            "price": str(f.avg_fill_price),
+                        }
+                        for f in fills
+                    ],
                 },
                 sys.stdout,
                 default=str,
             )
             sys.stdout.write("\n")
         else:
-            print(f"source={ds.source} symbol={ds.symbol} bars={len(ds.bars)} trades={result.n_trades}")
-            print(f"initial_capital={result.initial_capital} final_equity={result.final_equity}")
-            print(f"total_return={result.total_return:.4%}")
+            print(f"mm fills {len(fills)} on {len(ds.bars)} bars for {args.symbol}")
+            for f in fills[:5]:
+                print(f"  {f.timestamp} {f.side.value} {f.filled_quantity} @ {f.avg_fill_price}")
         return 0
+
+    if args.command == "ml":
+        from cryptobot.ml.features import build_features
+        from cryptobot.ml.models.direction import DirectionClassifier
+        from cryptobot.backtest.data import load_bars
+
+        ds = load_bars(source=args.source, symbol="BTCUSDT", timeframe="1h")
+        bars = ds.bars[: args.bars]
+        features = build_features(bars)
+        clf = DirectionClassifier(horizon=args.horizon)
+        score = clf.walk_forward_score(features, n_splits=4)
+        out = {
+            "n_samples": len(features),
+            "n_features": features.shape[1] if hasattr(features, "shape") else len(features[0]),
+            "walk_forward_score": score,
+            "model": clf.summary(),
+        }
+        if args.json:
+            json.dump(out, sys.stdout, default=str)
+            sys.stdout.write("\n")
+        else:
+            for k, v in out.items():
+                print(f"{k}: {v}")
+        return 0
+
+    if args.command == "serve":
+        from cryptobot.utils.health_server import serve_health
+
+        await serve_health(host=args.host, port=args.port)
+        return 0
+
+    if args.command == "bot":
+        from cryptobot.utils.health_server import HealthServer
+
+        server = HealthServer(host=args.host, port=args.port)
+        server.start()
+        print(f"bot stub running; health at http://{args.host}:{args.port}/health")
+        try:
+            while True:
+                await asyncio.sleep(60)
+        finally:
+            server.stop()
+        return 0
+
     if args.command == "validate":
         print("validate command OK: pass BacktestResults object from code path")
         return 0
