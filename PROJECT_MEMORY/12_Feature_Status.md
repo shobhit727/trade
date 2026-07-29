@@ -32,7 +32,7 @@
 | `risk/kill_switch.py` | ✅ | KillSwitch reads portfolio signal. |
 | `risk/correlation.py` | ✅ | max_abs_correlation helper. |
 | `execution/engine.py` | ✅ | ExecutionEngine, risk-gated order submission, `build_venue(mode)` factory selects by `settings.execution.mode`. |
-| `execution/algorithms.py` | ✅ | twap_slices, vwap_slices, pov_quantity. |
+| `execution/algorithms.py` | ✅ | TWAP, VWAP, POV (incl. capped + randomized), Implementation Shortfall (Perée-Clark), Iceberg (display qty + randomization), liquidity-seek sweeps, arrival-price benchmark, `vwap_schedule()` with horizon-minute lookup, `build_pov_schedule`, `slicer_for(name)` dispatcher. |
 | `execution/router.py` | ✅ | SmartOrderRouter: best-price ranker, latency-aware ranker, fallback to next venue on failure, split-and-route across venues. |
 | `execution/adverse_selection.py` | ✅ | AdverseSelectionGuard (mid-move cancel, spread-widening cancel, toxicity-spike cancel) + QueuePosition + TopOfBook + `attach_to_engine` helper. |
 | `execution/venue/base.py` | ✅ | Abstract Venue. |

@@ -927,7 +927,9 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [x] SmartOrderRouter (`execution/router.py`) — price + latency rankers, fallback, split
 - [x] AdverseSelectionGuard (`execution/adverse_selection.py`) — mid-move cancel, spread-widening cancel, toxicity-spike cancel
 - [x] Latency monitoring (`monitoring/metrics.py`) — `record_venue_quote_latency`, `record_routing_decision`, `record_execution_latency`
-- [ ] Implementation-shortfall / iceberg algorithms
+- [x] Implementation Shortfall (Perée-Clark), Iceberg (display qty + randomization),
+      liquidity-seek sweeps, POV (cap + randomized), arrival-price benchmark,
+      `VWAPSchedule` with horizon-minute lookup, `slicer_for(name)` dispatcher
 
 ### Phase 8: Live Trading & Monitoring
 - [x] `cryptobot-test` Compose service (profile `test`)
