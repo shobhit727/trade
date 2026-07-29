@@ -140,7 +140,9 @@ class EventBus:
                 sub.event_count += 1
                 delivered += 1
             except Exception as e:
-                print(f"Error in subscriber {sub.id}: {e}")
+                import logging
+
+                logging.getLogger(__name__).exception("Error in subscriber %s: %s", sub.id, e)
         return delivered
 
     def get_history(self, limit: int = 100, event_type: Optional[Union[EventType, str]] = None) -> List[Event]:

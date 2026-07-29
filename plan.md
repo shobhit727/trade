@@ -176,16 +176,13 @@ src/cryptobot/
 - [x] Strategy registry (`StrategyRegistry` singleton)
 - [ ] Parameter optimization (Optuna) — no integration yet
 
-### Phase 4: Core Strategies (Week 4-6) ⭐ — 🔲 pending
-- [ ] **Mean Reversion**: Z-score + RSI + BB, multi-TF (`strategies/mean_reversion.py` missing)
-- [ ] **Trend Following**: EMA + ADX + ATR trailing stops (`strategies/trend_following.py` missing)
-- [ ] **Statistical Arbitrage**: Cointegration, Kalman hedge (`strategies/stat_arb.py` missing)
-- [ ] **Funding Arbitrage**: Basis, term structure (`strategies/funding_arb.py` missing)
-- [ ] **Market Making**: Avellaneda-Stoikov, inventory skew (`strategies/market_making.py` missing)
-- [x] Mean reversion placeholder only — uses hardcoded `65000` trigger, not real indicators
-- [x] Real mean reversion strategy (`strategies/mean_reversion.py`) — Z-score + RSI + Bollinger Bands
-- [x] Real trend following strategy (`strategies/trend_following.py`) — EMA crossover + ADX + ATR trailing stop
-- [x] End-to-end runner (`backtest/runner.py`) for both strategies
+### Phase 4: Core Strategies (Week 4-6) ⭐ — ✅ done
+- [x] Mean Reversion: Z-score + RSI + BB (`strategies/mean_reversion.py`)
+- [x] Trend Following: EMA + ADX + ATR trailing stops (`strategies/trend_following.py`)
+- [x] Statistical Arbitrage: hedge ratio + correlation gate + z-score (`strategies/stat_arb.py`)
+- [x] Funding Arbitrage: basis + carry + funding rate (`strategies/funding_arb.py`)
+- [x] Market Making: Avellaneda-Stoikov + AdverseSelectionGuard (`strategies/market_making.py`)
+- [x] Mean reversion placeholder (`MeanReversionStrategyPlaceholder` in `strategies/base.py`)
 
 ### Phase 5: Risk Management (Week 6-7) ⭐ — ✅ minimal, ⚠️ partial
 - [x] Pre-trade risk checks (exposure, drawdown via kill switch, notional bounds)
@@ -194,16 +191,16 @@ src/cryptobot/
 - [x] Kill switch (`risk/kill_switch.py` driven by portfolio signal)
 - [ ] Real-time risk dashboard — Grafana panels exist but not wired live
 
-### Phase 6: ML Pipeline (Week 7-9) ⭐ — 🔲 pending
-- [ ] Feature engineering (`ml/features.py` missing)
-- [ ] Feature store with versioning
-- [ ] Direction classifier (LightGBM)
-- [ ] Volatility forecasting
-- [ ] Regime detection (HMM / Transformer)
-- [ ] Ensemble stacking / blending
-- [ ] Walk-forward training with purged CV
-- [ ] Online inference (<10ms)
-- [ ] Auto-retrain on drift
+### Phase 6: ML Pipeline (Week 7-9) ⭐ — ✅ done
+- [x] Feature engineering (`ml/features.py`) — RSI, MACD, ATR ratio, BB position + width, log volume, log returns
+- [x] Direction classifier (`ml/models/direction.py`) — sklearn logreg preferred, pure-numpy fallback
+- [x] Walk-forward training with purged CV (`ml/online.py` WalkForwardTrainer)
+- [x] Auto-retrain on drift detection (`ml/online.py` DriftDetector)
+- [ ] Feature store with versioning (stretch)
+- [ ] Volatility forecasting (stretch)
+- [ ] Regime detection (HMM / Transformer) (stretch)
+- [ ] Ensemble stacking / blending (stretch)
+- [ ] Online inference (<10ms) — current DirectionClassifier fits that budget; production pipeline deferred
 
 ### Phase 7: Execution Engine (Week 9-10) — ✅ done
 - [x] Order management (`execution/engine.py`) with `build_venue(mode)` factory
@@ -226,7 +223,7 @@ src/cryptobot/
 - [x] Grafana dashboards (JSON under `monitoring/grafana/` and `docker/grafana/`)
 - [x] Alerting channels (Telegram/Discord/Email/PagerDuty stubs)
 - [x] Health checks (`monitoring/health.py`)
-- [ ] `cryptobot` HTTP `/health` endpoint — not implemented (Docker HEALTHCHECK uses `http://127.0.0.1:8080/health`, will fail until implemented)
+- [x] `cryptobot` HTTP `/health` endpoint — stdlib ThreadingHTTPServer in `utils/health_server.py`, exposed via `cli serve` / `cli bot`. Dockerfile HEALTHCHECK passes against it.
 - [x] Docker base `python:3.14-slim`
 - [x] Kubernetes manifests (`deploy/k8s/`) — namespace, config, secret, pvc, deployment+service+hpa
 - [x] Multi-arch Docker images (`scripts/build_multiarch.sh`, `.github/workflows/release.yml`)
@@ -937,7 +934,7 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [x] Grafana dashboards JSON (`docker/grafana/`, `monitoring/grafana/`)
 - [x] Alerting channels (`monitoring/alerting.py`)
 - [x] Health checks (`monitoring/health.py`)
-- [ ] `cryptobot` HTTP `/health` endpoint (no HTTP server in source; Docker HEALTHCHECK will fail until implemented)
+- [x] `cryptobot` HTTP `/health` endpoint (`utils/health_server.py` ThreadingHTTPServer)
 - [x] Real walk-forward / Monte Carlo in `backtest/validation.py`
 - [x] Live trading profile wired (Binance adapter done; `EXECUTION_MODE=binance|testnet|live`)
 - [x] Kubernetes manifests (`deploy/k8s/*.yaml`) — namespace, configmap, secret, pvc, deployment, service, hpa; kustomization overlay

@@ -3,10 +3,14 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Dict, List, Any
 import asyncio
+import logging
 from datetime import datetime
 from decimal import Decimal
 from cryptobot.core.events import Event, OrderEvent, OrderSide, OrderType, PositionSide
 from cryptobot.utils.decorators import timeout_decorator
+
+
+logger = logging.getLogger(__name__)
 
 class BaseStrategy(ABC):
     """
@@ -64,7 +68,7 @@ class StrategyRegistry:
         if cls._instance is None:
             cls._instance = super(StrategyRegistry, cls).__new__(cls)
             cls._instance.strategies: Dict[str, BaseStrategy] = {}
-            print("StrategyRegistry initialized.")
+            logger.debug("StrategyRegistry initialized.")
         return cls._instance
 
     def register(self, strategy_class: type[BaseStrategy], config: Dict[str, Any]):
@@ -89,7 +93,7 @@ class MeanReversionStrategyPlaceholder(BaseStrategy):
     @timeout_decorator(timeout=0.5) # Use timeout decorator for safety
     async def initialize(self, initial_data: Any):
         # In reality, this would load historical data slices into internal buffers.
-        print(f"[{self.get_name()}] Initializing with {len(initial_data) if initial_data is not None else 0} data points.")
+        logger.info("[%s] Initializing with %s data points.", self.get_name(), len(initial_data) if initial_data is not None else 0)
         self.internal_state['z_score'] = [] # Placeholder for indicator history
 
     async def on_market_data(self, event: Event) -> List[OrderEvent]:
@@ -102,11 +106,11 @@ class MeanReversionStrategyPlaceholder(BaseStrategy):
         is_oversold = float(price) < self._config.get("low_trigger", 0.8) * 65000
 
         if is_overbought:
-            print(f"  [MR] Overbought detected ({float(price):.2f}). SIGNAL: SHORT.")
+            logger.info("[MR] Overbought detected (%.2f). SIGNAL: SHORT.", float(price))
             return [OrderEvent(type=OrderType.MARKET, symbol=event.payload["symbol"], quantity=Decimal("1"), side=OrderSide.SELL, position_side=PositionSide.SHORT)]
         elif is_oversold:
-              print(f"  [MR] Oversold detected ({float(price):.2f}). SIGNAL: LONG.")
-              return [OrderEvent(type=OrderType.MARKET, symbol=event.payload["symbol"], quantity=Decimal("1"), side=OrderSide.BUY, position_side=PositionSide.LONG)]
+            logger.info("[MR] Oversold detected (%.2f). SIGNAL: LONG.", float(price))
+            return [OrderEvent(type=OrderType.MARKET, symbol=event.payload["symbol"], quantity=Decimal("1"), side=OrderSide.BUY, position_side=PositionSide.LONG)]
 
         return [] # No action taken
 

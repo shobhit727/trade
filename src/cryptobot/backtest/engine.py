@@ -1,10 +1,14 @@
 from __future__ import annotations
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import List, Dict, Any, Optional, AsyncIterator
 from uuid import uuid4
+
+
+logger = logging.getLogger(__name__)
 
 from cryptobot.core.events import Event, EventType, OrderEvent, PositionEvent, PnLEvent, PositionSide
 from cryptobot.core.clock import Clock, SimulatedClock, ClockFactory, ClockMode
@@ -123,8 +127,8 @@ class BacktestEngine:
         """Run the backtest simulation."""
         await self.initialize()
 
-        print(f"[Backtest] Starting: {self.start_time} to {self.end_time}")
-        print(f"[Backtest] Initial capital: ${self.initial_capital:,.2f}")
+        logger.info("Starting: %s to %s", self.start_time, self.end_time)
+        logger.info("Initial capital: %s", self.initial_capital)
 
         # Process events
         async for event in data_stream:
@@ -178,12 +182,10 @@ class BacktestEngine:
             avg_loss = Decimal("0")
             profit_factor = Decimal("0")
 
-        print(f"\n[Backtest] Results:")
-        print(f"[Backtest] Final equity: ${final_equity:,.2f}")
-        print(f"[Backtest] Total return: {total_return:.2f}%")
-        print(f"[Backtest] Max drawdown: {float(max_dd * 100):.2f}%")
-        print(f"[Backtest] Sharpe ratio: {float(sharpe):.2f}")
-        print(f"[Backtest] Trades: {len(self._trades)} (Wins: {len(winning_trades)}, Losses: {len(losing_trades)})")
+        logger.info(
+            "Results: final_equity=%s total_return=%s max_dd=%s sharpe=%s trades=%s",
+            final_equity, total_return, max_dd, sharpe, len(self._trades),
+        )
 
         return BacktestResult(
             start_time=self.start_time,
@@ -279,6 +281,7 @@ class BacktestEngine:
                     pnl = (pos.entry_price - avg_price) * filled_qty
 
                 # Record trade
+                pnl_net_fees = pnl - fees
                 trade = TradeRecord(
                     symbol=symbol,
                     entry_time=pos.opened_at or self._clock.current_time,
@@ -287,8 +290,8 @@ class BacktestEngine:
                     exit_price=avg_price,
                     quantity=filled_qty,
                     side="long" if pos.side == PositionSide.LONG else "short",
-                    pnl=pnl,
-                    pnl_pct=pnl / (pos.entry_price * filled_qty) * Decimal("100") if filled_qty > 0 else Decimal("0"),
+                    pnl=pnl_net_fees,
+                    pnl_pct=pnl_net_fees / (pos.entry_price * filled_qty) * Decimal("100") if filled_qty > 0 else Decimal("0"),
                     fees=fees,
                     strategy=pos.strategy,
                 )

@@ -25,7 +25,14 @@
 | `strategies/base.py` | ✅ | BaseStrategy, StrategyRegistry, MeanReversionStrategyPlaceholder. Valid `OrderEvent` construction. |
 | `strategies/mean_reversion.py` | ✅ | Real strategy: Z-score + RSI + Bollinger Bands (pandas/numpy). |
 | `strategies/trend_following.py` | ✅ | Real strategy: EMA + ADX + ATR trailing stop. |
+| `strategies/market_making.py` | ✅ | Avellaneda-Stoikov market making (reservation price + spread), `run_on_history` synth fill path, pluggable to ExecutionEngine + AdverseSelectionGuard. |
+| `strategies/stat_arb.py` | ✅ | Pairs trading: rolling hedge ratio, correlation gate, z-score entry/exit/stop. |
+| `strategies/funding_arb.py` | ✅ | Funding / basis arb: spot-vs-perp + funding rate + basis entry/exit. |
 | `strategies/registry.py` | ✅ | Re-export only. |
+| `ml/features.py` | ✅ | 8 features: returns, RSI, MACD line + signal, ATR ratio, BB position + width, log volume. |
+| `ml/models/direction.py` | ✅ | `DirectionClassifier` (sklearn logreg preferred, numpy fallback), walk-forward score. |
+| `ml/online.py` | ✅ | `DriftDetector` (mean/std shift) + `WalkForwardTrainer` purged splits. |
+| `utils/health_server.py` | ✅ | stdlib ThreadingHTTPServer exposing `/health` JSON + `/metrics` Prometheus text. Used by Dockerfile HEALTHCHECK. |
 | `risk/manager.py` | ✅ | RiskManager pre-trade checks (kill switch, notional, total exposure). |
 | `risk/limits.py` | ✅ | RiskLimits from config. |
 | `risk/sizing.py` | ✅ | fixed_fraction_size, kelly_size, volatility_target_size. |

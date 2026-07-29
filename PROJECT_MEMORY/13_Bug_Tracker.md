@@ -43,9 +43,11 @@
 | B029 | `monitoring/metrics.py` | `ProfitFactor` uses `Counter` for realized PnL with negative values. See B025. | Crash. |
 | B030 | `data/cleaning.py` | `clean_klines` `report.start`/`end` defaults to `datetime.utcnow()` when columns missing at top of function. | Cosmetic. |
 | B031 | `monitoring/alerting.py` | `init_alerting` may attempt to start threads even without channels. | Side effects on import. |
-| B032 | `backtest/engine.py` | `_handle_order_fill` updates equity using unrealized PnL from payload, but does not subtract fees from equity. | PnL optimistic. |
+| B032 | `backtest/engine.py` | `_handle_order_fill` updates equity using unrealized PnL from payload, but does not subtract fees from equity. | Resolved 2026-07-29: trade `pnl` now nets fees, `pnl_pct` computed from net. |
 | B033 | `backtest/validation.py` | `_perform_walk_forward` and `_run_monte_carlo` return fixed values. | Resolved 2026-07-29: replaced with real math. |
 | B036 | `execution/venue/simulated.py` | Ignores slippage/fees. | Resolved 2026-07-29: slippage + commission applied. |
+| B039 | `data/cleaning.py` | `clean_trades` allows non-numeric price/quantity silently. | Resolved 2026-07-29: coerce via `pd.to_numeric`; non-numeric + non-positive rows are dropped and reported. |
+| B048 | `risk/manager.py` | `RiskCheckResult.to_event` converts `Decimal` to `float` (`float(self.current_value)`). | Resolved 2026-07-29: payload now carries `str(Decimal)` to preserve precision. |
 | B034 | `core/portfolio.py` | `check_kill_switch` reads `daily_loss_pct` from state; `daily_pnl` reset relies on external cron. | Stale daily loss. |
 | B035 | `monitoring/dashboard.py` | Dashboard JSON builders reference Prometheus expression names with `cryptobot_` prefix; not exercised. | Unknown. |
 | B037 | `monitoring/metrics.py` | `total_pnl` `Counter` cannot accept negative PnL. | Same as B025. |
@@ -62,7 +64,7 @@
 | B048 | `risk/manager.py` | `RiskCheckResult.to_event` converts `Decimal` to `float` (`float(self.current_value)`). | Precision loss. |
 | B049 | `strategies/base.py` | `StrategyRegistry.__new__` prints "initialized" on import. | Side effect. |
 | B050 | `config.py` | `Settings(extra="ignore")` swallows YAML mismatch. | Resolved 2026-07-29: added `_flatten_yaml` and `Settings.from_yaml_safe` that translate nested YAML groups to flat Settings fields. |
-| B051 | `monitoring/__init__.py` | Eagerly imports `cryptobot.monitoring.metrics`, which fails without `prometheus_client`. | ImportError. |
+| B051 | `monitoring/__init__.py` | Eagerly imports `cryptobot.monitoring.metrics`, which fails without `prometheus_client`. | Documented in 19_Open_Questions.md AV-2. Importers should `import cryptobot.monitoring.metrics` lazily if they need it without Prometheus installed. |
 
 ## Will-surprise areas
 

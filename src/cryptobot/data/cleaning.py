@@ -239,14 +239,17 @@ class DataCleaner:
                 report.add_issue(DataQualityIssue.DUPLICATE_TIMESTAMPS, int(dup_mask.sum()))
                 df = df[~dup_mask].reset_index(drop=True)
 
-        # Validate price and quantity
+        # Validate price and quantity; coerce non-numeric values to NaN then drop them.
         for col in ["price", "quantity"]:
             if col in df.columns:
-                invalid = df[col] <= 0
+                coerced = pd.to_numeric(df[col], errors="coerce")
+                invalid_numeric = coerced.isna()
+                non_positive = coerced <= 0
+                invalid = invalid_numeric | non_positive.fillna(False)
                 if invalid.any():
                     report.add_issue(DataQualityIssue.NEGATIVE_PRICE if col == "price" else DataQualityIssue.ZERO_VOLUME,
                                    int(invalid.sum()), f"Column: {col}")
-                    df = df[~invalid].reset_index(drop=True)
+                    df = df.loc[~invalid].reset_index(drop=True)
 
         report.total_rows = len(df)
         return df, report

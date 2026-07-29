@@ -22,8 +22,8 @@ class RiskCheckResult:
             check_type=check_type,
             passed=self.passed,
             message=self.message,
-            current_value=float(self.current_value) if self.current_value is not None else None,
-            limit_value=float(self.limit_value) if self.limit_value is not None else None,
+            current_value=str(self.current_value) if self.current_value is not None else None,
+            limit_value=str(self.limit_value) if self.limit_value is not None else None,
             symbol=order.symbol,
             strategy=order.strategy,
         )

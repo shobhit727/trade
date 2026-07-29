@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 import asyncio
+import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -8,6 +10,8 @@ from enum import Enum
 from typing import AsyncIterator, Callable, Dict, List, Optional, Set
 from uuid import uuid4
 
+
+logger = logging.getLogger(__name__)
 
 class ClockMode(str, Enum):
     REALTIME = "realtime"
