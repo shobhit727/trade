@@ -18,8 +18,11 @@
 | `backtest/engine.py` | ✅ | BacktestEngine, BacktestResult, TradeRecord. Position/PositionSide import fixed. |
 | `backtest/metrics.py` | ✅ | Sharpe, Sortino, drawdown, profit factor. Sortino method added. |
 | `backtest/simulator.py` | ✅ | FillSimulator + factory. |
-| `backtest/validation.py` | ✅ | Walk-forward + Monte Carlo stubs. `run_validation` returns report. |
-| `strategies/base.py` | ✅ | BaseStrategy, StrategyRegistry, MeanReversionStrategy placeholder. Valid `OrderEvent` construction. |
+| `backtest/validation.py` | ✅ | Real walk-forward (rolling-window with embargo), Monte Carlo block-permutation, deflated Sharpe. |
+| `backtest/reporting.py` | ✅ | HTML tearsheet generator (stdlib only). |
+| `strategies/base.py` | ✅ | BaseStrategy, StrategyRegistry, MeanReversionStrategyPlaceholder. Valid `OrderEvent` construction. |
+| `strategies/mean_reversion.py` | ✅ | Real strategy: Z-score + RSI + Bollinger Bands (pandas/numpy). |
+| `strategies/trend_following.py` | ✅ | Real strategy: EMA + ADX + ATR trailing stop. |
 | `strategies/registry.py` | ✅ | Re-export only. |
 | `risk/manager.py` | ✅ | RiskManager pre-trade checks (kill switch, notional, total exposure). |
 | `risk/limits.py` | ✅ | RiskLimits from config. |

@@ -1,6 +1,6 @@
 # 13. Bug Tracker
 
-> **Last Updated**: 2026-07-29 (audit pass)
+> **Last Updated**: 2026-07-29 (audit pass + strategy/validation/fills/reporting pass)
 > **Confidence**: High for resolved; medium for open.
 
 ## Resolved (verified)
@@ -44,10 +44,10 @@
 | B030 | `data/cleaning.py` | `clean_klines` `report.start`/`end` defaults to `datetime.utcnow()` when columns missing at top of function. | Cosmetic. |
 | B031 | `monitoring/alerting.py` | `init_alerting` may attempt to start threads even without channels. | Side effects on import. |
 | B032 | `backtest/engine.py` | `_handle_order_fill` updates equity using unrealized PnL from payload, but does not subtract fees from equity. | PnL optimistic. |
-| B033 | `backtest/validation.py` | `_perform_walk_forward` and `_run_monte_carlo` return fixed values. | Reports always pass. |
+| B033 | `backtest/validation.py` | `_perform_walk_forward` and `_run_monte_carlo` return fixed values. | Resolved 2026-07-29: replaced with real math. |
+| B036 | `execution/venue/simulated.py` | Ignores slippage/fees. | Resolved 2026-07-29: slippage + commission applied. |
 | B034 | `core/portfolio.py` | `check_kill_switch` reads `daily_loss_pct` from state; `daily_pnl` reset relies on external cron. | Stale daily loss. |
 | B035 | `monitoring/dashboard.py` | Dashboard JSON builders reference Prometheus expression names with `cryptobot_` prefix; not exercised. | Unknown. |
-| B036 | `execution/venue/simulated.py` | Ignores slippage/fees. | Realism gap. |
 | B037 | `monitoring/metrics.py` | `total_pnl` `Counter` cannot accept negative PnL. | Same as B025. |
 | B038 | `risk/manager.py` | `notional_price = price or order.price or order.avg_fill_price or Decimal("0")` will yield zero for unfilled market orders → reject by min size. | Sizing failure. |
 | B039 | `data/cleaning.py` | `clean_trades` allows non-numeric price/quantity silently. | Bad data passes. |
