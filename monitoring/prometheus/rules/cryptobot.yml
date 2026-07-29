@@ -1,0 +1,209 @@
+groups:
+  - name: cryptobot.risk
+    interval: 30s
+    rules:
+      - alert: CryptobotHighRiskExposure
+        expr: cryptobot_risk_exposure_pct > 80
+        for: 5m
+        labels:
+          severity: critical
+          category: risk
+        annotations:
+          summary: "High portfolio risk exposure: {{ $value }}%"
+          description: "Portfolio exposure exceeds 80% threshold"
+          runbook_url: "https://github.com/cryptobot/runbooks#high-risk-exposure"
+
+      - alert: CryptobotDailyLossLimit
+        expr: cryptobot_risk_daily_loss_pct > 5
+        for: 1m
+        labels:
+          severity: critical
+          category: risk
+        annotations:
+          summary: "Daily loss limit breached: {{ $value }}%"
+          description: "Daily loss exceeds 5% limit"
+          runbook_url: "https://github.com/cryptobot/runbooks#daily-loss-limit"
+
+      - alert: CryptobotMaxDrawdown
+        expr: cryptobot_risk_drawdown_pct > 10
+        for: 5m
+        labels:
+          severity: warning
+          category: risk
+        annotations:
+          summary: "Maximum drawdown exceeded: {{ $value }}%"
+          description: "Portfolio drawdown exceeds 10% threshold"
+          runbook_url: "https://github.com/cryptobot/runbooks#max-drawdown"
+
+      - alert: CryptobotKillSwitchActive
+        expr: cryptobot_risk_kill_switch_active == 1
+        for: 0m
+        labels:
+          severity: emergency
+          category: risk
+        annotations:
+          summary: "Kill switch activated"
+          description: "Automated kill switch triggered - all trading halted"
+          runbook_url: "https://github.com/cryptobot/runbooks#kill-switch"
+
+      - alert: CryptobotHighCorrelation
+        expr: cryptobot_risk_correlation > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          category: risk
+        annotations:
+          summary: "High strategy correlation: {{ $value }}"
+          description: "Strategies are highly correlated, reducing diversification"
+
+  - name: cryptobot.trading
+    interval: 30s
+    rules:
+      - alert: CryptobotNoActivePositions
+        expr: cryptobot_positions_open == 0
+        for: 1h
+        labels:
+          severity: info
+          category: trading
+        annotations:
+          summary: "No active positions for 1 hour"
+          description: "No open positions detected - check if strategies are running"
+
+      - alert: CryptobotOrderRejectionRate
+        expr: rate(cryptobot_orders_rejected_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          category: execution
+        annotations:
+          summary: "High order rejection rate"
+          description: "Order rejection rate exceeds 10%"
+
+      - alert: CryptobotLowFillRate
+        expr: cryptobot_execution_fill_rate_pct < 80
+        for: 5m
+        labels:
+          severity: warning
+          category: execution
+        annotations:
+          summary: "Low order fill rate: {{ $value }}%"
+          description: "Order fill rate below 80%"
+
+      - alert: CryptobotHighSlippage
+        expr: histogram_quantile(0.95, rate(cryptobot_execution_slippage_bps_bucket[5m])) > 50
+        for: 5m
+        labels:
+          severity: warning
+          category: execution
+        annotations:
+          summary: "High execution slippage: {{ $value }} bps"
+          description: "95th percentile slippage exceeds 50 bps"
+
+  - name: cryptobot.system
+    interval: 30s
+    rules:
+      - alert: CryptobotDown
+        expr: up{job="cryptobot"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: system
+        annotations:
+          summary: "Cryptobot instance down"
+          description: "Cryptobot has been down for more than 1 minute"
+
+      - alert: CryptobotHighMemoryUsage
+        expr: (cryptobot_system_memory_bytes{type="used"} / cryptobot_system_memory_bytes{type="total"}) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          category: system
+        annotations:
+          summary: "High memory usage: {{ $value }}%"
+          description: "System memory usage exceeds 85%"
+
+      - alert: CryptobotHighCPUUsage
+        expr: cryptobot_system_cpu_percent > 90
+        for: 5m
+        labels:
+          severity: warning
+          category: system
+        annotations:
+          summary: "High CPU usage: {{ $value }}%"
+          description: "System CPU usage exceeds 90%"
+
+      - alert: CryptobotHighErrorRate
+        expr: rate(cryptobot_errors_total[5m]) > 1
+        for: 2m
+        labels:
+          severity: warning
+          category: system
+        annotations:
+          summary: "High error rate: {{ $value }}/s"
+          description: "Error rate exceeds 1 per second"
+
+      - alert: CryptobotConnectionLost
+        expr: cryptobot_connection_status == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: system
+        annotations:
+          summary: "Connection lost: {{ $labels.component }} - {{ $labels.endpoint }}"
+          description: "Critical connection to external service lost"
+
+  - name: cryptobot.data
+    interval: 30s
+    rules:
+      - alert: CryptobotDataFeedStale
+        expr: cryptobot_market_data_staleness_seconds > 30
+        for: 2m
+        labels:
+          severity: warning
+          category: data
+        annotations:
+          summary: "Stale market data: {{ $value }}s"
+          description: "Market data hasn't been updated for {{ $value }} seconds"
+
+      - alert: CryptobotDataGaps
+        expr: increase(cryptobot_market_data_gaps_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          category: data
+        annotations:
+          summary: "Market data gaps detected"
+          description: "More than 10 data gaps in the last 5 minutes"
+
+  - name: cryptobot.ml
+    interval: 60s
+    rules:
+      - alert: CryptobotMLHighInferenceLatency
+        expr: histogram_quantile(0.99, rate(cryptobot_ml_inference_latency_seconds_bucket[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          category: ml
+        annotations:
+          summary: "High ML inference latency: {{ $value }}s"
+          description: "99th percentile inference latency exceeds 100ms"
+
+      - alert: CryptobotMLModelDrift
+        expr: cryptobot_ml_drift_score > 0.2
+        for: 10m
+        labels:
+          severity: warning
+          category: ml
+        annotations:
+          summary: "ML model drift detected: {{ $value }}"
+          description: "Data drift score exceeds threshold for {{ $labels.feature }}"
+
+      - alert: CryptobotMLLowAccuracy
+        expr: cryptobot_ml_model_accuracy < 0.5
+        for: 15m
+        labels:
+          severity: warning
+          category: ml
+        annotations:
+          summary: "Low ML model accuracy: {{ $value }}"
+          description: "Model accuracy below 50% - consider retraining"

@@ -1,0 +1,112 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname', 'category']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: 'default'
+  routes:
+    - match:
+        severity: 'emergency'
+      receiver: 'pagerduty'
+      repeat_interval: 15m
+    - match:
+        severity: 'critical'
+      receiver: 'telegram-critical'
+      repeat_interval: 30m
+    - match:
+        category: 'risk'
+      receiver: 'telegram-risk'
+      repeat_interval: 1h
+    - match:
+        category: 'ml'
+      receiver: 'telegram-ml'
+      repeat_interval: 6h
+
+receivers:
+  - name: 'default'
+    telegram_configs:
+      - bot_token: '${TELEGRAM_BOT_TOKEN}'
+        chat_id: '${TELEGRAM_CHAT_ID}'
+        parse_mode: 'HTML'
+        message: |
+          {{ range .Alerts }}
+          {{ if eq .Status "firing" }}🚨 {{ else }}✅ {{ end }}
+          <b>{{ .Annotations.summary }}</b>
+          {{ .Annotations.description }}
+          Severity: {{ .Labels.severity }}
+          Category: {{ .Labels.category }}
+          {{ end }}
+
+  - name: 'telegram-critical'
+    telegram_configs:
+      - bot_token: '${TELEGRAM_BOT_TOKEN}'
+        chat_id: '${TELEGRAM_CHAT_ID}'
+        parse_mode: 'HTML'
+        message: |
+          🚨 <b>CRITICAL: {{ .Annotations.summary }}</b>
+          {{ .Annotations.description }}
+
+  - name: 'telegram-risk'
+    telegram_configs:
+      - bot_token: '${TELEGRAM_BOT_TOKEN}'
+        chat_id: '${TELEGRAM_CHAT_ID}'
+        parse_mode: 'HTML'
+        message: |
+          ⚠️ <b>RISK ALERT: {{ .Annotations.summary }}</b>
+          {{ .Annotations.description }}
+
+  - name: 'telegram-ml'
+    telegram_configs:
+      - bot_token: '${TELEGRAM_BOT_TOKEN}'
+        chat_id: '${TELEGRAM_CHAT_ID}'
+        parse_mode: 'HTML'
+        message: |
+          🤖 <b>ML ALERT: {{ .Annotations.summary }}</b>
+          {{ .Annotations.description }}
+
+  - name: 'pagerduty'
+    pagerduty_configs:
+      - service_key: '${PAGERDUTY_INTEGRATION_KEY}'
+        severity: '{{ .Labels.severity }}'
+        summary: '{{ .Annotations.summary }}'
+        details:
+          description: '{{ .Annotations.description }}'
+          category: '{{ .Labels.category }}'
+
+  - name: 'discord'
+    discord_configs:
+      - webhook_url: '${DISCORD_WEBHOOK_URL}'
+        message: |
+          {{ range .Alerts }}
+          {{ if eq .Status "firing" }}🚨 **{{ .Annotations.summary }}** {{ else }}✅ **Resolved: {{ .Annotations.summary }}** {{ end }}
+          {{ .Annotations.description }}
+          Severity: {{ .Labels.severity }}
+          Category: {{ .Labels.category }}
+          {{ end }}
+
+  - name: 'email'
+    email_configs:
+      - to: '${EMAIL_TO}'
+        from: '${EMAIL_FROM}'
+        smarthost: '${EMAIL_SMTP_HOST}:${EMAIL_SMTP_PORT}'
+        auth_username: '${EMAIL_USERNAME}'
+        auth_password: '${EMAIL_PASSWORD}'
+        send_resolved: true
+        headers:
+          Subject: '[Cryptobot] {{ .Status | title }}: {{ .Annotations.summary }}'
+
+inhibit_rules:
+  - source_match:
+      severity: 'emergency'
+    target_match:
+      severity: 'warning'
+    equal: ['category', 'source']
+
+  - source_match:
+      alertname: 'CryptobotDown'
+    target_match_re:
+      alertname: '.*'
+    equal: ['instance']

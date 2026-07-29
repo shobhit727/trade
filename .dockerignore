@@ -1,0 +1,14 @@
+**
+!Dockerfile
+!requirements/
+!requirements/**
+!src/
+!src/**
+!tests/
+!tests/**
+!configs/
+!configs/**
+!migrations/
+!migrations/**
+!PROJECT_MEMORY/
+!PROJECT_MEMORY/12_Feature_Status.md

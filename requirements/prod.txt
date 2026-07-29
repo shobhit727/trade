@@ -1,0 +1,38 @@
+# Core
+pydantic>=2.10
+pydantic-settings>=2.7
+pyyaml>=6.0
+python-dotenv>=1.0
+
+# Async/Networking
+aiohttp>=3.11
+websockets>=14.0
+redis>=5.2
+
+# Exchange
+ccxt>=4.4
+
+# Data
+pandas>=2.2
+numpy>=2.2
+
+# ML (lightweight for laptop)
+scikit-learn>=1.6
+lightgbm>=4.5
+joblib>=1.4
+
+# Monitoring
+prometheus-client>=0.21
+structlog>=24.4
+
+# CLI/Utils
+click>=8.1
+rich>=13.9
+orjson>=3.10
+
+requests>=2.32
+
+# Testing
+pytest>=8.3
+pytest-asyncio>=0.24
+pytest-cov>=6.0

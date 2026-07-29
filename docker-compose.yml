@@ -1,0 +1,423 @@
+services:
+  cryptobot-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test
+      args:
+        REQUIREMENTS: requirements/test.txt
+    container_name: cryptobot-test
+    environment:
+      - APP_ENV=test
+      - APP_LOG_LEVEL=DEBUG
+      - PYTHONPATH=/app/src
+    volumes:
+      - .:/app
+    command: pytest -q tests/unit/test_core_foundation.py
+    networks:
+      - cryptobot-network
+    profiles:
+      - test
+
+  # =============================================================================
+  # TimescaleDB - Time-series database for market data
+  # =============================================================================
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: cryptobot-timescaledb
+    environment:
+      POSTGRES_DB: ${DB_NAME:-cryptobot}
+      POSTGRES_USER: ${DB_USER:-cryptobot}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-cryptobot}
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-cryptobot} -d ${DB_NAME:-cryptobot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+    networks:
+      - cryptobot-network
+
+  # =============================================================================
+  # Redis - Cache and message bus
+  # =============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: cryptobot-redis
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+    networks:
+      - cryptobot-network
+
+  # =============================================================================
+  # Prometheus - Metrics collection
+  # =============================================================================
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: cryptobot-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--storage.tsdb.retention.size=10GB'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+    networks:
+      - cryptobot-network
+
+  # =============================================================================
+  # Alertmanager - Alert routing and deduplication
+  # =============================================================================
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: cryptobot-alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "9093:9093"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+    networks:
+      - cryptobot-network
+
+  # =============================================================================
+  # Grafana - Visualization and dashboards
+  # =============================================================================
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: cryptobot-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: "grafana-piechart-panel,grafana-worldmap-panel"
+    volumes:
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - alertmanager
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+    networks:
+      - cryptobot-network
+
+  # =============================================================================
+  # Loki - Log aggregation
+  # =============================================================================
+  loki:
+    image: grafana/loki:2.9.2
+    container_name: cryptobot-loki
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./monitoring/loki/local-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3100/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+    networks:
+      - cryptobot-network
+
+  # =============================================================================
+  # Promtail - Log collector for Loki
+  # =============================================================================
+  promtail:
+    image: grafana/promtail:2.9.2
+    container_name: cryptobot-promtail
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./monitoring/promtail/config.yml:/etc/promtail/config.yml:ro
+      - ./logs:/var/log/cryptobot:ro
+      - /var/log:/var/log/host:ro
+    depends_on:
+      - loki
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+    networks:
+      - cryptobot-network
+
+  # =============================================================================
+  # Cryptobot Application - Main trading bot
+  # =============================================================================
+  cryptobot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: cryptobot-app
+    environment:
+      - APP_ENV=production
+      - APP_LOG_LEVEL=INFO
+      - BINANCE_TESTNET=true
+      - BINANCE_API_KEY=${BINANCE_API_KEY:-}
+      - BINANCE_API_SECRET=${BINANCE_API_SECRET:-}
+      - DB_HOST=timescaledb
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-cryptobot}
+      - DB_USER=${DB_USER:-cryptobot}
+      - DB_PASSWORD=${DB_PASSWORD:-cryptobot}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MARKET_DATA_REDIS_HOST=redis
+      - MARKET_DATA_REDIS_PORT=6379
+      - PROMETHEUS_PORT=9090
+      - MONITORING_TELEGRAM_ENABLED=${MONITORING_TELEGRAM_ENABLED:-false}
+      - MONITORING_TELEGRAM_BOT_TOKEN=${MONITORING_TELEGRAM_BOT_TOKEN:-}
+      - MONITORING_TELEGRAM_CHAT_ID=${MONITORING_TELEGRAM_CHAT_ID:-}
+      - MONITORING_DISCORD_WEBHOOK=${MONITORING_DISCORD_WEBHOOK:-}
+      - MONITORING_EMAIL_ENABLED=${MONITORING_EMAIL_ENABLED:-false}
+      - MONITORING_EMAIL_SMTP_HOST=${EMAIL_SMTP_HOST:-}
+      - MONITORING_EMAIL_SMTP_PORT=${EMAIL_SMTP_PORT:-}
+      - MONITORING_EMAIL_USERNAME=${EMAIL_USERNAME:-}
+      - MONITORING_EMAIL_PASSWORD=${EMAIL_PASSWORD:-}
+      - MONITORING_EMAIL_FROM=${EMAIL_FROM:-}
+      - MONITORING_EMAIL_TO=${EMAIL_TO:-}
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./logs:/app/logs
+      - ./data:/app/data
+    ports:
+      - "8080:8080"  # Health/Metrics endpoint
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2'
+        reservations:
+          memory: 1G
+          cpus: '1'
+    networks:
+      - cryptobot-network
+    restart: unless-stopped
+
+  # =============================================================================
+  # Cryptobot Paper Trading - Paper trading mode
+  # =============================================================================
+  cryptobot-paper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: cryptobot-paper
+    environment:
+      - APP_ENV=paper
+      - APP_LOG_LEVEL=DEBUG
+      - BINANCE_TESTNET=true
+      - BINANCE_API_KEY=${BINANCE_TESTNET_API_KEY:-}
+      - BINANCE_API_SECRET=${BINANCE_TESTNET_API_SECRET:-}
+      - EXECUTION_MODE=paper
+      - DB_HOST=timescaledb
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-cryptobot_paper}
+      - DB_USER=${DB_USER:-cryptobot}
+      - DB_PASSWORD=${DB_PASSWORD:-cryptobot}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./logs:/app/logs
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+    networks:
+      - cryptobot-network
+    restart: unless-stopped
+    profiles:
+      - paper
+
+  # =============================================================================
+  # Cryptobot Backtest - Backtesting worker
+  # =============================================================================
+  cryptobot-backtest:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: cryptobot-backtest
+    environment:
+      - APP_ENV=backtest
+      - APP_LOG_LEVEL=INFO
+      - DB_HOST=timescaledb
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-cryptobot}
+      - DB_USER=${DB_USER:-cryptobot}
+      - DB_PASSWORD=${DB_PASSWORD:-cryptobot}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: '4'
+        reservations:
+          memory: 2G
+          cpus: '2'
+    networks:
+      - cryptobot-network
+    profiles:
+      - backtest
+
+  # =============================================================================
+  # Nginx - Reverse proxy for Grafana and APIs
+  # =============================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: cryptobot-nginx
+    volumes:
+      - ./monitoring/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./monitoring/nginx/conf.d:/etc/nginx/conf.d:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - grafana
+      - prometheus
+      - alertmanager
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 32M
+    networks:
+      - cryptobot-network
+
+volumes:
+  timescaledb_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+  grafana_data:
+    driver: local
+  loki_data:
+    driver: local
+
+networks:
+  cryptobot-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

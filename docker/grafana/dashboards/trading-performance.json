@@ -1,0 +1,454 @@
+{
+  "dashboard": {
+    "title": "Cryptobot - Trading Performance",
+    "tags": ["cryptobot", "trading", "performance", "pnl"],
+    "timezone": "utc",
+    "refresh": "10s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Total Equity",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "cryptobot_total_equity_usd",
+            "legendFormat": "Equity"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "color": {"mode": "palette-classic"}
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Daily PnL",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "cryptobot_daily_pnl_usd",
+            "legendFormat": "{{strategy}}"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "color": {"mode": "palette-classic"},
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "green", "value": 0}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Total PnL by Strategy",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "cryptobot_total_pnl_usd",
+            "legendFormat": "{{strategy}}"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "color": {"mode": "palette-classic"}
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Sharpe Ratio",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "cryptobot_sharpe_ratio{period=\"all\"}",
+            "legendFormat": "{{strategy}}"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 8, "w": 6, "h": 4},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 0.5},
+                {"color": "green", "value": 1.0},
+                {"color": "blue", "value": 2.0}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Sortino Ratio",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "cryptobot_sortino_ratio{period=\"all\"}",
+            "legendFormat": "{{strategy}}"
+          }
+        ],
+        "gridPos": {"x": 18, "y": 8, "w": 6, "h": 4},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 0.5},
+                {"color": "green", "value": 1.0}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 6,
+        "title": "Max Drawdown %",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "cryptobot_max_drawdown_pct * 100",
+            "legendFormat": "{{strategy}}"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 12, "w": 6, "h": 4},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 50,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 10},
+                {"color": "red", "value": 20}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 7,
+        "title": "Win Rate %",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "cryptobot_win_rate_pct",
+            "legendFormat": "{{strategy}}"
+          }
+        ],
+        "gridPos": {"x": 18, "y": 12, "w": 6, "h": 4},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 40},
+                {"color": "green", "value": 50},
+                {"color": "blue", "value": 60}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 8,
+        "title": "Profit Factor",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "cryptobot_profit_factor",
+            "legendFormat": "{{strategy}}"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 16, "w": 6, "h": 4},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 1.0},
+                {"color": "green", "value": 1.5},
+                {"color": "blue", "value": 2.0}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 9,
+        "title": "Open Positions",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "cryptobot_positions_open",
+            "legendFormat": "{{strategy}} {{symbol}} {{side}}",
+            "format": "table"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 20, "w": 12, "h": 10},
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {"type": "value", "options": {"0": {"text": "FLAT", "color": "gray"}, "1": {"text": "OPEN", "color": "green"}}}
+            ]
+          }
+        }
+      },
+      {
+        "id": 10,
+        "title": "Position Sizes (USD)",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "cryptobot_position_size_usd",
+            "legendFormat": "{{strategy}} {{symbol}} {{side}}",
+            "format": "table"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 20, "w": 12, "h": 10},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD"
+          }
+        }
+      },
+      {
+        "id": 11,
+        "title": "Unrealized PnL by Position",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "cryptobot_position_pnl_unrealized_usd",
+            "legendFormat": "{{strategy}} {{symbol}}",
+            "format": "table"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 30, "w": 12, "h": 10},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "green", "value": 0}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 12,
+        "title": "Realized PnL by Strategy",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(cryptobot_position_pnl_realized_total_usd[5m])",
+            "legendFormat": "{{strategy}} {{symbol}}"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 30, "w": 12, "h": 10},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD"
+          }
+        }
+      },
+      {
+        "id": 13,
+        "title": "Orders Filled Rate",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(cryptobot_orders_filled_total[5m])",
+            "legendFormat": "{{strategy}} {{symbol}} {{side}}"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 40, "w": 12, "h": 8},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ops"
+          }
+        }
+      },
+      {
+        "id": 14,
+        "title": "Orders Rejected",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(cryptobot_orders_rejected_total[5m])",
+            "legendFormat": "{{strategy}} {{symbol}} {{reason}}"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 40, "w": 12, "h": 8},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ops"
+          }
+        }
+      },
+      {
+        "id": 15,
+        "title": "Execution Latency (p95)",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(cryptobot_execution_latency_seconds_bucket[5m]))",
+            "legendFormat": "{{venue}} {{symbol}} {{order_type}}"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 48, "w": 12, "h": 8},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 0.1},
+                {"color": "red", "value": 0.5}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 16,
+        "title": "Execution Slippage (p95, bps)",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(cryptobot_execution_slippage_bps_bucket[5m]))",
+            "legendFormat": "{{venue}} {{symbol}} {{side}}"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 48, "w": 12, "h": 8},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 10},
+                {"color": "red", "value": 50}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 17,
+        "title": "Risk Exposure %",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "cryptobot_risk_exposure_pct * 100",
+            "legendFormat": "Portfolio"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 56, "w": 6, "h": 4},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 60},
+                {"color": "red", "value": 80}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 18,
+        "title": "Kill Switch Active",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "cryptobot_risk_kill_switch_active",
+            "legendFormat": "Kill Switch"
+          }
+        ],
+        "gridPos": {"x": 6, "y": 56, "w": 6, "h": 4},
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {"type": "value", "options": {"0": {"text": "INACTIVE", "color": "green"}, "1": {"text": "ACTIVE", "color": "red"}}}
+            ]
+          }
+        }
+      },
+      {
+        "id": 19,
+        "title": "Available Balance",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "cryptobot_available_balance_usd",
+            "legendFormat": "Available"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 56, "w": 6, "h": 4},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD"
+          }
+        }
+      },
+      {
+        "id": 20,
+        "title": "Used Margin",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "cryptobot_used_margin_usd",
+            "legendFormat": "Used Margin"
+          }
+        ],
+        "gridPos": {"x": 18, "y": 56, "w": 6, "h": 4},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD"
+          }
+        }
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "schemaVersion": 38,
+    "version": 1
+  },
+  "overwrite": true
+}

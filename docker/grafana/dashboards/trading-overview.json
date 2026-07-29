@@ -1,0 +1,347 @@
+{
+  "dashboard": {
+    "title": "Cryptobot - Trading Overview",
+    "tags": ["cryptobot", "trading"],
+    "timezone": "utc",
+    "refresh": "10s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Total Equity (USD)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "cryptobot_total_equity_usd",
+            "legendFormat": "Total Equity"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "green", "value": 10000}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Daily PnL (USD)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum by (strategy) (cryptobot_daily_pnl_usd)",
+            "legendFormat": "{{strategy}}"
+          }
+        ],
+        "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 0},
+                {"color": "green", "value": 100}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Open Positions",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum by (strategy, symbol, side) (cryptobot_positions_open)",
+            "legendFormat": "{{strategy}} {{symbol}} {{side}}"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 5},
+                {"color": "red", "value": 10}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Portfolio Exposure %",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "cryptobot_risk_exposure_pct{strategy=\"portfolio\"} * 100",
+            "legendFormat": "Exposure %"
+          }
+        ],
+        "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 50},
+                {"color": "red", "value": 80}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Max Drawdown %",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "cryptobot_max_drawdown_pct * 100",
+            "legendFormat": "Max DD"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 4, "w": 6, "h": 4},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 5},
+                {"color": "red", "value": 15}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 6,
+        "title": "Kill Switch Status",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "cryptobot_risk_kill_switch_active",
+            "legendFormat": "Kill Switch"
+          }
+        ],
+        "gridPos": {"x": 6, "y": 4, "w": 6, "h": 4},
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {"type": "value", "options": {"0": {"text": "INACTIVE", "color": "green"}, "1": {"text": "ACTIVE", "color": "red"}}}
+            ],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "red", "value": 1}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 7,
+        "title": "Equity Curve",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "cryptobot_total_equity_usd",
+            "legendFormat": "Equity"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "color": {"mode": "palette-classic"}
+          }
+        }
+      },
+      {
+        "id": 8,
+        "title": "PnL by Strategy",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "cryptobot_daily_pnl_usd",
+            "legendFormat": "{{strategy}}"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "color": {"mode": "palette-classic"}
+          }
+        }
+      },
+      {
+        "id": 9,
+        "title": "Orders Total",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(cryptobot_orders_total[5m])",
+            "legendFormat": "{{strategy}} {{symbol}} {{side}} {{status}}"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ops",
+            "color": {"mode": "palette-classic"}
+          }
+        }
+      },
+      {
+        "id": 10,
+        "title": "Execution Latency (p95)",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(cryptobot_execution_latency_seconds_bucket[5m]))",
+            "legendFormat": "{{venue}} {{symbol}}"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 0.1},
+                {"color": "red", "value": 0.5}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 11,
+        "title": "Market Data Latency (p95)",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(cryptobot_market_data_latency_seconds_bucket[5m]))",
+            "legendFormat": "{{source}} {{symbol}} {{type}}"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 0.05},
+                {"color": "red", "value": 0.2}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 12,
+        "title": "Strategy Performance",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "cryptobot_sharpe_ratio",
+            "legendFormat": "{{strategy}} Sharpe",
+            "format": "table"
+          },
+          {
+            "expr": "cryptobot_sortino_ratio",
+            "legendFormat": "{{strategy}} Sortino",
+            "format": "table"
+          },
+          {
+            "expr": "cryptobot_win_rate_pct",
+            "legendFormat": "{{strategy}} Win Rate",
+            "format": "table"
+          },
+          {
+            "expr": "cryptobot_profit_factor",
+            "legendFormat": "{{strategy}} Profit Factor",
+            "format": "table"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 24, "w": 12, "h": 8},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 13,
+        "title": "Position Sizes by Strategy",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "sum by (strategy) (cryptobot_position_size_usd)",
+            "legendFormat": "{{strategy}}",
+            "format": "table"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 32, "w": 12, "h": 8},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD"
+          }
+        }
+      },
+      {
+        "id": 14,
+        "title": "Errors by Component",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(cryptobot_errors_total[5m])",
+            "legendFormat": "{{component}} {{error_type}}"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 32, "w": 12, "h": 8},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ops",
+            "color": {"mode": "palette-classic"}
+          }
+        }
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "schemaVersion": 38,
+    "version": 1
+  },
+  "overwrite": true
+}
