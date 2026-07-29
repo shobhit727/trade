@@ -857,6 +857,7 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [x] Create docker-compose.yml for local dev (TimescaleDB, Redis, Grafana, Loki, Alertmanager, Promtail)
 - [x] Add `Dockerfile` (`python:3.14-slim`)
 - [x] Add `.dockerignore`, `.gitignore`
+- [x] Add `pyproject.toml` + `pytest.ini` + `Settings.from_yaml_safe` (configs/settings mismatch fixed 2026-07-29)
 - [ ] Set up Rust workspace (`Cargo.toml` exists, `crates/cryptobot-core/Cargo.toml` manifest only)
 - [ ] Implement core Rust types (`cryptobot-core`)
 - [ ] Implement feature engine in Rust (`cryptobot-features`)

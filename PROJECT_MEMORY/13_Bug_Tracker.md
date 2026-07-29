@@ -61,7 +61,7 @@
 | B047 | `cli/main.py` | Three subcommands exist but only print-and-exit. | No real functionality. |
 | B048 | `risk/manager.py` | `RiskCheckResult.to_event` converts `Decimal` to `float` (`float(self.current_value)`). | Precision loss. |
 | B049 | `strategies/base.py` | `StrategyRegistry.__new__` prints "initialized" on import. | Side effect. |
-| B050 | `config.py` | `Settings(extra="ignore")` swallows YAML mismatch. | Silent config drift. |
+| B050 | `config.py` | `Settings(extra="ignore")` swallows YAML mismatch. | Resolved 2026-07-29: added `_flatten_yaml` and `Settings.from_yaml_safe` that translate nested YAML groups to flat Settings fields. |
 | B051 | `monitoring/__init__.py` | Eagerly imports `cryptobot.monitoring.metrics`, which fails without `prometheus_client`. | ImportError. |
 
 ## Will-surprise areas

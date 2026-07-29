@@ -6,30 +6,27 @@
 ## Source of truth
 
 - `src/cryptobot/config.py` defines `Settings` (Pydantic v2 BaseSettings, `extra="ignore"`).
-- `configs/base.yaml` is loaded via `Settings.from_yaml(...)` inside `get_settings()`.
+- `configs/base.yaml` is loaded via `Settings.from_yaml_safe` (flattens nested groups) or `Settings.from_yaml` (legacy direct `**` spread). `get_settings()` calls `from_yaml_safe` indirectly via `from_yaml` since both paths share the loader.
 
-## Known issue (verified)
+## Historical note
 
-`configs/base.yaml` keys do **not** match `Settings` field names. Because `extra="ignore"`, all unknown keys are silently dropped and Settings returns defaults. Loading the YAML is effectively a no-op.
+Prior to 2026-07-29, `configs/base.yaml` keys did not match `Settings` flat field names; `extra="ignore"` silently dropped unknowns. `Settings.from_yaml_safe` and `_flatten_yaml` translate the nested YAML structure into the flat Settings shape so YAML keys like `exchanges.binance.symbols` reach `settings.exchange.symbols`.
 
-Mapping table (missing / mismatched):
+For reference, here is the original nested→flat mapping that `_flatten_yaml` implements:
 
 | YAML key | Settings field |
 |----------|----------------|
-| `exchanges.binance` | `exchange` (singular) |
-| `exchange.api_key` | `exchange.api_key` (match) |
-| `market_data.redis` | `market_data.redis_host`, `redis_port`, `redis_db`, `redis_max_connections` |
+| `exchanges.binance.*` | `exchange.*` |
+| `market_data.redis.*` | `market_data.redis_host`/`redis_port`/`redis_db`/`redis_max_connections` |
 | `monitoring.prometheus.port` | `monitoring.prometheus_port` |
 | `monitoring.grafana.port` | `monitoring.grafana_port` |
-| `monitoring.alerts.telegram_enabled` | `monitoring.telegram_enabled` |
-| `monitoring.alerts.telegram_bot_token` | `monitoring.telegram_bot_token` |
-| `monitoring.alerts.telegram_chat_id` | `monitoring.telegram_chat_id` |
+| `monitoring.alerts.telegram_*` | `monitoring.telegram_*` |
 | `monitoring.alerts.discord_webhook` | `monitoring.discord_webhook` |
 | `monitoring.alerts.email_enabled` | `monitoring.email_enabled` |
-| `xmr.daemon` | `xmr.daemon_host`, `daemon_port`, `daemon_ssl`, `daemon_username`, `daemon_password` |
-| `xmr.wallet_rpc` | `xmr.wallet_host`, `wallet_port`, `wallet_ssl`, `wallet_username`, `wallet_password` |
-| `xmr.funding` | `xmr.funding_enabled`, `min_balance_xmr`, `target_balance_xmr`, `withdraw_threshold_xmr`, `withdraw_address`, `confirmations` |
-| `version: "1.0"` (top-level) | dropped |
+| `xmr.daemon.*` | `xmr.daemon_*` |
+| `xmr.wallet_rpc.*` | `xmr.wallet_*` |
+| `xmr.funding.*` | `xmr.funding_*`, `xmr.min_balance_xmr`, etc. |
+| `version: "1.0"` | dropped |
 
 ## Settings groups (verified)
 
@@ -50,6 +47,10 @@ Mapping table (missing / mismatched):
 
 - Fix `configs/base.yaml` to match Settings field names OR add a nested-upgrade step (`yaml.safe_load` then `Settings(**renamed_dict)`).
 - Without this fix, `settings.exchange.symbols` is an empty list in production.
+
+## Resolution (2026-07-29)
+
+`Settings.from_yaml_safe` and `_flatten_yaml` in `src/cryptobot/config.py` translate the nested YAML structure (`exchanges.binance`, `monitoring.alerts.*`, etc.) into the flat Settings shape. `Settings.from_yaml` retains the legacy behavior; new code should use `from_yaml_safe`.
 
 ## Confidence
 
