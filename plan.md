@@ -208,9 +208,9 @@ src/cryptobot/
 - [x] Execution algorithms helpers (TWAP/VWAP/POV helpers in `execution/algorithms.py`)
 - [x] `Venue` interface + `SimulatedVenue` (slippage + commission)
 - [x] `BinanceVenue` (ccxt.async_support; retries, sandbox mode, credential guard)
-- [ ] Smart order routing (multi-venue)
+- [x] Smart order routing (`execution/router.py`) — `SmartOrderRouter` with price-rank and latency-rank, fallbacks, split-and-route
 - [ ] Adverse selection protection
-- [ ] Latency monitoring
+- [ ] Latency monitoring (router records `latency_ms` and `round_trip_ms` per venue)
 
 ### Phase 8: Live Trading & Monitoring (Week 10-12) — ⚠️ partial
 - [x] Compose stack (`docker-compose.yml`: Timescale, Redis, Prometheus, Grafana, Loki, Alertmanager)
@@ -917,7 +917,7 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [x] `Venue` interface + `SimulatedVenue`
 - [x] TWAP/VWAP/POV helpers (`execution/algorithms.py`)
 - [x] Binance live adapter (`execution/venue/binance.py`) — ccxt async, retries, credential guard
-- [ ] Smart order routing multi-venue
+- [x] Smart order routing multi-venue (`execution/router.py`) — SmartOrderRouter with price and latency rankers, fallback, split
 - [ ] Implementation-shortfall / iceberg algorithms
 - [ ] Adverse selection protection
 - [ ] Latency monitoring

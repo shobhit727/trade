@@ -32,6 +32,7 @@
 | `risk/correlation.py` | ✅ | max_abs_correlation helper. |
 | `execution/engine.py` | ✅ | ExecutionEngine, risk-gated order submission, `build_venue(mode)` factory selects by `settings.execution.mode`. |
 | `execution/algorithms.py` | ✅ | twap_slices, vwap_slices, pov_quantity. |
+| `execution/router.py` | ✅ | SmartOrderRouter: best-price ranker, latency-aware ranker, fallback to next venue on failure, split-and-route across venues. |
 | `execution/venue/base.py` | ✅ | Abstract Venue. |
 | `execution/venue/simulated.py` | ✅ | In-memory venue with slippage + commission. |
 | `execution/venue/binance.py` | ✅ | Live / testnet Binance via ccxt.async_support. Sandbox mode, retries, error mapping, guardrails for missing credentials. |

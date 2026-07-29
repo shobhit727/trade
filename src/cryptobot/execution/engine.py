@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Optional
 from uuid import uuid4
 
 from cryptobot.config import settings
 from cryptobot.core.bus import EventBus, get_event_bus
 from cryptobot.core.events import Event, EventType, OrderEvent, OrderStatus
+from cryptobot.execution.router import SmartOrderRouter
 from cryptobot.execution.venue.base import Venue
 from cryptobot.execution.venue.simulated import SimulatedVenue
 from cryptobot.risk.manager import RiskManager, get_risk_manager
@@ -30,6 +32,7 @@ class ExecutionEngine:
     risk_manager: RiskManager = field(default_factory=get_risk_manager)
     event_bus: EventBus = field(default_factory=get_event_bus)
     orders: dict[str, OrderEvent] = field(default_factory=dict)
+    router: Optional[SmartOrderRouter] = None
 
     async def submit_order(self, order: OrderEvent) -> OrderEvent:
         if not order.order_id:
@@ -42,6 +45,21 @@ class ExecutionEngine:
             self.orders[order.order_id] = order
             await self.event_bus.publish(order)
             return order
+
+        if self.router is not None and len(self.router.venues) > 1:
+            routed = await self.router.route(order)
+            for child in routed.children:
+                self.orders[child.order_id] = child
+            first_fill = routed.fills[0] if routed.fills else None
+            if first_fill is None:
+                order.status = OrderStatus.REJECTED
+                order.__post_init__()
+                self.orders[order.order_id] = order
+                await self.event_bus.publish(order)
+                return order
+            self.orders[first_fill.order_id] = first_fill
+            await self.event_bus.publish(Event(type=EventType.ORDER_FILLED, payload=first_fill.payload))
+            return first_fill
 
         filled = await self.venue.submit_order(order)
         self.orders[filled.order_id] = filled
