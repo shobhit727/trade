@@ -36,7 +36,7 @@
 | `execution/venue/base.py` | ✅ | Abstract Venue. |
 | `execution/venue/simulated.py` | ✅ | In-memory venue with slippage + commission. |
 | `execution/venue/binance.py` | ✅ | Live / testnet Binance via ccxt.async_support. Sandbox mode, retries, error mapping, guardrails for missing credentials. |
-| `monitoring/metrics.py` | ✅ | Prometheus metrics + helpers. Requires `prometheus_client`. |
+| `monitoring/metrics.py` | ✅ | Prometheus metrics + helpers. Requires `prometheus_client`. Includes `record_venue_quote_latency` and `record_routing_decision` for SOR observability. |
 | `monitoring/alerting.py` | ✅ | AlertManager + Telegram/Discord/Email/PagerDuty channels. |
 | `monitoring/health.py` | ✅ | HealthMonitor + HealthChecker subclasses. `inspect.isawaitable` + false-as-unhealthy fix. |
 | `monitoring/dashboard.py` | ✅ | Dashboard JSON builders. |

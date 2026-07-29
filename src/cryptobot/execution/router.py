@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -8,6 +9,9 @@ from typing import Awaitable, Callable, Dict, List, Optional, Sequence
 
 from cryptobot.core.events import OrderEvent, OrderSide
 from cryptobot.execution.venue.base import Venue
+
+
+logger = logging.getLogger(__name__)
 
 
 Ranker = Callable[[str, Sequence["VenueScore"]], int]
@@ -99,6 +103,7 @@ class SmartOrderRouter:
         try:
             price = await asyncio.wait_for(venue.get_price(symbol), timeout=self.config.quote_timeout_s)
             latency_ms = (time.perf_counter() - start) * 1000.0
+            self._record_quote(name, symbol, latency_ms)
             if price <= 0:
                 return VenueScore(name=name, venue=venue, price=Decimal("0"), latency_ms=latency_ms, fee_bps=fee, error="no quote")
             return VenueScore(
@@ -110,7 +115,22 @@ class SmartOrderRouter:
             )
         except Exception as exc:
             latency_ms = (time.perf_counter() - start) * 1000.0
+            self._record_quote(name, symbol, latency_ms)
             return VenueScore(name=name, venue=venue, price=Decimal("0"), latency_ms=latency_ms, fee_bps=fee, error=str(exc))
+
+    def _record_quote(self, name: str, symbol: str, latency_ms: float) -> None:
+        try:
+            from cryptobot.monitoring.metrics import record_venue_quote_latency
+            record_venue_quote_latency(venue=name, symbol=symbol, latency=latency_ms / 1000.0)
+        except Exception as exc:
+            logger.debug("metrics record skipped: %s", exc)
+
+    def _record_decision(self, name: str, symbol: str, action: str) -> None:
+        try:
+            from cryptobot.monitoring.metrics import record_routing_decision
+            record_routing_decision(venue=name, symbol=symbol, action=action)
+        except Exception as exc:
+            logger.debug("metrics record skipped: %s", exc)
 
     async def quote_all(self, symbol: str) -> List[VenueScore]:
         scores = await asyncio.gather(*(self._quote(v, symbol) for v in self.venues))
@@ -136,13 +156,19 @@ class SmartOrderRouter:
             client_order_id=order.client_order_id,
         )
         routed.children.append(child)
+        self._record_decision(chosen.name, order.symbol, "selected")
         try:
+            start = time.perf_counter()
             filled = await asyncio.wait_for(
                 chosen.venue.submit_order(child),
                 timeout=self.config.quote_timeout_s * 4,
             )
+            chosen.round_trip_ms = (time.perf_counter() - start) * 1000.0
+            self._record_decision(chosen.name, order.symbol, "filled")
             routed.fills.append(filled)
-        except Exception:
+        except Exception as exc:
+            self._record_decision(chosen.name, order.symbol, "failed")
+            logger.warning("router fallback starting: %s", exc)
             for fallback_score in scores:
                 if fallback_score is chosen or fallback_score.error:
                     continue
@@ -158,11 +184,16 @@ class SmartOrderRouter:
                     client_order_id=order.client_order_id,
                 )
                 routed.children.append(fallback_child)
+                self._record_decision(fallback_score.name, order.symbol, "fallback")
                 try:
+                    start = time.perf_counter()
                     filled = await fallback_score.venue.submit_order(fallback_child)
+                    fallback_score.round_trip_ms = (time.perf_counter() - start) * 1000.0
+                    self._record_decision(fallback_score.name, order.symbol, "filled")
                     routed.fills.append(filled)
                     break
                 except Exception:
+                    self._record_decision(fallback_score.name, order.symbol, "failed")
                     continue
         return routed
 
@@ -200,10 +231,15 @@ class SmartOrderRouter:
                 client_order_id=f"{parent.client_order_id or 'split'}-{n}",
             )
             routed.children.append(child)
+            self._record_decision(score.name, parent.symbol, "split")
             try:
+                start = time.perf_counter()
                 filled = await score.venue.submit_order(child)
+                score.round_trip_ms = (time.perf_counter() - start) * 1000.0
+                self._record_decision(score.name, parent.symbol, "filled")
                 routed.fills.append(filled)
             except Exception:
+                self._record_decision(score.name, parent.symbol, "failed")
                 continue
         return routed
 

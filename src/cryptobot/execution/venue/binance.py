@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from decimal import Decimal
 from typing import Any, Dict, Mapping, Optional
 
@@ -143,6 +144,7 @@ class BinanceVenue(Venue):
 
         last_exc: Optional[Exception] = None
         for attempt in range(self.max_retries):
+            start = time.perf_counter()
             try:
                 price: Optional[float] = None
                 if type_ == "limit":
@@ -150,6 +152,7 @@ class BinanceVenue(Venue):
                         return self._reject(order, OrderStatus.REJECTED, "Limit order missing price")
                     price = float(order.price)
                 raw = await exchange.create_order(symbol, type_, side, amount, price, params_typed)
+                self._record_round_trip(type_, start)
                 return self._apply_fill(order, raw)
             except Exception as exc:
                 last_exc = exc
@@ -161,6 +164,15 @@ class BinanceVenue(Venue):
                 await asyncio.sleep(backoff)
 
         return self._reject(order, OrderStatus.REJECTED, str(last_exc) if last_exc else "submit failed")
+
+    @staticmethod
+    def _record_round_trip(order_type: str, start: float) -> None:
+        latency_ms = (time.perf_counter() - start) * 1000.0
+        try:
+            from cryptobot.monitoring.metrics import record_execution_latency
+            record_execution_latency(venue="binance", symbol="-", order_type=order_type, latency=latency_ms / 1000.0)
+        except Exception as exc:
+            logger.debug("metrics record skipped: %s", exc)
 
     def _apply_fill(self, order: OrderEvent, raw: Mapping[str, Any]) -> OrderEvent:
         try:
@@ -213,9 +225,11 @@ class BinanceVenue(Venue):
         if ccxt_async is None or not self._has_credentials(self.api_key, self.api_secret):
             return Decimal("0")
         exchange = self._ensure_exchange()
+        start = time.perf_counter()
         try:
             mapped = self._map_symbol(symbol)
             ticker = await exchange.fetch_ticker(mapped)
+            self._record_round_trip("quote", start)
             last = ticker.get("last") or ticker.get("close")
             return Decimal(str(last)) if last is not None else Decimal("0")
         except Exception as exc:

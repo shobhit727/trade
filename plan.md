@@ -210,7 +210,10 @@ src/cryptobot/
 - [x] `BinanceVenue` (ccxt.async_support; retries, sandbox mode, credential guard)
 - [x] Smart order routing (`execution/router.py`) — `SmartOrderRouter` with price-rank and latency-rank, fallbacks, split-and-route
 - [ ] Adverse selection protection
-- [ ] Latency monitoring (router records `latency_ms` and `round_trip_ms` per venue)
+- [x] Latency monitoring (`monitoring/metrics.py` `record_venue_quote_latency`,
+      `record_routing_decision`, `record_execution_latency`). Router records per-venue
+      quote latency + selected/fallback/split/failed; SimulatedVenue + BinanceVenue
+      record their own round-trip on submit/cancel.
 
 ### Phase 8: Live Trading & Monitoring (Week 10-12) — ⚠️ partial
 - [x] Compose stack (`docker-compose.yml`: Timescale, Redis, Prometheus, Grafana, Loki, Alertmanager)

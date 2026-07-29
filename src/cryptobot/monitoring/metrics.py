@@ -549,6 +549,28 @@ def record_execution_slippage(venue: str, symbol: str, side: str, slippage_bps: 
     execution_slippage.labels(venue=venue, symbol=symbol, side=side).observe(slippage_bps)
 
 
+def record_venue_quote_latency(venue: str, symbol: str, latency: float) -> None:
+    """Record venue quote (best-bid/ask fetch) latency."""
+    try:
+        execution_latency.labels(
+            venue=venue, symbol=symbol, order_type="quote"
+        ).observe(latency)
+    except Exception:
+        pass
+
+
+def record_routing_decision(venue: str, symbol: str, action: str) -> None:
+    """Smart-order-router selector counter.
+
+    `action` is one of: ``selected``, ``fallback``, ``split``, ``failed``.
+    """
+    try:
+        execution_retry_count.labels(venue=venue, symbol=symbol).inc()
+        execution_fill_rate.labels(venue=venue, symbol=symbol).set(1.0 if action in {"selected", "split"} else 0.0)
+    except Exception:
+        pass
+
+
 def record_strategy_signal(strategy: str, signal_type: str, symbol: str) -> None:
     """Record strategy signal."""
     strategy_signals.labels(strategy=strategy, signal_type=signal_type, symbol=symbol).inc()

@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Optional
 
 from cryptobot.core.events import OrderEvent, OrderStatus
 from cryptobot.execution.venue.base import Venue
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -36,6 +41,7 @@ class SimulatedVenue(Venue):
         self._position_qty: dict[str, Decimal] = {}
 
     async def submit_order(self, order: OrderEvent) -> OrderEvent:
+        start = time.perf_counter()
         mark = order.price or self.prices.get(order.symbol, Decimal("0"))
         if mark <= 0:
             order.status = OrderStatus.REJECTED
@@ -60,7 +66,17 @@ class SimulatedVenue(Venue):
             self._position_qty[order.symbol] = pos + order.quantity
         else:
             self._position_qty[order.symbol] = pos - order.quantity
+        self._record_round_trip("simulated", order.symbol, order.type.value, start)
         return order
+
+    @staticmethod
+    def _record_round_trip(venue: str, symbol: str, order_type: str, start: float) -> None:
+        latency_ms = (time.perf_counter() - start) * 1000.0
+        try:
+            from cryptobot.monitoring.metrics import record_execution_latency
+            record_execution_latency(venue=venue, symbol=symbol, order_type=order_type, latency=latency_ms / 1000.0)
+        except Exception as exc:
+            logger.debug("metrics record skipped: %s", exc)
 
     async def cancel_order(self, order_id: str) -> bool:
         order = self.orders.get(order_id)
