@@ -205,13 +205,15 @@ src/cryptobot/
 - [ ] Online inference (<10ms)
 - [ ] Auto-retrain on drift
 
-### Phase 7: Execution Engine (Week 9-10) — ✅ mostly done; ⚠️ smart-routing pending
+### Phase 7: Execution Engine (Week 9-10) — ✅ done
 - [x] Order management (`execution/engine.py`) with `build_venue(mode)` factory
 - [x] Execution algorithms helpers (TWAP/VWAP/POV helpers in `execution/algorithms.py`)
 - [x] `Venue` interface + `SimulatedVenue` (slippage + commission)
 - [x] `BinanceVenue` (ccxt.async_support; retries, sandbox mode, credential guard)
 - [x] Smart order routing (`execution/router.py`) — `SmartOrderRouter` with price-rank and latency-rank, fallbacks, split-and-route
-- [ ] Adverse selection protection
+- [x] Adverse selection protection (`execution/adverse_selection.py`)
+  Mid-move cancel threshold, spread-widening cancel, toxicity-spike cancel,
+  QueuePosition + TopOfBook + integrate via `attach_to_engine`.
 - [x] Latency monitoring (`monitoring/metrics.py` `record_venue_quote_latency`,
       `record_routing_decision`, `record_execution_latency`). Router records per-venue
       quote latency + selected/fallback/split/failed; SimulatedVenue + BinanceVenue
@@ -919,14 +921,13 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [ ] Auto-retrain on drift (`ml/auto_retrain.py`)
 
 ### Phase 7: Execution Engine
-- [x] Order management (`execution/engine.py`)
-- [x] `Venue` interface + `SimulatedVenue`
+- [x] Order management (`execution/engine.py`) with `build_venue(mode)` factory, optional SOR
+- [x] `Venue` interface + `SimulatedVenue` (slippage + commission) + `BinanceVenue` (ccxt async)
 - [x] TWAP/VWAP/POV helpers (`execution/algorithms.py`)
-- [x] Binance live adapter (`execution/venue/binance.py`) — ccxt async, retries, credential guard
-- [x] Smart order routing multi-venue (`execution/router.py`) — SmartOrderRouter with price and latency rankers, fallback, split
+- [x] SmartOrderRouter (`execution/router.py`) — price + latency rankers, fallback, split
+- [x] AdverseSelectionGuard (`execution/adverse_selection.py`) — mid-move cancel, spread-widening cancel, toxicity-spike cancel
+- [x] Latency monitoring (`monitoring/metrics.py`) — `record_venue_quote_latency`, `record_routing_decision`, `record_execution_latency`
 - [ ] Implementation-shortfall / iceberg algorithms
-- [ ] Adverse selection protection
-- [ ] Latency monitoring
 
 ### Phase 8: Live Trading & Monitoring
 - [x] `cryptobot-test` Compose service (profile `test`)

@@ -34,6 +34,7 @@
 | `execution/engine.py` | ✅ | ExecutionEngine, risk-gated order submission, `build_venue(mode)` factory selects by `settings.execution.mode`. |
 | `execution/algorithms.py` | ✅ | twap_slices, vwap_slices, pov_quantity. |
 | `execution/router.py` | ✅ | SmartOrderRouter: best-price ranker, latency-aware ranker, fallback to next venue on failure, split-and-route across venues. |
+| `execution/adverse_selection.py` | ✅ | AdverseSelectionGuard (mid-move cancel, spread-widening cancel, toxicity-spike cancel) + QueuePosition + TopOfBook + `attach_to_engine` helper. |
 | `execution/venue/base.py` | ✅ | Abstract Venue. |
 | `execution/venue/simulated.py` | ✅ | In-memory venue with slippage + commission. |
 | `execution/venue/binance.py` | ✅ | Live / testnet Binance via ccxt.async_support. Sandbox mode, retries, error mapping, guardrails for missing credentials. |
