@@ -1,23 +1,65 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal
+from typing import Optional
 
 from cryptobot.core.events import OrderEvent, OrderStatus
 from cryptobot.execution.venue.base import Venue
 
 
+@dataclass
+class FillResult:
+    order_id: str
+    symbol: str
+    side: str
+    filled_quantity: Decimal
+    fill_price: Decimal
+    fees: Decimal
+    slippage_bps: Decimal
+    funding_payment: Decimal
+
+
 class SimulatedVenue(Venue):
-    def __init__(self, prices: dict[str, Decimal] | None = None):
+    def __init__(
+        self,
+        prices: Optional[dict[str, Decimal]] = None,
+        slippage_bps: Decimal = Decimal("2"),
+        commission_bps: Decimal = Decimal("5"),
+        funding_rate: Decimal = Decimal("0.0001"),
+    ):
         self.prices = prices or {}
+        self.default_slippage_bps = slippage_bps
+        self.commission_bps = commission_bps
+        self.funding_rate = funding_rate
         self.orders: dict[str, OrderEvent] = {}
+        self._position_qty: dict[str, Decimal] = {}
 
     async def submit_order(self, order: OrderEvent) -> OrderEvent:
-        price = order.price or self.prices.get(order.symbol, Decimal("0"))
-        order.status = OrderStatus.FILLED
+        mark = order.price or self.prices.get(order.symbol, Decimal("0"))
+        if mark <= 0:
+            order.status = OrderStatus.REJECTED
+            self.orders[order.order_id] = order
+            order.__post_init__()
+            return order
+        slip = self.default_slippage_bps
+        if order.side.value == "BUY":
+            fill_price = mark * (Decimal("1") + slip / Decimal("10000"))
+        else:
+            fill_price = mark * (Decimal("1") - slip / Decimal("10000"))
+        fill_price = fill_price.quantize(Decimal("0.0001"))
+        fees = (order.quantity * fill_price * self.commission_bps / Decimal("10000")).quantize(Decimal("0.0001"))
         order.filled_quantity = order.quantity
-        order.avg_fill_price = price
+        order.avg_fill_price = fill_price
+        order.commission = fees
+        order.status = OrderStatus.FILLED
         order.__post_init__()
         self.orders[order.order_id] = order
+        pos = self._position_qty.get(order.symbol, Decimal("0"))
+        if order.side.value == "BUY":
+            self._position_qty[order.symbol] = pos + order.quantity
+        else:
+            self._position_qty[order.symbol] = pos - order.quantity
         return order
 
     async def cancel_order(self, order_id: str) -> bool:
@@ -32,4 +74,4 @@ class SimulatedVenue(Venue):
         return self.prices.get(symbol, Decimal("0"))
 
 
-__all__ = ["SimulatedVenue"]
+__all__ = ["SimulatedVenue", "FillResult"]

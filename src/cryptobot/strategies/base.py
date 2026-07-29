@@ -82,7 +82,7 @@ class StrategyRegistry:
 
 # --- Example Implementation: Mean Reversion (A simple placeholder strategy) ---
 
-class MeanReversionStrategy(BaseStrategy):
+class MeanReversionStrategyPlaceholder(BaseStrategy):
     def __init__(self, strategy_name: str, config: Dict[str, Any]):
         super().__init__(strategy_name, config)
 

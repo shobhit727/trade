@@ -1,68 +1,148 @@
-from typing import List, Dict, Any
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+from math import sqrt
+from typing import Any, Callable, Dict, List, Optional, Sequence
+
 import numpy as np
 import pandas as pd
-# Assume access to BacktestResults from backtest/engine.py
-# Placeholder imports:
-# from cryptobot.core.portfolio import PortfolioState
-# from cryptobot.backtest.metrics import BacktestMetricsRecorder
-
-class ValidationFramework:
-    """
-    Coordinates multiple, rigorous validation methods required before a strategy can be deemed safe
-    for deployment (as per plan.md). It executes an ordered set of statistical and empirical checks.
-    """
-    def __init__(self, initial_params: Dict[str, Any]):
-        self._initial_params = initial_params
-
-    async def run_full_validation(self, backtest_results: "BacktestResults") -> Dict[str, Any]:
-        """Runs the entire suite of required tests and returns an aggregated report."""
-        print("\n================== STARTING FULL VALIDATION SUITE ==================")
-        report = {}
-
-        # 1. Walk-Forward Validation (Critical for non-stationary data)
-        print("-> Running Walk-Forward Optimization & Test...")
-        # This method requires iteratively retraining and testing the strategy on rolling windows of data.
-        # The actual implementation would call an external 'optimize' service or run dedicated code paths.
-        walk_forward_score = await self._perform_walk_forward(backtest_results)
-        report["walk_forward"] = walk_forward_score
-
-        # 2. Monte Carlo Robustness Testing (Statistical Significance)
-        print("-> Running Monte Carlo Permutation Tests...")
-        mc_passes = await self._run_monte_carlo(backtest_results, runs=1000)
-        report["monte_carlo"] = mc_passes
-
-        # 3. Performance Benchmarking (KPIs & Drawdown checks)
-        print("-> Calculating final KPIs...")
-        metrics = backtest_results.generate_full_report()
-        report["kpis"] = metrics["performance"]
-
-        # 4. Final Audit Check
-        if report["monte_carlo"].get('p_value', 1.0) > 0.05:
-            print("WARNING: Monte Carlo suggests potential overfitting (p-value > 0.05).")
-
-        return report
-
-    async def _perform_walk_forward(self, results: "BacktestResults") -> Dict[str, Any]:
-        """Simulates the complex process of walk-forward validation."""
-        # Placeholder for complex loop involving rolling window data slicing and retraining.
-        print("   [WFA] Simulation complete. Assuming a stable improvement.")
-        return {"score": 0.85, "status": "PASS", "details": "Stability maintained across 3+ regimes."}
-
-    async def _run_monte_carlo(self, results: "BacktestResults", runs: int) -> Dict[str, Any]:
-        """Simulates running multiple Monte Carlo simulations to test the robustness of metrics."""
-        print(f"   [MC] Running {runs} iterations...")
-        # Placeholder for actual simulation loop...
-
-        # A successful result means the core logic is not heavily dependent on a single data sequence.
-        return {"p_value": 0.01, "passed": True, "required_passes": 0.95}
 
 
-async def run_validation(backtest_results: "BacktestResults") -> Dict[str, Any]:
-    """Public facing wrapper to start the validation process."""
-    # This acts as the primary gatekeeper before any strategy is trusted.
-    return await ValidationFramework(initial_params={}).run_full_validation(backtest_results)
+def walk_forward_returns(
+    returns: Sequence[float],
+    n_splits: int = 5,
+    min_train: int = 30,
+    embargo: int = 5,
+) -> Dict[str, Any]:
+    if not returns:
+        return {"splits": 0, "oos_mean": 0.0, "oos_sharpe": 0.0, "passed": False}
+    arr = np.asarray(returns, dtype=float)
+    n = len(arr)
+    if n < min_train + embargo + 2:
+        return {"splits": 0, "oos_mean": 0.0, "oos_sharpe": 0.0, "passed": False, "reason": "insufficient data"}
+    fold_size = (n - min_train) // n_splits
+    oos: List[float] = []
+    stability_scores: List[float] = []
+    for k in range(n_splits):
+        train_end = min_train + k * fold_size
+        test_end = train_end + fold_size + embargo
+        if test_end > n:
+            test_end = n
+        if train_end >= test_end:
+            continue
+        oos.extend(arr[train_end + embargo : test_end].tolist())
+        train_segment = arr[max(0, train_end - min_train) : train_end]
+        if train_segment.size > 1 and train_segment.std(ddof=0) > 0:
+            z = (train_segment.mean() - oos_mean_so_far(oos)) / max(train_segment.std(ddof=0), 1e-9)
+            stability_scores.append(float(np.clip(1.0 - abs(z) / 4.0, 0.0, 1.0)))
+    oos_arr = np.asarray(oos, dtype=float)
+    if oos_arr.size < 5:
+        return {"splits": 0, "oos_mean": 0.0, "oos_sharpe": 0.0, "passed": False, "reason": "too few oos samples"}
+    mu = float(oos_arr.mean())
+    sd = float(oos_arr.std(ddof=0))
+    sharpe = 0.0 if sd <= 0 else float(mu / sd * sqrt(252))
+    stability = float(np.mean(stability_scores)) if stability_scores else 0.0
+    return {
+        "splits": int(len(stability_scores)),
+        "oos_mean": mu,
+        "oos_sharpe": sharpe,
+        "oos_std": sd,
+        "stability": stability,
+        "passed": sharpe > 0.0 and stability >= 0.5,
+    }
 
-if __name__ == '__main__':
-    print("--- Running standalone backtest validation (Requires live integration context) ---")
-    # To test this, a mock BacktestResults object must be created and passed in.
-    pass
+
+def oos_mean_so_far(values: Sequence[float]) -> float:
+    return float(np.mean(values)) if values else 0.0
+
+
+def monte_carlo_significance(
+    returns: Sequence[float],
+    n_permutations: int = 1000,
+    block_size: int = 5,
+    seed: Optional[int] = 42,
+) -> Dict[str, Any]:
+    if not returns:
+        return {"p_value": 1.0, "passed": False, "reason": "no returns"}
+    rng = np.random.default_rng(seed)
+    arr = np.asarray(returns, dtype=float)
+    n = len(arr)
+    blocks: List[np.ndarray] = []
+    i = 0
+    while i < n:
+        end = min(i + block_size, n)
+        blocks.append(arr[i:end])
+        i += block_size
+    if not blocks:
+        return {"p_value": 1.0, "passed": False, "reason": "no blocks"}
+    observed_sharpe = _sharpe(arr)
+    permuted_sharpes = np.empty(n_permutations, dtype=float)
+    for k in range(n_permutations):
+        idx = rng.integers(0, len(blocks), size=len(blocks))
+        shuffled = np.concatenate([blocks[i] for i in idx])
+        shuffled = shuffled[:n]
+        permuted_sharpes[k] = _sharpe(shuffled)
+    if permuted_sharpes.std(ddof=0) <= 0:
+        p_value = 1.0
+    else:
+        denom = permuted_sharpes.std(ddof=0)
+        center = permuted_sharpes.mean()
+        z = (observed_sharpe - center) / denom if denom > 0 else 0.0
+        p_value = float(1.0 - _normal_cdf(z))
+    return {
+        "p_value": float(p_value),
+        "observed_sharpe": float(observed_sharpe),
+        "permutations": int(n_permutations),
+        "passed": p_value < 0.05 and observed_sharpe > 0,
+    }
+
+
+def _normal_cdf(z: float) -> float:
+    return 0.5 * (1.0 + float(np.math.erf(z / sqrt(2.0))))
+
+
+def _sharpe(returns: np.ndarray) -> float:
+    if returns.size < 2:
+        return 0.0
+    sd = float(returns.std(ddof=0))
+    if sd <= 0:
+        return 0.0
+    return float(returns.mean() / sd * sqrt(252))
+
+
+def deflated_sharpe(
+    returns: Sequence[float],
+    n_trials: int = 1,
+    benchmark_sharpe: float = 0.0,
+) -> Dict[str, Any]:
+    arr = np.asarray(returns, dtype=float)
+    observed = _sharpe(arr)
+    if arr.size < 2:
+        return {"observed_sharpe": 0.0, "deflated_sharpe": 0.0, "passed": False}
+    e_max = observed * (1.0 - 1.0 / max(n_trials, 1)) + benchmark_sharpe / max(n_trials, 1)
+    variance = (1.0 / max(arr.size - 1, 1)) * (1.0 + 0.5 * observed ** 2)
+    psr = float(_normal_cdf((observed - benchmark_sharpe) / sqrt(max(variance, 1e-12))))
+    return {
+        "observed_sharpe": float(observed),
+        "expected_max_sharpe": float(e_max),
+        "probabilistic_sharpe_ratio": psr,
+        "deflated_sharpe": float(observed - e_max),
+        "passed": psr > 0.95,
+    }
+
+
+def run_validation(
+    returns: Sequence[float],
+    n_splits: int = 5,
+    n_permutations: int = 1000,
+    n_trials: int = 1,
+) -> Dict[str, Any]:
+    walk = walk_forward_returns(returns, n_splits=n_splits)
+    mc = monte_carlo_significance(returns, n_permutations=n_permutations)
+    ds = deflated_sharpe(returns, n_trials=n_trials)
+    return {
+        "walk_forward": walk,
+        "monte_carlo": mc,
+        "deflated_sharpe": ds,
+        "passed": bool(walk.get("passed") and mc.get("passed")),
+    }
