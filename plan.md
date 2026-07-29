@@ -1,8 +1,10 @@
 # Cryptobot - Elite Quantitative Trading System
 ## Master Plan & Architecture Document
 
-> **Status**: Planning Phase | **Last Updated**: 2026-07-05
-> **Context**: Building on existing foundation (config, events, state, market_data)
+> **Status**: Active development | **Last Updated**: 2026-07-29
+> **Context**: Core infrastructure, backtester, risk, execution, monitoring implemented. ML pipeline and live exchange adapter still pending. Verified against `PROJECT_MEMORY/12_Feature_Status.md` and `13_Bug_Tracker.md`.
+> **Current Python**: 3.14 (Docker base `python:3.14-slim`).
+> **Repository**: `git@github.com:shobhit727/trade.git` (private).
 
 ---
 
@@ -22,154 +24,203 @@
 
 ---
 
-## 2. Existing Foundation (Already Built)
+## 2. Existing Foundation (Verified)
 
 | Module | File | Status |
 |--------|------|--------|
-| Configuration System | `src/cryptobot/config.py` | ✅ Complete - Pydantic + YAML + env |
-| Event System | `src/cryptobot/core/events.py` | ✅ Complete - 60+ event types |
-| State Management | `src/cryptobot/core/state.py` | ✅ Complete - SQLite persistence |
-| Market Data | `src/cryptobot/market_data/manager.py` | ✅ Complete - Binance WS + Redis cache |
-| Config File | `configs/base.yaml` | ✅ Comprehensive |
+| Configuration System | `src/cryptobot/config.py` | ✅ Pydantic v2 + YAML + env. **Note**: `configs/base.yaml` keys do not match `Settings` field names; `extra="ignore"` swallows the mismatch. See `PROJECT_MEMORY/08_Config_Reference.md`. |
+| Event System | `src/cryptobot/core/events.py` | ✅ 40+ event types (market, signals, orders, positions, P&L, risk, system). |
+| Event Bus | `src/cryptobot/core/bus.py` | ✅ Pub/sub + history + replay. Async + sync callbacks, wildcard, filter. |
+| Clock | `src/cryptobot/core/clock.py` | ✅ `RealtimeClock`, `SimulatedClock`, `AcceleratedClock`, factory. |
+| State Management | `src/cryptobot/core/state.py` | ✅ SQLite persistence. Graceful fallback if `_sqlite3` missing. |
+| Portfolio | `src/cryptobot/core/portfolio.py` | ✅ Multi-strategy portfolio, kill-switch wiring. |
+| Market Data | `src/cryptobot/market_data/manager.py` | ✅ Binance WS client, REST helpers, Redis cache. |
+| Data Ingestion | `src/cryptobot/data/ingestion.py` | ✅ OHLCV/Tick/TradeData, BinanceDataIngestion. |
+| Data Storage | `src/cryptobot/data/storage.py` | ✅ TimescaleDBStorage, ParquetStorage, HybridStorage. |
+| Data Cleaning | `src/cryptobot/data/cleaning.py` | ✅ DataCleaner + helpers. |
+| Backtest Engine | `src/cryptobot/backtest/engine.py` | ✅ Event-driven, fills, equity curve. |
+| Backtest Metrics | `src/cryptobot/backtest/metrics.py` | ✅ Sharpe, Sortino, drawdown, profit factor. |
+| Backtest Simulator | `src/cryptobot/backtest/simulator.py` | ✅ FillSimulator + factory. |
+| Backtest Validation | `src/cryptobot/backtest/validation.py` | ⚠️ Walk-forward + Monte Carlo stubs; needs real math. |
+| Strategy Base | `src/cryptobot/strategies/base.py` | ✅ BaseStrategy, registry, MeanReversionStrategy placeholder. |
+| Risk Manager | `src/cryptobot/risk/manager.py` | ✅ Pre-trade checks (kill switch, notional, exposure). |
+| Risk Limits | `src/cryptobot/risk/limits.py` | ✅ |
+| Risk Sizing | `src/cryptobot/risk/sizing.py` | ✅ Fixed-fraction, volatility-target, Kelly. |
+| Risk Kill Switch | `src/cryptobot/risk/kill_switch.py` | ✅ |
+| Risk Correlation | `src/cryptobot/risk/correlation.py` | ✅ Helper. |
+| Execution Engine | `src/cryptobot/execution/engine.py` | ✅ Order lifecycle + risk gate. |
+| Execution Algorithms | `src/cryptobot/execution/algorithms.py` | ✅ TWAP/VWAP/POV. |
+| Execution Venue Base | `src/cryptobot/execution/venue/base.py` | ✅ Abstract. |
+| Execution Simulated | `src/cryptobot/execution/venue/simulated.py` | ✅ In-memory. |
+| Execution Binance | `src/cryptobot/execution/venue/binance.py` | 🔲 Missing. |
+| Monitoring Metrics | `src/cryptobot/monitoring/metrics.py` | ✅ Prometheus metrics. |
+| Monitoring Alerting | `src/cryptobot/monitoring/alerting.py` | ✅ Telegram/Discord/Email/PagerDuty. |
+| Monitoring Health | `src/cryptobot/monitoring/health.py` | ✅ HealthMonitor + checkers. |
+| Monitoring Dashboard | `src/cryptobot/monitoring/dashboard.py` | ✅ Grafana JSON builders. |
+| CLI Main | `src/cryptobot/cli/main.py` | ✅ argparse (placeholder subcommands). |
+| Utils Logging | `src/cryptobot/utils/logging.py` | ✅ structlog wrapper. |
+| Utils Decorators | `src/cryptobot/utils/decorators.py` | ✅ retry, timeout_decorator, circuit_breaker. |
+| Utils Types | `src/cryptobot/utils/types.py` | ✅ Candle, OrderBook, Trade, etc. |
+| Tests | `tests/unit/test_core_foundation.py` | ✅ 4 smoke tests. |
+| Dockerfile | `Dockerfile` | ✅ Multi-stage, `python:3.14-slim`. |
+| Compose | `docker-compose.yml` | ✅ Full stack + `cryptobot-test` profile. |
+| `.dockerignore` | `.dockerignore` | ✅ Minimal context. |
+| `.gitignore` | `.gitignore` | ✅ Includes `__pycache__/`. |
+| Cargo workspace | `Cargo.toml`, `crates/cryptobot-core/Cargo.toml` | ⚠️ Manifest only, no `src/`. |
 
 ---
 
-## 3. Target Architecture
+## 3. Current Architecture (Verified)
 
 ```
 src/cryptobot/
-├── config.py                 # ✅ Settings management
+├── config.py                 # ✅ Pydantic v2 Settings + YAML + env
 ├── core/
-│   ├── events.py             # ✅ Event definitions
-│   ├── state.py              # ✅ State persistence
-│   ├── bus.py                # 🔲 Event bus (pub/sub, replay)
-│   ├── portfolio.py          # 🔲 Portfolio-level state & optimization
-│   └── clock.py              # 🔲 Time abstraction (backtest/live)
+│   ├── events.py             # ✅ 40+ event types
+│   ├── state.py              # ✅ SQLite persistence
+│   ├── bus.py                # ✅ Pub/sub + history + replay
+│   ├── portfolio.py          # ✅ Multi-strategy portfolio
+│   └── clock.py              # ✅ Realtime / Simulated / Accelerated
 ├── data/
-│   ├── ingestion.py          # 🔲 Multi-source data ingestion
-│   ├── storage.py            # 🔲 TimescaleDB/Parquet storage
-│   ├── cleaning.py           # 🔲 Data validation & cleaning
-│   └── features.py           # 🔲 Feature engineering pipeline
+│   ├── ingestion.py          # ✅ OHLCV + BinanceDataIngestion
+│   ├── storage.py            # ✅ TimescaleDB + Parquet + Hybrid
+│   ├── cleaning.py           # ✅ DataCleaner + helpers
+│   └── features.py           # 🔲 Missing
 ├── strategies/
-│   ├── base.py               # 🔲 Strategy base class & interface
-│   ├── registry.py           # 🔲 Strategy registry & discovery
-│   ├── mean_reversion.py     # 🔲 Z-score, RSI, Bollinger Bands
-│   ├── trend_following.py    # 🔲 EMA/ADX/ATR momentum
-│   ├── stat_arb.py           # 🔲 Pairs trading, cointegration
-│   ├── funding_arb.py        # 🔲 Basis capture, funding rates
-│   ├── market_making.py      # 🔲 Avellaneda-Stoikov, inventory mgmt
-│   └── ml_strategy.py        # 🔲 ML-based signal generation
-├── ml/
-│   ├── features.py           # 🔲 Feature store & engineering
-│   ├── models/               # 🔲 Model definitions
-│   │   ├── direction.py      # 🔲 LightGBM direction classifier
-│   │   ├── volatility.py     # 🔲 Volatility forecasting
-│   │   ├── regime.py         # 🔲 HMM/transformer regime detection
-│   │   └── ensemble.py       # 🔲 Stacking/blending
-│   ├── training.py           # 🔲 Training pipeline, CV, walk-forward
-│   ├── inference.py          # 🔲 Online inference, batch scoring
-│   └── auto_retrain.py       # 🔲 Drift detection, scheduled retrain
+│   ├── base.py               # ✅ BaseStrategy + registry + placeholder MR
+│   ├── registry.py           # ✅ Re-export
+│   ├── mean_reversion.py     # 🔲 Concrete mean reversion strategy
+│   ├── trend_following.py    # 🔲 Concrete trend following strategy
+│   ├── stat_arb.py           # 🔲 Pairs trading
+│   ├── funding_arb.py        # 🔲 Funding rate arb
+│   ├── market_making.py      # 🔲 Avellaneda-Stoikov
+│   └── ml_strategy.py        # 🔲 ML-driven strategy
+├── ml/                       # 🔲 Empty directory
+│   ├── features.py           # 🔲 Feature engineering
+│   ├── models/
+│   │   ├── direction.py      # 🔲 LightGBM
+│   │   ├── volatility.py     # 🔲 Quantile regression
+│   │   ├── regime.py         # 🔲 HMM / Transformer
+│   │   └── ensemble.py       # 🔲 Stacking
+│   ├── training.py           # 🔲 Purged CV + walk-forward
+│   ├── inference.py          # 🔲 Online inference
+│   └── auto_retrain.py       # 🔲 Drift detection
 ├── execution/
-│   ├── engine.py             # 🔲 Order management & routing
-│   ├── algorithms.py         # 🔲 TWAP, VWAP, POV, iceberg
-│   ├── venue/                # 🔲 Venue adapters
-│   │   ├── binance.py        # 🔲 Binance REST/WS
-│   │   └── base.py           # 🔲 Venue interface
-│   └── simulator.py          # 🔲 Realistic fill simulation
+│   ├── engine.py             # ✅ Order lifecycle + risk gate
+│   ├── algorithms.py         # ✅ TWAP / VWAP / POV
+│   ├── venue/
+│   │   ├── base.py           # ✅ Abstract Venue
+│   │   ├── simulated.py      # ✅ SimulatedVenue
+│   │   └── binance.py        # 🔲 Live Binance adapter
+│   └── simulator.py          # 🔲 Realistic fill simulator (separate from backtest)
 ├── risk/
-│   ├── manager.py            # 🔲 Risk engine (pre-trade checks)
-│   ├── sizing.py             # 🔲 Kelly, volatility targeting, CPPI
-│   ├── limits.py             # 🔲 Position, exposure, drawdown limits
-│   ├── correlation.py        # 🔲 Correlation monitoring & hedging
-│   └── kill_switch.py        # 🔲 Automated risk controls
+│   ├── manager.py            # ✅ Pre-trade checks
+│   ├── sizing.py             # ✅ Fixed / vol-target / Kelly
+│   ├── limits.py             # ✅ RiskLimits
+│   ├── correlation.py        # ✅ Helper
+│   └── kill_switch.py        # ✅ Portfolio-driven
 ├── backtest/
-│   ├── engine.py             # 🔲 Event-driven backtester
-│   ├── data.py               # 🔲 Historical data replay
-│   ├── metrics.py            # 🔲 Performance analytics
-│   ├── validation.py         # 🔲 Walk-forward, Monte Carlo, PBO
+│   ├── engine.py             # ✅ Event-driven backtester
+│   ├── data.py               # 🔲 Historical data replay helper
+│   ├── metrics.py            # ✅ Performance metrics
+│   ├── validation.py         # ⚠️ WFA + MC stubs
 │   └── reporting.py          # 🔲 Tearsheet generation
 ├── monitoring/
-│   ├── metrics.py            # 🔲 Prometheus metrics
-│   ├── dashboard.py          # 🔲 Grafana dashboards
-│   ├── alerting.py           # 🔲 Telegram/Discord/Email alerts
-│   └── health.py             # 🔲 System health checks
+│   ├── metrics.py            # ✅ Prometheus
+│   ├── dashboard.py          # ✅ Grafana JSON builders
+│   ├── alerting.py           # ✅ Multi-channel alerts
+│   └── health.py             # ✅ Health checks
 ├── cli/
-│   ├── main.py               # 🔲 Main entry point
-│   ├── backtest.py           # 🔲 Backtest command
-│   ├── paper.py              # 🔲 Paper trading command
-│   ├── live.py               # 🔲 Live trading command
+│   ├── main.py               # ✅ argparse (placeholder subcommands)
+│   ├── backtest.py           # 🔲 Concrete command (folded into main.py)
+│   ├── paper.py              # 🔲
+│   ├── live.py               # 🔲
 │   └── optimize.py           # 🔲 Parameter optimization
 └── utils/
-    ├── logging.py            # 🔲 Structured logging
-    ├── decorators.py         # 🔲 Retry, timeout, circuit breaker
-    └── math.py               # 🔲 Numerical utilities
+    ├── logging.py            # ✅ structlog wrapper
+    ├── decorators.py         # ✅ retry / timeout / circuit breaker
+    └── math.py               # 🔲 Numerical utilities (folded into utils/types.py)
 ```
 
----
+```
 
 ## 4. Implementation Phases
 
-### Phase 1: Core Infrastructure (Week 1-2)
-- [ ] Event bus with replay capability
-- [ ] Portfolio state management
-- [ ] Time abstraction (simulated vs real)
-- [ ] Data ingestion pipeline (REST + WS, multiple venues)
-- [ ] TimescaleDB schema & migrations
-- [ ] Structured logging + Prometheus metrics
+> **Status legend**: ✅ implemented · ⚠️ partial · 🔲 pending.
+> Cross-reference `PROJECT_MEMORY/12_Feature_Status.md`.
 
-### Phase 2: Backtesting Engine (Week 2-3) ⭐ **HIGH PRIORITY**
-- [ ] Event-driven backtester core
-- [ ] Realistic fill simulation (slippage, fees, funding, liquidation)
-- [ ] Historical data management (Parquet + TimescaleDB)
-- [ ] Performance metrics (Sharpe, Sortino, Calmar, MaxDD, PBO)
-- [ ] Walk-forward validation framework
-- [ ] Monte Carlo robustness testing
-- [ ] Tearsheet generation (HTML/PDF)
+### Phase 1: Core Infrastructure (Week 1-2) — ✅ mostly done
+- [x] Event bus with replay capability (`core/bus.py`)
+- [x] Portfolio state management (`core/portfolio.py`)
+- [x] Time abstraction (`core/clock.py`, three clock modes + factory)
+- [x] Data ingestion pipeline (Binance helpers in `data/ingestion.py`)
+- [x] TimescaleDB schema (defined in `data/storage.py`; no SQL migrations yet)
+- [x] Structured logging + Prometheus metrics
 
-### Phase 3: Strategy Framework (Week 3-4) ⭐ **HIGH PRIORITY**
-- [ ] Base strategy class with lifecycle hooks
-- [ ] Signal generation interface
-- [ ] Position management (entry, scaling, exit, stops)
-- [ ] Strategy registry & configuration
-- [ ] Parameter optimization (Optuna integration)
+### Phase 2: Backtesting Engine (Week 2-3) ⭐ — ⚠️ partial
+- [x] Event-driven backtester core (`backtest/engine.py`)
+- [x] Fill simulation (`backtest/simulator.py`, `execution/venue/simulated.py`)
+- [ ] Historical data replay helper (`backtest/data.py` missing)
+- [x] Performance metrics: Sharpe, Sortino, MaxDD, win_rate, profit_factor
+- [ ] PBO, Calmar, full tearsheet — pending `backtest/reporting.py`
+- [ ] Walk-forward validation framework — `backtest/validation.py` returns fixed values
+- [ ] Monte Carlo robustness testing — same placeholder issue
+- [ ] Tearsheet generation (HTML/PDF) — `backtest/reporting.py` missing
 
-### Phase 4: Core Strategies (Week 4-6) ⭐ **HIGH PRIORITY**
-- [ ] **Mean Reversion**: Z-score + RSI + BB, multi-timeframe confirmation
-- [ ] **Trend Following**: EMA crossover + ADX filter + ATR trailing stops
-- [ ] **Statistical Arbitrage**: Cointegration (Johansen), pairs selection, Kalman filter hedge ratios
-- [ ] **Funding Arbitrage**: Basis tracking, term structure, inventory hedging
-- [ ] **Market Making**: Avellaneda-Stoikov optimal quotes, inventory skew, adverse selection
+### Phase 3: Strategy Framework (Week 3-4) ⭐ — ⚠️ partial
+- [x] Base strategy class with lifecycle hooks (`strategies/base.py`)
+- [x] Signal generation interface (returns `List[OrderEvent]`)
+- [ ] Position management primitives — partially in strategies placeholders
+- [x] Strategy registry (`StrategyRegistry` singleton)
+- [ ] Parameter optimization (Optuna) — no integration yet
 
-### Phase 5: Risk Management (Week 6-7) ⭐ **HIGH PRIORITY**
-- [ ] Pre-trade risk checks (exposure, correlation, drawdown)
-- [ ] Dynamic position sizing (Kelly fraction, vol targeting)
-- [ ] Portfolio optimization (HRP, mean-CVaR)
-- [ ] Kill switch & circuit breakers
-- [ ] Real-time risk dashboard
+### Phase 4: Core Strategies (Week 4-6) ⭐ — 🔲 pending
+- [ ] **Mean Reversion**: Z-score + RSI + BB, multi-TF (`strategies/mean_reversion.py` missing)
+- [ ] **Trend Following**: EMA + ADX + ATR trailing stops (`strategies/trend_following.py` missing)
+- [ ] **Statistical Arbitrage**: Cointegration, Kalman hedge (`strategies/stat_arb.py` missing)
+- [ ] **Funding Arbitrage**: Basis, term structure (`strategies/funding_arb.py` missing)
+- [ ] **Market Making**: Avellaneda-Stoikov, inventory skew (`strategies/market_making.py` missing)
+- [x] Mean reversion placeholder only — uses hardcoded `65000` trigger, not real indicators
 
-### Phase 6: ML Pipeline (Week 7-9) ⭐ **HIGH PRIORITY**
-- [ ] Feature engineering (100+ features: microstructure, technical, regime, alternative)
+### Phase 5: Risk Management (Week 6-7) ⭐ — ✅ minimal, ⚠️ partial
+- [x] Pre-trade risk checks (exposure, drawdown via kill switch, notional bounds)
+- [x] Dynamic position sizing helpers (Kelly, vol-target, fixed-fraction)
+- [ ] Portfolio optimization (HRP, mean-CVaR) — not implemented
+- [x] Kill switch (`risk/kill_switch.py` driven by portfolio signal)
+- [ ] Real-time risk dashboard — Grafana panels exist but not wired live
+
+### Phase 6: ML Pipeline (Week 7-9) ⭐ — 🔲 pending
+- [ ] Feature engineering (`ml/features.py` missing)
 - [ ] Feature store with versioning
-- [ ] Direction classification (LightGBM + CatBoost ensemble)
-- [ ] Volatility forecasting (Quantile regression)
-- [ ] Regime detection (HMM + Transformer)
+- [ ] Direction classifier (LightGBM)
+- [ ] Volatility forecasting
+- [ ] Regime detection (HMM / Transformer)
+- [ ] Ensemble stacking / blending
 - [ ] Walk-forward training with purged CV
-- [ ] Online inference (<10ms latency)
-- [ ] Auto-retrain on performance drift
+- [ ] Online inference (<10ms)
+- [ ] Auto-retrain on drift
 
-### Phase 7: Execution Engine (Week 9-10)
-- [ ] Order management system (OMS)
+### Phase 7: Execution Engine (Week 9-10) — ⚠️ partial
+- [x] Order management (`execution/engine.py`)
+- [x] Execution algorithms helpers (TWAP/VWAP/POV helpers in `execution/algorithms.py`)
 - [ ] Smart order routing (multi-venue)
-- [ ] Execution algorithms (TWAP, VWAP, POV, implementation shortfall)
+- [x] `Venue` interface + `SimulatedVenue` (`execution/venue/{base,simulated}.py`)
+- [ ] `Binance` venue (`execution/venue/binance.py` missing)
+- [ ] Realistic fill simulator with slippage/fees/funding (current simulated ignores them)
 - [ ] Adverse selection protection
 - [ ] Latency monitoring
 
-### Phase 8: Live Trading & Monitoring (Week 10-12)
-- [ ] Paper trading mode (full parity)
-- [ ] Live trading with safety guards
-- [ ] Grafana dashboards (PnL, risk, system, strategy)
-- [ ] Alerting (Telegram, Discord, PagerDuty)
-- [ ] Deployment (Docker, Kubernetes, secrets)
+### Phase 8: Live Trading & Monitoring (Week 10-12) — ⚠️ partial
+- [x] Compose stack (`docker-compose.yml`: Timescale, Redis, Prometheus, Grafana, Loki, Alertmanager)
+- [x] Paper trading profile (`cryptobot-paper` service, `EXECUTION_MODE=paper` env)
+- [ ] Live trading profile fully wired — `cryptobot` service depends on missing Binance adapter
+- [x] Grafana dashboards (JSON under `monitoring/grafana/` and `docker/grafana/`)
+- [x] Alerting channels (Telegram/Discord/Email/PagerDuty stubs)
+- [x] Health checks (`monitoring/health.py`)
+- [ ] `cryptobot` HTTP `/health` endpoint — not implemented
+- [x] Docker base `python:3.14-slim`
+- [ ] Kubernetes manifests, systemd units — not implemented
+- [ ] Multi-arch Docker images — not configured
 
 ---
 
@@ -177,8 +228,8 @@ src/cryptobot/
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| **Primary Language** | Python 3.11+ | ML ecosystem, rapid iteration, sufficient speed with numba |
-| **Performance-Critical** | **Rust (via PyO3/maturin)** | Backtest engine, fill simulator, feature computation, order book math |
+| **Primary Language** | Python 3.14 | ML ecosystem, rapid iteration. `Dockerfile` uses `python:3.14-slim`. |
+| **Performance-Critical** | **Rust (via PyO3/maturin)** — pending | Backtest engine, fill simulator, feature computation, order book math. Currently: `Cargo.toml` only, no crate members. |
 | **Async Framework** | asyncio + aiohttp | Native, high-performance, WebSocket support |
 | **Database** | TimescaleDB + SQLite | Time-series optimized, local dev friendly |
 | **Message Bus** | Redis Streams + local asyncio | Pub/sub, replay, persistence |
@@ -787,80 +838,103 @@ This section documents ALL algorithmic trading strategies that the system must s
 
 ---
 
-## 14. Detailed TODO List (Track Progress Here)
+## 14. Detailed TODO List
+
+> Status legend: ✅ done · ⚠️ partial · 🔲 pending. Mirror of section 4 (Implementation Phases) keyed by file.
+> Live view: `PROJECT_MEMORY/12_Feature_Status.md`, `13_Bug_Tracker.md`, `23_Repository_History.md`.
 
 ### Phase 1: Core Infrastructure
 - [x] Create project directories structure
-- [x] Implement EventBus (core/bus.py)
-- [x] Implement Clock abstraction (core/clock.py)
-- [ ] Implement Portfolio management (core/portfolio.py)
-- [ ] Update core/__init__.py exports
-- [ ] Create data ingestion pipeline (data/ingestion.py)
-- [ ] Create data storage layer (data/storage.py) - TimescaleDB + Parquet
-- [ ] Create data cleaning/validation (data/cleaning.py)
-- [ ] Create structured logging (utils/logging.py)
-- [ ] Add Prometheus metrics (monitoring/metrics.py)
-- [ ] Create docker-compose.yml for local dev (TimescaleDB, Redis, Grafana)
-- [ ] Set up Rust workspace (crates/) with maturin
-- [ ] Implement core Rust types (cryptobot-core)
-- [ ] Implement feature engine in Rust (cryptobot-features)
+- [x] Implement EventBus (`core/bus.py`)
+- [x] Implement Clock abstraction (`core/clock.py`)
+- [x] Implement Portfolio management (`core/portfolio.py`)
+- [x] Update `core/__init__.py` exports
+- [x] Create data ingestion pipeline (`data/ingestion.py`)
+- [x] Create data storage layer (`data/storage.py` — TimescaleDB + Parquet)
+- [x] Create data cleaning/validation (`data/cleaning.py`)
+- [x] Create structured logging (`utils/logging.py`)
+- [x] Add Prometheus metrics (`monitoring/metrics.py`)
+- [x] Create docker-compose.yml for local dev (TimescaleDB, Redis, Grafana, Loki, Alertmanager, Promtail)
+- [x] Add `Dockerfile` (`python:3.14-slim`)
+- [x] Add `.dockerignore`, `.gitignore`
+- [ ] Set up Rust workspace (`Cargo.toml` exists, `crates/cryptobot-core/Cargo.toml` manifest only)
+- [ ] Implement core Rust types (`cryptobot-core`)
+- [ ] Implement feature engine in Rust (`cryptobot-features`)
 
-### Phase 2: Backtesting Engine (HIGH PRIORITY)
-- [ ] Event-driven backtester core (backtest/engine.py + cryptobot-backtest)
-- [ ] Realistic fill simulator (backtest/simulator.py + cryptobot-backtest)
-- [ ] Historical data manager (backtest/data.py)
-- [ ] Performance metrics (backtest/metrics.py) - Sharpe, Sortino, Calmar, MaxDD, PBO
-- [ ] Walk-forward validation framework (backtest/validation.py)
-- [ ] Monte Carlo robustness testing (backtest/validation.py + cryptobot-stats)
-- [ ] Tearsheet generation (backtest/reporting.py) - HTML/PDF
+### Phase 2: Backtesting Engine
+- [x] Event-driven backtester core (`backtest/engine.py`)
+- [x] Fill simulator (`backtest/simulator.py`)
+- [x] Performance metrics (`backtest/metrics.py`) — Sharpe, Sortino, MaxDD, win_rate, profit_factor
+- [ ] Realistic fills with slippage/fees/funding — current fills ignore them
+- [ ] Historical data manager (`backtest/data.py`)
+- [ ] Walk-forward validation with real math (`backtest/validation.py` returns fixed values today)
+- [ ] Monte Carlo robustness testing
+- [ ] Tearsheet generation (`backtest/reporting.py`)
 
-### Phase 3: Strategy Framework (HIGH PRIORITY)
-- [ ] Base strategy class (strategies/base.py) - lifecycle hooks
-- [ ] Signal generation interface
-- [ ] Position management (entry, scaling, exit, stops)
-- [ ] Strategy registry & discovery (strategies/registry.py)
-- [ ] Parameter optimization with Optuna (cli/optimize.py)
+### Phase 3: Strategy Framework
+- [x] Base strategy class with lifecycle hooks (`strategies/base.py`)
+- [x] Signal generation interface (`List[OrderEvent]`)
+- [x] Strategy registry (`StrategyRegistry`)
+- [ ] Position management primitives (scaling, stops)
+- [ ] Parameter optimization with Optuna (`cli/optimize.py`)
 
-### Phase 4: Core Strategies (HIGH PRIORITY)
-- [ ] Mean Reversion: Z-score + RSI + BB multi-timeframe (strategies/mean_reversion.py)
-- [ ] Trend Following: EMA/ADX/ATR momentum (strategies/trend_following.py)
-- [ ] Statistical Arbitrage: Cointegration + Kalman hedge (strategies/stat_arb.py)
-- [ ] Funding Arbitrage: Basis tracking + inventory hedging (strategies/funding_arb.py)
-- [ ] Market Making: Avellaneda-Stoikov quotes + inventory skew (strategies/market_making.py)
+### Phase 4: Core Strategies
+- [x] Strategy base + registry + placeholder mean-reversion
+- [ ] Mean Reversion concrete (`strategies/mean_reversion.py`)
+- [ ] Trend Following concrete (`strategies/trend_following.py`)
+- [ ] Statistical Arbitrage concrete (`strategies/stat_arb.py`)
+- [ ] Funding Arbitrage concrete (`strategies/funding_arb.py`)
+- [ ] Market Making concrete (`strategies/market_making.py`)
+- [ ] ML-driven strategy (`strategies/ml_strategy.py`)
 
-### Phase 5: Risk Management (HIGH PRIORITY)
-- [ ] Risk engine with pre-trade checks (risk/manager.py)
-- [ ] Dynamic position sizing: Kelly, vol targeting (risk/sizing.py + cryptobot-risk)
-- [ ] Portfolio optimization: HRP, mean-CVaR (risk/limits.py + cryptobot-risk)
-- [ ] Correlation monitoring & hedging (risk/correlation.py)
-- [ ] Kill switch & circuit breakers (risk/kill_switch.py)
+### Phase 5: Risk Management
+- [x] Risk engine with pre-trade checks (`risk/manager.py`)
+- [x] Dynamic position sizing helpers (`risk/sizing.py` — fixed, vol-target, Kelly)
+- [x] Risk limits (`risk/limits.py`)
+- [x] Correlation helper (`risk/correlation.py`)
+- [x] Kill switch (`risk/kill_switch.py`)
+- [ ] Portfolio optimization (HRP, mean-CVaR)
+- [ ] Replace `print`-based status with structlog
 
-### Phase 6: ML Pipeline (HIGH PRIORITY)
-- [ ] Feature engineering pipeline (ml/features.py + cryptobot-features) - 100+ features
+### Phase 6: ML Pipeline
+- [ ] Feature engineering pipeline (`ml/features.py`) — directory missing
 - [ ] Feature store with versioning
-- [ ] Direction classifier: LightGBM + CatBoost ensemble (ml/models/direction.py)
-- [ ] Volatility forecasting: Quantile regression (ml/models/volatility.py)
-- [ ] Regime detection: HMM + Transformer (ml/models/regime.py)
-- [ ] Ensemble stacking/blending (ml/models/ensemble.py)
-- [ ] Walk-forward training with purged CV (ml/training.py)
-- [ ] Online inference (<10ms) (ml/inference.py)
-- [ ] Auto-retrain on drift detection (ml/auto_retrain.py)
+- [ ] Direction classifier (`ml/models/direction.py`)
+- [ ] Volatility forecasting (`ml/models/volatility.py`)
+- [ ] Regime detection (`ml/models/regime.py`)
+- [ ] Ensemble stacking (`ml/models/ensemble.py`)
+- [ ] Walk-forward training with purged CV (`ml/training.py`)
+- [ ] Online inference (`ml/inference.py`)
+- [ ] Auto-retrain on drift (`ml/auto_retrain.py`)
 
 ### Phase 7: Execution Engine
-- [ ] Order management system (execution/engine.py)
-- [ ] Smart order routing multi-venue (execution/venue/)
-- [ ] Execution algorithms: TWAP, VWAP, POV (execution/algorithms.py)
-- [ ] Adverse selection protection (cryptobot-orderbook)
+- [x] Order management (`execution/engine.py`)
+- [x] `Venue` interface + `SimulatedVenue`
+- [x] TWAP/VWAP/POV helpers (`execution/algorithms.py`)
+- [ ] Binance live adapter (`execution/venue/binance.py`)
+- [ ] Smart order routing multi-venue
+- [ ] Implementation-shortfall / iceberg algorithms
+- [ ] Adverse selection protection
 - [ ] Latency monitoring
 
 ### Phase 8: Live Trading & Monitoring
-- [ ] Paper trading mode (cli/paper.py)
-- [ ] Live trading with safety guards (cli/live.py)
-- [ ] Grafana dashboards (monitoring/dashboard.py)
-- [ ] Alerting: Telegram/Discord/Email (monitoring/alerting.py)
-- [ ] Health checks (monitoring/health.py)
-- [ ] Docker/K8s deployment configs
-- [ ] VPS systemd service files
+- [x] `cryptobot-test` Compose service (profile `test`)
+- [x] `cryptobot-paper` Compose profile
+- [x] Grafana dashboards JSON (`docker/grafana/`, `monitoring/grafana/`)
+- [x] Alerting channels (`monitoring/alerting.py`)
+- [x] Health checks (`monitoring/health.py`)
+- [ ] `cryptobot` HTTP `/health` endpoint (no HTTP server in source)
+- [ ] Real walk-forward / Monte Carlo in `backtest/validation.py`
+- [ ] Live trading profile fully wired (requires Binance adapter)
+- [ ] Kubernetes manifests, systemd units
+- [ ] Multi-arch Docker images (x86_64 + ARM64)
+
+### Tests
+- [x] 4 smoke tests in `tests/unit/test_core_foundation.py`
+- [ ] Property-based tests (hypothesis) for risk/math
+- [ ] Integration tests (TimescaleDB / Redis / Prometheus)
+- [ ] CI/CD pipeline with cross-compile
+- [ ] Regression tests on backtest metrics
 - [ ] Multi-arch Docker images (x86_64, ARM64)
 
 ### Testing & Quality
@@ -871,7 +945,7 @@ This section documents ALL algorithmic trading strategies that the system must s
 
 ---
 
-*This document is the single source of truth for the project. Update it after every major milestone.*
+*This document is the **architectural** source of truth for the project. Update it after every major milestone. For day-to-day knowledge (bugs, debt, decisions, recent changes), see `PROJECT_MEMORY/` which is the operational source of truth.*
 
 ---
 
