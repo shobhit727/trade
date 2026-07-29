@@ -1,0 +1,397 @@
+# Cryptobot Runbook
+
+> How to run this trading bot with Docker Compose. Keep this file next to `docker-compose.yml`.
+
+## 1. Prerequisites
+
+You need only three things on your machine:
+
+| Tool | Version | Why |
+|------|---------|-----|
+| Docker Engine | 24.0+ | Builds and runs containers |
+| Docker Compose v2 | 2.20+ | `docker compose` (not `docker-compose`) |
+| Bash or PowerShell | n/a | Running the commands below |
+
+Optional:
+
+- Git (only if you clone from GitHub)
+- A Binance Testnet account: https://testnet.binance.vision (live trading keys, if you ever turn `EXECUTION_MODE=live` on)
+
+Verify:
+
+```bash
+docker --version
+docker compose version
+```
+
+Both must print non-error output.
+
+> **Apple Silicon note.** Compose profiles use `linux/amd64` images. Apple Silicon will work via emulation but is slower. The multi-arch `Dockerfile` can also publish `linux/arm64` images; see §6.
+
+## 2. Clone the repo
+
+```bash
+git clone git@github.com:shobhit727/trade.git cryptobot
+cd cryptobot
+```
+
+If you only have HTTPS access:
+
+```bash
+git clone https://github.com/shobhit727/trade.git cryptobot
+```
+
+## 3. File layout that matters for Compose
+
+| File | What it is |
+|------|-----------|
+| `docker-compose.yml` | Root compose file. Profiles: `paper`, `backtest`, `test`, `tracing`. |
+| `Dockerfile` | Multi-stage (`base`, `test`, `production`). Uses `python:3.14-slim`. |
+| `.dockerignore` | Keeps the build context small. |
+| `configs/base.yaml` | Default configuration (Pydantic settings). |
+| `requirements/prod.txt` | Runtime deps. |
+| `requirements/test.txt` | Test deps (pytest, pytest-asyncio, etc.). |
+| `.env.example` (optional) | If you want to set env vars; see §4. |
+| `compose/docker-compose.yml` | A second compose file at `compose/`. The root file is the source of truth. |
+
+## 4. Environment variables
+
+Compose reads secrets from your shell environment. Set them inline or in a `.env` file next to `docker-compose.yml`:
+
+```bash
+# Required only if you actually trade / connect to Binance
+export BINANCE_API_KEY="your-testnet-key"
+export BINANCE_API_SECRET="your-testnet-secret"
+
+# Optional alerting (Telegram / Discord / email)
+export MONITORING_TELEGRAM_BOT_TOKEN=""
+export MONITORING_TELEGRAM_CHAT_ID=""
+export MONITORING_DISCORD_WEBHOOK=""
+export EMAIL_SMTP_HOST=""
+export EMAIL_SMTP_PORT=""
+export EMAIL_USERNAME=""
+export EMAIL_PASSWORD=""
+export EMAIL_FROM=""
+export EMAIL_TO=""
+
+# Database (only used when running the full stack)
+export DB_PASSWORD="cryptobot"
+```
+
+The compose file uses `:-` defaults so missing vars are not errors. The full stack logs warnings when `BINANCE_API_KEY` is unset; that's expected for paper-only runs.
+
+## 5. Profiles
+
+| Profile | What it brings up | Use it when |
+|---------|-------------------|-------------|
+| (default) | TimescaleDB + Redis + Prometheus + Alertmanager + Grafana + Loki + Promtail + nginx + `cryptobot` paper | Running the full observability stack locally |
+| `test` | just `cryptobot-test` | Running the smoke tests in an isolated container |
+| `backtest` | TimescaleDB + Redis + `cryptobot-backtest` | Heavy compute for a long historical run |
+| `paper` | TimescaleDB + Redis + `cryptobot-paper` (debug log level) | Trading in paper mode with logging on |
+| `tracing` (in `compose/docker-compose.yml`) | Jaeger all-in-one | Adding distributed tracing |
+
+Profiles are combined with `--profile`. Default services always run unless excluded.
+
+Validate before starting:
+
+```bash
+docker compose config --quiet
+docker compose --profile test config --quiet
+docker compose --profile backtest config --quiet
+```
+
+Both must exit 0 with no output.
+
+## 6. Common commands
+
+### Run the test suite (recommended first step)
+
+```bash
+docker compose --profile test build cryptobot-test
+docker compose --profile test run --rm cryptobot-test
+```
+
+Equivalent one-shot:
+
+```bash
+docker compose --profile test run --rm --build cryptobot-test
+```
+
+You should see pytest produce 4-dot/4-pass lines and exit 0.
+
+### Start the full stack (paper trading + observability)
+
+```bash
+docker compose up -d cryptobot-paper
+```
+
+This brings up:
+- `cryptobot-paper` on `http://localhost:8080` (health endpoint — read §10).
+- Prometheus on `http://localhost:9090`.
+- Grafana on `http://localhost:3000` (default `admin/admin`).
+- Alertmanager on `http://localhost:9093`.
+- Loki on `http://localhost:3100`.
+
+Tail logs:
+
+```bash
+docker compose logs -f cryptobot-paper
+```
+
+Stop:
+
+```bash
+docker compose down
+```
+
+Reset state:
+
+```bash
+docker compose down -v
+```
+
+### Run a backtest from the CLI
+
+After running the test profile once (so the test image is built locally), you can also run the same image as a CLI:
+
+```bash
+docker compose --profile test run --rm cryptobot-test \
+  python -m cryptobot.cli.main backtest \
+  --strategy trend_following --bars 200 --json
+```
+
+The CLI sources stay `synthetic` by default. To plug in real data:
+
+```bash
+docker compose --profile test run --rm \
+  -v "$PWD/data:/app/data" \
+  cryptobot-test \
+  python -m cryptobot.cli.main backtest \
+  --strategy mean_reversion --source csv --path /app/data/ohlcv.csv
+```
+
+### Multi-arch build (linux/amd64, linux/arm64)
+
+```bash
+docker buildx create --name cryptobot --use
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  --target production \
+  --tag ghcr.io/<you>/trade:latest \
+  --build-arg REQUIREMENTS=requirements/prod.txt \
+  --push .
+```
+
+Or use the helper:
+
+```bash
+REGISTRY=ghcr.io/<you>/trade TAG=dev ./scripts/build_multiarch.sh
+```
+
+Requires `setup-qemu-action` registration on Linux runners, or Docker Desktop with `docker-container` driver on macOS.
+
+## 7. Outputs and ports
+
+| Service | Host port | Container port | Notes |
+|---------|-----------|----------------|-------|
+| cryptobot-paper / cryptobot | 8080 | 8080 | Health/metrics endpoint |
+| prometheus | 9090 | 9090 | `/metrics` scrape target |
+| alertmanager | 9093 | 9093 | |
+| grafana | 3000 | 3000 | Login `admin/admin` |
+| loki | 3100 | 3100 | |
+| timescaledb | 5432 | 5432 | Postgres-compatible |
+| redis | 6379 | 6379 | |
+| nginx | 80, 443 | 80, 443 | Reverse proxy for grafana/prometheus |
+
+`cryptobot-test` and `cryptobot-backtest` expose **no host ports** by design — they run, finish, and exit.
+
+## 8. Logs
+
+```bash
+# All services, follow
+docker compose logs -f
+
+# One service
+docker compose logs -f cryptobot-paper
+
+# Last 200 lines
+docker compose logs --tail=200 cryptobot-paper
+
+# Since a timestamp
+docker compose logs --since="2024-01-01T00:00:00" cryptobot-paper
+```
+
+`cryptobot-paper` is configured with `APP_LOG_LEVEL=DEBUG` for easier inspection. Production builds (the `production` image target) default to `INFO`.
+
+## 9. Configuration knobs
+
+The bot reads `configs/base.yaml`. Override anything via env (prefixes: `APP_`, `RISK_`, `EXECUTION_`, `BINANCE_`, `MARKET_DATA_`, `MONITORING_`, `DB_`, `ML_`, `XMR_`, `BACKTEST_`).
+
+Examples:
+
+```bash
+# Tighter risk
+RISK_MAX_DAILY_LOSS_PCT=0.02 RISK_KILL_SWITCH_DAILY_LOSS_PCT=0.05 \
+  docker compose up -d cryptobot-paper
+
+# Live mode (DANGER — only after Binance adapter is wired and tested)
+EXECUTION_MODE=binance BINANCE_TESTNET=false \
+  BINANCE_API_KEY=$BINANCE_API_KEY BINANCE_API_SECRET=$BINANCE_API_SECRET \
+  docker compose up -d cryptobot
+```
+
+The YAML structure (`exchanges.binance`, `monitoring.alerts.*`, `xmr.daemon`, `xmr.wallet_rpc`) is flattened into the Settings namespace by `Settings.from_yaml_safe` in `src/cryptobot/config.py`.
+
+## 10. Health checks and `/health` endpoint
+
+The Dockerfile configures:
+
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3).read()"
+```
+
+> ⚠️ As of this writing, no HTTP server is wired in `src/cryptobot/`. The HEALTHCHECK will fail until a tiny HTTP handler on port 8080 is added.
+
+Workarounds while it's unwired:
+
+```bash
+# Override the HEALTHCHECK by editing the compose service or by using --no-healthcheck
+docker run --rm --no-healthcheck ghcr.io/<you>/trade:latest
+
+# Or check the process manually
+docker compose exec cryptobot-paper ps -ef | grep cryptobot
+```
+
+When the endpoint exists:
+
+```bash
+curl -fsS http://localhost:8080/health
+curl -fsS http://localhost:8080/metrics | head
+```
+
+## 11. Troubleshooting
+
+### "Cannot connect to the Docker daemon"
+
+```bash
+# macOS / Windows: start Docker Desktop
+# Linux:
+sudo systemctl start docker
+sudo usermod -aG docker $USER    # log out, log in
+```
+
+### `qemu: process terminated unexpectedly` or similar host crash
+
+Known intermittent issue with Docker Desktop on certain Apple Silicon builds. Restart Docker Desktop. CI workflows use buildx + QEMU explicitly to avoid this:
+
+```bash
+docker buildx create --use
+```
+
+### `cryptobot-paper` is `Restarting` or unhealthy
+
+```bash
+docker compose logs cryptobot-paper | tail -100
+docker compose exec cryptobot-paper python -c "from cryptobot.config import settings; print(settings.exchange.symbols)"
+```
+
+Most common root causes:
+- Missing `_sqlite3` (will log a warning; persistence silently disabled — see `PROJECT_MEMORY/13_Bug_Tracker.md` `B024`).
+- `configs/base.yaml` mismatch — fixed in `Settings.from_yaml_safe` (`08_Config_Reference.md`).
+- Risk rejection — `cryptobot kill switch` style logs from `risk.manager.RiskManager.check_order`.
+
+### Tests pass locally, fail in Docker
+
+The test target installs `requirements/test.txt` plus an extra `pip install numpy pandas` step in CI. Locally that's your dev install. In Docker it's pulled fresh. If a test fails, rebuild:
+
+```bash
+docker compose --profile test build --no-cache cryptobot-test
+```
+
+### "Port already in use"
+
+Stop the conflicting process or change `ports:` mapping in `docker-compose.yml`. 5432, 6379, 9090, 9093, 3000, 3100, 8080 are the common offenders.
+
+### "Network cryptobot-network not found"
+
+Compose creates the network on first `up`. If you see this error, run any service first:
+
+```bash
+docker compose up -d timescaledb redis
+docker compose up -d cryptobot-paper
+```
+
+### `BinanceVenue` rejects orders
+
+Expected when `BINANCE_API_KEY` is empty. Either set real testnet keys or set `EXECUTION_MODE=paper` to use `SimulatedVenue`:
+
+```bash
+EXECUTION_MODE=paper docker compose up -d cryptobot-paper
+```
+
+### Wipe persistent state
+
+```bash
+docker compose down -v
+```
+
+Removes named volumes (timescaledb_data, redis_data, prometheus_data, etc.).
+
+## 12. Kubernetes
+
+`deploy/k8s/` has manifests: namespace, configmap, secret, pvc, deployment, service, hpa, kustomization overlay.
+
+Apply:
+
+```bash
+kubectl apply -k deploy/k8s/
+```
+
+Inspect:
+
+```bash
+kubectl -n cryptobot get pods
+kubectl -n cryptobot logs -f deploy/cryptobot
+```
+
+The `cryptobot` service exposes port 8080 via ClusterIP; add an Ingress to expose publicly.
+
+Secrets live in `deploy/k8s/02-secret.yaml` with `REPLACE_ME` placeholders. Replace them with `kubectl -n cryptobot create secret` or sealed-secrets.
+
+The deployment needs an image registry (default: `ghcr.io/shobhit727/trade:latest`). Push your build first:
+
+```bash
+docker push ghcr.io/shobhit727/trade:latest
+kubectl -n cryptobot set image deploy/cryptobot cryptobot=ghcr.io/<you>/trade:$GIT_SHA
+```
+
+## 13. CI
+
+`.github/workflows/ci.yml` runs on every push/PR:
+- ruff + pyflakes lint
+- pytest with coverage
+- docker build of `test` target
+- docker compose config validation (default + `test` profiles)
+- docker buildx multi-arch matrix (linux/amd64 + linux/arm64) on `main`
+
+`.github/workflows/release.yml` runs on `v*.*.*` tags:
+- Multi-arch publish (linux/amd64 + linux/arm64) to GHCR
+- SBOM + provenance
+- Manifest list at `ghcr.io/<you>/trade:latest`
+
+To cut a release:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+## 14. Where to look next
+
+- `PROJECT_MEMORY/12_Feature_Status.md` — module-by-module status.
+- `PROJECT_MEMORY/13_Bug_Tracker.md` — known issues, including the in-memory SQLite fallback and the unimplemented `/health` endpoint.
+- `PROJECT_MEMORY/08_Config_Reference.md` — Settings field reference.
+- `plan.md` — phases and remaining work.
+- `src/cryptobot/backtest/runner.py` + `runner.run_backtest` — backtest API.
+- `src/cryptobot/execution/router.py` — SOR.

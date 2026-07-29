@@ -10,6 +10,8 @@
 
 ## 1. Project Context & Goals
 
+> Operational guide: see [`docs/RUNBOOK.md`](docs/RUNBOOK.md) for prerequisites, common Compose commands, profiles, troubleshooting.
+
 ### User Requirements
 - **Scope**: "Everything" - multi-asset, multi-strategy, institutional-grade
 - **Capital**: Retail ($10K-$100K), seconds-to-minutes latency acceptable
