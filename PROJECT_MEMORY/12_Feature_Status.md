@@ -48,6 +48,10 @@
 | `market_data/manager.py` | ✅ | Binance WS client. Requires `aiohttp`, `redis`. |
 | `ml/` | 🔲 | Empty directory. |
 | `data/features.py` | 🔲 | Missing. |
+| `deploy/k8s/` | ✅ | Namespace, ConfigMap, Secret, PVC, Deployment (with probes + `runAsNonRoot`), Service, HPA, `kustomization.yaml`. |
+| `.github/workflows/ci.yml` | ✅ | Lint + unit + compose-validate + buildx matrix (amd64 + arm64). |
+| `.github/workflows/release.yml` | ✅ | Tag-driven multi-arch publish + SBOM + provenance. |
+| `scripts/build_multiarch.sh` | ✅ | Local multi-arch build via buildx + QEMU. |
 | `execution/venue/binance.py` | 🔲 | Missing. |
 | `crates/cryptobot-*/` | 🔲 | Manifest only. |
 | `pyproject.toml` / `setup.py` | 🔲 | Missing. |

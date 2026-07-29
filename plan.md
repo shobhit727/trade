@@ -222,10 +222,11 @@ src/cryptobot/
 - [x] Grafana dashboards (JSON under `monitoring/grafana/` and `docker/grafana/`)
 - [x] Alerting channels (Telegram/Discord/Email/PagerDuty stubs)
 - [x] Health checks (`monitoring/health.py`)
-- [ ] `cryptobot` HTTP `/health` endpoint — not implemented
+- [ ] `cryptobot` HTTP `/health` endpoint — not implemented (Docker HEALTHCHECK uses `http://127.0.0.1:8080/health`, will fail until implemented)
 - [x] Docker base `python:3.14-slim`
-- [ ] Kubernetes manifests, systemd units — not implemented
-- [ ] Multi-arch Docker images — not configured
+- [x] Kubernetes manifests (`deploy/k8s/`) — namespace, config, secret, pvc, deployment+service+hpa
+- [x] Multi-arch Docker images (`scripts/build_multiarch.sh`, `.github/workflows/release.yml`)
+- [x] GitHub Actions CI (`.github/workflows/ci.yml`) — lint, unit, docker test target, multi-arch buildx
 
 ---
 
@@ -931,19 +932,20 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [x] Grafana dashboards JSON (`docker/grafana/`, `monitoring/grafana/`)
 - [x] Alerting channels (`monitoring/alerting.py`)
 - [x] Health checks (`monitoring/health.py`)
-- [ ] `cryptobot` HTTP `/health` endpoint (no HTTP server in source)
-- [ ] Real walk-forward / Monte Carlo in `backtest/validation.py`
-- [ ] Live trading profile fully wired (requires Binance adapter)
-- [ ] Kubernetes manifests, systemd units
-- [ ] Multi-arch Docker images (x86_64 + ARM64)
+- [ ] `cryptobot` HTTP `/health` endpoint (no HTTP server in source; Docker HEALTHCHECK will fail until implemented)
+- [x] Real walk-forward / Monte Carlo in `backtest/validation.py`
+- [x] Live trading profile wired (Binance adapter done; `EXECUTION_MODE=binance|testnet|live`)
+- [x] Kubernetes manifests (`deploy/k8s/*.yaml`) — namespace, configmap, secret, pvc, deployment, service, hpa; kustomization overlay
+- [x] Multi-arch Docker images (`scripts/build_multiarch.sh`, `.github/workflows/release.yml`)
+- [x] GitHub Actions CI (`.github/workflows/ci.yml`) — lint + unit + compose-validate + multi-arch buildx
 
 ### Tests
-- [x] 4 smoke tests in `tests/unit/test_core_foundation.py`
+- [x] 14 unit test files in `tests/unit/` covering event bus, retry, simulated execution, backtest fill flow, reporting, mean reversion + validation + reporting, smart order router, latency metrics, Binance venue, backtest runner, backtest data, config loading, basic foundation
 - [ ] Property-based tests (hypothesis) for risk/math
 - [ ] Integration tests (TimescaleDB / Redis / Prometheus)
-- [ ] CI/CD pipeline with cross-compile
+- [x] CI/CD pipeline (GitHub Actions; cross-compile via QEMU + buildx matrix)
 - [ ] Regression tests on backtest metrics
-- [ ] Multi-arch Docker images (x86_64, ARM64)
+- [x] Multi-arch Docker images (x86_64, ARM64)
 
 ### Testing & Quality
 - [ ] Unit tests for all core modules (>90% coverage)

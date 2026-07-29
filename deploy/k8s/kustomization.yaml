@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: cryptobot
+
+resources:
+  - 00-namespace.yaml
+  - 01-config.yaml
+  - 02-secret.yaml
+  - 03-pvc.yaml
+  - 04-deployment.yaml
+
+commonLabels:
+  app.kubernetes.io/name: cryptobot
+  app.kubernetes.io/part-of: cryptobot
+  app.kubernetes.io/managed-by: kustomize
