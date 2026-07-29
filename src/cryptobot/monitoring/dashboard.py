@@ -7,7 +7,11 @@ Generates JSON dashboard definitions for PnL, Risk, System, and Strategy monitor
 from __future__ import annotations
 
 import json
+import logging
 from typing import Dict, List, Any
+
+
+logger = logging.getLogger(__name__)
 
 
 def create_pnl_dashboard() -> Dict[str, Any]:
@@ -632,7 +636,7 @@ def save_dashboards(output_dir: str = "/app/grafana/dashboards"):
         filepath = os.path.join(output_dir, f"{title}.json")
         with open(filepath, "w") as f:
             json.dump(db, f, indent=2)
-        print(f"Saved: {filepath}")
+        logger.info("Saved: %s", filepath)
 
 
 if __name__ == "__main__":

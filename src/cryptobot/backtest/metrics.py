@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 import numpy as np
@@ -205,6 +206,6 @@ class BacktestResults:
 
 
 if __name__ == '__main__':
-    # NOTE: This test requires all modules (Event, PortfolioState) to be set up correctly
-    # before running in a single file context, which is not ideal.
-    print("--- Execution blocked for standalone testing. Requires setup of core dependencies. ---")
+    import logging
+
+    logging.warning("Execution blocked for standalone testing. Requires setup of core dependencies.")

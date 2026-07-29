@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -9,6 +10,9 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Callable, Optional
 from uuid import uuid4
+
+
+logger = logging.getLogger(__name__)
 
 import aiohttp
 import redis.asyncio as redis
@@ -56,9 +60,9 @@ class BinanceWSClient:
             url = f"{self.ws_url}/stream?streams={'/'.join(streams)}"
             self.ws = await self.session.ws_connect(url, heartbeat=30)
             self._reconnect_delay = 1
-            print(f"Connected to Binance WS: {url}")
+            logger.info("Connected to Binance WS: %s", url)
         except Exception as e:
-            print(f"WS connection failed: {e}")
+            logger.warning("WS connection failed: %s", e)
             await self._reconnect()
 
     def _build_streams(self) -> list[str]:
@@ -77,7 +81,7 @@ class BinanceWSClient:
         if not self.running:
             return
         delay = min(self._reconnect_delay, self._max_reconnect_delay)
-        print(f"Reconnecting in {delay}s...")
+        logger.info("Reconnecting in %.1fs", delay)
         await asyncio.sleep(delay)
         self._reconnect_delay *= 2
         await self._connect()
@@ -104,7 +108,7 @@ class BinanceWSClient:
                 elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.ERROR):
                     await self._reconnect()
             except Exception as e:
-                print(f"WS listen error: {e}")
+                logger.warning("WS listen error: %s", e)
                 await asyncio.sleep(1)
 
     async def _handle_message(self, data: str):
@@ -126,7 +130,7 @@ class BinanceWSClient:
             elif "@markPrice" in stream:
                 await self._handle_mark_price(payload)
         except Exception as e:
-            print(f"Message handling error: {e}")
+            logger.warning("Message handling error: %s", e)
 
     async def _handle_ticker(self, data: dict):
         symbol = data.get("s", "")
@@ -214,7 +218,7 @@ class BinanceWSClient:
                 else:
                     callback(event)
             except Exception as e:
-                print(f"Callback error for {event_type}: {e}")
+                logger.warning("Callback error for %s: %s", event_type, e)
 
 
 class MarketDataCache:
@@ -352,7 +356,7 @@ class MarketDataManager:
                 else:
                     callback(event)
             except Exception as e:
-                print(f"Callback error: {e}")
+                logger.warning("Callback error: %s", e)
 
     def get_ticker(self, symbol: str) -> Optional[TickerEvent]:
         data = self.cache.local_cache.get(f"ticker:{symbol}")

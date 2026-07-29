@@ -3,9 +3,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import sys
 from datetime import datetime
 from decimal import Decimal
+
+
+logger = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -85,12 +89,20 @@ async def _run(args: argparse.Namespace) -> int:
             )
             sys.stdout.write("\n")
         else:
-            print(
-                f"strategy={args.strategy} source={ds.source} symbol={ds.symbol} "
-                f"bars={len(ds.bars)} trades={result.n_trades}"
+            logger.info(
+                "strategy=%s source=%s symbol=%s bars=%d trades=%d",
+                args.strategy,
+                ds.source,
+                ds.symbol,
+                len(ds.bars),
+                result.n_trades,
             )
-            print(f"initial_capital={result.initial_capital} final_equity={result.final_equity}")
-            print(f"total_return={result.total_return:.4%}")
+            logger.info(
+                "initial_capital=%s final_equity=%s total_return=%.4f%%",
+                result.initial_capital,
+                result.final_equity,
+                result.total_return * 100,
+            )
         return 0
 
     if args.command == "mm":
@@ -134,9 +146,9 @@ async def _run(args: argparse.Namespace) -> int:
             )
             sys.stdout.write("\n")
         else:
-            print(f"mm fills {len(fills)} on {len(ds.bars)} bars for {args.symbol}")
+            logger.info("mm fills=%d bars=%d symbol=%s", len(fills), len(ds.bars), args.symbol)
             for f in fills[:5]:
-                print(f"  {f.timestamp} {f.side.value} {f.filled_quantity} @ {f.avg_fill_price}")
+                logger.info("  %s %s %s @ %s", f.timestamp, f.side.value, f.filled_quantity, f.avg_fill_price)
         return 0
 
     if args.command == "ml":
@@ -160,7 +172,7 @@ async def _run(args: argparse.Namespace) -> int:
             sys.stdout.write("\n")
         else:
             for k, v in out.items():
-                print(f"{k}: {v}")
+                logger.info("%s: %s", k, v)
         return 0
 
     if args.command == "serve":
@@ -174,7 +186,7 @@ async def _run(args: argparse.Namespace) -> int:
 
         server = HealthServer(host=args.host, port=args.port)
         server.start()
-        print(f"bot stub running; health at http://{args.host}:{args.port}/health")
+        logger.info("bot stub running; health at http://%s:%d/health", args.host, args.port)
         try:
             while True:
                 await asyncio.sleep(60)
@@ -183,10 +195,10 @@ async def _run(args: argparse.Namespace) -> int:
         return 0
 
     if args.command == "validate":
-        print("validate command OK: pass BacktestResults object from code path")
+        logger.info("validate command OK: pass BacktestResults object from code path")
         return 0
     if args.command == "paper":
-        print("paper command OK: execution engine dry-run available")
+        logger.info("paper command OK: execution engine dry-run available")
         return 0
     return 2
 

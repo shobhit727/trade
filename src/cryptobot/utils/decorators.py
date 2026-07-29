@@ -45,6 +45,7 @@ def retry(
                     sleep_time = backoff_factor * (2**attempt)
                     if jitter:
                         sleep_time += random.uniform(-0.1, 0.1)
+                    sleep_time = max(0.0, sleep_time)
                     logger.warning(
                         f"Attempt {attempt + 1} failed with {type(e).__name__}: {e}. Retrying in {sleep_time:.2f}s."
                     )
@@ -68,6 +69,7 @@ def retry(
                     sleep_time = backoff_factor * (2**attempt)
                     if jitter:
                         sleep_time += random.uniform(-0.1, 0.1)
+                    sleep_time = max(0.0, sleep_time)
                     logger.warning(
                         f"Attempt {attempt + 1} failed with {type(e).__name__}: {e}. Retrying in {sleep_time:.2f}s."
                     )
@@ -223,9 +225,16 @@ def circuit_breaker(
 
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
-            # For sync functions, run in executor
-            loop = asyncio.get_event_loop()
-            return loop.run_until_complete(breaker.call(func, *args, **kwargs))
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop is not None:
+                raise RuntimeError(
+                    f"circuit_breaker({func.__name__}) called from a running event loop; "
+                    "use the async form, or call from a thread without a running loop."
+                )
+            return asyncio.run(breaker.call(func, *args, **kwargs))
 
         if asyncio.iscoroutinefunction(func):
             return async_wrapper

@@ -72,9 +72,9 @@ position_pnl_unrealized = Gauge(
     registry=registry,
 )
 
-position_pnl_realized = Counter(
-    "cryptobot_position_pnl_realized_total_usd",
-    "Total realized PnL in USD",
+position_pnl_realized = Gauge(
+    "cryptobot_position_pnl_realized_usd",
+    "Realized PnL in USD per strategy/symbol (signed)",
     ["strategy", "symbol"],
     registry=registry,
 )
@@ -449,6 +449,14 @@ backtest_trades = Counter(
 )
 
 # =============================================================================
+# Internal state
+# =============================================================================
+
+# Track running realized-PnL totals so Gauge can hold signed values.
+_realized_pnl_totals: dict[tuple[str, str], float] = {}
+
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
 
@@ -497,7 +505,11 @@ def record_position_update(
         position_size.labels(strategy=strategy, symbol=symbol, side=side).set(0)
 
     if realized_pnl != 0:
-        position_pnl_realized.labels(strategy=strategy, symbol=symbol).inc(realized_pnl)
+        key = (strategy, symbol)
+        prev = _realized_pnl_totals.get(key, 0.0)
+        new_total = prev + realized_pnl
+        _realized_pnl_totals[key] = new_total
+        position_pnl_realized.labels(strategy=strategy, symbol=symbol).set(new_total)
 
 
 def record_pnl(strategy: str, daily: float, total: float, equity: float, available: float, margin: float) -> None:
