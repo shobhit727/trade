@@ -20,6 +20,7 @@
 | `backtest/simulator.py` | ✅ | FillSimulator + factory. |
 | `backtest/validation.py` | ✅ | Real walk-forward (rolling-window with embargo), Monte Carlo block-permutation, deflated Sharpe. |
 | `backtest/reporting.py` | ✅ | HTML tearsheet generator (stdlib only). |
+| `backtest/runner.py` | ✅ | OhlcvBar + generate_synthetic_ohlcv + run_backtest end-to-end (OHLCV → strategy → ExecutionEngine → SimulatedVenue → BacktestEngine). |
 | `strategies/base.py` | ✅ | BaseStrategy, StrategyRegistry, MeanReversionStrategyPlaceholder. Valid `OrderEvent` construction. |
 | `strategies/mean_reversion.py` | ✅ | Real strategy: Z-score + RSI + Bollinger Bands (pandas/numpy). |
 | `strategies/trend_following.py` | ✅ | Real strategy: EMA + ADX + ATR trailing stop. |

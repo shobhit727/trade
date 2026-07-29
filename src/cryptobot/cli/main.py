@@ -2,16 +2,23 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
+import sys
 from datetime import datetime
+from decimal import Decimal
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cryptobot")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    backtest = sub.add_parser("backtest", help="Run a backtest placeholder until strategy/data wiring is complete")
-    backtest.add_argument("--start", default="2024-01-01T00:00:00")
-    backtest.add_argument("--end", default="2024-01-02T00:00:00")
-    backtest.add_argument("--capital", type=float, default=10000.0)
+    backtest = sub.add_parser("backtest", help="Run a backtest with synthetic OHLCV against a strategy")
+    backtest.add_argument("--strategy", choices=["mean_reversion", "trend_following"], default="mean_reversion")
+    backtest.add_argument("--bars", type=int, default=200)
+    backtest.add_argument("--seed", type=int, default=42)
+    backtest.add_argument("--vol", type=float, default=0.01)
+    backtest.add_argument("--capital", type=Decimal, default=Decimal("10000"))
+    backtest.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
 
     sub.add_parser("validate", help="Validate latest backtest artifact placeholder")
     sub.add_parser("paper", help="Start paper trading dry-run placeholder")
@@ -20,9 +27,23 @@ def build_parser() -> argparse.ArgumentParser:
 
 async def _run(args: argparse.Namespace) -> int:
     if args.command == "backtest":
-        datetime.fromisoformat(args.start)
-        datetime.fromisoformat(args.end)
-        print("backtest command OK: data/strategy wiring pending")
+        from cryptobot.backtest.runner import generate_synthetic_ohlcv, make_strategy, run_backtest
+
+        bars = generate_synthetic_ohlcv(
+            datetime(2024, 1, 1),
+            n_bars=args.bars,
+            seed=args.seed,
+            vol=args.vol,
+        )
+        strategy = make_strategy(args.strategy)
+        result = await run_backtest(bars, strategy=strategy, initial_capital=args.capital)
+        if args.json:
+            json.dump(result.to_dict(), sys.stdout, default=str)
+            sys.stdout.write("\n")
+        else:
+            print(f"strategy={args.strategy} bars={len(bars)} trades={result.n_trades}")
+            print(f"initial_capital={result.initial_capital} final_equity={result.final_equity}")
+            print(f"total_return={result.total_return:.4%}")
         return 0
     if args.command == "validate":
         print("validate command OK: pass BacktestResults object from code path")

@@ -181,6 +181,9 @@ src/cryptobot/
 - [ ] **Funding Arbitrage**: Basis, term structure (`strategies/funding_arb.py` missing)
 - [ ] **Market Making**: Avellaneda-Stoikov, inventory skew (`strategies/market_making.py` missing)
 - [x] Mean reversion placeholder only — uses hardcoded `65000` trigger, not real indicators
+- [x] Real mean reversion strategy (`strategies/mean_reversion.py`) — Z-score + RSI + Bollinger Bands
+- [x] Real trend following strategy (`strategies/trend_following.py`) — EMA crossover + ADX + ATR trailing stop
+- [x] End-to-end runner (`backtest/runner.py`) for both strategies
 
 ### Phase 5: Risk Management (Week 6-7) ⭐ — ✅ minimal, ⚠️ partial
 - [x] Pre-trade risk checks (exposure, drawdown via kill switch, notional bounds)
@@ -865,11 +868,13 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [x] Event-driven backtester core (`backtest/engine.py`)
 - [x] Fill simulator (`backtest/simulator.py`)
 - [x] Performance metrics (`backtest/metrics.py`) — Sharpe, Sortino, MaxDD, win_rate, profit_factor
-- [ ] Realistic fills with slippage/fees/funding — current fills ignore them
-- [ ] Historical data manager (`backtest/data.py`)
-- [ ] Walk-forward validation with real math (`backtest/validation.py` returns fixed values today)
-- [ ] Monte Carlo robustness testing
-- [ ] Tearsheet generation (`backtest/reporting.py`)
+- [x] Realistic fills (`execution/venue/simulated.py`) with slippage + commission
+- [x] OHLCV data manager + runner (`backtest/runner.py`) — synthetic data + end-to-end orchestration
+- [x] Walk-forward validation with real math (`backtest/validation.py`)
+- [x] Monte Carlo robustness testing (`backtest/validation.py`)
+- [x] Deflated Sharpe ratio
+- [x] Tearsheet generation (`backtest/reporting.py`)
+- [ ] Historical data replay from TimescaleDB / Parquet (backtest loads only synthetic today)
 
 ### Phase 3: Strategy Framework
 - [x] Base strategy class with lifecycle hooks (`strategies/base.py`)

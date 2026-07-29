@@ -40,11 +40,13 @@ src/cryptobot/  (2 files)
       __init__.py
       base.py              # Venue (abstract)
       simulated.py         # SimulatedVenue
-  backtest/  (4 files)
+  backtest/  (6 files)
     engine.py              # BacktestEngine, BacktestResult, TradeRecord
     metrics.py             # PerformanceMetrics, BacktestMetricsRecorder, BacktestResults
     simulator.py           # FillSimulator + factory
-    validation.py          # ValidationFramework (WFA + MC; stubs)
+    validation.py          # real walk-forward + Monte Carlo + deflated Sharpe
+    reporting.py           # HTML tearsheet generator (stdlib only)
+    runner.py              # OhlcvBar, generate_synthetic_ohlcv, run_backtest end-to-end
   monitoring/  (5 files)
     __init__.py
     metrics.py             # Prometheus metrics + helpers + MetricsCollector
