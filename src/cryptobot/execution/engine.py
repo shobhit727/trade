@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from uuid import uuid4
 
+from cryptobot.config import settings
 from cryptobot.core.bus import EventBus, get_event_bus
 from cryptobot.core.events import Event, EventType, OrderEvent, OrderStatus
 from cryptobot.execution.venue.base import Venue
@@ -10,9 +11,22 @@ from cryptobot.execution.venue.simulated import SimulatedVenue
 from cryptobot.risk.manager import RiskManager, get_risk_manager
 
 
+def build_venue(mode: str | None = None) -> Venue:
+    mode = (mode or settings.execution.mode or "paper").lower()
+    if mode in {"paper", "backtest"}:
+        return SimulatedVenue()
+    if mode in {"testnet", "live", "binance"}:
+        try:
+            from cryptobot.execution.venue.binance import BinanceVenue
+            return BinanceVenue()
+        except Exception:
+            return SimulatedVenue()
+    return SimulatedVenue()
+
+
 @dataclass
 class ExecutionEngine:
-    venue: Venue = field(default_factory=SimulatedVenue)
+    venue: Venue = field(default_factory=build_venue)
     risk_manager: RiskManager = field(default_factory=get_risk_manager)
     event_bus: EventBus = field(default_factory=get_event_bus)
     orders: dict[str, OrderEvent] = field(default_factory=dict)
@@ -54,4 +68,4 @@ def get_execution_engine() -> ExecutionEngine:
     return _execution_engine
 
 
-__all__ = ["ExecutionEngine", "get_execution_engine"]
+__all__ = ["ExecutionEngine", "build_venue", "get_execution_engine"]

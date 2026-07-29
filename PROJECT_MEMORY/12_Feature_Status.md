@@ -29,10 +29,11 @@
 | `risk/sizing.py` | ✅ | fixed_fraction_size, kelly_size, volatility_target_size. |
 | `risk/kill_switch.py` | ✅ | KillSwitch reads portfolio signal. |
 | `risk/correlation.py` | ✅ | max_abs_correlation helper. |
-| `execution/engine.py` | ✅ | ExecutionEngine, risk-gated order submission. |
+| `execution/engine.py` | ✅ | ExecutionEngine, risk-gated order submission, `build_venue(mode)` factory selects by `settings.execution.mode`. |
 | `execution/algorithms.py` | ✅ | twap_slices, vwap_slices, pov_quantity. |
 | `execution/venue/base.py` | ✅ | Abstract Venue. |
-| `execution/venue/simulated.py` | ✅ | In-memory venue. |
+| `execution/venue/simulated.py` | ✅ | In-memory venue with slippage + commission. |
+| `execution/venue/binance.py` | ✅ | Live / testnet Binance via ccxt.async_support. Sandbox mode, retries, error mapping, guardrails for missing credentials. |
 | `monitoring/metrics.py` | ✅ | Prometheus metrics + helpers. Requires `prometheus_client`. |
 | `monitoring/alerting.py` | ✅ | AlertManager + Telegram/Discord/Email/PagerDuty channels. |
 | `monitoring/health.py` | ✅ | HealthMonitor + HealthChecker subclasses. `inspect.isawaitable` + false-as-unhealthy fix. |

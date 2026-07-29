@@ -24,7 +24,7 @@
 
 12. How does `cryptobot` service's `8080/health` HTTP endpoint get built? No HTTP handler in source.
 13. What is the cron for `reset_daily_pnl`? Not visible.
-14. Does live mode actually connect to Binance? Requires `execution/venue/binance.py` (missing).
+14. Does live mode actually connect to Binance? Requires `execution/venue/binance.py` (now implemented via ccxt.async_support; needs sandbox/live credentials to actually run).
 
 ## Confidence
 

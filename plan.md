@@ -110,8 +110,8 @@ src/cryptobot/
 │   ├── algorithms.py         # ✅ TWAP / VWAP / POV
 │   ├── venue/
 │   │   ├── base.py           # ✅ Abstract Venue
-│   │   ├── simulated.py      # ✅ SimulatedVenue
-│   │   └── binance.py        # 🔲 Live Binance adapter
+│   │   ├── simulated.py      # ✅ SimulatedVenue (slippage + commission)
+│   │   └── binance.py        # ✅ BinanceVenue via ccxt.async_support
 │   └── simulator.py          # 🔲 Realistic fill simulator (separate from backtest)
 ├── risk/
 │   ├── manager.py            # ✅ Pre-trade checks
@@ -200,20 +200,19 @@ src/cryptobot/
 - [ ] Online inference (<10ms)
 - [ ] Auto-retrain on drift
 
-### Phase 7: Execution Engine (Week 9-10) — ⚠️ partial
-- [x] Order management (`execution/engine.py`)
+### Phase 7: Execution Engine (Week 9-10) — ✅ mostly done; ⚠️ smart-routing pending
+- [x] Order management (`execution/engine.py`) with `build_venue(mode)` factory
 - [x] Execution algorithms helpers (TWAP/VWAP/POV helpers in `execution/algorithms.py`)
+- [x] `Venue` interface + `SimulatedVenue` (slippage + commission)
+- [x] `BinanceVenue` (ccxt.async_support; retries, sandbox mode, credential guard)
 - [ ] Smart order routing (multi-venue)
-- [x] `Venue` interface + `SimulatedVenue` (`execution/venue/{base,simulated}.py`)
-- [ ] `Binance` venue (`execution/venue/binance.py` missing)
-- [ ] Realistic fill simulator with slippage/fees/funding (current simulated ignores them)
 - [ ] Adverse selection protection
 - [ ] Latency monitoring
 
 ### Phase 8: Live Trading & Monitoring (Week 10-12) — ⚠️ partial
 - [x] Compose stack (`docker-compose.yml`: Timescale, Redis, Prometheus, Grafana, Loki, Alertmanager)
 - [x] Paper trading profile (`cryptobot-paper` service, `EXECUTION_MODE=paper` env)
-- [ ] Live trading profile fully wired — `cryptobot` service depends on missing Binance adapter
+- [ ] Live trading profile fully wired — `cryptobot` service now has Binance adapter to drive live/paper via `EXECUTION_MODE`
 - [x] Grafana dashboards (JSON under `monitoring/grafana/` and `docker/grafana/`)
 - [x] Alerting channels (Telegram/Discord/Email/PagerDuty stubs)
 - [x] Health checks (`monitoring/health.py`)
@@ -912,7 +911,7 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [x] Order management (`execution/engine.py`)
 - [x] `Venue` interface + `SimulatedVenue`
 - [x] TWAP/VWAP/POV helpers (`execution/algorithms.py`)
-- [ ] Binance live adapter (`execution/venue/binance.py`)
+- [x] Binance live adapter (`execution/venue/binance.py`) — ccxt async, retries, credential guard
 - [ ] Smart order routing multi-venue
 - [ ] Implementation-shortfall / iceberg algorithms
 - [ ] Adverse selection protection
