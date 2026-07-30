@@ -6,9 +6,16 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from decimal import Decimal
+from enum import Enum
 from typing import Awaitable, Callable, Deque, Dict, List, Optional
 
 from cryptobot.core.events import Event, EventType, OrderEvent, OrderStatus
+
+
+class AdverseAction(Enum):
+    NONE = "none"
+    CANCEL = "cancel"
+    REPLACE = "replace"
 
 
 logger = logging.getLogger(__name__)
@@ -153,9 +160,6 @@ class AdverseSelectionGuard:
     @property
     def tracked(self) -> List[str]:
         return list(self._positions.keys())
-
-
-AdverseAction = _adverse_action_enum()
 
 
 async def attach_to_engine(engine, guard: AdverseSelectionGuard) -> None:

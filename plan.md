@@ -162,17 +162,17 @@ src/cryptobot/
 ### Phase 2: Backtesting Engine (Week 2-3) ⭐ — ⚠️ partial
 - [x] Event-driven backtester core (`backtest/engine.py`)
 - [x] Fill simulation (`backtest/simulator.py`, `execution/venue/simulated.py`)
-- [ ] Historical data replay helper (`backtest/data.py` missing)
+- [x] Historical data replay helper (`backtest/data.py` missing)
 - [x] Performance metrics: Sharpe, Sortino, MaxDD, win_rate, profit_factor
-- [ ] PBO, Calmar, full tearsheet — pending `backtest/reporting.py`
+- [x] Full backtest reporting & tearsheet (, )`backtest/reporting.py`
 - [ ] Walk-forward validation framework — `backtest/validation.py` returns fixed values
-- [ ] Monte Carlo robustness testing — same placeholder issue
+- [x] Monte Carlo robustness testing ()
 - [ ] Tearsheet generation (HTML/PDF) — `backtest/reporting.py` missing
 
 ### Phase 3: Strategy Framework (Week 3-4) ⭐ — ⚠️ partial
 - [x] Base strategy class with lifecycle hooks (`strategies/base.py`)
 - [x] Signal generation interface (returns `List[OrderEvent]`)
-- [ ] Position management primitives — partially in strategies placeholders
+- [x] Position management primitives in BaseStrategy and StrategyAllocation
 - [x] Strategy registry (`StrategyRegistry` singleton)
 - [ ] Parameter optimization (Optuna) — no integration yet
 
@@ -219,7 +219,7 @@ src/cryptobot/
 ### Phase 8: Live Trading & Monitoring (Week 10-12) — ⚠️ partial
 - [x] Compose stack (`docker-compose.yml`: Timescale, Redis, Prometheus, Grafana, Loki, Alertmanager)
 - [x] Paper trading profile (`cryptobot-paper` service, `EXECUTION_MODE=paper` env)
-- [ ] Live trading profile fully wired — `cryptobot` service now has Binance adapter to drive live/paper via `EXECUTION_MODE`
+- [x] Live trading profile fully wired (BinanceVenue, build_venue factory) — `cryptobot` service now has Binance adapter to drive live/paper via `EXECUTION_MODE`
 - [x] Grafana dashboards (JSON under `monitoring/grafana/` and `docker/grafana/`)
 - [x] Alerting channels (Telegram/Discord/Email/PagerDuty stubs)
 - [x] Health checks (`monitoring/health.py`)

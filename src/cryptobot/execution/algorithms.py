@@ -229,7 +229,15 @@ def build_pov_schedule(
         if remaining <= 0:
             break
     if remaining > 0 and out:
-        out[-1] += remaining
+        # Redistribute the leftover across the remaining periods up to the cap.
+        leftover_periods = duration_periods - len(out)
+        if leftover_periods > 0:
+            per_period = remaining / leftover_periods
+            per_period = min(per_period, cap_per_period) if cap_per_period else per_period
+            for _ in range(leftover_periods):
+                out.append(per_period)
+        else:
+            out[-1] += remaining
     return out
 
 

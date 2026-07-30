@@ -357,6 +357,9 @@ class OrderEvent(Event):
             "strategy": self.strategy,
         }
 
+    def to_dict(self) -> dict[str, Any]:
+        return dict(self.payload)
+
 
 @dataclass
 class PositionEvent(Event):

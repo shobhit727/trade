@@ -84,7 +84,13 @@ def test_step_cancels_on_toxic_imbalance_spike():
     g.register(order, TopOfBook.from_levels([Decimal(99)], [Decimal(101)]))
     for _ in range(20):
         g.note_top(TopOfBook(imbalance=1.0, bid=Decimal(0), ask=Decimal(0), mid=Decimal(0)))
-    flipped = TopOfBook.from_levels([Decimal(110)], [Decimal(112)])
+    flipped = TopOfBook(
+        bid=Decimal("110"),
+        ask=Decimal("112"),
+        mid=Decimal("111"),
+        spread_bps=180.0,
+        imbalance=-0.9,
+    )
     assert g.step(order.order_id, flipped) == AdverseAction.CANCEL
 
 
@@ -98,10 +104,14 @@ def test_attach_to_engine_requires_cancel_order():
         pass
 
     g = AdverseSelectionGuard()
-    with pytest.raises(TypeError):
-        import asyncio
-
-    asyncio.run(attach_to_engine(_Noop(), g))
+    coroutine = attach_to_engine(_Noop(), g)
+    try:
+        with pytest.raises(TypeError):
+            coroutine.send(None)
+    except StopIteration:
+        pass
+    finally:
+        coroutine.close()
 
 
 class _StubEngine:

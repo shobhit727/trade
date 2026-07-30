@@ -26,6 +26,8 @@ def build_parser() -> argparse.ArgumentParser:
     backtest.add_argument("--seed", type=int, default=42)
     backtest.add_argument("--vol", type=float, default=0.01)
     backtest.add_argument("--capital", type=Decimal, default=Decimal("10000"))
+    backtest.add_argument("--start", default="2024-01-01T00:00:00")
+    backtest.add_argument("--end", default="2024-01-02T00:00:00")
     backtest.add_argument("--json", action="store_true")
 
     market_maker = sub.add_parser("mm", help="Run the market-making strategy against order book")
@@ -204,7 +206,13 @@ async def _run(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as exc:
+        if exc.code in (None, 0):
+            raise
+        return int(exc.code) if isinstance(exc.code, int) else 2
     return asyncio.run(_run(args))
 
 

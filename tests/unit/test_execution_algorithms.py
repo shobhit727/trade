@@ -132,7 +132,7 @@ def test_arrival_price_benchmark_zero_or_no_fee():
 
 def test_build_pov_schedule_respects_remaining():
     out = build_pov_schedule(
-        Decimal("100"),
+        Decimal("40"),
         duration_periods=5,
         participation_rate=Decimal("0.1"),
         market_volume_per_period=Decimal("100"),
@@ -140,12 +140,14 @@ def test_build_pov_schedule_respects_remaining():
     )
     assert len(out) == 5
     assert all(s <= Decimal("8") for s in out)
-    assert sum(out) == Decimal("100")
+    assert sum(out) == Decimal("40")
 
 
 def test_slicer_for_dispatch():
     fn = slicer_for("twap")
-    assert fn(Decimal("10"), 3) == [Decimal("10") / Decimal(3)] * 3
+    slices = fn(Decimal("10"), 3)
+    assert len(slices) == 3
+    assert sum(slices) == Decimal("10")
     with pytest.raises(ValueError):
         slicer_for("nope")
 

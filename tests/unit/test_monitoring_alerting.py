@@ -1,0 +1,278 @@
+"""Tests for cryptobot.monitoring.alerting
+
+Focuses on AlertManager routing, dedup, and severity gating without
+requiring real Telegram/Discord/Email channels.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from datetime import datetime, timedelta
+from typing import List
+
+import pytest
+
+from cryptobot.monitoring.alerting import (
+    Alert,
+    AlertCategory,
+    AlertManager,
+    AlertRule,
+    AlertSeverity,
+    NotificationChannel,
+)
+
+
+class _RecordingChannel:
+    def __init__(self, name: str = "test"):
+        self.name = name
+        self.alerts: List[Alert] = []
+
+    def get_name(self) -> str:
+        return self.name
+
+    async def send(self, alert: Alert) -> bool:
+        self.alerts.append(alert)
+        return True
+
+
+def _alert(severity: str = "WARNING", category: str = "SYSTEM") -> Alert:
+    return Alert(
+        id=f"{severity.value}-{category.value}",
+        title=f"{severity.value} {category.value}",
+        message=f"msg-{severity.value}",
+        severity=severity,
+        category=category,
+        source="test",
+        timestamp=datetime.utcnow(),
+    )
+
+
+def test_match_rule_severity_and_category():
+    rule = AlertRule(
+        name="",
+        category="SYSTEM",
+        severity="WARNING",
+        channels=["test"],
+    )
+    mgr = AlertManager()
+    assert mgr._match_rule(_alert(), rule) is True
+    assert mgr._match_rule(_alert(severity="INFO"), rule) is False
+    assert mgr._match_rule(_alert(category="RISK"), rule) is False
+
+
+def test_match_rule_labels_must_match():
+    rule = AlertRule(
+        name="",
+        severity="WARNING",
+        channels=["test"],
+        labels={"component": "x"},
+    )
+    mgr = AlertManager()
+    a = _alert()
+    a.labels = {"component": "x"}
+    assert mgr._match_rule(a, rule) is True
+    a.labels = {"component": "y"}
+    assert mgr._match_rule(a, rule) is False
+
+
+def test_get_channels_for_alert_default_is_all_channels():
+    mgr = AlertManager()
+    ch_a = type("Ch", (), {"get_name": lambda self: "a"})()
+    ch_b = type("Ch", (), {"get_name": lambda self: "b"})()
+    mgr.add_channel(ch_a)
+    mgr.add_channel(ch_b)
+    chosen = mgr._get_channels_for_alert(_alert())
+    assert {c.get_name() for c in chosen} == {"a", "b"}
+
+
+def test_get_channels_for_alert_filters_by_rule():
+    mgr = AlertManager()
+    ch_a = type("Ch", (), {"get_name": lambda self: "a"})()
+    ch_b = type("Ch", (), {"get_name": lambda self: "b"})()
+    mgr.add_channel(ch_a)
+    mgr.add_channel(ch_b)
+    mgr.add_rule(
+        AlertRule(
+            name="only_a",
+            category="SYSTEM",
+            severity="WARNING",
+            channels=["a"],
+        )
+    )
+    chosen = mgr._get_channels_for_alert(_alert())
+    assert [c.get_name() for c in chosen] == ["a"]
+
+
+@pytest.mark.asyncio
+async def test_fire_routes_to_channels_and_appends_history():
+    mgr = AlertManager()
+    ch_a = type("Ch", (), {"get_name": lambda self: "a", "send": lambda self, a: asyncio.sleep(0) or True})()
+    mgr.add_channel(ch_a)
+    n = await mgr.fire(_alert())
+    assert n == 1
+    assert len(mgr.active_alerts) == 1
+
+
+@pytest.mark.asyncio
+async def test_fire_respects_cooldown():
+    mgr = AlertManager()
+    ch = type("Ch", (), {"get_name": lambda self: "a", "send": lambda self, a: asyncio.sleep(0) or True})()
+    mgr.add_channel(ch)
+    mgr.add_rule(
+        AlertRule(
+            name="r",
+            severity="WARNING",
+            channels=["test"],
+            cooldown=timedelta(seconds=60),
+        )
+    )
+    alert = _alert()
+    first = await mgr.fire(alert)
+    second = await mgr.fire(alert)
+    assert first == 1
+    assert second == 0
+    assert len(ch_a.alerts) == 1
+
+
+def test_alert_fingerprint_is_stable():
+    a1 = Alert("WARNING", "SYSTEM", "msg")
+    a2 = Alert("WARNING", "SYSTEM", "msg")
+    a3 = Alert("CRITICAL", "SYSTEM", "msg")
+    assert a1.fingerprint == a2.fingerprint
+    assert a1.fingerprint != a3.fingerprint
+
+
+def test_alert_to_dict_round_trip():
+    a = Alert("WARNING", "SYSTEM", "msg")
+    d = a.to_dict()
+    assert d["id"] == a.id
+    assert d["severity"] == "WARNING"
+    assert d["category"] == "SYSTEM"
+
+
+def test_alert_rule_matches_severity_and_category():
+    rule = AlertRule(
+        name="",
+        category="SYSTEM",
+        severity="WARNING",
+        channels=["test"],
+    )
+    mgr = AlertManager()
+    assert mgr._match_rule(Alert("WARNING", "SYSTEM", "msg"), rule) is True
+    assert mgr._match_rule(Alert("INFO", "SYSTEM", "msg"), rule) is False
+    assert mgr._match_rule(Alert("WARNING", "RISK", "msg"), rule) is False
+
+
+def test_alert_rule_label_filtering():
+    rule = AlertRule(
+        name="",
+        severity="WARNING",
+        channels=["test"],
+        labels={"component": "x"},
+    )
+    mgr = AlertManager()
+    a = _alert()
+    a.labels = {"component": "x"}
+    assert mgr._match_rule(a, rule) is True
+    a.labels = {"component": "y"}
+    assert mgr._match_rule(a, rule) is False
+
+
+def test_get_channels_for_alert_default_is_all_channels():
+    mgr = AlertManager()
+    ch_a = type("Ch", (), {"get_name": lambda self: "a", "send": lambda self, a: asyncio.sleep(0) or True})()
+    ch_b = type("Ch", (), {"get_name": lambda self: "b", "send": lambda self, a: asyncio.sleep(0) or True})()
+    mgr.add_channel(ch_a)
+    mgr.add_channel(ch_b)
+    channels = mgr._get_channels_for_alert(Alert("WARNING", "SYSTEM", "msg"))
+    assert {c.get_name() for c in channels} == {"a", "b"}
+
+
+def test_get_channels_for_alert_filters_by_rule():
+    mgr = AlertManager()
+    ch_a = type("Ch", (), {"get_name": lambda self: "a", "send": lambda self, a: asyncio.sleep(0) or True})()
+    ch_b = type("Ch", (), {"get_name": lambda self: "b", "send": lambda self, a: asyncio.sleep(0) or True})()
+    mgr.add_channel(ch_a)
+    mgr.add_channel(ch_b)
+    mgr.add_rule(
+        AlertRule(
+            name="only_a",
+            category="SYSTEM",
+            severity="WARNING",
+            channels=["a"],
+        )
+    )
+    chosen = mgr._get_channels_for_alert(Alert("WARNING", "SYSTEM", "msg"))
+    assert [c.get_name() for c in chosen] == ["a"]
+
+
+@pytest.mark.asyncio
+async def test_fire_routes_to_channels_and_appends_history():
+    mgr = AlertManager()
+    ch = type("Ch", (), {"get_name": lambda self: "a", "send": lambda self, a: asyncio.sleep(0) or True})()
+    mgr.add_channel(ch)
+    n = await mgr.fire(Alert("WARNING", "SYSTEM", "test"))
+    assert n == 1
+    assert len(mgr.active_alerts) == 1
+
+
+@pytest.mark.asyncio
+async def test_fire_respects_cooldown():
+    mgr = AlertManager()
+    ch = type("Ch", (), {"get_name": lambda self: "a", "send": lambda self, a: asyncio.sleep(0) or True})()
+    mgr.add_channel(ch)
+    mgr.add_rule(
+        AlertRule(
+            name="r",
+            severity="WARNING",
+            channels=["a"],
+            cooldown=timedelta(seconds=60),
+        )
+    )
+    alert = Alert("WARNING", "SYSTEM", "test")
+    first = await mgr.fire(alert)
+    second = await mgr.fire(alert)
+    assert first == 1
+    assert second == 0
+
+
+def test_alert_fingerprint_is_stable():
+    a1 = Alert("WARNING", "SYSTEM", "msg")
+    a2 = Alert("WARNING", "SYSTEM", "msg")
+    a3 = Alert("CRITICAL", "SYSTEM", "msg")
+    assert a1.fingerprint == a2.fingerprint
+    assert a1.fingerprint != a3.fingerprint
+
+
+def test_alert_to_dict_round_trip():
+    a = Alert("WARNING", "SYSTEM", "msg")
+    d = a.to_dict()
+    assert d["id"] == a.id
+    assert d["severity"] == "WARNING"
+    assert d["category"] == "SYSTEM"
+
+
+# --- NotificationChannel abstract base ---
+
+
+def test_notification_channel_abstract():
+    from cryptobot.monitoring.alerting import NotificationChannel
+
+    class Dummy(NotificationChannel):
+        async def send(self, alert):
+            return True
+
+    d = Dummy()
+    assert hasattr(d, "send")
+
+
+# --- AlertManager.get_alert_manager singleton ---
+
+
+def test_get_alert_manager_returns_singleton():
+    from cryptobot.monitoring.alerting import get_alert_manager, AlertManager
+
+    m1 = get_alert_manager()
+    m2 = get_alert_manager()
+    assert m1 is m2
+    assert isinstance(m1, AlertManager)

@@ -59,12 +59,18 @@ def _row_to_bar(row: Dict[str, Any], default_symbol: str) -> OhlcvBar:
         ts = ts_raw
     else:
         raise ValueError(f"unsupported timestamp value: {ts_raw!r}")
+    o = row.get("open", row.get("open_price"))
+    h = row.get("high", row.get("high_price"))
+    l = row.get("low", row.get("low_price"))
+    c = row.get("close", row.get("close_price"))
+    if o is None or h is None or l is None or c is None:
+        raise KeyError("missing required ohlc column")
     return OhlcvBar(
         timestamp=ts,
-        open=float(row.get("open", row.get("open_price", 0.0))),
-        high=float(row.get("high", row.get("high_price", 0.0))),
-        low=float(row.get("low", row.get("low_price", 0.0))),
-        close=float(row.get("close", row.get("close_price", 0.0))),
+        open=float(o),
+        high=float(h),
+        low=float(l),
+        close=float(c),
         volume=float(row.get("volume", row.get("vol", 0.0))),
     )
 

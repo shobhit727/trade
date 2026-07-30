@@ -12,7 +12,7 @@ class AppSettings(BaseSettings):
     log_level: str = "INFO"
     timezone: str = "UTC"
 
-    model_config = SettingsConfigDict(env_prefix="APP_")
+    model_config = SettingsConfigDict(env_prefix="APP_", extra="ignore")
 
 
 class ExchangeSettings(BaseSettings):
@@ -29,7 +29,7 @@ class ExchangeSettings(BaseSettings):
     max_positions: int = 5
     position_size_pct: float = 0.15
 
-    model_config = SettingsConfigDict(env_prefix="BINANCE_")
+    model_config = SettingsConfigDict(env_prefix="BINANCE_", extra="ignore")
 
 
 class MarketDataSettings(BaseSettings):
@@ -42,7 +42,7 @@ class MarketDataSettings(BaseSettings):
     redis_db: int = 0
     redis_max_connections: int = 50
 
-    model_config = SettingsConfigDict(env_prefix="MARKET_DATA_")
+    model_config = SettingsConfigDict(env_prefix="MARKET_DATA_", extra="ignore")
 
 
 class RiskSettings(BaseSettings):
@@ -59,7 +59,7 @@ class RiskSettings(BaseSettings):
     min_order_size_usd: float = 10
     max_order_size_usd: float = 10000
 
-    model_config = SettingsConfigDict(env_prefix="RISK_")
+    model_config = SettingsConfigDict(env_prefix="RISK_", extra="ignore")
 
 
 class ExecutionSettings(BaseSettings):
@@ -72,7 +72,7 @@ class ExecutionSettings(BaseSettings):
     retry_delay_ms: int = 100
     smart_routing: bool = False
 
-    model_config = SettingsConfigDict(env_prefix="EXECUTION_")
+    model_config = SettingsConfigDict(env_prefix="EXECUTION_", extra="ignore")
 
 
 class MLSettings(BaseSettings):
@@ -83,7 +83,7 @@ class MLSettings(BaseSettings):
     min_samples_train: int = 10000
     feature_lookback: int = 500
 
-    model_config = SettingsConfigDict(env_prefix="ML_")
+    model_config = SettingsConfigDict(env_prefix="ML_", extra="ignore")
 
 
 class XMRSettings(BaseSettings):
@@ -106,7 +106,7 @@ class XMRSettings(BaseSettings):
     confirmations: int = 10
     subaddress_lookahead: int = 100
 
-    model_config = SettingsConfigDict(env_prefix="XMR_")
+    model_config = SettingsConfigDict(env_prefix="XMR_", extra="ignore")
 
 
 class MonitoringSettings(BaseSettings):
@@ -121,7 +121,7 @@ class MonitoringSettings(BaseSettings):
     email_enabled: bool = False
     health_check_interval: int = 30
 
-    model_config = SettingsConfigDict(env_prefix="MONITORING_")
+    model_config = SettingsConfigDict(env_prefix="MONITORING_", extra="ignore")
 
 
 class DatabaseSettings(BaseSettings):
@@ -134,7 +134,7 @@ class DatabaseSettings(BaseSettings):
     pool_size: int = 10
     max_overflow: int = 20
 
-    model_config = SettingsConfigDict(env_prefix="DB_")
+    model_config = SettingsConfigDict(env_prefix="DB_", extra="ignore")
 
 
 class BacktestSettings(BaseSettings):
@@ -146,7 +146,7 @@ class BacktestSettings(BaseSettings):
     slippage_bps: int = 3
     funding_rate_included: bool = True
 
-    model_config = SettingsConfigDict(env_prefix="BACKTEST_")
+    model_config = SettingsConfigDict(env_prefix="BACKTEST_", extra="ignore")
 
 
 class Settings(BaseSettings):
