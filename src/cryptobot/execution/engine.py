@@ -43,7 +43,16 @@ class ExecutionEngine:
             order.status = OrderStatus.REJECTED
             order.__post_init__()
             self.orders[order.order_id] = order
-            await self.event_bus.publish(order)
+            await self.event_bus.publish(Event(
+                type=EventType.ORDER_REJECTED,
+                source=order.strategy,
+                correlation_id=order.order_id,
+                payload={
+                    "order": order.payload,
+                    "reason": risk.message,
+                    "check_type": "pre_trade",
+                },
+            ))
             return order
 
         if self.router is not None and len(self.router.venues) > 1:
@@ -55,7 +64,12 @@ class ExecutionEngine:
                 order.status = OrderStatus.REJECTED
                 order.__post_init__()
                 self.orders[order.order_id] = order
-                await self.event_bus.publish(order)
+                await self.event_bus.publish(Event(
+                    type=EventType.ORDER_REJECTED,
+                    source=order.strategy,
+                    correlation_id=order.order_id,
+                    payload={"reason": "smart router found no fill", "check_type": "routing"},
+                ))
                 return order
             self.orders[first_fill.order_id] = first_fill
             await self.event_bus.publish(Event(type=EventType.ORDER_FILLED, payload=first_fill.payload))
@@ -63,7 +77,15 @@ class ExecutionEngine:
 
         filled = await self.venue.submit_order(order)
         self.orders[filled.order_id] = filled
-        await self.event_bus.publish(Event(type=EventType.ORDER_FILLED, payload=filled.payload))
+        if filled.status == OrderStatus.REJECTED:
+            await self.event_bus.publish(Event(
+                type=EventType.ORDER_REJECTED,
+                source=filled.strategy,
+                correlation_id=filled.order_id,
+                payload={"order": filled.payload, "reason": "venue rejected", "check_type": "venue"},
+            ))
+        else:
+            await self.event_bus.publish(Event(type=EventType.ORDER_FILLED, payload=filled.payload))
         return filled
 
     async def cancel_order(self, order_id: str) -> bool:

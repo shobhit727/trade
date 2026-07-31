@@ -1,6 +1,6 @@
 # 12. Feature Status
 
-> **Last Updated**: 2026-07-29 (audit pass)
+> **Last Updated**: 2026-07-31 (audit pass: risk/exec/portfolio/bus/alerting/state)
 > **Confidence**: High.
 
 ## Verified module status
@@ -80,6 +80,22 @@
 - `Dockerfile` (new), `requirements/test.txt` (new), `cryptobot-test` service (new), `.dockerignore` (new).
 - `requirements/prod.txt` — modern `>=` ranges, removed `monero-rpc==0.3.0`.
 
+## Fixed this session (2026-07-31)
+
+- `risk/manager.py` (B038) — pre-trade notional check now skipped when no price available; market orders no longer falsely rejected by min-size.
+- `execution/engine.py` (B040) — emits `EventType.ORDER_REJECTED` with `reason` + `check_type` on risk reject AND on venue reject; `order.payload` carried in event.
+- `market_data/manager.py` (B044) — `BinanceWSClient._symbols`/`_timeframes` fall back to `default_symbol` / `["1m"]` when settings empty.
+- `core/portfolio.py` (B034) — `update_equity` auto-resets `_daily_pnl_start` when UTC day boundary crossed (and on first equity push from 0).
+- `core/bus.py` (B045) — `publish_batch` dispatches atomically under single lock.
+- `monitoring/alerting.py` (B031/B041) — `init_alerting()` only starts background task when channels configured; `stop()` is idempotent.
+- `core/state.py` (B024) — emits `logging.warning` when `sqlite3` unavailable.
+- `tests/unit/test_cli.py` — fixed `from cryptobot.cli import main` shadowing; now imports `_run` directly.
+
 ## Confidence
 
 - High.
+
+## Verification
+
+- 31 unit tests pass (`test_config_loading`, `test_risk_helpers`, `test_risk_manager_str`, `test_cli`).
+- Additional smoke tests pass: basic fill, ORDER_REJECTED event, batch atomic, no-price notional, portfolio daily PnL tracking.

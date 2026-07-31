@@ -40,12 +40,13 @@ class RiskManager:
         if active:
             return RiskCheckResult(False, reason)
 
-        notional_price = price or order.price or order.avg_fill_price or Decimal("0")
-        notional = order.quantity * notional_price
-        if notional < self.limits.min_order_size_usd:
-            return RiskCheckResult(False, "Order below minimum size", notional, self.limits.min_order_size_usd)
-        if notional > self.limits.max_order_size_usd:
-            return RiskCheckResult(False, "Order above maximum size", notional, self.limits.max_order_size_usd)
+        notional_price = price or order.price or order.avg_fill_price
+        notional = order.quantity * notional_price if notional_price else Decimal("0")
+        if notional_price is not None:
+            if notional < self.limits.min_order_size_usd:
+                return RiskCheckResult(False, "Order below minimum size", notional, self.limits.min_order_size_usd)
+            if notional > self.limits.max_order_size_usd:
+                return RiskCheckResult(False, "Order above maximum size", notional, self.limits.max_order_size_usd)
 
         state = self.portfolio.get_state()
         if state.total_equity > 0:

@@ -10,8 +10,8 @@ import sys
 
 import pytest
 
-from cryptobot.cli import main as cli_main
-from cryptobot.cli.main import build_parser, main as _main
+from cryptobot.cli import main as cli_main_module
+from cryptobot.cli.main import build_parser, main as _main, _run
 
 
 # --- parser -------------------------------------------------------------
@@ -65,7 +65,7 @@ async def test_paper_returns_zero():
 
 async def _run_async(args: argparse.Namespace) -> int:
     """Run the async _run function directly (bypassing asyncio.run)."""
-    return await cli_main._run(args)
+    return await _run(args)
 
 
 def test_main_help_exits(monkeypatch):

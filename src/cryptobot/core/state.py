@@ -19,6 +19,8 @@ from cryptobot.core.events import (
 try:
     import sqlite3
 except ModuleNotFoundError:
+    import logging
+    logging.getLogger(__name__).warning("sqlite3 unavailable; state persistence disabled")
     sqlite3 = None
 
 

@@ -37,8 +37,8 @@ class BinanceWSClient:
         self._max_reconnect_delay = 60
         self._last_ping = 0
         self._ping_interval = 20
-        self._symbols = settings.exchange.symbols
-        self._timeframes = settings.exchange.timeframes
+        self._symbols = settings.exchange.symbols or [settings.exchange.default_symbol]
+        self._timeframes = settings.exchange.timeframes or ["1m"]
 
     async def start(self):
         self.running = True

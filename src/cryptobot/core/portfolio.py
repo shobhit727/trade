@@ -174,12 +174,20 @@ class PortfolioManager:
     async def update_equity(self, equity: Decimal):
         """Update portfolio equity and recalculate metrics."""
         async with self._lock:
+            now = datetime.utcnow()
+            if not self._equity_curve:
+                self._daily_pnl_start = equity
+            else:
+                last_time = self._equity_curve[-1][0]
+                if last_time.date() < now.date():
+                    self.reset_daily_pnl()
+
             if self._state.total_equity > 0:
                 daily_return = (equity - self._state.total_equity) / self._state.total_equity
                 self._daily_returns.append(daily_return)
 
             self._state.total_equity = equity
-            self._equity_curve.append((datetime.utcnow(), equity))
+            self._equity_curve.append((now, equity))
 
             if equity > self._state.peak_equity:
                 self._state.peak_equity = equity

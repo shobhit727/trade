@@ -464,13 +464,19 @@ class AlertManager:
 
     async def stop(self):
         """Stop alert manager."""
+        if not self._running:
+            return
         self._running = False
-        if self._cleanup_task:
-            self._cleanup_task.cancel()
+        task = self._cleanup_task
+        self._cleanup_task = None
+        if task:
+            task.cancel()
             try:
-                await self._cleanup_task
+                await task
             except asyncio.CancelledError:
                 pass
+            except Exception as e:
+                logger.error(f"Error awaiting cleanup task: {e}")
 
     async def _cleanup_loop(self):
         """Periodic cleanup of old alerts and cooldowns."""
@@ -616,7 +622,8 @@ def get_alert_manager() -> AlertManager:
 async def init_alerting() -> AlertManager:
     """Initialize and start alert manager."""
     manager = get_alert_manager()
-    await manager.start()
+    if manager.channels:
+        await manager.start()
     return manager
 
 

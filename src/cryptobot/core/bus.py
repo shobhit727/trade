@@ -115,8 +115,28 @@ class EventBus:
 
     async def publish_batch(self, events: List[Event]) -> int:
         total = 0
-        for event in events:
-            total += await self._dispatch(event)
+        async with self._lock:
+            for event in events:
+                self._history.append(event)
+                target_ids: Set[str] = set(self._type_index.get(event.type, set()))
+                target_ids.update(self._wildcard_subs)
+                subs = [self._subscriptions[sid] for sid in target_ids if sid in self._subscriptions]
+
+                for sub in subs:
+                    if sub.filter_fn and not sub.filter_fn(event):
+                        continue
+                    try:
+                        if sub.async_callback:
+                            await sub.async_callback(event)
+                        elif sub.callback:
+                            result = sub.callback(event)
+                            if asyncio.iscoroutine(result):
+                                await result
+                        sub.event_count += 1
+                        total += 1
+                    except Exception as e:
+                        import logging
+                        logging.getLogger(__name__).exception("Error in subscriber %s: %s", sub.id, e)
         return total
 
     async def _dispatch(self, event: Event) -> int:
