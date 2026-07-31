@@ -31,10 +31,30 @@ jobs:
       - name: Pyflakes
         run: pyflakes src tests
 
+  cargo-lint:
+    name: Rust lint (fmt + clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  cargo-test:
+    name: Rust tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo test
+        run: cargo test --workspace
+
   unit:
     name: Unit tests (Python 3.14)
     runs-on: ubuntu-latest
-    needs: lint
+    needs: [lint, cargo-lint, cargo-test]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -65,11 +85,11 @@ jobs:
       - name: Run pytest inside test container
         run: docker run --rm cryptobot:test
 
-  docker-buildx:
+  docker-build:
     name: Docker buildx (amd64 + arm64)
     runs-on: ubuntu-latest
     needs: [lint, unit, docker-test]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     permissions:
       contents: read
       packages: write
@@ -84,7 +104,7 @@ jobs:
           platforms: arm64
       - uses: docker/setup-buildx-action@v3
       - name: Login to GHCR
-        if: matrix.platform == 'linux/amd64'
+        if: github.event_name == 'push' && matrix.platform == 'linux/amd64'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -105,9 +125,9 @@ jobs:
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          push: ${{ matrix.platform == 'linux/amd64' }}
+          push: ${{ github.event_name == 'push' && matrix.platform == 'linux/amd64' }}
       - name: Manifest list (merge)
-        if: matrix.platform == 'linux/amd64'
+        if: github.event_name == 'push' && matrix.platform == 'linux/amd64'
         run: |
           docker buildx imagetools create \
             -t ${{ env.REGISTRY_IMAGE }}:${{ github.sha }} \
