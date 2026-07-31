@@ -48,7 +48,7 @@ The following were listed previously and are now resolved or shipped:
 - DI container (`dependency-injector`).
 - Replace global singletons with `Settings` + lifetime.
 - Add OpenTelemetry tracing for `EventBus.publish`/`_dispatch`.
-- Add `prometheus_client` switch: `MetricsCollector` interface so non-Prometheus backend can be used (avoid eager import — related to B051).
+- ~~Add `prometheus_client` switch: `MetricsCollector` interface so non-Prometheus backend can be used (avoid eager import — related to B051)~~ — resolved 2026-07-31 via `_NoOpMetric` stub; future: add an explicit `MetricsBackend` protocol for swappable backends (e.g., OpenTelemetry, statsd).
 
 ## Nice-to-have
 

@@ -67,7 +67,7 @@
 
 ## Anti-patterns still observed
 
-- `monitoring/__init__.py` eagerly re-exports `cryptobot.monitoring.metrics` (Prometheus dep at import time) — B051 still Open; importers should use lazy imports where applicable.
+- ~~`monitoring/__init__.py` eagerly re-exports `cryptobot.monitoring.metrics` (Prometheus dep at import time)~~ — **B051 resolved 2026-07-31**: `metrics.py` exposes `PROMETHEUS_AVAILABLE` + `_NoOpMetric` stub; `alerting.py` defers `import aiohttp` to per-channel `_send`; `monitoring/__init__.py` lazy via `__getattr__`. Covered by `tests/unit/test_monitoring_lazy_imports.py`.
 - 6 dead empty dirs under `src/cryptobot/` — left in tree.
 
 ## Confidence

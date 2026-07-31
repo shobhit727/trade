@@ -32,7 +32,7 @@
 ## To verify
 
 - AV-1: `cryptobot` service's `8080/health` HTTP endpoint actually exists. Yes — `utils/health_server.py` + `cli serve`.
-- AV-2: `monitoring/metrics.py` import under no-Prometheus env. Fails at import; B051 still Open. Document for consumers.
+- AV-2: `monitoring/metrics.py` import under no-Prometheus env. **Resolved 2026-07-31** (try/except + `_NoOpMetric` stub + `PROMETHEUS_AVAILABLE` flag).
 - AV-3: `Settings` parser handles YAML `version: "1.0"` key quietly (verified — ignored).
 - AV-4: `Settings` parser handles missing `xmr.daemon` group (verified — defaults).
 - AV-5: `BinanceWSClient.start` works with empty `settings.exchange.symbols` (verified — falls back to `default_symbol` + `["1m"]`, B044).

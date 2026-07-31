@@ -3,11 +3,90 @@ Prometheus metrics for the trading system.
 
 Provides counters, histograms, and gauges for monitoring
 trading performance, system health, and risk metrics.
+
+When ``prometheus_client`` is not installed, ``PROMETHEUS_AVAILABLE`` is
+``False`` and every metric object below is replaced with a no-op stub
+whose ``.inc``/``.set``/``.observe``/``.labels`` etc. are harmless
+no-ops. This keeps ``import cryptobot.monitoring`` and submodule
+imports cheap when the binary is run in environments without the
+optional dependency (e.g. a slim test container).
 """
 
 from __future__ import annotations
 
-from prometheus_client import Counter, Gauge, Histogram, Info, CollectorRegistry, generate_latest
+try:
+    from prometheus_client import (
+        Counter as _RealCounter,
+        Gauge as _RealGauge,
+        Histogram as _RealHistogram,
+        Info as _RealInfo,
+        CollectorRegistry as _RealCollectorRegistry,
+        generate_latest as _real_generate_latest,
+    )
+    PROMETHEUS_AVAILABLE = True
+except Exception:
+    PROMETHEUS_AVAILABLE = False
+
+    class _NoOpLabels:
+        def __getattr__(self, _name):
+            return lambda *_a, **_kw: None
+
+    class _NoOpMetric:
+        def __init__(self, *_a, **_kw):
+            pass
+
+        def labels(self, *_a, **_kw):
+            return _NoOpLabels()
+
+        def inc(self, *_a, **_kw):
+            return None
+
+        def dec(self, *_a, **_kw):
+            return None
+
+        def set(self, *_a, **_kw):
+            return None
+
+        def observe(self, *_a, **_kw):
+            return None
+
+        def time(self):
+            from contextlib import nullcontext
+
+            return nullcontext()
+
+        def info(self, *_a, **_kw):
+            return None
+
+    class _NoOpRegistry:
+        def __init__(self, *_a, **_kw):
+            pass
+
+    _RealCounter = _RealGauge = _RealHistogram = _RealInfo = _NoOpMetric
+    _RealCollectorRegistry = _NoOpRegistry
+
+    def _real_generate_latest(_registry):
+        return b""
+
+
+if PROMETHEUS_AVAILABLE:
+    Counter = _RealCounter
+    Gauge = _RealGauge
+    Histogram = _RealHistogram
+    Info = _RealInfo
+    CollectorRegistry = _RealCollectorRegistry
+    generate_latest = _real_generate_latest
+else:
+    Counter = _NoOpMetric
+    Gauge = _NoOpMetric
+    Histogram = _NoOpMetric
+    Info = _NoOpMetric
+    CollectorRegistry = _NoOpRegistry
+
+    def generate_latest(_registry):
+        return b""
+
+
 from cryptobot.config import settings
 
 

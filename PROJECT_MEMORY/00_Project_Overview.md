@@ -31,7 +31,7 @@ Repo documents the goal of an institutional-grade retail-trading bot. Source-of-
 - `src/cryptobot/strategies/`: BaseStrategy, registry, **6 concrete strategies** (mean_reversion, trend_following, stat_arb, funding_arb, market_making, ml_strategy) — all implemented. YAML `strategies.enabled` now wired via `load_strategies_from_config` (B057/B059).
 - `src/cryptobot/risk/`: limits, sizing, kill_switch, manager (B060/B061 notional price > 0), correlation — implemented.
 - `src/cryptobot/execution/`: engine (B040 ORDER_REJECTED), algorithms (TWAP/VWAP/POV/IS/Iceberg/sweep/arrival/vwap_schedule), router (SmartOrderRouter), adverse_selection (AdverseSelectionGuard), venue/base+simulated+binance — implemented.
-- `src/cryptobot/monitoring/`: metrics (Gauge for PnL, B025), alerting (lazy init B031, shared executor B067), health (async-aware, runtime mutators B043), dashboard — implemented. `monitoring/__init__.py` eager-imports `metrics` (B051 still Open).
+- `src/cryptobot/monitoring/`: metrics (Gauge for PnL, B025), alerting (lazy init B031, shared executor B067), health (async-aware, runtime mutators B043), dashboard — implemented. **`metrics` + `alerting` are optional-deps-tolerant** (B051 resolved 2026-07-31): no-op `_NoOpMetric` stubs when `prometheus_client` missing; `aiohttp` deferred to per-channel `_send` methods.
 - `src/cryptobot/cli/main.py`: argparse with `validate`, `paper`, `bot`, `serve` subcommands — implemented (`serve` starts `HealthServer`).
 - `src/cryptobot/ml/`: features (8), models/direction (sklearn logreg + numpy fallback; train stats persisted, B065), online (WalkForwardTrainer + DriftDetector) — implemented. volatility/regime/ensemble still missing.
 - `tests/unit/`: 22 test files covering all major modules.
@@ -61,7 +61,7 @@ Repo documents the goal of an institutional-grade retail-trading bot. Source-of-
 
 - ~~`Cargo.toml [workspace] members` lists 7; only 1 has a manifest. `cargo build` fails until trimmed or per-crate manifests added.~~ → **resolved 2026-07-31** (trimmed to `["crates/cryptobot-core"]`, deleted 6 empty sibling dirs, `lib.rs` stub + unit test).
 - 6 dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/`.
-- `monitoring/__init__.py` eager-imports metrics (B051 still Open).
+- ~~`monitoring/__init__.py` eager-imports metrics~~ → resolved 2026-07-31 (B051: no-op `_NoOpMetric` stub + lazy aiohttp; `monitoring/__init__.py` lazy via `__getattr__`).
 - ML models `volatility.py`, `regime.py`, `ensemble.py` still missing.
 
 ## Confidence per subject

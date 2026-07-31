@@ -105,7 +105,7 @@ ml.online.DriftDetector.score(...)  # detects mean/std shift on incoming feature
 ## Failure modes
 
 - **No sqlite3**: `core.state.StateManager` logs a warning (B024), skips DB init; persistence silently disabled. State diverges across restart.
-- **No prometheus_client**: `monitoring.metrics` import fails. `monitoring/__init__.py` eagerly re-exports metrics symbols; importing `cryptobot.monitoring` from a no-Prometheus env crashes (B051 still open).
+- **No prometheus_client**: `monitoring.metrics` no longer crashes — wraps import in try/except and exposes `_NoOpMetric` stubs (B051 resolved 2026-07-31). `monitoring/__init__.py` lazy via `__getattr__`.
 - **No asyncpg**: `data.storage.TimescaleDBStorage` import-time dependency; `data/__init__.py` re-exports it.
 - **No pandas**: `data.cleaning` import fails; `data/__init__.py` re-exports.
 - **No aiohttp**: `data.ingestion` import fails; `market_data.manager` import fails. After import, `_ensure_session()` lazy-creates and reuses a session (B042).

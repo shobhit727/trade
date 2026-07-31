@@ -92,6 +92,15 @@
 - Bypassing `risk/manager.py` would be catastrophic. No guard today.
 - `state_manager` silent no-op on missing `_sqlite3` is invisible to users — now logs warning (B024).
 
+## Lazy noop fallbacks for monitoring (B051, resolved)
+
+When `prometheus_client` or `aiohttp` are absent, `cryptobot.monitoring.{metrics, alerting}` import cleanly:
+
+- `metrics.py` exposes `PROMETHEUS_AVAILABLE` and a `_NoOpMetric` stub that swallows `.inc/.set/.observe/.labels/.time/.info/.dec` calls.
+- `alerting.py` defers `import aiohttp` to the HTTP channel `_send` methods.
+- `monitoring/__init__.py` already routes symbol access through `__getattr__` so the package facade never touches the failing submodules until a symbol is actually requested.
+- New `tests/unit/test_monitoring_lazy_imports.py` covers the no-op fallbacks (subprocess + AST).
+
 ## Confidence
 
 - High.

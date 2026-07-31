@@ -20,7 +20,7 @@
 - **R10**: ~~`risk/manager.py` uses `Decimal("0")` fallback when no price set~~ — **resolved**: notional check skipped when no valid price (B038, B060, B061 fetches market price pre-check).
 - **R11**: ~~`utils/decorators.py` jitter can produce negative sleep~~ — **resolved**: clamped to `max(0.0, sleep_time)` (B027).
 - **R12**: ~~`utils/decorators.py` `circuit_breaker` sync wrapper breaks in async context~~ — **resolved**: raises `RuntimeError` in running loop (B028).
-- **R13**: `monitoring/__init__.py` eagerly imports `cryptobot.monitoring.metrics` — B051 still Open. Document for consumers; consider lazy re-exports.
+- **R13**: ~~`monitoring/__init__.py` eagerly imports `cryptobot.monitoring.metrics`~~ — **B051 resolved 2026-07-31** (no-op fallback + lazy aiohttp).
 
 ## Business
 

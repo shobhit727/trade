@@ -18,8 +18,6 @@ from typing import Any, Callable, Dict, List, Optional, Set
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-import aiohttp
-
 from cryptobot.config import settings
 from cryptobot.utils.logging import get_logger
 
@@ -135,6 +133,7 @@ class TelegramChannel(NotificationChannel):
         }
 
         try:
+            import aiohttp
             async with aiohttp.ClientSession() as session:
                 async with session.post(self.api_url, json=payload, timeout=10) as resp:
                     if resp.status == 200:
@@ -192,6 +191,7 @@ class DiscordChannel(NotificationChannel):
         payload = {"embeds": [embed]}
 
         try:
+            import aiohttp
             async with aiohttp.ClientSession() as session:
                 async with session.post(self.webhook_url, json=payload, timeout=10) as resp:
                     if resp.status in (200, 204):
@@ -331,6 +331,7 @@ class PagerDutyChannel(NotificationChannel):
         }
 
         try:
+            import aiohttp
             async with aiohttp.ClientSession() as session:
                 async with session.post(self.api_url, json=payload, timeout=10) as resp:
                     if resp.status == 202:
