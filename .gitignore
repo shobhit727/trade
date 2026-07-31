@@ -12,6 +12,7 @@ htmlcov/
 *.egg-info/
 dist/
 build/
+target/
 .venv/
 venv/
 env/
@@ -26,3 +27,4 @@ data/parquet/
 data/cache/
 logs/
 *.log
+

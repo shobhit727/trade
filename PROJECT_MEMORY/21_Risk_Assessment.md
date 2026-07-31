@@ -16,7 +16,7 @@
 - **R6**: ~~`monitoring/metrics.py` Prometheus `Counter` cannot accept negative PnL~~ — **resolved**: `total_pnl` is now `Gauge` (B025/B037).
 - **R7**: `core/clock.py` `SimulatedClock` lacks lock around `pause`/`resume`. Race possible — not yet exercised by tests.
 - **R8**: ~~`execution/venue/binance.py` absent~~ — **resolved**: `BinanceVenue` via `ccxt.async_support` with sandbox/retries/credential guards (current `binance.py`).
-- **R9**: `crates/` empty / non-buildable. Workspace lists 7 members; only 1 has a `Cargo.toml`. `cargo build` fails until either each gets a manifest or the array is trimmed. CLI/CI do not run cargo.
+- **R9**: ~~`crates/` empty / non-buildable.~~ **Resolved 2026-07-31**: workspace `members` trimmed to `["crates/cryptobot-core"]`; 6 empty sibling crates deleted; `cryptobot-core` has `lib.rs` stub + passing unit test; `cargo build` + `cargo test` clean.
 - **R10**: ~~`risk/manager.py` uses `Decimal("0")` fallback when no price set~~ — **resolved**: notional check skipped when no valid price (B038, B060, B061 fetches market price pre-check).
 - **R11**: ~~`utils/decorators.py` jitter can produce negative sleep~~ — **resolved**: clamped to `max(0.0, sleep_time)` (B027).
 - **R12**: ~~`utils/decorators.py` `circuit_breaker` sync wrapper breaks in async context~~ — **resolved**: raises `RuntimeError` in running loop (B028).

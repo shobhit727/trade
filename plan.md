@@ -1,8 +1,8 @@
 # Cryptobot - Elite Quantitative Trading System
 ## Master Plan & Architecture Document
 
-> **Status**: Active development | **Last Updated**: 2026-07-31 (audit v2; doc/code sync + Rust workspace defect flagged)
-> **Context**: Core, backtester, risk, execution, monitoring, ML core (features + direction + walk-forward + drift + MLStrategy), live exchange adapter, smart order router, adverse-selection guard, health server, K8s manifests (Service + HPA + kustomization), multi-arch CI, TimescaleDB migrations, YAML-driven strategy registry all implemented. **Rust workspace declares 7 members but only `cryptobot-core` has a `Cargo.toml`; `cargo build` from root fails on the other 6 missing manifests — trim the array or add per-crate manifests.** Verified against `PROJECT_MEMORY/26_Audit_2026-07-31_v2.md` (which supersedes `25_Audit_2026-07-31.md`).
+> **Status**: Active development | **Last Updated**: 2026-07-31 (audit v3; Rust workspace now buildable + docs sync)
+> **Context**: Core, backtester, risk, execution, monitoring, ML core (features + direction + walk-forward + drift + MLStrategy), live exchange adapter, smart order router, adverse-selection guard, health server, K8s manifests (Service + HPA + kustomization), multi-arch CI, TimescaleDB migrations, YAML-driven strategy registry, **buildable Rust workspace (`cargo build` + `cargo test` clean)** all implemented. Verified against `PROJECT_MEMORY/26_Audit_2026-07-31_v2.md` and `24_Agent_Log.md` session "audit v3".
 > **Current Python**: 3.14 (Docker base `python:3.14-slim`).
 > **Repository**: `git@github.com:shobhit727/trade.git` (private).
 
@@ -69,7 +69,7 @@
 | Compose | `docker-compose.yml` | ✅ Test + default profiles valid (monitoring dirs scaffolded). |
 | `.dockerignore` | `.dockerignore` | ✅ Minimal context. |
 | `.gitignore` | `.gitignore` | ✅ Includes `__pycache__/`. |
-| Cargo workspace | `Cargo.toml` + 7 member crates | ⚠️ Workspace lists 7 members; only `crates/cryptobot-core/Cargo.toml` exists. Other 6 members (`backtest`, `features`, `orderbook`, `py`, `risk`, `stats`) have empty `src/`, `benches/`, `tests/` but **no manifest**. `cargo build` from root fails on missing member manifests. Trim `members` array to just `cryptobot-core`, or add a `Cargo.toml` to each empty crate. |
+| Cargo workspace | `Cargo.toml` + 1 member crate | ✅ Workspace trimmed to `["crates/cryptobot-core"]`; 6 empty sibling crate dirs deleted. `cryptobot-core` has manifest + `lib.rs` stub + 1 unit test. `cargo build` + `cargo test` clean (rustup stable 1.97.1). Empty `src/{events,math,time,types}/` subdirs preserved for future surface. `.cargo/config.toml` carries per-target rustflags. |
 | `pyproject.toml` | `pyproject.toml` | ✅ setuptools build + CLI entry. |
 | Migrations SQL | `migrations/001_extension.sql`, `002_hypertables.sql` | ✅ TimescaleDB schema. |
 | ML Features | `src/cryptobot/ml/features.py` | ✅ 8 features (returns, RSI, MACD, ATR ratio, BB pos+width, log volume). |
@@ -262,7 +262,7 @@ src/cryptobot/
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | **Primary Language** | Python 3.14 | ML ecosystem, rapid iteration. `Dockerfile` uses `python:3.14-slim`. |
-| **Performance-Critical** | **Rust (via PyO3/maturin)** — pending | Backtest engine, fill simulator, feature computation, order book math. Currently: workspace manifest declares 7 members but only `cryptobot-core` has a `Cargo.toml`; the other 6 are empty skeletons (no manifest). `cryptobot-core/src/{events,math,time,types}/` are empty subdirs with no `lib.rs`. `cargo build` from root fails on missing member manifests. CI does not run cargo. |
+| **Performance-Critical** | **Rust (via PyO3/maturin)** — pending | Backtest engine, fill simulator, feature computation, order book math. Currently: workspace trimmed to 1 member (`cryptobot-core`) with manifest + `lib.rs` stub (`pub fn placeholder`) + 1 unit test; `cargo build` + `cargo test` clean. Sibling crates (`backtest`, `features`, `orderbook`, `py`, `risk`, `stats`) deleted until each gets a manifest + `lib.rs`. CI does not yet run cargo. |
 | **Async Framework** | asyncio + aiohttp | Native, high-performance, WebSocket support |
 | **Database** | TimescaleDB + SQLite | Time-series optimized, local dev friendly |
 | **Message Bus** | Redis Streams + local asyncio | Pub/sub, replay, persistence |
@@ -302,16 +302,18 @@ src/cryptobot/
 ### Rust Crate Structure (`crates/`)
 ```
 crates/
-├── cryptobot-core/          # Shared types, events, math
-├── cryptobot-backtest/      # Event-driven backtester, fill simulator
-├── cryptobot-features/      # Feature computation (SIMD optimized)
-├── cryptobot-risk/          # Risk math: Kelly, CVaR, HRP, correlation
-├── cryptobot-stats/         # Statistical validation: PBO, Monte Carlo, deflated Sharpe
-├── cryptobot-orderbook/     # Order book operations, VPIN, microstructure
-└── cryptobot-py/            # PyO3 bindings for Python integration
+├── cryptobot-core/          # Shared types, events, math  ← implemented (lib.rs stub)
+├── cryptobot-backtest/      # Event-driven backtester, fill simulator  ← pending
+├── cryptobot-features/      # Feature computation (SIMD optimized)  ← pending
+├── cryptobot-risk/          # Risk math: Kelly, CVaR, HRP, correlation  ← pending
+├── cryptobot-stats/         # Statistical validation: PBO, Monte Carlo, deflated Sharpe  ← pending
+├── cryptobot-orderbook/     # Order book operations, VPIN, microstructure  ← pending
+└── cryptobot-py/            # PyO3 bindings for Python integration  ← pending
 ```
 
-**Current state**: Workspace manifest lists 7 members + populated `[workspace.dependencies]`. Only `crates/cryptobot-core/Cargo.toml` exists; the other 6 crate directories have empty `src/`, `benches/`, `tests/` skeletons but no `Cargo.toml`, so `cargo build` from root errors on missing member manifests. `cryptobot-core` itself has empty `src/{events,math,time,types}/` subdirs and no `lib.rs`, so the package compiles but produces no lib artifact. Not integrated in CI (no Cargo step in `.github/workflows/`). Trivial fix: trim `Cargo.toml [workspace] members` to `["crates/cryptobot-core"]`, or add a minimal `Cargo.toml` per empty member.
+Only `cryptobot-core` exists on disk today (with `lib.rs` stub + 1 unit test). The other 6 dirs were deleted 2026-07-31 (no manifest, only empty skeleton). Re-add each to `Cargo.toml [workspace] members` when implementing.
+
+**Current state** (post audit v3): workspace trimmed to 1 member (`cryptobot-core`) + `lib.rs` stub (`pub fn placeholder() -> &'static str`) + 1 unit test. `cargo build` + `cargo test` clean (rustup stable 1.97.1). Empty subdirs `crates/cryptobot-core/src/{events,math,time,types}/` preserved for future surface. Per-target `rustflags` live in `.cargo/config.toml`. Sibling crates (`backtest`, `features`, `orderbook`, `py`, `risk`, `stats`) deleted; re-add to `[workspace] members` when each gets a `Cargo.toml` + `lib.rs`. CI does not yet run cargo (no `.github/workflows/cargo.yml` job).
 
 ### Build & Deploy
 - **Local**: `maturin develop` (auto-compiles Rust, installs Python package)
@@ -457,7 +459,7 @@ mkdir -p docker seccomp compose scripts migrations
 - [ ] `src/cryptobot/ml/models/ensemble.py` — Stacking
 - [x] ✅ `src/cryptobot/ml/online.py` — WalkForwardTrainer (purged) + DriftDetector
 - [ ] `src/cryptobot/cli/optimize.py` — Parameter optimization (Optuna)
-- [ ] **Rust workspace** — trim `Cargo.toml [workspace] members` to `["crates/cryptobot-core"]`, or add minimal `Cargo.toml` per empty member (currently `cargo build` fails)
+- [x] ✅ **Rust workspace** — trimmed to `["crates/cryptobot-core"]`; 6 empty sibling dirs deleted; `lib.rs` stub + 1 unit test; `cargo build` + `cargo test` clean. Re-add each sibling when it gets a manifest.
 - [ ] **Remove dead dirs** under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/`
 
 ---
@@ -475,7 +477,7 @@ mkdir -p docker seccomp compose scripts migrations
 **Phase 4/6/8 overlap**: Core infrastructure ✅, Backtester ✅, Strategies 6/6 ✅ (ml_strategy.py created), ML core ✅, Execution ✅, Risk ✅, Monitoring ✅, Live/Compose ✅, K8s ✅. Next: Rust crate implementations, ML volatility/regime/ensemble models.
 
 ### Blockers
-- Rust workspace non-buildable — `Cargo.toml [workspace] members` declares 7, only `cryptobot-core` has a manifest; trim or add per-crate manifests
+- ~~Rust workspace non-buildable — `Cargo.toml [workspace] members` declared 7, only `cryptobot-core` had a manifest; trim or add per-crate manifests~~ → **resolved 2026-07-31** (workspace trimmed; 6 sibling dirs deleted; `lib.rs` stub + 1 unit test; `cargo build` + `cargo test` clean)
 - ML volatility / regime / ensemble models not implemented (disabled in `configs/base.yaml`)
 - Dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/` (delete or document)
 - `monitoring/__init__.py` eager-imports `metrics` (B051) — breaks import in no-Prometheus envs

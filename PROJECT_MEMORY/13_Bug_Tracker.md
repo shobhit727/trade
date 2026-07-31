@@ -58,6 +58,7 @@
 | B049 | `strategies/base.py` | `StrategyRegistry.__new__` printed on import. | Removed. |
 | B050 | `config.py` | `Settings(extra="ignore")` swallowed YAML mismatch. | Added `_flatten_yaml` and `Settings.from_yaml_safe`. |
 | B051 | `monitoring/__init__.py` | Eagerly imports `cryptobot.monitoring.metrics` → no-Prometheus env crashes on `import cryptobot.monitoring`. | **Open** — documented in `19_Open_Questions.md` AV-2; consider lazy re-exports. |
+| **NEW** | `Cargo.toml [workspace] members` + 6 empty `crates/*` | `cargo build` fails: workspace declared 7 members; only `cryptobot-core` had a `Cargo.toml`. | **Resolved 2026-07-31**: trimmed `members` to `["crates/cryptobot-core"]`; deleted 6 empty sibling dirs; moved `[target.*] rustflags` from virtual-manifest to `.cargo/config.toml` (illegal in virtual); fixed `[build-profile.*]` → `[profile.*]` key; fixed `python = ["pyo3"]` feature referencing missing `pyo3` dep (dropped); created `crates/cryptobot-core/src/lib.rs` stub. `cargo build` and `cargo test` now pass. |
 | B060 | `risk/manager.py:43-44` | Notional check bypassed for market orders. | Added `notional_price > 0` check; skip notional when no valid price. |
 | B061 | `execution/engine.py:40` | `check_order(order, order.price)` passed `None` for market orders. | Fetch market price via `venue.get_price()` for market orders before risk check. |
 | B062 | `backtest/engine.py:235` | `event.payload.get("price", event.payload.get("close_price", 0))` returned `"0"` if both missing. | Skip mark price update if no valid price in payload. |

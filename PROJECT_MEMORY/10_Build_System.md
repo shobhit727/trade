@@ -9,9 +9,9 @@
 |----------|--------|-------|
 | `Dockerfile` | ✅ | Multi-stage (`base`, `test`, `production`). ARG `REQUIREMENTS` swaps deps list. `python:3.14-slim`. |
 | `docker-compose.yml` | ✅ | Names: `timescaledb`, `redis`, `prometheus`, `alertmanager`, `grafana`, `loki`, `promtail`, `cryptobot`, `cryptobot-paper`, `cryptobot-backtest`, `cryptobot-test`, `nginx`. Profiles: `paper`, `backtest`, `test`, `tracing`. Default profile validates; monitoring subdirs scaffolded. |
-| `Cargo.toml` (root) | ⚠️ | Workspace manifest with 7 declared members + `[workspace.dependencies]`. Only `crates/cryptobot-core/Cargo.toml` exists; the other 6 members lack manifests. `cargo build` from root fails. |
-| `crates/cryptobot-core/Cargo.toml` | ⚠️ | Manifest present; `src/{events,math,time,types}/` empty subdirs; no `lib.rs` so the package compiles but produces no artifact. |
-| `crates/cryptobot-{backtest,features,orderbook,py,risk,stats}/Cargo.toml` | 🔲 | No manifest. Empty `src/`, `benches/`, `tests/` only. |
+| `Cargo.toml` (root) | ✅ | Workspace manifest with 1 member (`cryptobot-core`) + `[workspace.dependencies]`. `cargo build` + `cargo test` pass (verified 2026-07-31 with rustup stable 1.97.1). |
+| `crates/cryptobot-core/` | ✅ | Manifest + `lib.rs` stub (`pub fn placeholder`) + 1 unit test. Empty `src/{events,math,time,types}/` subdirs preserved for future surface. |
+| `crates/cryptobot-{backtest,features,orderbook,py,risk,stats}/` | 🔲 | Removed 2026-07-31 (no manifest). Re-add when each gets a `Cargo.toml` + `lib.rs`. |
 | `pyproject.toml` | ✅ | setuptools build + `cryptobot` CLI entry point. |
 | `setup.py` | n/a | Not used. |
 | `migrations/` | ✅ | `001_extension.sql`, `002_hypertables.sql`. Compose mounts the directory into TimescaleDB entrypoint. |

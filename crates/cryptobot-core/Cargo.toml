@@ -36,4 +36,4 @@ criterion = { workspace = true }
 
 [features]
 default = []
-python = ["pyo3"]
+# `python` feature (PyO3 bindings) deferred until cryptobot-py crate is reintroduced.

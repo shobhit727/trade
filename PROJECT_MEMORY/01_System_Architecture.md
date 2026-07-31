@@ -13,9 +13,11 @@
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
-│          Rust Layer (scaffolded; not buildable)                  │
-│  Cargo.toml (root) lists 7 members; only cryptobot-core has      │
-│  manifest. src/ empty across the workspace. cargo build fails.   │
+│          Rust Layer (buildable; core stub only)                 │
+│  Cargo.toml (root) → 1 member: cryptobot-core (lib.rs stub +    │
+│  unit test). Sibling crates (backtest/features/orderbook/py/    │
+│  risk/stats) deleted until each gets a Cargo.toml + lib.rs.     │
+│  `cargo build` + `cargo test` pass (rustup stable 1.97.1).      │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -35,7 +37,7 @@
 | Market Data | `manager.py` | ✅ Binance WS with fallback symbols+timeframes (B044). |
 | CLI | `main.py` | ✅ argparse `validate/paper/bot/serve` with real logic. |
 | ML | `features.py`, `online.py`, `models/direction.py` | ✅ Core. `volatility.py`, `regime.py`, `ensemble.py` 🔲 missing. Walk-forward stats persistence (B065). |
-| Rust | `crates/*` | 🔲 Workspace lists 7; only `cryptobot-core` has `Cargo.toml`. Other 6 have empty `src/{,benches,tests}/` but no manifest, so `cargo build` fails. |
+| Rust | `crates/*` | ✅ Workspace trimmed to 1 member (`cryptobot-core`) with `lib.rs` stub + 1 unit test. `cargo build` + `cargo test` pass. Empty `src/{events,math,time,types}/` subdirs preserved. Sibling crates removed (planned to be re-added when each gets a manifest). |
 
 ## Event flow (verified)
 

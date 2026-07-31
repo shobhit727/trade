@@ -14,7 +14,7 @@ Repo documents the goal of an institutional-grade retail-trading bot. Source-of-
 ## High-level architecture
 
 - Python orchestration: `src/cryptobot/` (22 unit test files, 30+ modules)
-- Rust scaffold: `Cargo.toml` declares 7 workspace members; only `cryptobot-core` has a `Cargo.toml`. `cargo build` from root fails until trimmed or per-crate manifests added.
+- Rust: `Cargo.toml` workspace with 1 member (`cryptobot-core`) + `lib.rs` stub; `cargo build` + `cargo test` clean. Sibling crates deleted until each gets a manifest.
 - Storage: TimescaleDB (prod), SQLite (in-process), Parquet (local)
 - Cache/Bus: Redis (intended), asyncio EventBus (in-process)
 - Observability: Prometheus + Grafana, Loki/Promtail, Alertmanager (all dirs scaffolded)
@@ -38,7 +38,7 @@ Repo documents the goal of an institutional-grade retail-trading bot. Source-of-
 - `docker-compose.yml`: full stack. Test profile ✅. Default profile ✅.
 - `deploy/k8s/`: namespace, ConfigMap, Secret, PVC, Deployment, **Service (ClusterIP)**, **HPA (v2 CPU/memory)**, kustomization. (B053)
 - `migrations/`: `001_extension.sql`, `002_hypertables.sql`.
-- `Cargo.toml` + 7 crates: `cryptobot-core` has manifest + empty `src/{events,math,time,types}/`; the other 6 directories exist with empty `src/{,benches,tests}/` but **no manifest**. `cargo build` fails.
+- `Cargo.toml` + 1 crate: `cryptobot-core` with `lib.rs` stub + unit test. `cargo build` + `cargo test` clean. Sibling crates deleted until each gets a manifest.
 - `pyproject.toml`: setuptools build + CLI entry.
 
 ## Notable resolved discrepancies (audit v1 → v2)
@@ -57,8 +57,9 @@ Repo documents the goal of an institutional-grade retail-trading bot. Source-of-
 
 ## Remaining real gaps
 
-- `Cargo.toml [workspace] members` lists 7; only 1 has a manifest. `cargo build` fails until trimmed or per-crate manifests added.
-- `crates/cryptobot-core/src/{events,math,time,types}/` empty subdirs; no `lib.rs` so the crate doesn't produce artifacts.
+## Remaining real gaps
+
+- ~~`Cargo.toml [workspace] members` lists 7; only 1 has a manifest. `cargo build` fails until trimmed or per-crate manifests added.~~ → **resolved 2026-07-31** (trimmed to `["crates/cryptobot-core"]`, deleted 6 empty sibling dirs, `lib.rs` stub + unit test).
 - 6 dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/`.
 - `monitoring/__init__.py` eager-imports metrics (B051 still Open).
 - ML models `volatility.py`, `regime.py`, `ensemble.py` still missing.

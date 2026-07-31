@@ -10,5 +10,11 @@
 !configs/**
 !migrations/
 !migrations/**
+!crates/
+!crates/**
+!Cargo.toml
+!Cargo.lock
+!.cargo/
+!.cargo/**
 !PROJECT_MEMORY/
 !PROJECT_MEMORY/12_Feature_Status.md

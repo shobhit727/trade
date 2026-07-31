@@ -69,9 +69,10 @@ Used by `docker compose --profile test run --rm cryptobot-test`.
 
 ## Rust
 
-- `Cargo.toml` (root): declares 7 workspace members in `[workspace] members = [...]`. `[workspace.dependencies]` fully populated.
-- Only `crates/cryptobot-core/Cargo.toml` exists. Other 6 members (`cryptobot-backtest`, `cryptobot-features`, `cryptobot-orderbook`, `cryptobot-py`, `cryptobot-risk`, `cryptobot-stats`) have only empty `src/`, `benches/`, `tests/` skeletons — no manifest. `cargo build` from repo root errors until each gets a `Cargo.toml` (or the array is trimmed).
-- `crates/cryptobot-core/src/{events,math,time,types}/` are empty subdirs; the package itself compiles against the manifest but with no `lib.rs` it doesn't produce artifacts.
+- `Cargo.toml` (root): workspace with 1 member (`cryptobot-core`) + populated `[workspace.dependencies]`. `cargo build` + `cargo test` verified (rustup stable 1.97.1, 2026-07-31).
+- `crates/cryptobot-core/src/lib.rs`: stub `pub fn placeholder() -> &'static str` + 1 unit test.
+- `crates/cryptobot-core/src/{events,math,time,types}/`: empty subdirs preserved for future surface.
+- `.cargo/config.toml`: per-target `rustflags = ["-C", "target-cpu=native"]` for x86_64 / aarch64 Linux.
 
 ## Docker base
 

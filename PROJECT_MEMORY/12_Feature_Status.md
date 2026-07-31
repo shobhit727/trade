@@ -64,8 +64,8 @@
 | `.github/workflows/ci.yml` | ✅ | Lint + unit + compose-validate + buildx matrix (amd64 + arm64). |
 | `.github/workflows/release.yml` | ✅ | Tag-driven multi-arch publish + SBOM + provenance. |
 | `scripts/build_multiarch.sh` | ✅ | Local multi-arch build via buildx + QEMU. |
-| `crates/cryptobot-core/` | ⚠️ | Manifest only; `src/{events,math,time,types}/` are empty subdirs; no `lib.rs`. Compiles against manifest but produces no artifact. |
-| `crates/cryptobot-{backtest,features,risk,stats,orderbook,py}/` | 🔲 | No `Cargo.toml` despite being listed in workspace `members`. `cargo build` from root fails. Each dir has only empty `src/`, `benches/`, `tests/`. Trim array or add per-crate manifests. |
+| `crates/cryptobot-core/` | ✅ | Manifest + `lib.rs` stub (`pub fn placeholder() -> &'static str`); 1 unit test passes. `cargo build` and `cargo test` succeed. Empty `src/{events,math,time,types}/` subdirs preserved for future surface. |
+| `crates/cryptobot-{backtest,features,risk,stats,orderbook,py}/` | 🔲 | Deleted 2026-07-31 (no manifest, only empty skeleton). Workspace `members` trimmed to `["crates/cryptobot-core"]`. Re-add when each gets a `Cargo.toml` + `lib.rs`. |
 | `pyproject.toml` | ✅ | setuptools build + `cryptobot` CLI entry point. |
 | `migrations/*.sql` | ✅ | `001_extension.sql`, `002_hypertables.sql`. |
 | `docker-compose.yml` | ✅ | Test + default profiles valid (monitoring dirs scaffolded: `monitoring/{loki,promtail,nginx}`). |

@@ -78,7 +78,7 @@
 | Drop `lightgbm` from `requirements/prod.txt` | 5 min | Medium | **Done** (B055) |
 | Fix `configs/base.yaml` `ml.models.direction.type` mismatch | 5 min | Medium | **Done** (B058) |
 | Add `data/features.py` as alias | 1 day | Medium | **Done** (B056) |
-| **Fix Rust workspace (trim members or add manifests)** | 5 min | **High** | **Open** |
+| **Fix Rust workspace (trim members or add manifests)** | 5 min | **High** | **Done** — trimmed to `["crates/cryptobot-core"]`, deleted 6 empty sibling crate dirs, added `lib.rs` stub, moved `[target.*]` to `.cargo/config.toml`, fixed `[build-profile]` key, dropped dead `python` feature. `cargo build` + `cargo test` pass. |
 | **Tighten `BinanceWSClient` fallback to log when fired** | 5 min | Low | **Open** |
 
 ## Removal candidates

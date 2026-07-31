@@ -3,6 +3,37 @@
 > **Last Updated**: 2026-07-31 (audit v2)
 > **Confidence**: High.
 
+## Session 2026-07-31 (audit v3 — Rust workspace fix)
+
+### Goal
+
+Resolve the **High** item from audit v2: `cargo build` fails because `Cargo.toml [workspace] members` listed 7 crates but only `cryptobot-core` had a `Cargo.toml`.
+
+### Sequence
+
+1. Verified `crates/cryptobot-{backtest,features,orderbook,py,risk,stats}/` contain only empty `src/`, `tests/`, `benches/` skeletons (no source files, no manifest). Deleted all 6 dirs.
+2. Trimmed `[workspace] members` in `Cargo.toml` to `["crates/cryptobot-core"]` only.
+3. First `cargo build` failed: `[target.*] rustflags` illegal in virtual manifests → moved those key/values to `.cargo/config.toml`.
+4. Second `cargo build` failed: `python = ["pyo3"]` feature in `cryptobot-core/Cargo.toml` referenced a dep that wasn't in `[dependencies]`. Dropped the feature (Python bindings are deferred until the `cryptobot-py` crate is reintroduced).
+5. Created `crates/cryptobot-core/src/lib.rs` stub: `pub fn placeholder() -> &'static str` + 1 unit test.
+6. Third `cargo build` ran but warned `unused manifest key: build-profile` → renamed `[build-profile.dev]` and `[build-profile.release]` to `[profile.dev]` and `[profile.release]` (current cargo syntax).
+7. `cargo build` clean (~1m 6s). `cargo test`: 1 test passing. `cargo build --release` clean. Rustup stable 1.97.1.
+8. Added `target/` to `.gitignore` and `target/` to `.dockerignore`. Added `Cargo.toml`, `Cargo.lock`, `!crates/`, `!.cargo/` to `.dockerignore` allowlist (Rust sources may need to be built inside the buildx layer).
+9. Refreshed memory docs: `01` (Rust layer block + table), `09` (Rust section), `10` (Build system table), `12` (feature status rows for cryptobot-core and the deleted siblings), `13` (Rust workspace defect → Resolved), `14` (Rust fix → Done), `21` (R9 → Resolved), `22` (Rust quick-win status), `26` (audit v2 §1 + §7 status block), `00_Project_Overview` (Remaining real gaps).
+
+### Verified
+
+- `cargo build` (debug + release) clean — no warnings.
+- `cargo test`: `tests::placeholder_returns_name` passes.
+- `cargo metadata --no-deps`: workspace has 1 member `cryptobot-core@0.1.0`; resolve has no errors.
+- 6 empty sibling crate dirs gone from `crates/`.
+
+### Remaining gaps after this pass
+
+- 6 dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/`.
+- `monitoring/__init__.py` eager-imports metrics (B051 still Open).
+- ML `volatility.py`, `regime.py`, `ensemble.py` missing.
+
 ## Session 2026-07-31 (audit v2 — current pass)
 
 ### User goals

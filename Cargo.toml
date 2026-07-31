@@ -2,12 +2,6 @@
 resolver = "2"
 members = [
     "crates/cryptobot-core",
-    "crates/cryptobot-backtest",
-    "crates/cryptobot-features",
-    "crates/cryptobot-risk",
-    "crates/cryptobot-stats",
-    "crates/cryptobot-orderbook",
-    "crates/cryptobot-py",
 ]
 
 [workspace.package]
@@ -66,11 +60,11 @@ toml = "0.8"
 criterion = "0.5"
 proptest = "1.0"
 
-[build-profile.dev]
+[profile.dev]
 opt-level = 1
 debug = true
 
-[build-profile.release]
+[profile.release]
 opt-level = 3
 lto = "thin"
 codegen-units = 1
@@ -80,9 +74,3 @@ strip = true
 [profile.bench]
 inherits = "release"
 debug = true
-
-[target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "target-cpu=native"]
-
-[target.aarch64-unknown-linux-gnu]
-rustflags = ["-C", "target-cpu=native"]
