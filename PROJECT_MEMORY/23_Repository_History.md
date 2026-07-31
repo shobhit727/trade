@@ -1,7 +1,7 @@
 # 23. Repository History
 
-> **Last Updated**: 2026-07-29 (audit pass)
-> **Confidence**: Git history not present in this workspace; entries below are session-level snapshots.
+> **Last Updated**: 2026-07-31 (audit sync)
+> **Confidence**: Git history present; entries below are session-level snapshots.
 
 ## Original state (pre-session)
 
@@ -45,13 +45,22 @@
 
 - `PROJECT_MEMORY/00-24` rewritten/created to reflect verified code state.
 
-## Verification
+## Session 2026-07-31 (audit sync)
+
+### Documentation sync
+
+- `plan.md`: Section 2 status table corrected (binance.py ✅, ml/features.py ✅, backtest/data/runner/reporting/validation ✅, router/adverse_selection ✅, health_server ✅, K8s ⚠️ missing Service/HPA, Rust 🔲 empty scaffolding, compose ⚠️ default profile broken). Section 3 architecture tree fully updated. Section 4 Phases 2-8 corrected (Phase 2 ✅, Phase 4 ⚠️ ml_strategy missing, Phase 6 ⚠️ core only, Phase 8 ⚠️ compose broken + K8s missing Service/HPA). Section 5 technical decisions updated (Rust status, ML framework).
+- `PROJECT_MEMORY/12_Feature_Status.md`: All modules re-verified; resolved bugs marked; missing items noted (ml_strategy.py, data/features.py, k8s Service/HPA, compose default profile, Rust crates).
+- `PROJECT_MEMORY/13_Bug_Tracker.md`: B025/B027/B028/B029/B031/B037/B040/B041/B044/B045/B046/B048/B049 moved from Open → Resolved. New open bugs added: B052-B059 (compose broken, K8s missing, ml_strategy missing, lightgbm unused, data/features.py missing, Rust crates empty, config mismatches, strategies.enabled not read).
+- `PROJECT_MEMORY/14_Technical_Debt.md`: Resolved items removed/marked done. New critical items: fix compose default profile, add K8s Service/HPA, implement ml_strategy.py or downgrade plan, remove dead dirs, drop lightgbm, fix config mismatches.
+- `PROJECT_MEMORY/00_Project_Overview.md`: Full rewrite to match current state.
+- `PROJECT_MEMORY/25_Audit_2026-07-31.md`: New audit document with 26 mismatches and top 5 fixes.
+
+### Verification
 
 - `python3 -m py_compile` passes on all edited files.
-- `docker compose --profile test config` parses.
-- Docker run blocked by host daemon instability (qemu crash).
-- Local smoke run via `python3 -m py_compile` only; full pytest run requires Docker.
-
-## Confidence
-
-- High.
+- `docker compose --profile test config`: passes.
+- `docker compose config` (default): fails on missing `monitoring/{loki,promtail,nginx}`.
+- Docker run blocked by host daemon instability.
+- 22 unit test files in `tests/unit/`.
+- `cargo build` not tested (Rust crates empty).

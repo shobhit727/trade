@@ -58,8 +58,18 @@ def build_parser() -> argparse.ArgumentParser:
     bot.add_argument("--host", default="127.0.0.1")
     bot.add_argument("--port", type=int, default=8080)
 
-    sub.add_parser("validate", help="Validate latest backtest artifact placeholder")
-    sub.add_parser("paper", help="Start paper trading dry-run placeholder")
+    validate_cmd = sub.add_parser("validate", help="Validate backtest statistical significance")
+    validate_cmd.add_argument("--source", choices=["synthetic"], default="synthetic")
+    validate_cmd.add_argument("--bars", type=int, default=200)
+    validate_cmd.add_argument("--splits", type=int, default=5)
+    validate_cmd.add_argument("--permutations", type=int, default=200)
+    validate_cmd.add_argument("--json", action="store_true")
+
+    paper_cmd = sub.add_parser("paper", help="Run paper trading dry-run")
+    paper_cmd.add_argument("--symbol", default="BTCUSDT")
+    paper_cmd.add_argument("--source", choices=["synthetic"], default="synthetic")
+    paper_cmd.add_argument("--bars", type=int, default=200)
+    paper_cmd.add_argument("--json", action="store_true")
     return parser
 
 
@@ -197,10 +207,66 @@ async def _run(args: argparse.Namespace) -> int:
         return 0
 
     if args.command == "validate":
-        logger.info("validate command OK: pass BacktestResults object from code path")
-        return 0
+        from cryptobot.backtest.validation import run_validation
+        from cryptobot.backtest.data import load_bars
+
+        ds = load_bars(source=args.source, symbol="BTCUSDT", timeframe="1h")
+        bars = ds.bars[: args.bars]
+        returns = [
+            float(bars[i + 1].close - bars[i].close) / float(bars[i].close)
+            for i in range(len(bars) - 1)
+        ]
+        if not returns:
+            logger.error("no bars to validate")
+            return 1
+        report = run_validation(returns, n_splits=args.splits, n_permutations=args.permutations)
+        if args.json:
+            json.dump(report, sys.stdout, default=str)
+            sys.stdout.write("\n")
+        else:
+            logger.info("passed=%s", report["passed"])
+            logger.info("walk_forward=%s", report["walk_forward"])
+            logger.info("monte_carlo=%s", report["monte_carlo"])
+            logger.info("deflated_sharpe=%s", report["deflated_sharpe"])
+        return 0 if report["passed"] else 1
+
     if args.command == "paper":
-        logger.info("paper command OK: execution engine dry-run available")
+        from cryptobot.backtest.data import load_bars
+        from cryptobot.execution.engine import ExecutionEngine
+        from cryptobot.execution.venue.simulated import SimulatedVenue
+        from cryptobot.risk.manager import RiskManager
+
+        ds = load_bars(source=args.source, symbol=args.symbol, timeframe="1h")
+        bars = ds.bars[: args.bars]
+        venue = SimulatedVenue(
+            prices={args.symbol: Decimal(str(bars[0].close))} if bars else {}
+        )
+        engine = ExecutionEngine(venue=venue, risk_manager=RiskManager())
+        fills = 0
+        for bar in bars:
+            mark = Decimal(str(bar.close))
+            if mark <= 0:
+                continue
+            order = OrderEvent(
+                symbol=args.symbol,
+                type=OrderType.MARKET,
+                side=OrderSide.BUY,
+                quantity=Decimal("1"),
+                strategy="paper",
+            )
+            order.price = mark
+            filled = await engine.submit_order(order)
+            if filled.status == OrderStatus.FILLED:
+                fills += 1
+        if args.json:
+            json.dump(
+                {"symbol": args.symbol, "bars": len(bars), "fills": fills},
+                sys.stdout,
+                default=str,
+            )
+            sys.stdout.write("\n")
+        else:
+            logger.info("paper fills=%d bars=%d symbol=%s", fills, len(bars), args.symbol)
         return 0
     return 2
 
