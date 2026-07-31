@@ -466,20 +466,11 @@ mkdir -p docker seccomp compose scripts migrations
 - Requirements: `requirements/prod.txt`
 
 ### Current Phase
-**Phase 4/6/8 overlap**: Core infrastructure ✅, Backtester ✅, Strategies 5/6 ✅, ML core ✅, Execution ✅, Risk ✅, Monitoring ✅, Live/Compose/K8s ⚠️. Next: `ml_strategy.py`, K8s Service/HPA, Rust crate implementations, remove unused `lightgbm` dep.
+**Phase 4/6/8 overlap**: Core infrastructure ✅, Backtester ✅, Strategies 6/6 ✅ (ml_strategy.py created), ML core ✅, Execution ✅, Risk ✅, Monitoring ✅, Live/Compose ✅, K8s ✅. Next: Rust crate implementations, ML volatility/regime/ensemble models.
 
 ### Blockers
-- `ml_strategy.py` missing — ML strategy cannot be instantiated
 - Rust workspace non-functional — `cargo build` fails, no `lib.rs` in any crate
-- K8s incomplete — no Service, no HPA (cluster-internal only)
-- `configs/base.yaml` `ml.models.direction.type: lightgbm` but implementation uses sklearn — config mismatch
-- `strategies.enabled` in YAML not read by any code — strategies never auto-instantiated from config
-- `requirements/prod.txt` lists `lightgbm>=4.5` unused — heavy native dep bloats image
-- ~~**Risk notional check broken for market orders**~~ → **FIXED** (B060/B061)
-- ~~**Backtest equity double-counts unrealized PnL**~~ → **FIXED** (B063)
-- ~~**ML walk-forward data leakage**~~ → **FIXED** (B065)
-- ~~**Health check symbols empty**~~ → **FIXED** (B066)
-- ~~**SQLite DB not in mounted volume**~~ → **FIXED** (B069)
+- ML volatility/regime/ensemble models not implemented (disabled in config)
 - Need TimescaleDB running for integration tests (docker-compose)
 - Need historical data for backtesting (Binance API or data vendor)
 
