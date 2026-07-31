@@ -29,6 +29,8 @@ class DirectionClassifier:
         self._weights: Optional[np.ndarray] = None
         self._bias: float = 0.0
         self._fitted = False
+        self._feature_means: Optional[np.ndarray] = None
+        self._feature_stds: Optional[np.ndarray] = None
 
     @staticmethod
     def _sigmoid(z: np.ndarray) -> np.ndarray:
@@ -38,7 +40,7 @@ class DirectionClassifier:
         if features.size == 0:
             self._fitted = False
             return self
-        X = self._normalize(features)
+        X, self._feature_means, self._feature_stds = self._normalize(features)
         y = labels.astype(float)
         if y.min() < 0 or y.max() > 1:
             y = (y > 0).astype(float)
@@ -69,16 +71,18 @@ class DirectionClassifier:
         return w, b
 
     @staticmethod
-    def _normalize(X: np.ndarray) -> np.ndarray:
-        means = X.mean(axis=0)
-        stds = X.std(axis=0)
+    def _normalize(X: np.ndarray, means: Optional[np.ndarray] = None, stds: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        if means is None:
+            means = X.mean(axis=0)
+        if stds is None:
+            stds = X.std(axis=0)
         stds = np.where(stds == 0, 1.0, stds)
-        return (X - means) / stds
+        return (X - means) / stds, means, stds
 
     def predict_proba(self, features: np.ndarray) -> np.ndarray:
         if not self._fitted or self._weights is None:
             return np.full(features.shape[0], 0.5)
-        X = self._normalize(features)
+        X = self._normalize(features, self._feature_means, self._feature_stds)[0]
         z = X @ self._weights + self._bias
         return self._sigmoid(z)
 

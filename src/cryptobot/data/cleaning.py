@@ -27,9 +27,9 @@ class QualityReport:
     """Data quality assessment report."""
     symbol: str
     timeframe: str
-    start: datetime
-    end: datetime
-    total_rows: int
+    start: Optional[datetime] = None
+    end: Optional[datetime] = None
+    total_rows: int = 0
     issues: Dict[DataQualityIssue, int] = None
     details: Dict[str, Any] = None
 
@@ -82,11 +82,18 @@ class DataCleaner:
             df = pd.DataFrame()
         required = ["open_time", "close_time", "open_price", "high_price", "low_price", "close_price", "volume"]
         missing = [c for c in required if c not in df.columns]
+        
+        start_time = None
+        end_time = None
+        if not df.empty and "open_time" in df.columns:
+            start_time = df["open_time"].min()
+            end_time = df["open_time"].max()
+        
         report = QualityReport(
             symbol=symbol,
             timeframe=timeframe,
-            start=df["open_time"].min() if not df.empty and "open_time" in df.columns else datetime.utcnow(),
-            end=df["open_time"].max() if not df.empty and "open_time" in df.columns else datetime.utcnow(),
+            start=start_time,
+            end=end_time,
             total_rows=len(df),
         )
 

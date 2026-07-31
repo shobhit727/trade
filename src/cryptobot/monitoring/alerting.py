@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import smtplib
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -207,6 +208,9 @@ class DiscordChannel(NotificationChannel):
 class EmailChannel(NotificationChannel):
     """Email notification channel via SMTP."""
 
+    _executor: Optional[ThreadPoolExecutor] = None
+    _executor_lock = asyncio.Lock()
+
     def __init__(
         self,
         smtp_host: str,
@@ -227,6 +231,20 @@ class EmailChannel(NotificationChannel):
 
     def get_name(self) -> str:
         return "email"
+
+    @classmethod
+    async def _get_executor(cls) -> ThreadPoolExecutor:
+        async with cls._executor_lock:
+            if cls._executor is None:
+                cls._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="email-sender")
+            return cls._executor
+
+    @classmethod
+    async def shutdown_executor(cls):
+        async with cls._executor_lock:
+            if cls._executor is not None:
+                cls._executor.shutdown(wait=True)
+                cls._executor = None
 
     async def send(self, alert: Alert) -> bool:
         if not all([self.smtp_host, self.username, self.password, self.to_emails]):
@@ -255,9 +273,10 @@ Alert ID: {alert.id}
         msg.attach(MIMEText(body, "plain"))
 
         try:
-            # Run in executor to avoid blocking
+            # Run in shared executor to avoid blocking
+            executor = await self._get_executor()
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, self._send_sync, msg)
+            await loop.run_in_executor(executor, self._send_sync, msg)
             logger.info(f"Email alert sent: {alert.id}")
             return True
         except Exception as e:
@@ -477,6 +496,10 @@ class AlertManager:
                 pass
             except Exception as e:
                 logger.error(f"Error awaiting cleanup task: {e}")
+        
+        # Shutdown email executor
+        from cryptobot.monitoring.alerting import EmailChannel
+        await EmailChannel.shutdown_executor()
 
     async def _cleanup_loop(self):
         """Periodic cleanup of old alerts and cooldowns."""

@@ -37,7 +37,16 @@ class ExecutionEngine:
     async def submit_order(self, order: OrderEvent) -> OrderEvent:
         if not order.order_id:
             order.order_id = str(uuid4())
-        risk = self.risk_manager.check_order(order, order.price)
+        
+        # For market orders, try to get current market price for risk check
+        risk_price = order.price
+        if risk_price is None and order.type == OrderType.MARKET:
+            try:
+                risk_price = await self.venue.get_price(order.symbol)
+            except Exception:
+                risk_price = None
+        
+        risk = self.risk_manager.check_order(order, risk_price)
         await self.event_bus.publish(risk.to_event("pre_trade", order))
         if not risk.passed:
             order.status = OrderStatus.REJECTED

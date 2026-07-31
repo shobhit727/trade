@@ -41,8 +41,8 @@ class RiskManager:
             return RiskCheckResult(False, reason)
 
         notional_price = price or order.price or order.avg_fill_price
-        notional = order.quantity * notional_price if notional_price else Decimal("0")
-        if notional_price is not None:
+        if notional_price is not None and notional_price > 0:
+            notional = order.quantity * notional_price
             if notional < self.limits.min_order_size_usd:
                 return RiskCheckResult(False, "Order below minimum size", notional, self.limits.min_order_size_usd)
             if notional > self.limits.max_order_size_usd:
@@ -50,7 +50,7 @@ class RiskManager:
 
         state = self.portfolio.get_state()
         if state.total_equity > 0:
-            total_exposure = (state.used_margin + notional) / state.total_equity
+            total_exposure = (state.used_margin + (notional if notional_price is not None and notional_price > 0 else Decimal("0"))) / state.total_equity
             if total_exposure > self.limits.max_total_exposure_pct:
                 return RiskCheckResult(False, "Total exposure limit exceeded", total_exposure, self.limits.max_total_exposure_pct)
 

@@ -440,7 +440,7 @@ class DataFeedHealthChecker(HealthChecker):
         try:
             # Check data freshness
             staleness = {}
-            symbols = settings.exchange.symbols
+            symbols = settings.exchange.symbols or [settings.exchange.default_symbol]
             for symbol in symbols:
                 ticker = self.manager.get_ticker(symbol)
                 if ticker:
@@ -721,7 +721,7 @@ async def _ping_exchange(client: Any):
 
 async def _check_data_freshness(manager: Any):
     """Check data feed freshness."""
-    symbols = settings.exchange.symbols
+    symbols = settings.exchange.symbols or [settings.exchange.default_symbol]
     max_age = 0
     for symbol in symbols:
         ticker = manager.get_ticker(symbol)

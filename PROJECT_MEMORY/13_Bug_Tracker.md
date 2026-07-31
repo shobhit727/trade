@@ -58,6 +58,16 @@
 | B049 | `strategies/base.py` | `StrategyRegistry.__new__` prints "initialized" on import. | Removed. |
 | B050 | `config.py` | `Settings(extra="ignore")` swallows YAML mismatch. | Added `_flatten_yaml` and `Settings.from_yaml_safe`. |
 | B051 | `monitoring/__init__.py` | Eagerly imports `cryptobot.monitoring.metrics`, which fails without `prometheus_client`. | Documented in `19_Open_Questions.md` AV-2. Importers should `import cryptobot.monitoring.metrics` lazily if they need it without Prometheus installed. |
+| B060 | `risk/manager.py:43-44` | Notional check uses `price or order.price or order.avg_fill_price` — evaluates to `Decimal("0")` for market orders; `notional_price is not None` is True. Market orders bypass sizing. | Added `notional_price > 0` check; skip notional validation when no valid price. |
+| B061 | `execution/engine.py:40` | `check_order(order, order.price)` passes `None` for market orders. | Fetch market price via `venue.get_price()` for market orders before risk check. |
+| B062 | `backtest/engine.py:235` | `event.payload.get("price", event.payload.get("close_price", 0))` returns `"0"` if both missing. | Skip mark price update if no valid price in payload. |
+| B063 | `backtest/engine.py:306` | Equity update adds unrealized PnL on top of `total_equity` (already includes it). Double-counts. | Removed manual equity update; portfolio tracks equity via position updates. |
+| B064 | `backtest/engine.py:294` | `pnl_pct = pnl_net_fees / (pos.entry_price * filled_qty)` — division by zero if entry_price=0. | Guard with `pos.entry_price > 0` check. |
+| B065 | `ml/models/direction.py:114-115` | Walk-forward `predict` normalizes test using its own mean/std — data leakage. | Store train statistics (`_feature_means`, `_feature_stds`) in `fit()`; use them in `predict()`. |
+| B066 | `monitoring/health.py:443,472` | `settings.exchange.symbols` empty if YAML missing — health checks pass vacuously. | Fallback to `[settings.exchange.default_symbol]` when symbols list empty. |
+| B067 | `monitoring/alerting.py:259-260` | `run_in_executor(None, _send_sync)` creates new thread per email — thread leak. | Shared `ThreadPoolExecutor` (max_workers=2) with lazy init + shutdown in `AlertManager.stop()`. |
+| B068 | `data/cleaning.py:88-89` | `start`/`end` default to `datetime.utcnow()` if `open_time` missing — misleading timestamps. | Made `start`/`end` Optional; set to `None` when column missing. |
+| B069 | `core/state.py:202` | DB path `cryptobot.db` in cwd (`/app`) not in mounted volume (`/app/data`) — state lost on restart. | Use `/app/data` if exists, else cwd; DB now at `/app/data/cryptobot.db` (persisted). |
 
 ## Open (verified)
 
@@ -76,16 +86,6 @@
 | B057 | `crates/*/src/` | All 7 Rust crates have empty `src/` — `cargo build` fails. | Rust layer non-functional. |
 | B058 | `configs/base.yaml` | `ml.models.direction.type: lightgbm` but implementation uses sklearn. | Config mismatch; silent loss. |
 | B059 | `configs/base.yaml` | `strategies.enabled` list not read by any code — strategies never auto-instantiated from config. | Strategies not loaded from config. |
-| B060 | `risk/manager.py:43-44` | Notional check uses `price or order.price or order.avg_fill_price` — evaluates to `Decimal("0")` for market orders, but `notional_price is not None` is True (Decimal("0") is not None). Market orders bypass sizing checks incorrectly. | Orders reject/accept wrongly; risk limits bypassed. |
-| B061 | `execution/engine.py:40` | `check_order(order, order.price)` passes `None` for market orders. Risk manager then uses `order.avg_fill_price` (also None pre-fill). Notional check ineffective for market orders. | Market orders bypass notional validation. |
-| B062 | `backtest/engine.py:235` | `event.payload.get("price", event.payload.get("close_price", 0))` — if both missing, returns `"0"` string → `Decimal("0")` corrupts mark prices. | Zero mark price → zero unrealized PnL, broken equity. |
-| B063 | `backtest/engine.py:306` | Equity update adds unrealized PnL on top of `total_equity` (which already includes it via portfolio). Double-counts unrealized PnL. | Inflated equity, wrong Sharpe/DD, all metrics corrupted. |
-| B064 | `backtest/engine.py:294` | `pnl_pct = pnl_net_fees / (pos.entry_price * filled_qty)` — `pos.entry_price` can be 0 if position created with 0 price. Division by zero. | Crash on position close. |
-| B065 | `ml/models/direction.py:114-115` | Walk-forward `predict` normalizes test fold using its own mean/std (via `_normalize`). Data leakage — test data statistics used for normalization. | Invalid walk-forward scores; overfitting not detected. |
-| B066 | `monitoring/health.py:443,472` | `settings.exchange.symbols` accessed but config flattens `exchanges.binance.symbols` → `exchange.symbols`. If YAML missing, empty list → health checks pass vacuously (no symbols checked). | False healthy; exchange down not detected. |
-| B067 | `monitoring/alerting.py:259-260` | `run_in_executor(None, _send_sync)` creates new thread per email via default ThreadPoolExecutor. No executor reuse. | Thread leak under high alert volume. |
-| B068 | `data/cleaning.py:88-89` | `start`/`end` default to `datetime.utcnow()` if `open_time` column missing or df empty. Misleading quality report timestamps. | Cosmetic but confusing for debugging. |
-| B069 | `core/state.py:202` | DB path `settings.database.name + ".db"` → `cryptobot.db` in cwd (`/app`). Compose mounts `./data:/app/data` — DB not in mounted volume, state lost on restart. | All persisted state (orders, positions, equity) lost on container restart. |
 
 ## Will-surprise areas
 

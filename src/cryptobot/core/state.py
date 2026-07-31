@@ -199,7 +199,10 @@ class StateManager:
         self._positions: dict[str, Position] = {}
         self._account = AccountState()
         self._daily_pnl_start: Decimal = Decimal("0")
-        self._db_path = Path(settings.database.name + ".db")
+        data_dir = Path("/app/data")
+        if not data_dir.exists():
+            data_dir = Path(".")
+        self._db_path = data_dir / f"{settings.database.name}.db"
         if sqlite3 is not None:
             self._init_db()
 

@@ -475,11 +475,11 @@ mkdir -p docker seccomp compose scripts migrations
 - `configs/base.yaml` `ml.models.direction.type: lightgbm` but implementation uses sklearn — config mismatch
 - `strategies.enabled` in YAML not read by any code — strategies never auto-instantiated from config
 - `requirements/prod.txt` lists `lightgbm>=4.5` unused — heavy native dep bloats image
-- **Risk notional check broken for market orders** (`risk/manager.py:43-44`, `execution/engine.py:40`) — market orders bypass sizing
-- **Backtest equity double-counts unrealized PnL** (`backtest/engine.py:306`) — all metrics corrupted
-- **ML walk-forward data leakage** (`ml/models/direction.py:114-115`) — test fold normalized with its own stats
-- **Health check symbols empty** (`monitoring/health.py:443`) — false healthy, exchange down not detected
-- **SQLite DB not in mounted volume** (`core/state.py:202`) — state lost on container restart
+- ~~**Risk notional check broken for market orders**~~ → **FIXED** (B060/B061)
+- ~~**Backtest equity double-counts unrealized PnL**~~ → **FIXED** (B063)
+- ~~**ML walk-forward data leakage**~~ → **FIXED** (B065)
+- ~~**Health check symbols empty**~~ → **FIXED** (B066)
+- ~~**SQLite DB not in mounted volume**~~ → **FIXED** (B069)
 - Need TimescaleDB running for integration tests (docker-compose)
 - Need historical data for backtesting (Binance API or data vendor)
 

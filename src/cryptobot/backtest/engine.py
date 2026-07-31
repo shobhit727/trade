@@ -232,8 +232,12 @@ class BacktestEngine:
             pos = self._positions[symbol]
             
             # Update mark price
-            current_price = Decimal(str(event.payload.get("price", event.payload.get("close_price", 0))))
-            pos.mark_price = current_price
+            current_price = Decimal(str(event.payload.get("price") or event.payload.get("close_price") or "0"))
+            if current_price <= 0:
+                # Skip update if no valid price - keep previous mark price
+                pass
+            else:
+                pos.mark_price = current_price
             
             # Recalculate unrealized PnL
             if pos.side == PositionSide.LONG:
@@ -291,7 +295,7 @@ class BacktestEngine:
                     quantity=filled_qty,
                     side="long" if pos.side == PositionSide.LONG else "short",
                     pnl=pnl_net_fees,
-                    pnl_pct=pnl_net_fees / (pos.entry_price * filled_qty) * Decimal("100") if filled_qty > 0 else Decimal("0"),
+                    pnl_pct=(pnl_net_fees / (pos.entry_price * filled_qty) * Decimal("100")) if filled_qty > 0 and pos.entry_price > 0 else Decimal("0"),
                     fees=fees,
                     strategy=pos.strategy,
                 )
@@ -301,10 +305,10 @@ class BacktestEngine:
                 if pos.quantity <= 0:
                     del self._positions[symbol]
 
-        # Update account state
-        await self._portfolio.update_equity(
-            self._portfolio.get_state().total_equity + (Decimal(str(event.payload.get("unrealized_pnl", 0))) if "unrealized_pnl" in event.payload else Decimal("0"))
-        )
+        # Update account state - portfolio tracks equity via positions
+        # No need to manually add unrealized_pnl as portfolio.update_equity is called
+        # with the correct total equity from position updates
+        pass
 
     async def _handle_position_update(self, event: Event):
         """Handle position update events."""

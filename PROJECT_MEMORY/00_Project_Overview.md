@@ -50,11 +50,11 @@ Repo documents the goal of an institutional-grade retail-trading bot. Same proje
 - `deploy/k8s/` missing `Service` and `HPA` claimed in plan.md Phase 8.
 - Rust workspace: 7 crates with empty `src/` — `cargo build` fails.
 - 6 dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/`.
-- **Risk notional check broken for market orders** (`risk/manager.py:43-44`, `execution/engine.py:40`) — market orders bypass min/max sizing.
-- **Backtest equity double-counts unrealized PnL** (`backtest/engine.py:306`) — Sharpe, DD, all metrics wrong.
-- **ML walk-forward data leakage** (`ml/models/direction.py:114-115`) — test normalized with own stats.
-- **Health check `settings.exchange.symbols` empty** (`monitoring/health.py:443`) — false healthy.
-- **SQLite DB at `/app/cryptobot.db` not in mounted volume** (`core/state.py:202`) — state lost on restart.
+- ~~**Risk notional check broken for market orders**~~ → **FIXED** (risk/manager.py, execution/engine.py)
+- ~~**Backtest equity double-counts unrealized PnL**~~ → **FIXED** (backtest/engine.py)
+- ~~**ML walk-forward data leakage**~~ → **FIXED** (ml/models/direction.py)
+- ~~**Health check `settings.exchange.symbols` empty**~~ → **FIXED** (monitoring/health.py)
+- ~~**SQLite DB at `/app/cryptobot.db` not in mounted volume**~~ → **FIXED** (core/state.py)
 
 ## Confidence per subject
 
