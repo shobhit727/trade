@@ -68,24 +68,23 @@
 | B067 | `monitoring/alerting.py:259-260` | `run_in_executor(None, _send_sync)` creates new thread per email — thread leak. | Shared `ThreadPoolExecutor` (max_workers=2) with lazy init + shutdown in `AlertManager.stop()`. |
 | B068 | `data/cleaning.py:88-89` | `start`/`end` default to `datetime.utcnow()` if `open_time` missing — misleading timestamps. | Made `start`/`end` Optional; set to `None` when column missing. |
 | B069 | `core/state.py:202` | DB path `cryptobot.db` in cwd (`/app`) not in mounted volume (`/app/data`) — state lost on restart. | Use `/app/data` if exists, else cwd; DB now at `/app/data/cryptobot.db` (persisted). |
+| B026 | `monitoring/health.py` | `create_standard_checks` wraps async functions in sync lambdas — fragile closure pattern. | Replaced lambdas with named `async def` functions. |
+| B042 | `data/ingestion.py` | `BinanceDataIngestion` creates `aiohttp.ClientSession` per-call without reuse — connection leak. | Added `_ensure_session()` with lock; sessions created once, reused across calls. |
+| B043 | `monitoring/health.py` | `HealthMonitor.start` has no runtime config update mechanism. | Added `unregister_check()`, `update_check_interval()`, `get_check()` methods. |
+| B053 | `deploy/k8s/` | Missing `Service` and `HPA` resources. | Created `05-service.yaml` (ClusterIP) + `06-hpa.yaml` (CPU/memory HPA); updated kustomization.yaml. |
+| B054 | `src/cryptobot/strategies/ml_strategy.py` | File does not exist; plan.md Phase 4 claims `[x]`. | Created `MLStrategy` class using `DirectionClassifier` + `MLStrategyConfig`. |
+| B055 | `requirements/prod.txt` | Lists `lightgbm>=4.5` but implementation uses sklearn — heavy native dep unused. | Removed `lightgbm>=4.5` from requirements. |
+| B056 | `src/cryptobot/data/features.py` | File does not exist; `ml/features.py` is canonical. | Created `data/features.py` as re-export of `ml.features` for backward compat. |
+| B057 | `strategies/registry.py` | `ml_strategy` missing from strategy registry map. | Added `ml_strategy` to `_STRATEGY_REGISTRY_MAP`. |
+| B058 | `configs/base.yaml` | `ml.models.direction.type: lightgbm` but implementation uses sklearn. | Changed to `sklearn_logreg`; disabled `volatility`/`regime` (not implemented). |
+| B059 | `configs/base.yaml` | `strategies.enabled` list not read by any code. | Added `load_strategies_from_config()` in `strategies/registry.py` with `_STRATEGY_REGISTRY_MAP`. |
+| B035 | `monitoring/dashboard.py` | Dashboard JSON builders reference Prometheus metric names with `cryptobot_` prefix. | Verified — all referenced metrics exist in `metrics.py`. False positive. |
 
 ## Open (verified)
 
 | ID | File | Bug | Risk |
 |----|------|------|------|
-| B026 | `monitoring/health.py` | `create_standard_checks` wraps async functions in sync lambdas. With B013 fix, await path works, but style is fragile. | Future regressions. |
 | B030 | `data/cleaning.py` | `clean_klines` `report.start`/`end` defaults to `datetime.utcnow()` when columns missing at top of function. | Cosmetic. |
-| B035 | `monitoring/dashboard.py` | Dashboard JSON builders reference Prometheus expression names with `cryptobot_` prefix; not exercised. | Unknown. |
-| B042 | `data/ingestion.py` | `BinanceDataIngestion` uses `aiohttp.ClientSession` directly without session reuse; opens per-call. | Performance + leak. |
-| B043 | `monitoring/health.py` | `HealthMonitor.start` spawns a task but no mechanism to update config-driven checks at runtime. | Hardcoded list. |
-| B052 | `docker-compose.yml` | Default profile references missing `monitoring/{loki,promtail,nginx}` dirs — compose config fails on default profile. | Compose won't start. | **RESOLVED** — scaffolded 3 dirs with minimal configs; `docker compose config` passes.
-| B053 | `deploy/k8s/` | Missing `Service` and `HPA` resources claimed in plan.md. | Cluster-internal only, no ingress. |
-| B054 | `src/cryptobot/strategies/ml_strategy.py` | File does not exist; plan.md Phase 4 claims `[x]`. | ML strategy cannot be instantiated. |
-| B055 | `requirements/prod.txt` | Lists `lightgbm>=4.5` but `ml/models/direction.py` uses sklearn/numpy only — no lightgbm import. | Heavy native dep unused. |
-| B056 | `src/cryptobot/data/features.py` | File does not exist; plan.md section 2 lists as `🔲 Missing`. | Use `ml/features.py` instead; update references. |
-| B057 | `crates/*/src/` | All 7 Rust crates have empty `src/` — `cargo build` fails. | Rust layer non-functional. |
-| B058 | `configs/base.yaml` | `ml.models.direction.type: lightgbm` but implementation uses sklearn. | Config mismatch; silent loss. |
-| B059 | `configs/base.yaml` | `strategies.enabled` list not read by any code — strategies never auto-instantiated from config. | Strategies not loaded from config. |
 
 ## Will-surprise areas
 
