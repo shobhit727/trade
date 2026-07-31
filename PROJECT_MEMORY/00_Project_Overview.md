@@ -1,71 +1,76 @@
 # 00. Project Overview
 
-> **Last Updated**: 2026-07-31 (audit sync)
+> **Last Updated**: 2026-07-31 (audit v2)
 > **Confidence**: High for current state; Medium for intent.
 
 ## What it is
 
-Crypto trading bot framework: Python 3.14, Rust workspace (7 crates, empty scaffolding), TimescaleDB + Redis, Binance live/testnet. Targets multi-asset, multi-strategy, statistical rigor.
+Crypto trading bot framework: Python 3.14, Rust workspace (7 crates declared; only `cryptobot-core` has a manifest), TimescaleDB + Redis, Binance live/testnet. Targets multi-asset, multi-strategy, statistical rigor.
 
 ## Why it exists
 
-Repo documents the goal of an institutional-grade retail-trading bot. Same project as the planning docs imply. Source-of-truth files: `plan.md`, `PROJECT_MEMORY/`.
+Repo documents the goal of an institutional-grade retail-trading bot. Source-of-truth files: `plan.md`, `PROJECT_MEMORY/`.
 
 ## High-level architecture
 
 - Python orchestration: `src/cryptobot/` (22 unit test files, 30+ modules)
-- Rust placeholder: `Cargo.toml` + 7 member crates with empty `src/` dirs
+- Rust scaffold: `Cargo.toml` declares 7 workspace members; only `cryptobot-core` has a `Cargo.toml`. `cargo build` from root fails until trimmed or per-crate manifests added.
 - Storage: TimescaleDB (prod), SQLite (in-process), Parquet (local)
 - Cache/Bus: Redis (intended), asyncio EventBus (in-process)
-- Observability: Prometheus + Grafana, Loki/Promtail (referenced but missing dirs), Alertmanager
-- Run: `Dockerfile` + `docker-compose.yml` (test profile ✅; default profile ✅ fixed)
+- Observability: Prometheus + Grafana, Loki/Promtail, Alertmanager (all dirs scaffolded)
+- Run: `Dockerfile` + `docker-compose.yml` (test ✅; default ✅)
 - CI: GitHub Actions (lint + unit + compose-validate + multi-arch buildx)
 
 ## Current state (verified)
 
 - `src/cryptobot/core/`: events, bus, clock, state, portfolio — implemented.
-- `src/cryptobot/data/`: ingestion, storage, cleaning — implemented. `features.py` missing (use `ml/features.py`).
+- `src/cryptobot/data/`: ingestion, storage, cleaning, features (re-export of ml) — implemented.
 - `src/cryptobot/backtest/`: engine, metrics, simulator, validation (real math), reporting (HTML), runner (end-to-end), data (CSV/Parquet/TimescaleDB/synthetic) — implemented.
 - `src/cryptobot/utils/`: logging, decorators (jitter clamped, circuit_breaker raises), types, health_server — implemented.
-- `src/cryptobot/market_data/manager.py`: Binance WS client with fallback — implemented.
-- `src/cryptobot/strategies/`: BaseStrategy, registry, **5 concrete strategies** (mean_reversion, trend_following, stat_arb, funding_arb, market_making). `ml_strategy.py` **missing**.
-- `src/cryptobot/risk/`: limits, sizing, kill_switch, manager, correlation — implemented.
-- `src/cryptobot/execution/`: engine, algorithms (TWAP/VWAP/POV/IS/Iceberg/sweep/arrival/vwap_schedule), router (SmartOrderRouter), adverse_selection (AdverseSelectionGuard), venue/base+simulated+binance — implemented.
-- `src/cryptobot/monitoring/`: metrics (Gauge for PnL), alerting (lazy init), health (async-aware), dashboard — implemented.
-- `src/cryptobot/cli/main.py`: argparse with `validate`, `paper`, `bot`, `serve` subcommands — implemented.
-- `src/cryptobot/ml/`: features (8), models/direction (sklearn logreg + numpy fallback), online (WalkForwardTrainer + DriftDetector) — implemented. volatility/regime/ensemble missing.
+- `src/cryptobot/market_data/manager.py`: Binance WS client with fallback to `default_symbol` and `["1m"]` (B044).
+- `src/cryptobot/strategies/`: BaseStrategy, registry, **6 concrete strategies** (mean_reversion, trend_following, stat_arb, funding_arb, market_making, ml_strategy) — all implemented. YAML `strategies.enabled` now wired via `load_strategies_from_config` (B057/B059).
+- `src/cryptobot/risk/`: limits, sizing, kill_switch, manager (B060/B061 notional price > 0), correlation — implemented.
+- `src/cryptobot/execution/`: engine (B040 ORDER_REJECTED), algorithms (TWAP/VWAP/POV/IS/Iceberg/sweep/arrival/vwap_schedule), router (SmartOrderRouter), adverse_selection (AdverseSelectionGuard), venue/base+simulated+binance — implemented.
+- `src/cryptobot/monitoring/`: metrics (Gauge for PnL, B025), alerting (lazy init B031, shared executor B067), health (async-aware, runtime mutators B043), dashboard — implemented. `monitoring/__init__.py` eager-imports `metrics` (B051 still Open).
+- `src/cryptobot/cli/main.py`: argparse with `validate`, `paper`, `bot`, `serve` subcommands — implemented (`serve` starts `HealthServer`).
+- `src/cryptobot/ml/`: features (8), models/direction (sklearn logreg + numpy fallback; train stats persisted, B065), online (WalkForwardTrainer + DriftDetector) — implemented. volatility/regime/ensemble still missing.
 - `tests/unit/`: 22 test files covering all major modules.
-- `docker-compose.yml`: full stack. Test profile ✅. Default profile ✅ (monitoring dirs scaffolded).
-- `deploy/k8s/`: namespace, ConfigMap, Secret, PVC, Deployment, kustomization. **No Service, no HPA.**
+- `docker-compose.yml`: full stack. Test profile ✅. Default profile ✅.
+- `deploy/k8s/`: namespace, ConfigMap, Secret, PVC, Deployment, **Service (ClusterIP)**, **HPA (v2 CPU/memory)**, kustomization. (B053)
 - `migrations/`: `001_extension.sql`, `002_hypertables.sql`.
-- `Cargo.toml` + 7 crates: all empty scaffolding.
+- `Cargo.toml` + 7 crates: `cryptobot-core` has manifest + empty `src/{events,math,time,types}/`; the other 6 directories exist with empty `src/{,benches,tests}/` but **no manifest**. `cargo build` fails.
 - `pyproject.toml`: setuptools build + CLI entry.
 
-## Notable discrepancies (verified)
+## Notable resolved discrepancies (audit v1 → v2)
 
-- `configs/base.yaml` keys do **not** match `src/cryptobot/config.py` Settings field names. Examples: `exchanges.binance` vs `exchange`, `monitoring.prometheus.port` vs `monitoring.prometheus_port`, `xmr.daemon` vs `xmr.daemon_host`, `monitoring.alerts.telegram_enabled` vs `monitoring.telegram_enabled`, `market_data.redis` vs `market_data.redis_host`. `Settings(extra="ignore")` swallows the mismatch and returns defaults — mitigated by `_flatten_yaml` + `from_yaml_safe`.
-- `configs/base.yaml` `ml.models.direction.type: lightgbm` but `ml/models/direction.py` uses sklearn/numpy fallback — config unused.
-- `configs/base.yaml` `strategies.enabled` list not read by any code — strategies never auto-instantiated from config.
-- `plan.md` Phase 4 claims `[x] ML-driven strategy (strategies/ml_strategy.py)` — file does not exist.
-- `deploy/k8s/` missing `Service` and `HPA` claimed in plan.md Phase 8.
-- Rust workspace: 7 crates with empty `src/` — `cargo build` fails.
+- ~~`configs/base.yaml` keys do not match Settings field names~~ → mitigated by `_flatten_yaml` + `Settings.from_yaml_safe` (B050).
+- ~~`configs/base.yaml` `ml.models.direction.type: lightgbm`~~ → changed to `sklearn_logreg`; `lightgbm` dep removed (B055/B058).
+- ~~`configs/base.yaml` `strategies.enabled` not read~~ → `load_strategies_from_config` added (B057/B059).
+- ~~`plan.md` Phase 4 claimed `[x] ML-driven strategy` but file missing~~ → `ml_strategy.py` created (B054).
+- ~~`deploy/k8s/` missing Service/HPA~~ → both added (B053).
+- ~~Docker compose default profile broken~~ → monitoring dirs scaffolded.
+- ~~Risk notional check broken for market orders~~ → fixed (B038/B060/B061).
+- ~~Backtest equity double-counts unrealized PnL~~ → fixed (B063/B064).
+- ~~ML walk-forward data leakage~~ → fixed (B065).
+- ~~Health check `settings.exchange.symbols` empty~~ → fixed (B044/B066).
+- ~~SQLite DB at `/app/cryptobot.db` not in mounted volume~~ → fixed (B069).
+
+## Remaining real gaps
+
+- `Cargo.toml [workspace] members` lists 7; only 1 has a manifest. `cargo build` fails until trimmed or per-crate manifests added.
+- `crates/cryptobot-core/src/{events,math,time,types}/` empty subdirs; no `lib.rs` so the crate doesn't produce artifacts.
 - 6 dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/`.
-- ~~**Risk notional check broken for market orders**~~ → **FIXED** (risk/manager.py, execution/engine.py)
-- ~~**Backtest equity double-counts unrealized PnL**~~ → **FIXED** (backtest/engine.py)
-- ~~**ML walk-forward data leakage**~~ → **FIXED** (ml/models/direction.py)
-- ~~**Health check `settings.exchange.symbols` empty**~~ → **FIXED** (monitoring/health.py)
-- ~~**SQLite DB at `/app/cryptobot.db` not in mounted volume**~~ → **FIXED** (core/state.py)
+- `monitoring/__init__.py` eager-imports metrics (B051 still Open).
+- ML models `volatility.py`, `regime.py`, `ensemble.py` still missing.
 
 ## Confidence per subject
 
-- High: directory tree, file presence, line counts, public class/symbol names.
-- Medium: behavior of modules not exercised by tests.
-- Low: anything not yet implemented (ML volatility/regime/ensemble, Rust core, live trading durability).
+- High: directory tree, file presence, line counts, public class/symbol names, recent bug fixes.
+- Medium: behavior of modules not exercised end-to-end.
+- Low: live Binance behavior under load, Rust perf layer.
 
 ## Recent changes
 
-- Audit 2026-07-31: synced `plan.md` and `PROJECT_MEMORY/` with actual repo state. 26 doc/code mismatches identified and documented in `25_Audit_2026-07-31.md`.
-- **Fixed 2026-07-31**: Scaffolded `monitoring/{loki,promtail,nginx}` directories with minimal configs; `docker compose config` (default profile) now passes.
-- Prior: Added `risk/`, `execution/`, `cli/`, smoke tests, `Dockerfile`, `requirements/test.txt`, `cryptobot-test` compose service, `.dockerignore`.
-- Patched imports, env imports, validation logic, sqlite fallback, health-check async detection.
+- **Audit v2 2026-07-31**: Created `26_Audit_2026-07-31_v2.md`. Refreshed stale memory docs (01, 02, 04, 05, 06, 07, 09, 11, 13, 14, 15, 17, 19, 20, 21, 22, 25). Marked v1 audit superseded.
+- Prior: B051-B069 fixes landed via `04bfecf / 90efd8f / 0337acb / adc5334 / 97b13f6 / 519fc7f` — K8s Service+HPA, ml_strategy, data/features, lightgbm drop, config fixes, registry load_strategies_from_config, monitoring/health runtime updates, aiohttp session reuse.
 - See `23_Repository_History.md`, `24_Agent_Log.md`, `13_Bug_Tracker.md`.

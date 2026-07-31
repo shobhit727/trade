@@ -1,13 +1,14 @@
 # 07. Database Model
 
-> **Last Updated**: 2026-07-29 (audit pass)
-> **Confidence**: High for schema found in code; Low for SQL DDL files (none exist).
+> **Last Updated**: 2026-07-31 (audit v2)
+> **Confidence**: High for SQLite + SQL migrations; Medium for TimescaleDB; Low for live behavior.
 
 ## What exists
 
-- `src/cryptobot/core/state.py` defines SQLite tables inline.
+- `src/cryptobot/core/state.py` defines SQLite tables inline; DB path resolves to `/app/data/cryptobot.db` when that mount exists (B069), else cwd.
 - `src/cryptobot/data/storage.py` defines TimescaleDB and Parquet backends.
-- No SQL migration files in `migrations/`.
+- `migrations/001_extension.sql` (TimescaleDB extension bootstrap) and `migrations/002_hypertables.sql` (hypertable DDL) are present.
+- `docker-compose.yml` mounts `./migrations` into `timescaledb` at `/docker-entrypoint-initdb.d`.
 
 ## SQLite schema (from `core/state.py`)
 
@@ -81,18 +82,17 @@ All money/decimal values stored as `TEXT` to avoid SQLite dynamic typing.
 
 ## Fallback behavior
 
-If `_sqlite3` is unavailable, `StateManager` does not call `_init_db()` and every `save_*` method early-returns. `load()` is also a no-op. State lives only in memory.
+If `_sqlite3` is unavailable, `StateManager` does not call `_init_db()` and emits `logging.warning`. Every `save_*` method early-returns. `load()` is also a no-op. State lives only in memory.
 
-## TimescaleDB / Parquet (planned)
+## TimescaleDB migrations (`migrations/`)
 
-`src/cryptobot/data/storage.py` declares `TimescaleDBStorage` and `ParquetStorage` with async write/read methods. Neither is exercised by smoke tests. Code paths require `asyncpg` and `pyarrow`, both missing from the test image.
+`001_extension.sql` enables `timescaledb` extension (placeholder; not verified against 2.x yet). `002_hypertables.sql` declares expected hypertable DDL for OHLCV / trades / funding rates / account snapshots. Verify columns match `data/storage.TimescaleDBStorage.write_*` before applying.
 
-## Migrations
+## TimescaleDB / Parquet (planned + partially implemented)
 
-- `migrations/` directory exists but contains no files.
-- `docker-compose.yml` mounts `./migrations` into `timescaledb` at `/docker-entrypoint-initdb.d`, so empty mounts do nothing.
+`src/cryptobot/data/storage.py` declares `TimescaleDBStorage`, `ParquetStorage`, and `HybridStorage` with async write/read methods. Code paths require `asyncpg` and `pyarrow`. Not exercised by smoke tests; integration tests pending.
 
-## Parquet / TimescaleDB schema (sketched in code)
+## Parquet row shape (sketched in code)
 
 `storage.py` writes row-shaped dicts:
 - `write_klines(klines: List[Dict])`
@@ -104,6 +104,6 @@ The exact column names are not enforced; consumption is JSON dict. No schema val
 
 ## Confidence
 
-- High: SQLite path.
-- Medium: Parquet path (no test coverage).
-- Low: TimescaleDB path (no connectivity, no tests).
+- High: SQLite path + SQL migrations.
+- Medium: Parquet path (no test coverage in this env).
+- Low: TimescaleDB path against live DB (no connectivity in audit env).

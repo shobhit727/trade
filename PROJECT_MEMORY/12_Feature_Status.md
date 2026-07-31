@@ -15,22 +15,22 @@
 | `data/ingestion.py` | ✅ | OHLCV/Tick/TradeData dataclasses, BinanceDataIngestion, DataIngestionManager. |
 | `data/storage.py` | ✅ | TimescaleDBStorage, ParquetStorage, HybridStorage. `timedelta` import fixed. |
 | `data/cleaning.py` | ✅ | DataCleaner, validate_ohlcv, detect_outliers_zscore, fill_missing_bars. None/empty guards fixed. |
-| `data/features.py` | 🔲 | Missing. Canonical feature pipeline is in `ml/features.py`. |
-| `backtest/engine.py` | ✅ | BacktestEngine, BacktestResult, TradeRecord. Position/PositionSide import fixed. |
+| `data/features.py` | ✅ | Re-export of `cryptobot.ml.features` (B056). |
+| `backtest/engine.py` | ✅ | BacktestEngine, BacktestResult, TradeRecord. Equity double-count removed (B063); entry-price zero-guard (B064). |
 | `backtest/metrics.py` | ✅ | Sharpe, Sortino, drawdown, profit factor. Sortino method added. Zero-guard on drawdown. |
 | `backtest/simulator.py` | ✅ | FillSimulator + factory. |
 | `backtest/validation.py` | ✅ | Real walk-forward (rolling-window with embargo), Monte Carlo block-permutation, deflated Sharpe. |
 | `backtest/reporting.py` | ✅ | HTML tearsheet generator (stdlib only). |
 | `backtest/runner.py` | ✅ | OhlcvBar + generate_synthetic_ohlcv + run_backtest end-to-end (OHLCV → strategy → ExecutionEngine → SimulatedVenue → BacktestEngine). |
 | `backtest/data.py` | ✅ | Historical data replay: `load_csv` (stdlib), `load_parquet` (pyarrow optional), `load_timescale` (async via existing storage layer), `OhlcvDataset.filter_range` + `load_bars` dispatcher. CLI supports `--source csv|parquet|timescale|synthetic`. |
-| `strategies/base.py` | ✅ | BaseStrategy, StrategyRegistry, correct `OrderEvent` construction, `from __future__ import annotations`. |
+| `strategies/base.py` | ✅ | BaseStrategy, StrategyRegistry, correct `OrderEvent` construction, `from __future__ import annotations`. No print on import (B049). |
 | `strategies/mean_reversion.py` | ✅ | Real strategy: Z-score + RSI + Bollinger Bands (pandas/numpy). |
 | `strategies/trend_following.py` | ✅ | Real strategy: EMA + ADX + ATR trailing stop. |
 | `strategies/market_making.py` | ✅ | Avellaneda-Stoikov market making (reservation price + spread), `run_on_history` synth fill path, pluggable to ExecutionEngine + AdverseSelectionGuard. |
 | `strategies/stat_arb.py` | ✅ | Pairs trading: rolling hedge ratio, correlation gate, z-score entry/exit/stop. |
 | `strategies/funding_arb.py` | ✅ | Funding / basis arb: spot-vs-perp + funding rate + basis entry/exit. |
-| `strategies/registry.py` | ✅ | Re-export only. |
-| `strategies/ml_strategy.py` | 🔲 | Missing. |
+| `strategies/registry.py` | ✅ | `load_strategies_from_config` + `_STRATEGY_REGISTRY_MAP` (6 strategies) — YAML `strategies.enabled` now honored (B057/B059). |
+| `strategies/ml_strategy.py` | ✅ | `MLStrategy` + `MLStrategyConfig` using `DirectionClassifier`; periodic retrain on price buffer (B054). |
 | `ml/features.py` | ✅ | 8 features: returns, RSI, MACD line + signal, ATR ratio, BB position + width, log volume. |
 | `ml/models/direction.py` | ✅ | `DirectionClassifier` (sklearn logreg preferred, numpy fallback), walk-forward score. |
 | `ml/online.py` | ✅ | `DriftDetector` (mean/std shift) + `WalkForwardTrainer` purged splits. |
@@ -60,20 +60,15 @@
 | `utils/types.py` | ✅ | Candle, OrderBook, Trade, TickData, OHLCVBar, PerformanceMetrics. |
 | `market_data/manager.py` | ✅ | Binance WS client. Requires `aiohttp`, `redis`. `_symbols`/`_timeframes` fallback to `default_symbol` / `["1m"]` when settings empty. |
 | `ml/` | ✅ | Core pipeline: features, direction, online (WalkForwardTrainer + DriftDetector). |
-| `deploy/k8s/` | ⚠️ | Namespace, ConfigMap, Secret, PVC, Deployment, kustomization. **No Service, no HPA.** |
+| `deploy/k8s/` | ✅ | Namespace, ConfigMap, Secret, PVC, Deployment, **Service (ClusterIP)**, **HPA (CPU+memory)**, kustomization (B053). |
 | `.github/workflows/ci.yml` | ✅ | Lint + unit + compose-validate + buildx matrix (amd64 + arm64). |
 | `.github/workflows/release.yml` | ✅ | Tag-driven multi-arch publish + SBOM + provenance. |
 | `scripts/build_multiarch.sh` | ✅ | Local multi-arch build via buildx + QEMU. |
-| `crates/cryptobot-core/` | 🔲 | Manifest + empty `src/{events,math,time,types}/` (no `lib.rs`). |
-| `crates/cryptobot-backtest/` | 🔲 | Manifest + empty `src/` (no `lib.rs`). |
-| `crates/cryptobot-features/` | 🔲 | Manifest + empty `src/` (no `lib.rs`). |
-| `crates/cryptobot-risk/` | 🔲 | Manifest + empty `src/` (no `lib.rs`). |
-| `crates/cryptobot-stats/` | 🔲 | Manifest + empty `src/` (no `lib.rs`). |
-| `crates/cryptobot-orderbook/` | 🔲 | Manifest + empty `src/` (no `lib.rs`). |
-| `crates/cryptobot-py/` | 🔲 | Manifest + empty `src/` (no `lib.rs`). |
+| `crates/cryptobot-core/` | ⚠️ | Manifest only; `src/{events,math,time,types}/` are empty subdirs; no `lib.rs`. Compiles against manifest but produces no artifact. |
+| `crates/cryptobot-{backtest,features,risk,stats,orderbook,py}/` | 🔲 | No `Cargo.toml` despite being listed in workspace `members`. `cargo build` from root fails. Each dir has only empty `src/`, `benches/`, `tests/`. Trim array or add per-crate manifests. |
 | `pyproject.toml` | ✅ | setuptools build + `cryptobot` CLI entry point. |
 | `migrations/*.sql` | ✅ | `001_extension.sql`, `002_hypertables.sql`. |
-| `docker-compose.yml` | ✅ | Test + default profiles valid (monitoring dirs scaffolded). |
+| `docker-compose.yml` | ✅ | Test + default profiles valid (monitoring dirs scaffolded: `monitoring/{loki,promtail,nginx}`). |
 
 ## Fixed this session (2026-07-29)
 

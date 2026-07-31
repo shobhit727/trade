@@ -1,34 +1,35 @@
 # 14. Technical Debt
 
-> **Last Updated**: 2026-07-31 (audit sync)
+> **Last Updated**: 2026-07-31 (audit v2)
 > **Confidence**: High.
 
 ## Categories
 
 ### Code quality
 
-- `monitoring/metrics.py` uses `Counter` for realized PnL — **RESOLVED**: now `Gauge`.
-- `utils/decorators.py` jitter can produce negative sleep — **RESOLVED**: clamped to `max(0.0, sleep_time)`.
-- `utils/decorators.py` `circuit_breaker` sync wrapper used `run_until_complete` inside running loop — **RESOLVED**: raises `RuntimeError`.
-- `strategies/base.py` printed on import inside `StrategyRegistry.__new__` — **RESOLVED**: removed.
-- `backtest/engine.py` mixed `print` with logic — **RESOLVED**: removed.
-- `core/clock.py` had `print` statements — **RESOLVED**: removed.
+- ~~`monitoring/metrics.py` uses `Counter` for realized PnL~~ — **RESOLVED** (B025/B037).
+- ~~`utils/decorators.py` jitter can produce negative sleep~~ — **RESOLVED** (B027).
+- ~~`utils/decorators.py` `circuit_breaker` sync wrapper used `run_until_complete` inside running loop~~ — **RESOLVED** (B028).
+- ~~`strategies/base.py` printed on import inside `StrategyRegistry.__new__`~~ — **RESOLVED** (B049).
+- ~~`backtest/engine.py` mixed `print` with logic~~ — **RESOLVED** (B046).
+- ~~`core/clock.py` had `print` statements~~ — **RESOLVED** (B046).
+- Unused imports in some modules — not yet swept.
 
 ### Architecture
 
-- `Settings(extra="ignore")` masks YAML mismatch — **mitigated**: `_flatten_yaml` + `from_yaml_safe` added.
+- ~~`Settings(extra="ignore")` masks YAML mismatch~~ — **mitigated** via `_flatten_yaml` + `from_yaml_safe` (B050).
 - `core/state.py` and `core/portfolio.py` both hold account state. Duplicating updates.
 - `risk/manager.py` is global; not DI-friendly.
-- `market_data.manager.BinanceWSClient` builds URLs from empty defaults → empty subscription — **RESOLVED**: fallback to `default_symbol` and `["1m"]`.
-- `data/features.py` missing — canonical feature pipeline is `ml/features.py`. Update references or remove `data/features.py` from plan.
+- ~~`market_data.manager.BinanceWSClient` builds URLs from empty defaults → empty subscription~~ — **RESOLVED** (B044).
+- ~~`data/features.py` missing~~ — **RESOLVED**: re-export created (B056).
 
 ### Performance
 
 - `backtest/engine.py` `_handle_order_fill` is O(N) per fill.
 - `data/cleaning.py` `vol_zscore` not accelerated.
 - `core/clock.py` `SimulatedClock._notify_waiters` is O(W) per step.
-- `data/ingestion.py` opens `aiohttp` sessions per call — no session reuse (B042).
-- `monitoring/health.py` `create_standard_checks` wraps async in sync lambdas — fragile style (B026).
+- ~~`data/ingestion.py` opens `aiohttp` sessions per call — no session reuse~~ — **RESOLVED** (B042).
+- ~~`monitoring/health.py` `create_standard_checks` wrapped async in sync lambdas~~ — **RESOLVED** (B026).
 
 ### Security
 
@@ -38,57 +39,58 @@
 
 ### Maintainability
 
-- ML pipeline: only core (features + direction + online). Volatility, regime, ensemble missing.
-- `ml_strategy.py` missing — plan.md claims `[x]`.
-- No `pyproject.toml` / `setup.py` — **RESOLVED**: `pyproject.toml` exists.
+- ML pipeline: only core (features + direction + online). Volatility, regime, ensemble still missing.
+- ~~`ml_strategy.py` missing — plan.md claims `[x]`~~ — **RESOLVED** (B054).
+- ~~No `pyproject.toml` / `setup.py`~~ — **RESOLVED**: `pyproject.toml` exists.
 - Many modules have unused imports.
-- `docker-compose.yml` default profile references missing `monitoring/{loki,promtail,nginx}` dirs — compose fails.
-- `deploy/k8s/` missing `Service` and `HPA`.
-- Rust workspace: 7 crates with empty `src/` — `cargo build` fails.
-- 6 dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/`.
+- ~~`docker-compose.yml` default profile references missing `monitoring/{loki,promtail,nginx}` dirs~~ — **RESOLVED**: scaffolded.
+- ~~`deploy/k8s/` missing `Service` and `HPA`~~ — **RESOLVED** (B053).
+- **NEW** Rust workspace: 7 members declared in `Cargo.toml`; only `cryptobot-core` has manifest. `cargo build` fails.
+- **NEW** 6 dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/`.
 
 ### Test coverage
 
 - 22 unit test files in `tests/unit/`.
 - No integration tests (TimescaleDB / Redis / Prometheus).
 - No property-based tests (hypothesis) for risk/math.
-- No CI/CD test run verification (pytest not run in this env).
+- No CI/CD test run verification (pytest not run in this audit env).
 
-## Critical debt (highest impact)
+## Critical debt (highest impact, post-fix)
 
 | Item | Effort | Priority | Status |
 |------|--------|----------|--------|
-| Align `configs/base.yaml` with `Settings` field names (or keep `_flatten_yaml`) | 0.5 day | High | Mitigated |
+| Align `configs/base.yaml` with `Settings` field names (or keep `_flatten_yaml`) | 0.5 day | High | **Done** (B050) |
 | Add `pyproject.toml` for `pip install -e .` | 0.5 day | High | **Done** |
 | Implement real walk-forward + Monte Carlo | 3-5 days | High | **Done** |
 | Implement ML feature pipeline (one indicator module) | 1-2 days | High | **Done** (core) |
 | Implement `execution/venue/binance.py` (ccxt adapter) | 1-2 days | High | **Done** |
-| Replace `Counter` with `Gauge` for realized PnL | 1 hour | High | **Done** |
-| Bound `retry` jitter so sleep_time ≥ 0 | 0.5 hour | High | **Done** |
-| Fix `circuit_breaker` sync wrapper (use `nest_asyncio` or always async) | 0.5 hour | High | **Done** (raises) |
+| Replace `Counter` with `Gauge` for realized PnL | 1 hour | High | **Done** (B025/B037) |
+| Bound `retry` jitter so sleep_time ≥ 0 | 0.5 hour | High | **Done** (B027) |
+| Fix `circuit_breaker` sync wrapper | 0.5 hour | High | **Done** (B028) |
 | Remove `print(...)` from `core/clock.py`, `backtest/engine.py`, `strategies/base.py` | 1 hour | Medium | **Done** |
-| Add `requirements/test.txt` cd into `Dockerfile` test target | 0.5 hour | Medium | **Done** |
-| Remove `monero-rpc` references | 0.1 hour | Medium | **Done** |
-| Add explicit `Venue.submit_order` params for slippage/fees | 1 day | Medium | **Done** (simulated venue) |
-| **Fix `docker-compose.yml` default profile (missing loki/promtail/nginx)** | 0.5 day | **Critical** | **Open** |
-| **Add `Service` + `HPA` to `deploy/k8s/`** | 0.5 day | High | **Open** |
-| **Implement `ml_strategy.py` or downgrade plan.md** | 1-2 days | High | **Open** |
-| **Remove dead dirs `src/cryptobot/{allocator,altdata,api,exchanges,funding,xmr}/`** | 5 min | Medium | **Open** |
-| **Drop `lightgbm` from `requirements/prod.txt` if unused** | 5 min | Medium | **Open** |
-| **Fix `configs/base.yaml` `ml.models.direction.type: lightgbm` mismatch** | 5 min | Medium | **Open** |
-| **Add `data/features.py` or remove reference from plan** | 1 day | Medium | **Open** |
-| **Rust: add `lib.rs` to crates or remove from workspace** | 1-2 days | Low | **Open** |
+| Add `requirements/test.txt` and Dockerfile test target | 0.5 day | Medium | **Done** |
+| Remove `monero-rpc` references | 0.1 hour | Medium | **Done** (B019) |
+| Add explicit `Venue.submit_order` params for slippage/fees | 1 day | Medium | **Done** (B036) |
+| Fix `docker-compose.yml` default profile (loki/promtail/nginx) | 0.5 day | Critical | **Done** |
+| Add `Service` + `HPA` to `deploy/k8s/` | 0.5 day | High | **Done** (B053) |
+| Implement `ml_strategy.py` or downgrade plan.md | 1-2 days | High | **Done** (B054) |
+| Remove dead dirs `src/cryptobot/{allocator,altdata,api,exchanges,funding,xmr}/` | 5 min | Medium | **Open** |
+| Drop `lightgbm` from `requirements/prod.txt` | 5 min | Medium | **Done** (B055) |
+| Fix `configs/base.yaml` `ml.models.direction.type` mismatch | 5 min | Medium | **Done** (B058) |
+| Add `data/features.py` as alias | 1 day | Medium | **Done** (B056) |
+| **Fix Rust workspace (trim members or add manifests)** | 5 min | **High** | **Open** |
+| **Tighten `BinanceWSClient` fallback to log when fired** | 5 min | Low | **Open** |
 
 ## Removal candidates
 
-- `lightgbm` from `requirements/prod.txt` (declared but unused).
-- `src/cryptobot/{allocator,altdata,api,exchanges,funding,xmr}/` (empty dirs).
-- `data/features.py` reference in plan.md (use `ml/features.py`).
+- 6 dead empty dirs under `src/cryptobot/`.
+- Stray `)` character in `plan.md` section 3.
+- Self-contradiction in `plan.md` Section 8 (claims Service + HPA done; Section 2 still says "No Service, no HPA"). Both wrong post-fix.
 
 ## Risk
 
 - Bypassing `risk/manager.py` would be catastrophic. No guard today.
-- `state_manager` silent no-op on missing `_sqlite3` is invisible to users — now logs warning.
+- `state_manager` silent no-op on missing `_sqlite3` is invisible to users — now logs warning (B024).
 
 ## Confidence
 

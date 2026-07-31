@@ -1,7 +1,7 @@
 # 01. System Architecture
 
-> **Last Updated**: 2026-07-29 (audit pass)
-> **Confidence**: High for the diagram and what exists; Low for what is intended.
+> **Last Updated**: 2026-07-31 (audit v2)
+> **Confidence**: High for what exists; Low for what is intended (Rust).
 
 ## Verified layers
 
@@ -9,12 +9,13 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Python Orchestration Layer (3.14)             │
 │  config │ core │ data │ strategies │ risk │ execution           │
-│  backtest │ monitoring │ utils │ cli │ market_data              │
+│  backtest │ monitoring │ utils │ cli │ ml │ market_data          │
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
-│          Rust Layer (placeholder)                               │
-│  Cargo.toml (root) + crates/cryptobot-core/Cargo.toml (no src)  │
+│          Rust Layer (scaffolded; not buildable)                  │
+│  Cargo.toml (root) lists 7 members; only cryptobot-core has      │
+│  manifest. src/ empty across the workspace. cargo build fails.   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -22,28 +23,30 @@
 
 | Layer | Files | Status |
 |-------|-------|--------|
-| Config | `src/cryptobot/config.py` | Pydantic v2 BaseSettings; YAML loader via `Settings.from_yaml`; `extra="ignore"` swallows unknown keys. |
-| Core | `events.py`, `bus.py`, `clock.py`, `state.py`, `portfolio.py` | Implemented. |
-| Data | `ingestion.py`, `storage.py`, `cleaning.py` | Implemented. |
-| Strategies | `base.py`, `registry.py` | Implemented (placeholder only). |
-| Risk | `manager.py`, `limits.py`, `sizing.py`, `kill_switch.py`, `correlation.py` | Implemented (minimal). |
-| Execution | `engine.py`, `algorithms.py`, `venue/base.py`, `venue/simulated.py` | Implemented (mock venue only). |
-| Backtest | `engine.py`, `metrics.py`, `simulator.py`, `validation.py` | Implemented. |
-| Monitoring | `metrics.py`, `alerting.py`, `health.py`, `dashboard.py` | Implemented. |
-| Utils | `logging.py`, `decorators.py`, `types.py` | Implemented. |
-| Market Data | `manager.py` | Binance WS client implemented. |
-| CLI | `main.py` | argparse implemented. |
-| ML | empty | Not implemented. |
-| Rust | `crates/cryptobot-core/Cargo.toml` | Manifest only. |
+| Config | `src/cryptobot/config.py` | ✅ Pydantic v2 BaseSettings + `from_yaml_safe` (uses `_flatten_yaml`) translates nested YAML to flat field names. `extra="ignore"` retained as safety net. |
+| Core | `events.py`, `bus.py`, `clock.py`, `state.py`, `portfolio.py` | ✅ Implemented. SQLite path now `/app/data/cryptobot.db` (B069). Daily PnL auto-resets at UTC day boundary (B034). |
+| Data | `ingestion.py`, `storage.py`, `cleaning.py`, `features.py` | ✅ `data/features.py` re-exports `cryptobot.ml.features` (B056). `BinanceDataIngestion` reuses `aiohttp.ClientSession` via `_ensure_session()` (B042). |
+| Strategies | `base.py`, `registry.py` + 6 concrete (`mean_reversion`, `trend_following`, `stat_arb`, `funding_arb`, `market_making`, `ml_strategy`) | ✅ All 6 implemented. Registry wired to YAML via `load_strategies_from_config` (B057/B059). |
+| Risk | `manager.py`, `limits.py`, `sizing.py`, `kill_switch.py`, `correlation.py` | ✅ Implemented. Notional check skipped on no-price (B038, B060, B061). |
+| Execution | `engine.py`, `algorithms.py`, `router.py`, `adverse_selection.py`, `venue/{base,simulated,binance}.py` | ✅ Implemented. `BinanceVenue` via `ccxt.async_support` with sandbox, retries, guards. SOR + adverse-selection wired. |
+| Backtest | `engine.py`, `metrics.py`, `simulator.py`, `validation.py`, `reporting.py`, `runner.py`, `data.py` | ✅ Real WFA + MC + deflated Sharpe; equity double-count fix (B063); entry-price zero guard (B064). |
+| Monitoring | `metrics.py`, `alerting.py`, `health.py`, `dashboard.py` | ✅ Implemented. `total_pnl` is `Gauge` (B025). `ThreadPoolExecutor` shared for alert fan-out (B067). Health monitor exposes runtime register/unregister (B043). |
+| Utils | `logging.py`, `decorators.py`, `types.py`, `health_server.py` | ✅ stdlib `ThreadingHTTPServer` for `/health` + `/metrics`. |
+| Market Data | `manager.py` | ✅ Binance WS with fallback symbols+timeframes (B044). |
+| CLI | `main.py` | ✅ argparse `validate/paper/bot/serve` with real logic. |
+| ML | `features.py`, `online.py`, `models/direction.py` | ✅ Core. `volatility.py`, `regime.py`, `ensemble.py` 🔲 missing. Walk-forward stats persistence (B065). |
+| Rust | `crates/*` | 🔲 Workspace lists 7; only `cryptobot-core` has `Cargo.toml`. Other 6 have empty `src/{,benches,tests}/` but no manifest, so `cargo build` fails. |
 
 ## Event flow (verified)
 
-- `market_data.manager` → publishes events into `core.bus.EventBus`.
-- `strategies.base.BaseStrategy.on_market_data(event)` consumes events.
+- `market_data.manager.BinanceWSClient` → publishes events into `core.bus.EventBus`.
+- `strategies.base.BaseStrategy.on_market_data(event)` consumes events (or `ml_strategy.MLStrategy.feed` for the ML one).
 - Strategies emit `OrderEvent`s.
-- `execution.engine.ExecutionEngine.submit_order(order)` calls `risk.manager.RiskManager.check_order(order)`, then venue.
-- `risk.manager.RiskCheckResult.to_event` publishes `RiskEvent`.
-- `backtest.engine.BacktestEngine` runs the loop in event-driven mode.
+- `execution.engine.ExecutionEngine.submit_order(order)` calls `risk.manager.RiskManager.check_order(order, price)` (B061 fetches market price for market orders), then `venue.submit_order`.
+- `risk.manager.RiskCheckResult.to_event` publishes `RiskEvent`. Rejected orders emit `ORDER_REJECTED` with `reason` and `check_type` (B040).
+- `execution.router.SmartOrderRouter` can intercept pre-venue for multi-venue selection.
+- `execution.adverse_selection.AdverseSelectionGuard` cancels active orders on mid-move / spread-widen / toxicity spikes.
+- `backtest.engine.BacktestEngine` runs event-driven loop; `backtest.runner.run_backtest` wires OHLCV → strategy → ExecutionEngine → SimulatedVenue end-to-end.
 
 ## Key cross-cutting decisions
 
@@ -51,31 +54,22 @@
 - All money: `Decimal`.
 - All async API entry points: `asyncio`.
 - Async-first, sync fallback only for selected decorators (`utils/decorators.py`).
-
-## Known mismatches
-
-- **`configs/base.yaml` vs `Settings`**: YAML keys do not match Settings field names. Examples:
-  - `exchanges.binance` → Settings has `exchange` (singular).
-  - `monitoring.alerts.telegram_enabled` → Settings has `monitoring.telegram_enabled`.
-  - `monitoring.alerts.discord_webhook` → Settings has `monitoring.discord_webhook`.
-  - `monitoring.alerts.email_enabled` → Settings has `monitoring.email_enabled`.
-  - `monitoring.prometheus.port` → Settings has `monitoring.prometheus_port`.
-  - `monitoring.grafana.port` → Settings has `monitoring.grafana_port`.
-  - `xmr.daemon` → Settings has `xmr.daemon_host`, `daemon_port`, `daemon_ssl`, `daemon_username`, `daemon_password`.
-  - `xmr.wallet_rpc` → Settings has `xmr.wallet_host`, `wallet_port`, `wallet_ssl`, `wallet_username`, `wallet_password`.
-  - `xmr.funding` → Settings has `xmr.funding_enabled`, `min_balance_xmr`, `target_balance_xmr`, `withdraw_threshold_xmr`, `withdraw_address`, `confirmations`.
-  - `market_data.redis` → Settings has `market_data.redis_host`, `redis_port`, `redis_db`, `redis_max_connections`.
-  - `monitoring.grafana.port` → Settings has `monitoring.grafana_port`.
-  - `monitoring.alerts.telegram_enabled` → Settings has `monitoring.telegram_enabled`.
-- `extra="ignore"` in `Settings` means YAML loading silently uses defaults for all unmatched keys. Effective config = all defaults.
-- `mean_reversion` / `trend_following` / `funding_arbitrage` / `statistical_arbitrage` strategies listed in YAML are not implemented as concrete classes.
+- Prometheus `Gauge` for any value that can be negative (no `Counter` for PnL).
+- YAML loader accepts the existing `configs/base.yaml` nested shape via `_flatten_yaml`; new code should prefer `Settings.from_yaml_safe`.
 
 ## Runtime pre-requisites
 
 - Python 3.14 slim (Dockerfile).
-- Optional third-party: `prometheus_client`, `aiohttp`, `asyncpg`, `pyarrow`, `pandas`, `numpy`, `ccxt`.
+- Optional third-party: `prometheus_client`, `aiohttp`, `asyncpg`, `pyarrow`, `pandas`, `numpy`, `ccxt`, `scikit-learn`.
 - Optional infrastructure: TimescaleDB, Redis.
-- If `_sqlite3` unavailable, `core.state.StateManager` skips persistence silently.
+- If `_sqlite3` unavailable, `core.state.StateManager` skips persistence and emits a warning (B024).
+- Container DB path resolves to `/app/data/cryptobot.db` first (B069); falls back to cwd.
+
+## Known gaps
+
+- `crates/{cryptobot-backtest,features,risk,stats,orderbook,py}/` lack `Cargo.toml` even though listed in workspace `members`. `cargo build` from root errors until either each gets a manifest or the array is trimmed.
+- 6 dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/`.
+- ML volatility / regime / ensemble models not implemented (disabled in `configs/base.yaml`).
 
 ## Detailed API references
 
@@ -85,6 +79,6 @@
 
 ## Confidence
 
-- High: diagram, file presence, public classes.
+- High: diagram, file presence, public classes, recent bug fixes.
 - Medium: behavior not exercised by tests.
-- Low: intended Rust surface, ML pipeline internals.
+- Low: Rust performance layer, live Binance behavior under load.

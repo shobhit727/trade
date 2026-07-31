@@ -1,6 +1,6 @@
 # 13. Bug Tracker
 
-> **Last Updated**: 2026-07-31 (audit sync)
+> **Last Updated**: 2026-07-31 (audit v2)
 > **Confidence**: High for resolved; medium for open.
 
 ## Resolved (verified)
@@ -26,75 +26,75 @@
 | B017 | `core/clock.py` | `AcceleratedClock` used `time.monotonic()` but `time` not imported. | Added. |
 | B018 | `core/state.py` | Hard `import sqlite3` broke Python without `_sqlite3`. | Try/except + skip DB. |
 | B019 | `requirements/prod.txt` | `monero-rpc==0.3.0` incompatible with Python 3.11+ and unused. | Removed. |
-| B020 | `tests/unit/test_core_foundation.py` | Tests referenced nonexistent APIs (`SubscriptionMode`, `update_on_trade`). | Replaced. |
+| B020 | `tests/unit/test_core_foundation.py` | Tests referenced nonexistent APIs. | Replaced with real smoke tests. |
 | B021 | `Dockerfile` | Missing. | Created. |
 | B022 | `docker-compose.yml` | No test service. | Added `cryptobot-test` in profile `test`. |
 | B023 | `.dockerignore` | Large `monitoring/` files in context. | Added minimal context. |
 | B024 | `core/state.py` | If `sqlite3` unavailable, persistence silently no-ops. | Log warning on import fail. |
 | B025 | `monitoring/metrics.py` | `record_pnl(..., realized_pnl=...)` uses Prometheus `Counter` which cannot decrement. | `total_pnl` is now `Gauge`. |
-| B026 | `monitoring/health.py` | `create_standard_checks` wraps async functions in sync lambdas. With B013 fix, await path works, but style is fragile. | Open — future refactor. |
-| B027 | `utils/decorators.py` | `retry` jitter: `sleep_time = backoff_factor * (2**attempt) + random.uniform(-0.1, 0.1)` may go negative. | Clamped with `max(0.0, sleep_time)`. |
-| B028 | `utils/decorators.py` | `circuit_breaker` sync wrapper uses `asyncio.get_event_loop().run_until_complete(...)` inside running loop. | Raises `RuntimeError` in running loop. |
+| B026 | `monitoring/health.py` | `create_standard_checks` wrapped async functions in sync lambdas — fragile style. | Replaced lambdas with named `async def` functions. |
+| B027 | `utils/decorators.py` | `retry` jitter could go negative. | Clamped with `max(0.0, sleep_time)`. |
+| B028 | `utils/decorators.py` | `circuit_breaker` sync wrapper used `run_until_complete` inside running loop. | Raises `RuntimeError` in running loop. |
 | B029 | `monitoring/metrics.py` | `ProfitFactor` uses `Counter` for realized PnL with negative values. | Same as B025 — `Gauge` used. |
-| B030 | `data/cleaning.py` | `clean_klines` `report.start`/`end` defaults to `datetime.utcnow()` when columns missing at top of function. | Cosmetic; not fixed. |
+| B030 | `data/cleaning.py` | `clean_klines` `report.start`/`end` defaulted to `datetime.utcnow()` when columns missing. | Made `start`/`end` Optional; set to `None` when column missing. |
 | B031 | `monitoring/alerting.py` | `init_alerting` may attempt to start threads even without channels. | Skip `start()` when no channels configured. `stop()` idempotent. |
-| B032 | `backtest/engine.py` | `_handle_order_fill` updates equity using unrealized PnL from payload, but does not subtract fees from equity. | Trade `pnl` nets fees, `pnl_pct` computed from net. |
-| B033 | `backtest/validation.py` | `_perform_walk_forward` and `_run_monte_carlo` return fixed values. | Replaced with real math. |
-| B034 | `core/portfolio.py` | `check_kill_switch` reads `daily_loss_pct` from state; `daily_pnl` reset relies on external cron. | `update_equity` auto-detects day boundary and resets `_daily_pnl_start`. |
-| B035 | `monitoring/dashboard.py` | Dashboard JSON builders reference Prometheus expression names with `cryptobot_` prefix; not exercised. | Unknown. |
-| B036 | `execution/venue/simulated.py` | Ignores slippage/fees. | Slippage + commission applied. |
+| B032 | `backtest/engine.py` | `_handle_order_fill` did not subtract fees from equity. | Trade `pnl` nets fees; `pnl_pct` computed from net. |
+| B033 | `backtest/validation.py` | `_perform_walk_forward` and `_run_monte_carlo` returned fixed values. | Replaced with real math. |
+| B034 | `core/portfolio.py` | `check_kill_switch` reads `daily_loss_pct` from state; `daily_pnl` reset relied on external cron. | `update_equity` auto-detects day boundary and resets `_daily_pnl_start`. |
+| B035 | `monitoring/dashboard.py` | Dashboard JSON builders reference Prometheus expression names. | Verified — all referenced metrics exist in `metrics.py`. False positive. |
+| B036 | `execution/venue/simulated.py` | Ignored slippage/fees. | Slippage + commission applied. |
 | B037 | `monitoring/metrics.py` | `total_pnl` `Counter` cannot accept negative PnL. | Same as B025 — `Gauge`. |
-| B038 | `risk/manager.py` | `notional_price = price or order.price or order.avg_fill_price or Decimal("0")` yields zero for unfilled market orders → reject by min size. | Skip notional check when no price available (market order pre-trade). |
-| B039 | `data/cleaning.py` | `clean_trades` allows non-numeric price/quantity silently. | Coerce via `pd.to_numeric`; non-numeric + non-positive rows dropped and reported. |
-| B040 | `execution/engine.py` | `submit_order` publishes `OrderEvent` after risk rejection, but `type` is still `OrderType.MARKET`, not `EventType.ORDER_REJECTED`. | Emit `ORDER_REJECTED` event with reason + check_type on risk reject and venue reject. |
+| B038 | `risk/manager.py` | `notional_price = price or order.price or ...` yielded zero for unfilled market orders → reject by min size. | Skip notional check when no valid price. |
+| B039 | `data/cleaning.py` | `clean_trades` allowed non-numeric silently. | Coerce via `pd.to_numeric`; non-numeric + non-positive rows dropped and reported. |
+| B040 | `execution/engine.py` | `submit_order` published `OrderEvent` after risk rejection, but type was not `EventType.ORDER_REJECTED`. | Emit `ORDER_REJECTED` event with reason + check_type on risk reject and venue reject. |
 | B041 | `monitoring/alerting.py` | Multiple channels all share `init_alerting` resource; no teardown error path. | `stop()` idempotent, guards `_running`. |
-| B042 | `data/ingestion.py` | `BinanceDataIngestion` uses `aiohttp.ClientSession` directly without session reuse; opens per-call. | Performance + leak. |
-| B043 | `monitoring/health.py` | `HealthMonitor.start` spawns a task but no mechanism to update config-driven checks at runtime. | Hardcoded list. |
-| B044 | `market_data/manager.py` | `BinanceWSClient` builds stream URL from `settings.exchange.symbols` (empty by default). | Fallback to `default_symbol` and `["1m"]` when empty. |
-| B045 | `core/bus.py` | `EventBus.publish_batch` calls `_dispatch` per event; no transaction. | All events dispatched atomically under single lock. |
+| B042 | `data/ingestion.py` | `BinanceDataIngestion` opened `aiohttp.ClientSession` per call. | Added `_ensure_session()` with lock; sessions created once, reused across calls. |
+| B043 | `monitoring/health.py` | `HealthMonitor.start` had no runtime config update mechanism. | Added `unregister_check()`, `update_check_interval()`, `get_check()` methods. |
+| B044 | `market_data/manager.py` | `BinanceWSClient` built stream URL from `settings.exchange.symbols` (empty by default). | Fallback to `default_symbol` and `["1m"]` when empty. |
+| B045 | `core/bus.py` | `EventBus.publish_batch` called `_dispatch` per event; no transaction. | All events dispatched atomically under single lock. |
 | B046 | `backtest/engine.py` | `print(...)` statements throughout. | Removed. |
-| B047 | `cli/main.py` | Three subcommands exist but only print-and-exit. | `validate`, `paper`, `bot`, `serve` now have real logic. |
-| B048 | `risk/manager.py` | `RiskCheckResult.to_event` converts `Decimal` to `float` (`float(self.current_value)`). | Payload now carries `str(Decimal)` to preserve precision. |
-| B049 | `strategies/base.py` | `StrategyRegistry.__new__` prints "initialized" on import. | Removed. |
-| B050 | `config.py` | `Settings(extra="ignore")` swallows YAML mismatch. | Added `_flatten_yaml` and `Settings.from_yaml_safe`. |
-| B051 | `monitoring/__init__.py` | Eagerly imports `cryptobot.monitoring.metrics`, which fails without `prometheus_client`. | Documented in `19_Open_Questions.md` AV-2. Importers should `import cryptobot.monitoring.metrics` lazily if they need it without Prometheus installed. |
-| B060 | `risk/manager.py:43-44` | Notional check uses `price or order.price or order.avg_fill_price` — evaluates to `Decimal("0")` for market orders; `notional_price is not None` is True. Market orders bypass sizing. | Added `notional_price > 0` check; skip notional validation when no valid price. |
-| B061 | `execution/engine.py:40` | `check_order(order, order.price)` passes `None` for market orders. | Fetch market price via `venue.get_price()` for market orders before risk check. |
-| B062 | `backtest/engine.py:235` | `event.payload.get("price", event.payload.get("close_price", 0))` returns `"0"` if both missing. | Skip mark price update if no valid price in payload. |
-| B063 | `backtest/engine.py:306` | Equity update adds unrealized PnL on top of `total_equity` (already includes it). Double-counts. | Removed manual equity update; portfolio tracks equity via position updates. |
-| B064 | `backtest/engine.py:294` | `pnl_pct = pnl_net_fees / (pos.entry_price * filled_qty)` — division by zero if entry_price=0. | Guard with `pos.entry_price > 0` check. |
-| B065 | `ml/models/direction.py:114-115` | Walk-forward `predict` normalizes test using its own mean/std — data leakage. | Store train statistics (`_feature_means`, `_feature_stds`) in `fit()`; use them in `predict()`. |
-| B066 | `monitoring/health.py:443,472` | `settings.exchange.symbols` empty if YAML missing — health checks pass vacuously. | Fallback to `[settings.exchange.default_symbol]` when symbols list empty. |
-| B067 | `monitoring/alerting.py:259-260` | `run_in_executor(None, _send_sync)` creates new thread per email — thread leak. | Shared `ThreadPoolExecutor` (max_workers=2) with lazy init + shutdown in `AlertManager.stop()`. |
-| B068 | `data/cleaning.py:88-89` | `start`/`end` default to `datetime.utcnow()` if `open_time` missing — misleading timestamps. | Made `start`/`end` Optional; set to `None` when column missing. |
-| B069 | `core/state.py:202` | DB path `cryptobot.db` in cwd (`/app`) not in mounted volume (`/app/data`) — state lost on restart. | Use `/app/data` if exists, else cwd; DB now at `/app/data/cryptobot.db` (persisted). |
-| B026 | `monitoring/health.py` | `create_standard_checks` wraps async functions in sync lambdas — fragile closure pattern. | Replaced lambdas with named `async def` functions. |
-| B042 | `data/ingestion.py` | `BinanceDataIngestion` creates `aiohttp.ClientSession` per-call without reuse — connection leak. | Added `_ensure_session()` with lock; sessions created once, reused across calls. |
-| B043 | `monitoring/health.py` | `HealthMonitor.start` has no runtime config update mechanism. | Added `unregister_check()`, `update_check_interval()`, `get_check()` methods. |
-| B053 | `deploy/k8s/` | Missing `Service` and `HPA` resources. | Created `05-service.yaml` (ClusterIP) + `06-hpa.yaml` (CPU/memory HPA); updated kustomization.yaml. |
-| B054 | `src/cryptobot/strategies/ml_strategy.py` | File does not exist; plan.md Phase 4 claims `[x]`. | Created `MLStrategy` class using `DirectionClassifier` + `MLStrategyConfig`. |
-| B055 | `requirements/prod.txt` | Lists `lightgbm>=4.5` but implementation uses sklearn — heavy native dep unused. | Removed `lightgbm>=4.5` from requirements. |
-| B056 | `src/cryptobot/data/features.py` | File does not exist; `ml/features.py` is canonical. | Created `data/features.py` as re-export of `ml.features` for backward compat. |
+| B047 | `cli/main.py` | Three subcommands existed but only printed-and-exited. | `validate`, `paper`, `bot`, `serve` now have real logic. |
+| B048 | `risk/manager.py` | `RiskCheckResult.to_event` converted `Decimal` to `float`. | Payload now carries `str(Decimal)` to preserve precision. |
+| B049 | `strategies/base.py` | `StrategyRegistry.__new__` printed on import. | Removed. |
+| B050 | `config.py` | `Settings(extra="ignore")` swallowed YAML mismatch. | Added `_flatten_yaml` and `Settings.from_yaml_safe`. |
+| B051 | `monitoring/__init__.py` | Eagerly imports `cryptobot.monitoring.metrics` → no-Prometheus env crashes on `import cryptobot.monitoring`. | **Open** — documented in `19_Open_Questions.md` AV-2; consider lazy re-exports. |
+| B060 | `risk/manager.py:43-44` | Notional check bypassed for market orders. | Added `notional_price > 0` check; skip notional when no valid price. |
+| B061 | `execution/engine.py:40` | `check_order(order, order.price)` passed `None` for market orders. | Fetch market price via `venue.get_price()` for market orders before risk check. |
+| B062 | `backtest/engine.py:235` | `event.payload.get("price", event.payload.get("close_price", 0))` returned `"0"` if both missing. | Skip mark price update if no valid price in payload. |
+| B063 | `backtest/engine.py:306` | Equity update added unrealized PnL on top of `total_equity` (double-count). | Removed manual equity update; portfolio tracks equity via position updates. |
+| B064 | `backtest/engine.py:294` | `pnl_pct` divided by zero if `entry_price=0`. | Guarded with `pos.entry_price > 0` check. |
+| B065 | `ml/models/direction.py:114-115` | Walk-forward `predict` normalized test using its own mean/std — data leakage. | Store train statistics (`_feature_means`, `_feature_stds`) in `fit()`; use in `predict()`. |
+| B066 | `monitoring/health.py:443,472` | `settings.exchange.symbols` empty — health checks passed vacuously. | Fallback to `[settings.exchange.default_symbol]`. |
+| B067 | `monitoring/alerting.py:259-260` | Email sent via `run_in_executor(None, _send_sync)` — new thread per email. | Shared `ThreadPoolExecutor` (max_workers=2), lazy init + shutdown in `AlertManager.stop()`. |
+| B068 | `data/cleaning.py:88-89` | `start`/`end` defaulted to `datetime.utcnow()` if `open_time` missing. | Made `start`/`end` Optional; `None` when column missing. |
+| B069 | `core/state.py:202` | DB path `cryptobot.db` in cwd not in mounted volume. | Use `/app/data` if exists, else cwd. |
+| B053 | `deploy/k8s/` | Missing `Service` and `HPA` resources. | `05-service.yaml` (ClusterIP) + `06-hpa.yaml` (CPU/memory HPA) added; kustomization.yaml updated. |
+| B054 | `src/cryptobot/strategies/ml_strategy.py` | File did not exist; plan.md Phase 4 claimed `[x]`. | Created `MLStrategy` + `MLStrategyConfig` using `DirectionClassifier`. |
+| B055 | `requirements/prod.txt` | Listed `lightgbm>=4.5` but implementation uses sklearn. | Removed `lightgbm>=4.5`. |
+| B056 | `src/cryptobot/data/features.py` | File did not exist; `ml/features.py` was canonical. | Created `data/features.py` as re-export of `cryptobot.ml.features`. |
 | B057 | `strategies/registry.py` | `ml_strategy` missing from strategy registry map. | Added `ml_strategy` to `_STRATEGY_REGISTRY_MAP`. |
-| B058 | `configs/base.yaml` | `ml.models.direction.type: lightgbm` but implementation uses sklearn. | Changed to `sklearn_logreg`; disabled `volatility`/`regime` (not implemented). |
-| B059 | `configs/base.yaml` | `strategies.enabled` list not read by any code. | Added `load_strategies_from_config()` in `strategies/registry.py` with `_STRATEGY_REGISTRY_MAP`. |
-| B035 | `monitoring/dashboard.py` | Dashboard JSON builders reference Prometheus metric names with `cryptobot_` prefix. | Verified — all referenced metrics exist in `metrics.py`. False positive. |
+| B058 | `configs/base.yaml` | `ml.models.direction.type: lightgbm` but implementation uses sklearn. | Changed to `sklearn_logreg`; disabled `volatility`/`regime`. |
+| B059 | `configs/base.yaml` | `strategies.enabled` list not read by any code. | Added `load_strategies_from_config()` with `_STRATEGY_REGISTRY_MAP`. |
 
 ## Open (verified)
 
 | ID | File | Bug | Risk |
 |----|------|------|------|
-| B030 | `data/cleaning.py` | `clean_klines` `report.start`/`end` defaults to `datetime.utcnow()` when columns missing at top of function. | Cosmetic. |
+| B051 | `monitoring/__init__.py` | Eagerly imports `cryptobot.monitoring.metrics` — no-Prometheus env crashes. | Medium. Lazy-import in downstream consumers; or convert `monitoring/__init__.py` to a thin facade. |
+| **NEW** | `Cargo.toml [workspace] members` + 6 empty `crates/*` | `cargo build` fails: 6 of 7 declared members have no `Cargo.toml`. | High for any Rust-aware CI / cross-crate refactor; Low otherwise (Python doesn't depend on Rust at runtime). |
+| **NEW** | `src/cryptobot/{allocator,altdata,api,exchanges,funding,xmr}/` | Dead empty dirs left in tree. | Cosmetic; bloat; hint to newcomers. |
 
 ## Will-surprise areas
 
-- `backtest/engine.py` `_handle_order_fill` opens positions using `PositionSide.LONG if side == "BUY" else PositionSide.SHORT`. This is correct for spot but ambiguous for futures with hedge mode. Verify.
 - `core/portfolio.py` `StrategyAllocation` initial `max_weight=0.2` is hardcoded; reads `settings.risk.max_single_position_pct` only if `register_strategy` is called with an explicit `max_weight` arg.
 - `risk/manager.py` uses `state.used_margin + notional` for total exposure. `used_margin` may not reflect actual margin usage for cross-margin venues.
+- `crates/cryptobot-core/src/{events,math,time,types}/` are empty subdirs; only the manifest exists.
+- `BinanceWSClient._symbols` / `_timeframes` fallback is silent (B044) — if YAML is misconfigured the bot quietly streams only `BTCUSDT 1m`. Add a `get_logger().warning` when fallback fires.
 
 ## Verification plan
 
 - `python3 -m py_compile` on all edited files: passes.
 - `docker compose --profile test config`: passes.
-- `docker compose config` (default profile): fails on missing `monitoring/{loki,promtail,nginx}`.
-- Full Docker run blocked by host daemon instability.
+- `docker compose config` (default profile): passes (scaffolded `monitoring/{loki,promtail,nginx}`).
+- `cargo build` from repo root: **fails** until workspace is trimmed or per-crate manifests added.
+- Full Docker runtime blocked by host daemon instability on some hosts.

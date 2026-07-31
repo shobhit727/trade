@@ -1,18 +1,17 @@
 # 08. Config Reference
 
-> **Last Updated**: 2026-07-29 (audit pass)
-> **Confidence**: High for Settings fields; High for mismatch with YAML.
+> **Last Updated**: 2026-07-31 (audit v2)
+> **Confidence**: High for Settings fields; High for YAML behavior.
 
 ## Source of truth
 
 - `src/cryptobot/config.py` defines `Settings` (Pydantic v2 BaseSettings, `extra="ignore"`).
-- `configs/base.yaml` is loaded via `Settings.from_yaml_safe` (flattens nested groups) or `Settings.from_yaml` (legacy direct `**` spread). `get_settings()` calls `from_yaml_safe` indirectly via `from_yaml` since both paths share the loader.
+- `configs/base.yaml` is loaded via `Settings.from_yaml_safe` (uses `_flatten_yaml` to translate nested groups) or `Settings.from_yaml` (legacy direct `**` spread).
+- `get_settings()` lru_cache wraps a `Settings()` instance; CLI uses `Settings.from_yaml_safe` for the YAML path.
 
-## Historical note
+## Current state (post-B050)
 
-Prior to 2026-07-29, `configs/base.yaml` keys did not match `Settings` flat field names; `extra="ignore"` silently dropped unknowns. `Settings.from_yaml_safe` and `_flatten_yaml` translate the nested YAML structure into the flat Settings shape so YAML keys like `exchanges.binance.symbols` reach `settings.exchange.symbols`.
-
-For reference, here is the original nested→flat mapping that `_flatten_yaml` implements:
+`Settings.from_yaml_safe` and `_flatten_yaml` translate the nested YAML structure (`exchanges.binance`, `monitoring.alerts.*`, `xmr.*`, etc.) into the flat Settings shape. Example mappings:
 
 | YAML key | Settings field |
 |----------|----------------|
@@ -43,15 +42,21 @@ For reference, here is the original nested→flat mapping that `_flatten_yaml` i
 | `database` | `DB_` | type, host, port, name, user, password, pool_size, max_overflow |
 | `backtest` | `BACKTEST_` | enabled, start_date, end_date, initial_capital, commission_bps, slippage_bps, funding_rate_included |
 
-## Blockers
+## ML config (post-B055/B058)
 
-- Fix `configs/base.yaml` to match Settings field names OR add a nested-upgrade step (`yaml.safe_load` then `Settings(**renamed_dict)`).
-- Without this fix, `settings.exchange.symbols` is an empty list in production.
+- `configs/base.yaml` `ml.models.direction.type: sklearn_logreg`. `DirectionClassifier` uses sklearn `LogisticRegression` when available, else closed-form numpy fallback.
+- `volatility` and `regime` blocks have `enabled: false` because the corresponding `ml/models/{volatility,regime}.py` are not implemented.
+- `lightgbm` removed from `requirements/prod.txt` (B055).
 
-## Resolution (2026-07-29)
+## Strategies config (post-B057/B059)
 
-`Settings.from_yaml_safe` and `_flatten_yaml` in `src/cryptobot/config.py` translate the nested YAML structure (`exchanges.binance`, `monitoring.alerts.*`, etc.) into the flat Settings shape. `Settings.from_yaml` retains the legacy behavior; new code should use `from_yaml_safe`.
+- `configs/base.yaml` `strategies.*.enabled` list is read by `cryptobot.strategies.registry.load_strategies_from_config`.
+- `_STRATEGY_REGISTRY_MAP` covers `mean_reversion`, `trend_following`, `statistical_arbitrage`, `funding_arbitrage`, `market_making`, `ml_strategy`.
+
+## Historical note
+
+Prior to 2026-07-29, `configs/base.yaml` keys did not match `Settings` flat field names; `extra="ignore"` silently dropped unknowns. `Settings.from_yaml_safe` and `_flatten_yaml` translate the nested YAML structure into the flat Settings shape so YAML keys like `exchanges.binance.symbols` reach `settings.exchange.symbols`.
 
 ## Confidence
 
-- High: every line of `config.py` and `bases/base.yaml` checked.
+- High: every line of `config.py` and `configs/base.yaml` checked.

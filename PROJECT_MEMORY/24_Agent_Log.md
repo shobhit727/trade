@@ -1,9 +1,9 @@
 # 24. Agent Log
 
-> **Last Updated**: 2026-07-31 (audit sync)
+> **Last Updated**: 2026-07-31 (audit v2)
 > **Confidence**: High.
 
-## Session 2026-07-31
+## Session 2026-07-31 (audit v2 — current pass)
 
 ### User goals
 
@@ -12,63 +12,58 @@
 
 ### Sequence
 
-1. Walked every file in repo and produced a verified inventory (src/, tests/, crates/, configs/, deploy/, monitoring/, docker/, scripts/, migrations/, root).
-2. Cross-referenced `plan.md`, `PROJECT_MEMORY/12_Feature_Status.md`, `13_Bug_Tracker.md`, `14_Technical_Debt.md`, `00_Project_Overview.md`, `23_Repository_History.md`, `24_Agent_Log.md` against actual code.
-3. Found 26 distinct mismatches across the three sources (plan over-claims, Memory under-claims, both stale vs code).
-4. Created `PROJECT_MEMORY/25_Audit_2026-07-31.md` documenting all mismatches.
-5. Updated `plan.md`:
-   - Section 2 status table: corrected all stale ✅/🔲/⚠️ for 40+ modules.
-   - Section 3 architecture tree: fully updated to match actual file tree.
-   - Section 4 Phases 2-8: corrected statuses (Phase 2 ✅, Phase 4 ⚠️, Phase 6 ⚠️, Phase 8 ⚠️).
-   - Section 5 technical decisions: updated Rust and ML framework status.
-6. Updated `PROJECT_MEMORY/12_Feature_Status.md`: all modules re-verified, bugs resolved added, new open bugs noted.
-7. Updated `PROJECT_MEMORY/13_Bug_Tracker.md`: 23 bugs moved Resolved; 12 new open bugs added (B052-B059).
-8. Updated `PROJECT_MEMORY/14_Technical_Debt.md`: resolved items marked done; new critical items added.
-9. Updated `PROJECT_MEMORY/00_Project_Overview.md`, `23_Repository_History.md`, `24_Agent_Log.md`.
-10. Prepared commit + push.
+1. Walked every directory (`src/`, `tests/`, `crates/`, `configs/`, `deploy/`, `monitoring/`, `docker/`, `scripts/`, `migrations/`, `docs/`) and produced a verified inventory.
+2. Read every `PROJECT_MEMORY/0X_*.md` plus `25_Audit_2026-07-31.md`.
+3. Cross-referenced against actual code: `grep` for `lightgbm` (gone), `ml_strategy.py` (present), `data/features.py` (present), K8s `Service`/`HPA` (present), Rust manifests (only `cryptobot-core`), monitoring subdirs (scaffolded).
+4. Found v1 audit (`25_Audit_2026-07-31.md`) and many `PROJECT_MEMORY/0X_*.md` files were **stale** post-B051-B069 fixes. v1 audit still claimed `ml_strategy.py` missing, K8s lacking Service/HPA, lightgbm in prod.txt — all wrong.
+5. Wrote `PROJECT_MEMORY/26_Audit_2026-07-31_v2.md` capturing current state and remaining drift.
+6. Refreshed stale memory docs: `01`, `02`, `04`, `05`, `06`, `07`, `09`, `11`, `13`, `14`, `15`, `17`, `19`, `20`, `21`, `22`. Marked `25` superseded.
+7. Deduped duplicate B026/B042/B043/B053 rows in `13_Bug_Tracker.md`; added "Open" row for Rust workspace defect and dead-dirs defect.
+8. Marked `12_Feature_Status.md` `data/features.py`, `ml_strategy.py`, `deploy/k8s/` to ✅; corrected Rust notes.
+9. Updated `00_Project_Overview.md` to current state.
+10. Refreshed `23_Repository_History.md` and this log.
 
-### Verified facts (not assumed)
+### Verified facts (post-fix)
 
-- `Settings(extra="ignore")` silently drops YAML keys — mitigated by `_flatten_yaml` + `from_yaml_safe`.
-- `core/state.py` falls back when `_sqlite3` missing + logs warning.
-- `monitoring/metrics.py` uses `Gauge` for PnL (not Counter).
-- `data/ingestion.py` opens `aiohttp` sessions per call (no reuse) — B042 open.
-- `strategies/base.py` no longer prints on import.
-- `core/clock.py` no longer prints.
-- `backtest/engine.py` no longer prints.
-- `utils/decorators.py` jitter clamped to ≥0; `circuit_breaker` raises in running loop.
-- `execution/engine.py` emits `ORDER_REJECTED` with reason + check_type on risk/venue reject.
-- `core/portfolio.py` `update_equity` auto-resets daily PnL on UTC day boundary.
-- `core/bus.py` `publish_batch` dispatches atomically under single lock.
-- `monitoring/alerting.py` `init_alerting()` skips start when no channels; `stop()` idempotent.
-- `BinanceVenue` exists (240 lines) and tested.
-- `ml_strategy.py` does NOT exist — plan.md Phase 4 wrong.
-- `data/features.py` does NOT exist — use `ml/features.py`.
-- `deploy/k8s/` missing Service + HPA.
-- `docker-compose.yml` default profile broken (missing monitoring/{loki,promtail,nginx}).
-- Rust workspace: 7 crates with empty `src/` — `cargo build` fails.
-- 6 dead empty dirs under `src/cryptobot/`.
+- ✅ `ml_strategy.py` (145 lines, `MLStrategy` + `MLStrategyConfig`).
+- ✅ `data/features.py` (28 lines, re-export of `cryptobot.ml.features`).
+- ✅ `deploy/k8s/05-service.yaml` (ClusterIP) + `06-hpa.yaml` (v2 CPU/memory) + `kustomization.yaml` references both.
+- ✅ `lightgbm` removed from `requirements/prod.txt`.
+- ✅ `configs/base.yaml` `ml.models.direction.type: sklearn_logreg`; `volatility`/`regime` `enabled: false`.
+- ✅ `strategies/registry.py` defines `load_strategies_from_config` + `_STRATEGY_REGISTRY_MAP` (6 strategies).
+- ✅ `monitoring/{loki,promtail,nginx}` scaffolded with config files; default compose profile validates.
+- ✅ `BinanceDataIngestion` uses `_ensure_session()` with lock (B042).
+- ✅ `HealthMonitor.unregister_check`, `update_check_interval`, `get_check` added (B043).
+- ✅ `RiskManager.check_order` skips notional when no valid price (B060); `ExecutionEngine` fetches `venue.get_price()` for market orders (B061).
+- ✅ `BacktestEngine._handle_order_fill` no longer double-counts unrealized PnL (B063); guards entry_price=0 (B064).
+- ✅ `DirectionClassifier` persists `_feature_means/_stds` from `fit` for `predict` (B065).
+- ✅ Health checks fall back to `[settings.exchange.default_symbol]` (B066).
+- ✅ `AlertManager` shared `ThreadPoolExecutor(max_workers=2)` for email (B067).
+- ✅ `StateManager` DB path: `/app/data` if mounted, else cwd (B069).
+
+### Remaining real gaps
+
+- `Cargo.toml [workspace] members` declares 7 crates but only `crates/cryptobot-core/Cargo.toml` exists; `cargo build` from root errors on the other 6 missing manifests. Trivial fix: trim members array or add minimal manifest per crate.
+- `crates/cryptobot-core/src/{events,math,time,types}/` are empty subdirs; no `lib.rs` so the crate doesn't produce a lib artifact.
+- 6 dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/`.
+- `monitoring/__init__.py` eager-imports `cryptobot.monitoring.metrics` (B051 still Open).
+- `ml/models/{volatility,regime,ensemble}.py` missing (disabled in YAML).
+- `plan.md` self-contradicts: Section 2 table still claims "No Service, no HPA" while Section 8 says they're done. Stray `)` in Section 3 tree.
 
 ### Decisions
 
-- Sync all docs to match code reality (not aspirational state).
-- Leave `ml_strategy.py` as 🔲 in plan.md and add B054 to bug tracker — user to decide implement or downgrade.
-- Leave compose default profile broken (B052) — user to scaffold missing dirs or remove services.
-- Leave K8s missing Service/HPA (B053) — user to add.
-- Drop `lightgbm` from requirements if unused (B055) — user to confirm.
-- Fix config mismatches (B058, B059) — user to confirm.
+- Sync all docs to match code reality.
+- Mark v1 audit superseded and point readers to v2.
+- Treat the Rust workspace defect as **out-of-scope** for this audit pass (5 min fix but requires touching workspace + each empty crate); flagged in `14_Technical_Debt.md`.
 
 ### Open questions
 
-- Should `ml_strategy.py` be implemented now or plan.md Phase 4 downgraded?
-- Should `monitoring/{loki,promtail,nginx}` be scaffolded or removed from compose?
-- Should `lightgbm` be removed from `requirements/prod.txt`?
-- Should `data/features.py` be created as alias or plan reference removed?
-- Should Rust crates get minimal `lib.rs` or be removed from workspace?
-- Should `configs/base.yaml` `strategies.enabled` be wired to registry auto-load?
+- Should the Rust workspace be trimmed to `["crates/cryptobot-core"]` or fleshed out with minimal `lib.rs` per crate?
+- Should the 6 dead `src/cryptobot/` dirs be deleted or documented?
+- Should `BinanceWSClient` fallback log a warning when fired?
 
 ### Confidence
 
-- High on facts in `00`, `12`, `13`, `14`, `23`, `24`, `25`.
+- High on facts in `00`, `02`, `04`, `05`, `06`, `07`, `09`, `11`, `12`, `13`, `14`, `15`, `17`, `19`, `20`, `21`, `22`, `23`, `26`.
 - Medium on behavior of modules not exercised by tests.
-- Low on ML/Rust coverage.
+- Low on live Binance behavior and Rust performance layer.

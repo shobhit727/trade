@@ -1,6 +1,6 @@
 # 15. Design Patterns
 
-> **Last Updated**: 2026-07-29 (audit pass)
+> **Last Updated**: 2026-07-31 (audit v2)
 > **Confidence**: High.
 
 ## Singleton
@@ -24,41 +24,51 @@
 
 - `cryptobot.core.clock.ClockFactory.create(...)` / `create_for_backtest` / `create_for_paper` / `create_for_live`.
 - `cryptobot.backtest.simulator.FillSimulatorFactory.create_for_backtest` / `create_for_paper` / `create_for_live`.
-- `cryptobot.execution.venue.base.Venue` (abstract) + `SimulatedVenue` (concrete).
+- `cryptobot.execution.venue.base.Venue` (abstract) + `SimulatedVenue` (concrete) + `BinanceVenue` (ccxt).
+- `cryptobot.execution.engine.build_venue(mode)` selects by `settings.execution.mode`.
+- `cryptobot.execution.algorithms.slicer_for(name)` (TWAP/VWAP/POV/IS/Iceberg/arrival/etc).
+- `cryptobot.strategies.registry.load_strategies_from_config` instantiates enabled strategies from YAML.
 
 ## Strategy
 
-- `cryptobot.strategies.base.BaseStrategy` ABC. `MeanReversionStrategy` placeholder implementation.
+- `cryptobot.strategies.base.BaseStrategy` ABC with 6 concrete subclasses (mean_reversion, trend_following, stat_arb, funding_arb, market_making, ml_strategy).
 
 ## Observer / Pub-Sub
 
-- `cryptobot.core.bus.EventBus` with sync/async callbacks, wildcard, filter, history.
+- `cryptobot.core.bus.EventBus` with sync/async callbacks, wildcard, filter, history, replay, atomic `publish_batch`.
 
 ## Registry
 
-- `cryptobot.strategies.base.StrategyRegistry` (overwrites duplicates silently).
+- `cryptobot.strategies.base.StrategyRegistry`.
+- `cryptobot.strategies.registry._STRATEGY_REGISTRY_MAP` — name → `(class, config_class)`.
+- `cryptobot.execution.venue.base.Venue` registry via `build_venue`.
 
 ## Decorator
 
-- `cryptobot.utils.decorators.retry`, `timeout_decorator`, `circuit_breaker`.
+- `cryptobot.utils.decorators.retry` (jitter clamped to ≥0), `timeout_decorator`, `circuit_breaker` (raises in running loop).
 
 ## Dataclass + Pydantic boundary
 
-- Pydantic (`config.py`) for external config.
-- `dataclass` for internal state, events, metrics.
+- Pydantic (`config.py`) for external config (Settings groups).
+- `dataclass` for internal state, events, metrics, strategy configs.
 
 ## Pipeline
 
 - `cryptobot.backtest.engine.BacktestEngine.run(stream)` consumes `AsyncIterator[Event]`.
 
-## Anti-patterns observed
+## Anti-patterns observed (resolved)
 
-- Global singletons everywhere; no DI container.
-- `print(...)` mixed with structlog.
-- `Counter` used for PnL (must be `Gauge`).
-- `Settings(extra="ignore")` swallows YAML mismatch.
-- `market_data.manager.BinanceWSClient` prints status messages.
-- `StrategyRegistry.__new__` prints on import.
+- ~~Global singletons everywhere; no DI container.~~  (still an architectural choice; consider `dependency-injector` later.)
+- ~~`print(...)` mixed with structlog~~ — removed from `core/clock.py`, `backtest/engine.py`, `strategies/base.py` (B046/B049 and follow-ups).
+- ~~`Counter` used for PnL~~ — replaced with `Gauge` (B025/B037).
+- ~~`Settings(extra="ignore")` swallows YAML mismatch~~ — `_flatten_yaml` + `from_yaml_safe` translates nested YAML (B050).
+- ~~`market_data.manager.BinanceWSClient` prints status messages~~ — fallback to `default_symbol` + `["1m"]` instead of warning (B044).
+- ~~`StrategyRegistry.__new__` prints on import~~ — removed (B049).
+
+## Anti-patterns still observed
+
+- `monitoring/__init__.py` eagerly re-exports `cryptobot.monitoring.metrics` (Prometheus dep at import time) — B051 still Open; importers should use lazy imports where applicable.
+- 6 dead empty dirs under `src/cryptobot/` — left in tree.
 
 ## Confidence
 
