@@ -3,13 +3,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Awaitable, Callable, Dict, List, Optional, Sequence
 
-from cryptobot.core.events import OrderEvent, OrderSide
+from cryptobot.core.events import OrderEvent
 from cryptobot.execution.venue.base import Venue
-
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +24,7 @@ class VenueScore:
     latency_ms: float = 0.0
     fee_bps: Decimal = Decimal("0")
     liquidity_score: float = 1.0
-    error: Optional[str] = None
+    error: str | None = None
     round_trip_ms: float = 0.0
 
     @property
@@ -48,8 +47,8 @@ class RouterConfig:
 @dataclass
 class RoutedOrder:
     parent: OrderEvent
-    children: List[OrderEvent] = field(default_factory=list)
-    fills: List[OrderEvent] = field(default_factory=list)
+    children: list[OrderEvent] = field(default_factory=list)
+    fills: list[OrderEvent] = field(default_factory=list)
 
     @property
     def is_complete(self) -> bool:
@@ -82,13 +81,13 @@ class SmartOrderRouter:
     def __init__(
         self,
         venues: Sequence[Venue],
-        config: Optional[RouterConfig] = None,
+        config: RouterConfig | None = None,
         ranker: Ranker = best_price_ranker,
-        fee_overrides: Optional[Dict[str, Decimal]] = None,
+        fee_overrides: dict[str, Decimal] | None = None,
     ):
         if not venues:
             raise ValueError("SmartOrderRouter requires at least one venue")
-        self.venues: List[Venue] = list(venues)
+        self.venues: list[Venue] = list(venues)
         self.config = config or RouterConfig()
         self.ranker = ranker
         self.fee_overrides = dict(fee_overrides or {})
@@ -132,11 +131,11 @@ class SmartOrderRouter:
         except Exception as exc:
             logger.debug("metrics record skipped: %s", exc)
 
-    async def quote_all(self, symbol: str) -> List[VenueScore]:
+    async def quote_all(self, symbol: str) -> list[VenueScore]:
         scores = await asyncio.gather(*(self._quote(v, symbol) for v in self.venues))
         return list(scores)
 
-    def pick(self, scores: Sequence[VenueScore]) -> Optional[VenueScore]:
+    def pick(self, scores: Sequence[VenueScore]) -> VenueScore | None:
         idx = self.ranker(symbol="", scores=scores)
         return scores[idx] if idx >= 0 else None
 

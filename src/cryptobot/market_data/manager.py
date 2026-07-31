@@ -5,31 +5,33 @@ import json
 import logging
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field
+from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Callable, Optional
-from uuid import uuid4
-
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 import aiohttp
 import redis.asyncio as redis
-from pydantic import BaseModel
 
 from cryptobot.config import settings
 from cryptobot.core.events import (
-    Event, EventType, TickerEvent, OrderBookEvent, TradeEvent,
-    KlineEvent, FundingRateEvent, create_event
+    Event,
+    EventType,
+    FundingRateEvent,
+    KlineEvent,
+    OrderBookEvent,
+    TickerEvent,
+    TradeEvent,
 )
 
 
 class BinanceWSClient:
     def __init__(self):
         self.ws_url = settings.exchange.ws_url
-        self.session: Optional[aiohttp.ClientSession] = None
-        self.ws: Optional[aiohttp.ClientWebSocketResponse] = None
+        self.session: aiohttp.ClientSession | None = None
+        self.ws: aiohttp.ClientWebSocketResponse | None = None
         self.running = False
         self.subscriptions: set[str] = set()
         self.callbacks: dict[str, list[Callable]] = defaultdict(list)
@@ -227,7 +229,7 @@ class BinanceWSClient:
 
 class MarketDataCache:
     def __init__(self):
-        self.redis: Optional[redis.Redis] = None
+        self.redis: redis.Redis | None = None
         self.local_cache: dict[str, Any] = {}
         self.ttl = settings.market_data.cache_ttl_seconds
 
@@ -251,7 +253,7 @@ class MarketDataCache:
         if self.redis:
             await self.redis.setex(key, self.ttl, json.dumps(data))
 
-    async def get_ticker(self, symbol: str) -> Optional[dict]:
+    async def get_ticker(self, symbol: str) -> dict | None:
         key = f"ticker:{symbol}"
         if key in self.local_cache:
             return self.local_cache[key]
@@ -268,7 +270,7 @@ class MarketDataCache:
         if self.redis:
             await self.redis.setex(key, self.ttl, json.dumps(data))
 
-    async def get_orderbook(self, symbol: str) -> Optional[dict]:
+    async def get_orderbook(self, symbol: str) -> dict | None:
         key = f"orderbook:{symbol}"
         if key in self.local_cache:
             return self.local_cache[key]
@@ -300,7 +302,7 @@ class MarketDataCache:
         if self.redis:
             await self.redis.setex(key, self.ttl, json.dumps(data))
 
-    async def get_funding_rate(self, symbol: str) -> Optional[dict]:
+    async def get_funding_rate(self, symbol: str) -> dict | None:
         key = f"funding:{symbol}"
         if key in self.local_cache:
             return self.local_cache[key]
@@ -362,13 +364,13 @@ class MarketDataManager:
             except Exception as e:
                 logger.warning("Callback error: %s", e)
 
-    def get_ticker(self, symbol: str) -> Optional[TickerEvent]:
+    def get_ticker(self, symbol: str) -> TickerEvent | None:
         data = self.cache.local_cache.get(f"ticker:{symbol}")
         if data:
             return TickerEvent(**data)
         return None
 
-    def get_orderbook(self, symbol: str) -> Optional[OrderBookEvent]:
+    def get_orderbook(self, symbol: str) -> OrderBookEvent | None:
         data = self.cache.local_cache.get(f"orderbook:{symbol}")
         if data:
             return OrderBookEvent(**data)

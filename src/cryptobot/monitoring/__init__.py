@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 _METRICS_EXPORTS = {
     "system_info",
     "init_system_info",

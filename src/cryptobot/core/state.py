@@ -3,17 +3,23 @@ from __future__ import annotations
 import json
 import threading
 from contextlib import contextmanager
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Optional
-from uuid import uuid4
+from typing import Any
 
 from cryptobot.config import settings
 from cryptobot.core.events import (
-    Event, EventType, OrderEvent, PositionEvent, PnLEvent,
-    OrderStatus, PositionSide, OrderSide, OrderType, TimeInForce
+    Event,
+    OrderEvent,
+    OrderSide,
+    OrderStatus,
+    OrderType,
+    PnLEvent,
+    PositionEvent,
+    PositionSide,
+    TimeInForce,
 )
 
 try:
@@ -32,11 +38,11 @@ class Order:
     side: OrderSide = OrderSide.BUY
     type: OrderType = OrderType.LIMIT
     quantity: Decimal = Decimal("0")
-    price: Optional[Decimal] = None
-    stop_price: Optional[Decimal] = None
+    price: Decimal | None = None
+    stop_price: Decimal | None = None
     status: OrderStatus = OrderStatus.NEW
     filled_quantity: Decimal = Decimal("0")
-    avg_fill_price: Optional[Decimal] = None
+    avg_fill_price: Decimal | None = None
     commission: Decimal = Decimal("0")
     commission_asset: str = ""
     time_in_force: TimeInForce = TimeInForce.GTC
@@ -103,7 +109,7 @@ class Position:
     leverage: int = 1
     margin_type: str = "ISOLATED"
     isolated_margin: Decimal = Decimal("0")
-    liquidation_price: Optional[Decimal] = None
+    liquidation_price: Decimal | None = None
     strategy: str = ""
     opened_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
@@ -180,7 +186,7 @@ class AccountState:
 
 
 class StateManager:
-    _instance: Optional[StateManager] = None
+    _instance: StateManager | None = None
     _lock = threading.Lock()
 
     def __new__(cls):
@@ -416,7 +422,7 @@ class StateManager:
                 event.source, event.correlation_id, json.dumps(event.payload)
             ))
 
-    def get_order(self, order_id: str) -> Optional[Order]:
+    def get_order(self, order_id: str) -> Order | None:
         return self._orders.get(order_id)
 
     def get_orders(self, symbol: str = "", strategy: str = "") -> list[Order]:
@@ -434,7 +440,7 @@ class StateManager:
             orders = [o for o in orders if o.symbol == symbol]
         return orders
 
-    def get_position(self, symbol: str) -> Optional[Position]:
+    def get_position(self, symbol: str) -> Position | None:
         return self._positions.get(symbol)
 
     def get_positions(self, strategy: str = "") -> list[Position]:

@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Deque, List, Optional, Tuple
 
 from cryptobot.core.events import OrderEvent, OrderSide
 from cryptobot.execution.engine import ExecutionEngine
@@ -26,14 +25,14 @@ class StatArbConfig:
 class StatArbStrategy:
     name = "stat_arb"
 
-    def __init__(self, config: Optional[StatArbConfig] = None):
+    def __init__(self, config: StatArbConfig | None = None):
         self.config = config or StatArbConfig()
-        self._prices_a: Deque[float] = deque(maxlen=self.config.lookback)
-        self._prices_b: Deque[float] = deque(maxlen=self.config.lookback)
-        self._exec: Optional[ExecutionEngine] = None
+        self._prices_a: deque[float] = deque(maxlen=self.config.lookback)
+        self._prices_b: deque[float] = deque(maxlen=self.config.lookback)
+        self._exec: ExecutionEngine | None = None
         self.inventory_a = Decimal("0")
         self.inventory_b = Decimal("0")
-        self.fills: List[OrderEvent] = []
+        self.fills: list[OrderEvent] = []
 
     def attach_execution(self, engine: ExecutionEngine) -> None:
         self._exec = engine
@@ -43,7 +42,7 @@ class StatArbStrategy:
         self._prices_b.append(price_b)
 
     @staticmethod
-    def _correlation(a: List[float], b: List[float]) -> float:
+    def _correlation(a: list[float], b: list[float]) -> float:
         n = min(len(a), len(b))
         if n < 5:
             return 0.0
@@ -56,7 +55,7 @@ class StatArbStrategy:
         return float(np.corrcoef(aa, bb)[0, 1])
 
     @staticmethod
-    def _hedge_ratio(a: List[float], b: List[float]) -> float:
+    def _hedge_ratio(a: list[float], b: list[float]) -> float:
         import numpy as np
 
         n = min(len(a), len(b))
@@ -71,7 +70,7 @@ class StatArbStrategy:
         return max(0.0, cov / var_b)
 
     @staticmethod
-    def _zscore(series: List[float]) -> float:
+    def _zscore(series: list[float]) -> float:
         n = len(series)
         if n < 2:
             return 0.0
@@ -84,14 +83,14 @@ class StatArbStrategy:
             return 0.0
         return float((arr[-1] - mu) / sd)
 
-    def _spread_series(self) -> List[float]:
+    def _spread_series(self) -> list[float]:
         n = min(len(self._prices_a), len(self._prices_b))
         return [
             a - self._hedge_ratio(list(self._prices_a), list(self._prices_b)) * b
             for a, b in zip(list(self._prices_a)[-n:], list(self._prices_b)[-n:])
         ]
 
-    def step(self) -> Optional[Tuple[OrderSide, OrderSide]]:
+    def step(self) -> tuple[OrderSide, OrderSide] | None:
         cfg = self.config
         if len(self._prices_a) < cfg.lookback or len(self._prices_b) < cfg.lookback:
             return None
@@ -110,7 +109,7 @@ class StatArbStrategy:
             return (OrderSide.BUY, OrderSide.SELL)
         return None
 
-    def feed_and_signal(self, price_a: float, price_b: float) -> Optional[Tuple[OrderSide, OrderSide]]:
+    def feed_and_signal(self, price_a: float, price_b: float) -> tuple[OrderSide, OrderSide] | None:
         self.feed(price_a, price_b)
         return self.step()
 

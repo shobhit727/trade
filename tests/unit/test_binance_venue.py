@@ -1,18 +1,16 @@
 from __future__ import annotations
 
-import asyncio
 from decimal import Decimal
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 
 from cryptobot.core.events import OrderEvent, OrderSide, OrderStatus, OrderType
-from cryptobot.execution.venue.binance import BinanceVenue
 
 
 class FakeExchange:
-    def __init__(self, responses: Dict[str, Any] | None = None, errors: list[Exception] | None = None):
+    def __init__(self, responses: dict[str, Any] | None = None, errors: list[Exception] | None = None):
         self.create_order = AsyncMock(side_effect=errors or [responses or self._default()])
         self.cancel_order = AsyncMock(return_value=None)
         self.fetch_ticker = AsyncMock(return_value={"last": "101.5"})
@@ -22,7 +20,7 @@ class FakeExchange:
         self.closed = True
 
     @staticmethod
-    def _default() -> Dict[str, Any]:
+    def _default() -> dict[str, Any]:
         return {
             "id": "binance-1",
             "status": "closed",

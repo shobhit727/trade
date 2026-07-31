@@ -13,14 +13,13 @@ from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set
-from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from enum import Enum
+from typing import Any
 
 from cryptobot.config import settings
 from cryptobot.utils.logging import get_logger
-
 
 logger = get_logger(__name__)
 
@@ -50,12 +49,12 @@ class Alert:
     severity: AlertSeverity = AlertSeverity.INFO
     category: AlertCategory = AlertCategory.SYSTEM
     source: str = ""
-    labels: Dict[str, str] = field(default_factory=dict)
-    annotations: Dict[str, str] = field(default_factory=dict)
+    labels: dict[str, str] = field(default_factory=dict)
+    annotations: dict[str, str] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=datetime.utcnow)
     fingerprint: str = ""
     resolved: bool = False
-    resolved_at: Optional[datetime] = None
+    resolved_at: datetime | None = None
 
     def __post_init__(self):
         if not self.fingerprint:
@@ -66,14 +65,14 @@ class Alert:
 class AlertRule:
     """Alert routing and notification rules."""
     name: str
-    category: Optional[AlertCategory] = None
-    severity: Optional[AlertSeverity] = None
-    labels: Dict[str, str] = field(default_factory=dict)
-    channels: List[str] = field(default_factory=list)
+    category: AlertCategory | None = None
+    severity: AlertSeverity | None = None
+    labels: dict[str, str] = field(default_factory=dict)
+    channels: list[str] = field(default_factory=list)
     cooldown: timedelta = field(default_factory=lambda: timedelta(minutes=15))
     auto_resolve: bool = True
     resolve_after: timedelta = field(default_factory=lambda: timedelta(hours=1))
-    escalation: Optional[Dict[AlertSeverity, List[str]]] = None
+    escalation: dict[AlertSeverity, list[str]] | None = None
 
 
 class NotificationChannel(ABC):
@@ -208,7 +207,7 @@ class DiscordChannel(NotificationChannel):
 class EmailChannel(NotificationChannel):
     """Email notification channel via SMTP."""
 
-    _executor: Optional[ThreadPoolExecutor] = None
+    _executor: ThreadPoolExecutor | None = None
     _executor_lock = asyncio.Lock()
 
     def __init__(
@@ -218,7 +217,7 @@ class EmailChannel(NotificationChannel):
         username: str,
         password: str,
         from_email: str,
-        to_emails: List[str],
+        to_emails: list[str],
         use_tls: bool = True,
     ):
         self.smtp_host = smtp_host
@@ -351,13 +350,13 @@ class AlertManager:
     """
 
     def __init__(self):
-        self.channels: Dict[str, NotificationChannel] = {}
-        self.rules: List[AlertRule] = []
-        self.active_alerts: Dict[str, Alert] = {}
-        self.alert_history: List[Alert] = []
-        self._cooldowns: Dict[str, datetime] = {}
+        self.channels: dict[str, NotificationChannel] = {}
+        self.rules: list[AlertRule] = []
+        self.active_alerts: dict[str, Alert] = {}
+        self.alert_history: list[Alert] = []
+        self._cooldowns: dict[str, datetime] = {}
         self._running = False
-        self._cleanup_task: Optional[asyncio.Task] = None
+        self._cleanup_task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
 
     def add_channel(self, channel: NotificationChannel):
@@ -381,7 +380,7 @@ class AlertManager:
                 return False
         return True
 
-    def _get_channels_for_alert(self, alert: Alert) -> List[NotificationChannel]:
+    def _get_channels_for_alert(self, alert: Alert) -> list[NotificationChannel]:
         """Determine which channels to use for an alert."""
         channels = set()
         for rule in self.rules:
@@ -470,7 +469,7 @@ class AlertManager:
 
         return sent_count
 
-    async def resolve_all(self, category: Optional[AlertCategory] = None):
+    async def resolve_all(self, category: AlertCategory | None = None):
         """Resolve all active alerts, optionally filtered by category."""
         alerts_to_resolve = list(self.active_alerts.values())
         for alert in alerts_to_resolve:
@@ -497,7 +496,7 @@ class AlertManager:
                 pass
             except Exception as e:
                 logger.error(f"Error awaiting cleanup task: {e}")
-        
+
         # Shutdown email executor
         from cryptobot.monitoring.alerting import EmailChannel
         await EmailChannel.shutdown_executor()
@@ -536,15 +535,15 @@ class AlertManager:
         for alert in to_resolve:
             await self.resolve(alert)
 
-    def get_active_alerts(self) -> List[Alert]:
+    def get_active_alerts(self) -> list[Alert]:
         """Get all active alerts."""
         return list(self.active_alerts.values())
 
-    def get_alert_history(self, limit: int = 100) -> List[Alert]:
+    def get_alert_history(self, limit: int = 100) -> list[Alert]:
         """Get recent alert history."""
         return self.alert_history[-limit:]
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get alert manager statistics."""
         return {
             "active_alerts": len(self.active_alerts),
@@ -608,7 +607,7 @@ DEFAULT_RULES = [
 
 
 # Global alert manager
-_alert_manager: Optional[AlertManager] = None
+_alert_manager: AlertManager | None = None
 
 
 def get_alert_manager() -> AlertManager:
@@ -666,7 +665,7 @@ async def alert(
     severity: AlertSeverity = AlertSeverity.INFO,
     category: AlertCategory = AlertCategory.SYSTEM,
     source: str = "",
-    labels: Optional[Dict[str, str]] = None,
+    labels: dict[str, str] | None = None,
 ) -> int:
     """Fire an alert."""
     manager = get_alert_manager()
@@ -686,7 +685,7 @@ async def alert_critical(
     message: str,
     category: AlertCategory = AlertCategory.SYSTEM,
     source: str = "",
-    labels: Optional[Dict[str, str]] = None,
+    labels: dict[str, str] | None = None,
 ) -> int:
     """Fire a critical alert."""
     return await alert(title, message, AlertSeverity.CRITICAL, category, source, labels)
@@ -697,7 +696,7 @@ async def alert_emergency(
     message: str,
     category: AlertCategory = AlertCategory.RISK,
     source: str = "",
-    labels: Optional[Dict[str, str]] = None,
+    labels: dict[str, str] | None = None,
 ) -> int:
     """Fire an emergency alert."""
     return await alert(title, message, AlertSeverity.EMERGENCY, category, source, labels)

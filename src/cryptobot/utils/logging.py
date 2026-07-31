@@ -11,16 +11,17 @@ import logging
 import logging.config
 import sys
 from contextvars import ContextVar
-from typing import Any, Dict, Optional
+from typing import Any
 from uuid import uuid4
 
 import structlog
+
 from cryptobot.config import settings
 
 # Context variables for request-scoped logging
-correlation_id_var: ContextVar[Optional[str]] = ContextVar("correlation_id", default=None)
-strategy_name_var: ContextVar[Optional[str]] = ContextVar("strategy_name", default=None)
-symbol_var: ContextVar[Optional[str]] = ContextVar("symbol", default=None)
+correlation_id_var: ContextVar[str | None] = ContextVar("correlation_id", default=None)
+strategy_name_var: ContextVar[str | None] = ContextVar("strategy_name", default=None)
+symbol_var: ContextVar[str | None] = ContextVar("symbol", default=None)
 
 
 def get_correlation_id() -> str:
@@ -69,7 +70,7 @@ class ContextFilter(logging.Filter):
         return True
 
 
-def add_context_to_event(logger: Any, method_name: str, event_dict: Dict[str, Any]) -> Dict[str, Any]:
+def add_context_to_event(logger: Any, method_name: str, event_dict: dict[str, Any]) -> dict[str, Any]:
     """Add context variables to structlog event dict."""
     cid = correlation_id_var.get()
     if cid:
@@ -163,7 +164,7 @@ def setup_logging(
     logging.getLogger("redis").setLevel(logging.WARNING)
 
 
-def get_logger(name: Optional[str] = None) -> structlog.stdlib.BoundLogger:
+def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     """
     Get a structured logger instance.
 

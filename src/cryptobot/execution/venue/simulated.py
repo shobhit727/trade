@@ -4,11 +4,9 @@ import logging
 import time
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Optional
 
 from cryptobot.core.events import OrderEvent, OrderStatus
 from cryptobot.execution.venue.base import Venue
-
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +26,7 @@ class FillResult:
 class SimulatedVenue(Venue):
     def __init__(
         self,
-        prices: Optional[dict[str, Decimal]] = None,
+        prices: dict[str, Decimal] | None = None,
         slippage_bps: Decimal = Decimal("2"),
         commission_bps: Decimal = Decimal("5"),
         funding_rate: Decimal = Decimal("0.0001"),

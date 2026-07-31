@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
-from datetime import datetime
 from decimal import Decimal
-from typing import Deque, Dict, Optional
 
 import numpy as np
 
@@ -25,21 +23,21 @@ class TrendFollowingConfig:
 class TrendFollowingStrategy:
     name = "trend_following"
 
-    def __init__(self, config: Optional[TrendFollowingConfig] = None):
+    def __init__(self, config: TrendFollowingConfig | None = None):
         self.config = config or TrendFollowingConfig()
-        self._highs: Dict[str, Deque[float]] = {}
-        self._lows: Dict[str, Deque[float]] = {}
-        self._closes: Dict[str, Deque[float]] = {}
-        self._entry_stop: Dict[str, float] = {}
+        self._highs: dict[str, deque[float]] = {}
+        self._lows: dict[str, deque[float]] = {}
+        self._closes: dict[str, deque[float]] = {}
+        self._entry_stop: dict[str, float] = {}
 
-    def _buf(self, symbol: str) -> tuple[Deque[float], Deque[float], Deque[float]]:
+    def _buf(self, symbol: str) -> tuple[deque[float], deque[float], deque[float]]:
         n = max(self.config.slow, self.config.adx_period * 2 + 1, self.config.atr_period + 1)
         h = self._highs.setdefault(symbol, deque(maxlen=n))
         l = self._lows.setdefault(symbol, deque(maxlen=n))
         c = self._closes.setdefault(symbol, deque(maxlen=n))
         return h, l, c
 
-    def feed(self, symbol: str, high: float, low: float, close: float) -> Optional[OrderEvent]:
+    def feed(self, symbol: str, high: float, low: float, close: float) -> OrderEvent | None:
         h, l, c = self._buf(symbol)
         h.append(high)
         l.append(low)

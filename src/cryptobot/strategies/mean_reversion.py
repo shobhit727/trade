@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 from decimal import Decimal
-from typing import Deque, Dict, List, Optional
 
 import numpy as np
-import pandas as pd
 
-from cryptobot.core.events import Event, OrderEvent, OrderSide
+from cryptobot.core.events import OrderEvent, OrderSide
 
 
 @dataclass
@@ -28,11 +25,11 @@ class MeanReversionConfig:
 class MeanReversionStrategy:
     name = "mean_reversion"
 
-    def __init__(self, config: Optional[MeanReversionConfig] = None):
+    def __init__(self, config: MeanReversionConfig | None = None):
         self.config = config or MeanReversionConfig()
-        self._prices: Dict[str, Deque[float]] = {}
+        self._prices: dict[str, deque[float]] = {}
 
-    def feed(self, symbol: str, price: float) -> Optional[OrderEvent]:
+    def feed(self, symbol: str, price: float) -> OrderEvent | None:
         buf = self._prices.setdefault(symbol, deque(maxlen=max(self.config.lookback, self.config.bb_period, self.config.rsi_period + 1)))
         buf.append(price)
         if len(buf) < self.config.bb_period:

@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Deque, Dict, List, Optional
 
 import numpy as np
 
@@ -15,7 +14,7 @@ from cryptobot.ml.models.direction import DirectionClassifier, DirectionConfig
 @dataclass
 class MLStrategyConfig:
     """Configuration for ML-driven trading strategy."""
-    symbols: List[str] = field(default_factory=lambda: ["BTCUSDT"])
+    symbols: list[str] = field(default_factory=lambda: ["BTCUSDT"])
     lookback: int = 100
     horizon: int = 5
     threshold: float = 0.55
@@ -35,14 +34,14 @@ class MLStrategy:
 
     name = "ml_strategy"
 
-    def __init__(self, config: Optional[MLStrategyConfig] = None):
+    def __init__(self, config: MLStrategyConfig | None = None):
         self.config = config or MLStrategyConfig()
-        self._prices: Dict[str, Deque[float]] = {}
-        self._classifier: Optional[DirectionClassifier] = None
+        self._prices: dict[str, deque[float]] = {}
+        self._classifier: DirectionClassifier | None = None
         self._bars_seen: int = 0
-        self._last_signal: Dict[str, int] = {}
+        self._last_signal: dict[str, int] = {}
 
-    def feed(self, symbol: str, price: float) -> Optional[OrderEvent]:
+    def feed(self, symbol: str, price: float) -> OrderEvent | None:
         """Feed a price tick and return an OrderEvent if a signal fires.
 
         Args:
@@ -111,7 +110,7 @@ class MLStrategy:
             side=side,
         )
 
-    def _retrain(self, buf: Deque[float]) -> None:
+    def _retrain(self, buf: deque[float]) -> None:
         """Retrain the direction classifier on recent data."""
         try:
             arr = np.fromiter(buf, dtype=float)
@@ -134,7 +133,7 @@ class MLStrategy:
         except Exception:
             self._classifier = None
 
-    def on_order_update(self, event: Event) -> List[OrderEvent]:
+    def on_order_update(self, event: Event) -> list[OrderEvent]:
         """Handle order update events (default: no action)."""
         return []
 

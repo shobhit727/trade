@@ -8,16 +8,13 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta
-from typing import List
 
 import pytest
 
 from cryptobot.monitoring.alerting import (
     Alert,
-    AlertCategory,
     AlertManager,
     AlertRule,
-    AlertSeverity,
     NotificationChannel,
 )
 
@@ -25,7 +22,7 @@ from cryptobot.monitoring.alerting import (
 class _RecordingChannel:
     def __init__(self, name: str = "test"):
         self.name = name
-        self.alerts: List[Alert] = []
+        self.alerts: list[Alert] = []
 
     def get_name(self) -> str:
         return self.name
@@ -256,7 +253,6 @@ def test_alert_to_dict_round_trip():
 
 
 def test_notification_channel_abstract():
-    from cryptobot.monitoring.alerting import NotificationChannel
 
     class Dummy(NotificationChannel):
         async def send(self, alert):
@@ -270,7 +266,7 @@ def test_notification_channel_abstract():
 
 
 def test_get_alert_manager_returns_singleton():
-    from cryptobot.monitoring.alerting import get_alert_manager, AlertManager
+    from cryptobot.monitoring.alerting import AlertManager, get_alert_manager
 
     m1 = get_alert_manager()
     m2 = get_alert_manager()

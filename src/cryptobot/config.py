@@ -1,9 +1,10 @@
 from functools import lru_cache
-from typing import Any, Dict, Optional
+from pathlib import Path
+from typing import Any
+
+import yaml
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-import yaml
-from pathlib import Path
 
 
 class AppSettings(BaseSettings):
@@ -181,7 +182,7 @@ class Settings(BaseSettings):
         return cls(**_flatten_yaml(data))
 
 
-def _flatten_yaml(data: Dict[str, Any]) -> Dict[str, Any]:
+def _flatten_yaml(data: dict[str, Any]) -> dict[str, Any]:
     binance = data.get("exchanges", {}).get("binance", {})
     market_data = data.get("market_data", {})
     redis_cfg = market_data.get("redis", {})
@@ -194,7 +195,7 @@ def _flatten_yaml(data: Dict[str, Any]) -> Dict[str, Any]:
     xmr_wallet = xmr.get("wallet_rpc", {})
     xmr_funding = xmr.get("funding", {})
 
-    flattened: Dict[str, Any] = {
+    flattened: dict[str, Any] = {
         "app": data.get("app", {}),
         "exchange": {
             "enabled": binance.get("enabled", True),

@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
 from decimal import Decimal
 
-import pytest
-
-from cryptobot.core.events import Event, OrderEvent, OrderSide, OrderStatus, OrderType, RiskEvent
+from cryptobot.core.events import OrderEvent, OrderSide
 from cryptobot.risk.manager import RiskCheckResult, RiskManager
 
 

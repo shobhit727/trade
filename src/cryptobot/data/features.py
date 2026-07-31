@@ -7,13 +7,13 @@ compatibility with existing references.
 
 from cryptobot.ml.features import (
     build_features,
-    future_returns,
-    compute_returns,
-    compute_rsi,
-    compute_macd,
     compute_atr_ratio,
     compute_bollinger,
     compute_log_volume,
+    compute_macd,
+    compute_returns,
+    compute_rsi,
+    future_returns,
 )
 
 __all__ = [

@@ -1,30 +1,23 @@
 from __future__ import annotations
 
 import asyncio
-import gzip
 import json
-import os
-import shutil
 from abc import ABC, abstractmethod
-from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
-from typing import Any, AsyncIterator, Dict, List, Optional, Set, Tuple
-from uuid import uuid4
+from typing import Any
 
 import aiohttp
-import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
 
-from cryptobot.config import settings
-from cryptobot.core.events import (
-    Event, EventType, TickerEvent, OrderBookEvent, TradeEvent,
-    KlineEvent, FundingRateEvent, OrderSide
-)
 from cryptobot.core.bus import get_event_bus
+from cryptobot.core.events import (
+    Event,
+    KlineEvent,
+    OrderSide,
+    TickerEvent,
+    TradeEvent,
+)
 
 
 @dataclass
@@ -42,7 +35,7 @@ class OHLCV:
     trades: int = 0
     is_closed: bool = True
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "symbol": self.symbol,
             "timeframe": self.timeframe,
@@ -90,7 +83,7 @@ class TradeData:
     side: OrderSide
     is_maker: bool = False
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "symbol": self.symbol,
             "trade_id": self.trade_id,
@@ -107,8 +100,8 @@ class DataSourceConfig:
     """Configuration for a data source."""
     name: str
     venue: str
-    symbols: List[str]
-    timeframes: List[str]
+    symbols: list[str]
+    timeframes: list[str]
     enabled: bool = True
     rate_limit: int = 1200
     api_key: str = ""
@@ -135,7 +128,7 @@ class DataIngestion(ABC):
         timeframe: str,
         start: datetime,
         end: datetime,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         pass
 
     @abstractmethod
@@ -148,15 +141,15 @@ class BinanceDataIngestion(DataIngestion):
 
     def __init__(self, config: DataSourceConfig):
         self.config = config
-        self._session: Optional[aiohttp.ClientSession] = None
+        self._session: aiohttp.ClientSession | None = None
         self._ws_client = None
         self._running = False
         self._event_bus = get_event_bus()
-        self._semaphore: Optional[asyncio.Semaphore] = None
+        self._semaphore: asyncio.Semaphore | None = None
         self._session_lock = asyncio.Lock()
 
     @property
-    def session(self) -> Optional[aiohttp.ClientSession]:
+    def session(self) -> aiohttp.ClientSession | None:
         return self._session
 
     async def _ensure_session(self):
@@ -191,7 +184,7 @@ class BinanceDataIngestion(DataIngestion):
         timeframe: str,
         start: datetime,
         end: datetime,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """Fetch historical klines from Binance REST API."""
         if self._session is None or self._session.closed:
             await self.start()
@@ -238,28 +231,28 @@ class BinanceDataIngestion(DataIngestion):
 
         return all_klines
 
-    async def fetch_ticker_24h(self, symbol: str) -> Dict:
+    async def fetch_ticker_24h(self, symbol: str) -> dict:
         """Fetch 24h ticker statistics."""
         if self._session is None or self._session.closed:
             await self.start()
         url = f"{self.config.base_url}/api/v3/ticker/24hr"
         return await self._rate_limited_get(url, {"symbol": symbol})
 
-    async def fetch_order_book(self, symbol: str, limit: int = 100) -> Dict:
+    async def fetch_order_book(self, symbol: str, limit: int = 100) -> dict:
         """Fetch order book snapshot."""
         if self._session is None or self._session.closed:
             await self.start()
         url = f"{self.config.base_url}/api/v3/depth"
         return await self._rate_limited_get(url, {"symbol": symbol, "limit": limit})
 
-    async def fetch_funding_rate(self, symbol: str, limit: int = 100) -> List[Dict]:
+    async def fetch_funding_rate(self, symbol: str, limit: int = 100) -> list[dict]:
         """Fetch funding rate history."""
         if self._session is None or self._session.closed:
             await self.start()
         url = f"{self.config.base_url}/fapi/v1/fundingRate"
         return await self._rate_limited_get(url, {"symbol": symbol, "limit": limit})
 
-    async def fetch_mark_price(self, symbol: str) -> Dict:
+    async def fetch_mark_price(self, symbol: str) -> dict:
         """Fetch mark price and funding rate."""
         if self._session is None or self._session.closed:
             await self.start()
@@ -295,7 +288,7 @@ class BinanceDataIngestion(DataIngestion):
             except asyncio.CancelledError:
                 pass
 
-    def _parse_ws_message(self, msg: Dict, symbol: str, timeframe: str) -> Optional[Event]:
+    def _parse_ws_message(self, msg: dict, symbol: str, timeframe: str) -> Event | None:
         event_type = msg.get("e")
         if event_type == "kline":
             k = msg.get("k", {})
@@ -337,7 +330,7 @@ class DataIngestionManager:
     """Manages multiple data sources and coordinates ingestion."""
 
     def __init__(self):
-        self.sources: Dict[str, DataIngestion] = {}
+        self.sources: dict[str, DataIngestion] = {}
         self._event_bus = get_event_bus()
 
     def register_source(self, source: DataIngestion):
@@ -354,12 +347,12 @@ class DataIngestionManager:
 
     async def fetch_all_historical(
         self,
-        symbols: List[str],
-        timeframes: List[str],
+        symbols: list[str],
+        timeframes: list[str],
         start: datetime,
         end: datetime,
         venue: str = "binance",
-    ) -> Dict[str, Dict[str, List[Dict]]]:
+    ) -> dict[str, dict[str, list[dict]]]:
         """Fetch historical data for all symbols/timeframes from a venue."""
         source = self.sources.get(venue)
         if not source:
@@ -375,7 +368,7 @@ class DataIngestionManager:
 
 
 # Global ingestion manager
-_ingestion_manager: Optional[DataIngestionManager] = None
+_ingestion_manager: DataIngestionManager | None = None
 
 
 def get_ingestion_manager() -> DataIngestionManager:

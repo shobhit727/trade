@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Optional
 
 from cryptobot.core.events import OrderEvent, RiskEvent
 from cryptobot.core.portfolio import PortfolioManager, get_portfolio_manager
@@ -14,8 +13,8 @@ from cryptobot.risk.limits import RiskLimits
 class RiskCheckResult:
     passed: bool
     message: str = ""
-    current_value: Optional[Decimal] = None
-    limit_value: Optional[Decimal] = None
+    current_value: Decimal | None = None
+    limit_value: Decimal | None = None
 
     def to_event(self, check_type: str, order: OrderEvent) -> RiskEvent:
         return RiskEvent(
@@ -35,7 +34,7 @@ class RiskManager:
     limits: RiskLimits = field(default_factory=RiskLimits)
     kill_switch: KillSwitch = field(default_factory=KillSwitch)
 
-    def check_order(self, order: OrderEvent, price: Optional[Decimal] = None) -> RiskCheckResult:
+    def check_order(self, order: OrderEvent, price: Decimal | None = None) -> RiskCheckResult:
         active, reason = self.kill_switch.evaluate(self.portfolio)
         if active:
             return RiskCheckResult(False, reason)
@@ -57,7 +56,7 @@ class RiskManager:
         return RiskCheckResult(True, "OK")
 
 
-_risk_manager: Optional[RiskManager] = None
+_risk_manager: RiskManager | None = None
 
 
 def get_risk_manager() -> RiskManager:

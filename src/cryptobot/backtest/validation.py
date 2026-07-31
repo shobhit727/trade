@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from collections.abc import Sequence
 from math import sqrt
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any
 
 import numpy as np
-import pandas as pd
 
 
 def walk_forward_returns(
@@ -13,7 +12,7 @@ def walk_forward_returns(
     n_splits: int = 5,
     min_train: int = 30,
     embargo: int = 5,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     if not returns:
         return {"splits": 0, "oos_mean": 0.0, "oos_sharpe": 0.0, "passed": False}
     arr = np.asarray(returns, dtype=float)
@@ -21,8 +20,8 @@ def walk_forward_returns(
     if n < min_train + embargo + 2:
         return {"splits": 0, "oos_mean": 0.0, "oos_sharpe": 0.0, "passed": False, "reason": "insufficient data"}
     fold_size = (n - min_train) // n_splits
-    oos: List[float] = []
-    stability_scores: List[float] = []
+    oos: list[float] = []
+    stability_scores: list[float] = []
     for k in range(n_splits):
         train_end = min_train + k * fold_size
         test_end = train_end + fold_size + embargo
@@ -60,14 +59,14 @@ def monte_carlo_significance(
     returns: Sequence[float],
     n_permutations: int = 1000,
     block_size: int = 5,
-    seed: Optional[int] = 42,
-) -> Dict[str, Any]:
+    seed: int | None = 42,
+) -> dict[str, Any]:
     if not returns:
         return {"p_value": 1.0, "passed": False, "reason": "no returns"}
     rng = np.random.default_rng(seed)
     arr = np.asarray(returns, dtype=float)
     n = len(arr)
-    blocks: List[np.ndarray] = []
+    blocks: list[np.ndarray] = []
     i = 0
     while i < n:
         end = min(i + block_size, n)
@@ -114,7 +113,7 @@ def deflated_sharpe(
     returns: Sequence[float],
     n_trials: int = 1,
     benchmark_sharpe: float = 0.0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     arr = np.asarray(returns, dtype=float)
     observed = _sharpe(arr)
     if arr.size < 2:
@@ -136,7 +135,7 @@ def run_validation(
     n_splits: int = 5,
     n_permutations: int = 1000,
     n_trials: int = 1,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     walk = walk_forward_returns(returns, n_splits=n_splits)
     mc = monte_carlo_significance(returns, n_permutations=n_permutations)
     ds = deflated_sharpe(returns, n_trials=n_trials)

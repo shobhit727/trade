@@ -1,8 +1,9 @@
 from __future__ import annotations
+
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
-from typing import List, Optional, Dict, Any
+from typing import Any
 
 
 @dataclass
@@ -15,9 +16,9 @@ class Candle:
     close: Decimal
     volume: Decimal
     trades: int = 0
-    
+
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'Candle':
+    def from_dict(cls, data: dict[str, Any]) -> Candle:
         """Create Candle from dictionary."""
         return cls(
             timestamp=datetime.fromisoformat(data['timestamp']),
@@ -28,8 +29,8 @@ class Candle:
             volume=Decimal(str(data['volume'])),
             trades=data.get('trades', 0),
         )
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert Candle to dictionary."""
         return {
             'timestamp': self.timestamp.isoformat(),
@@ -40,27 +41,27 @@ class Candle:
             'volume': str(self.volume),
             'trades': self.trades,
         }
-    
+
     @property
     def body(self) -> Decimal:
         """Get candle body."""
         return abs(self.close - self.open)
-    
+
     @property
     def upper_shadow(self) -> Decimal:
         """Get upper shadow."""
         return self.high - max(self.open, self.close)
-    
+
     @property
     def lower_shadow(self) -> Decimal:
         """Get lower shadow."""
         return min(self.open, self.close) - self.low
-    
+
     @property
     def is_bullish(self) -> bool:
         """Check if candle is bullish."""
         return self.close > self.open
-    
+
     @property
     def is_bearish(self) -> bool:
         """Check if candle is bearish."""
@@ -73,12 +74,12 @@ class OrderBookLevel:
     price: Decimal
     quantity: Decimal
     total: Decimal = field(init=False)
-    
+
     def __post_init__(self):
         self.total = self.price * self.quantity
-    
+
     @classmethod
-    def from_tuple(cls, data: tuple) -> 'OrderBookLevel':
+    def from_tuple(cls, data: tuple) -> OrderBookLevel:
         """Create from tuple (price, quantity)."""
         return cls(
             price=Decimal(str(data[0])),
@@ -91,35 +92,35 @@ class OrderBook:
     """Order book with bids and asks."""
     symbol: str
     timestamp: datetime
-    bids: List[OrderBookLevel] = field(default_factory=list)
-    asks: List[OrderBookLevel] = field(default_factory=list)
+    bids: list[OrderBookLevel] = field(default_factory=list)
+    asks: list[OrderBookLevel] = field(default_factory=list)
     sequence: int = 0
-    
+
     @property
-    def best_bid(self) -> Optional[Decimal]:
+    def best_bid(self) -> Decimal | None:
         """Get best bid price."""
         return self.bids[0].price if self.bids else None
-    
+
     @property
-    def best_ask(self) -> Optional[Decimal]:
+    def best_ask(self) -> Decimal | None:
         """Get best ask price."""
         return self.asks[0].price if self.asks else None
-    
+
     @property
-    def spread(self) -> Optional[Decimal]:
+    def spread(self) -> Decimal | None:
         """Get bid-ask spread."""
         if self.bids and self.asks:
             return self.asks[0].price - self.bids[0].price
         return None
-    
+
     @property
-    def mid_price(self) -> Optional[Decimal]:
+    def mid_price(self) -> Decimal | None:
         """Get mid price."""
         if self.bids and self.asks:
             return (self.bids[0].price + self.asks[0].price) / 2
         return None
-    
-    def depth(self, levels: int = 10) -> Dict[str, Any]:
+
+    def depth(self, levels: int = 10) -> dict[str, Any]:
         """Get order book depth."""
         return {
             'bids': [
@@ -131,19 +132,19 @@ class OrderBook:
                 for l in self.asks[:levels]
             ],
         }
-    
-    def imbalance(self) -> Optional[Decimal]:
+
+    def imbalance(self) -> Decimal | None:
         """Get order book imbalance."""
         if not self.bids or not self.asks:
             return None
-        
+
         bid_volume = sum(l.quantity for l in self.bids[:10])
         ask_volume = sum(l.quantity for l in self.asks[:10])
-        
+
         total = bid_volume + ask_volume
         if total == 0:
             return Decimal('0')
-        
+
         return (bid_volume - ask_volume) / total
 
 

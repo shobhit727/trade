@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
-from typing import List, Optional
 
 import numpy as np
 
@@ -20,7 +18,7 @@ class FeatureConfig:
     bb_std: float = 2.0
 
 
-def _to_array(bars: List[OhlcvBar], key: str):
+def _to_array(bars: list[OhlcvBar], key: str):
     fn = getattr(bars[0], key)
     return np.asarray([float(fn(b)) for b in bars], dtype=float) if False else np.asarray(
         [float(getattr(b, key)) for b in bars], dtype=float
@@ -95,7 +93,7 @@ def _bbands(close: np.ndarray, period: int, k: float):
     return mid, upper, lower
 
 
-def build_features(bars: List[OhlcvBar], config: Optional[FeatureConfig] = None) -> np.ndarray:
+def build_features(bars: list[OhlcvBar], config: FeatureConfig | None = None) -> np.ndarray:
     cfg = config or FeatureConfig()
     if not bars:
         return np.zeros((0, 8), dtype=float)
@@ -135,7 +133,7 @@ def build_features(bars: List[OhlcvBar], config: Optional[FeatureConfig] = None)
     return np.asarray(rows, dtype=float)
 
 
-def future_returns(bars: List[OhlcvBar], horizon: int = 5) -> np.ndarray:
+def future_returns(bars: list[OhlcvBar], horizon: int = 5) -> np.ndarray:
     n = len(bars)
     out = np.zeros(n - horizon)
     closes = np.asarray([float(b.close) for b in bars], dtype=float)

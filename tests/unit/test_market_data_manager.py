@@ -7,26 +7,19 @@ deps entirely.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-from unittest.mock import AsyncMock
-
-import pytest
 
 from cryptobot.core.events import (
     EventType,
-    FundingRateEvent,
-    KlineEvent,
     OrderBookEvent,
     TickerEvent,
-    TradeEvent,
 )
 from cryptobot.market_data.manager import (
+    BinanceWSClient,
     MarketDataCache,
     MarketDataManager,
-    BinanceWSClient,
 )
-
 
 # --- TickerEvent / OrderBookEvent helpers ---------------------------------
 
@@ -42,7 +35,7 @@ def _ticker(symbol: str = "BTCUSDT", price: str = "100"):
         bid_qty=Decimal("1"),
         ask_qty=Decimal("1"),
         volume_24h=Decimal("1000"),
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         source="binance_ws",
         event_id="t1",
         event_type=EventType.TICKER,
@@ -56,7 +49,7 @@ def _book(symbol: str = "BTCUSDT"):
         bids=[(Decimal("99.5"), Decimal("1")), (Decimal("99"), Decimal("2"))],
         asks=[(Decimal("100.5"), Decimal("1.5")), (Decimal("101"), Decimal("2"))],
         sequence=1,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         source="binance_ws",
     )
 
@@ -65,7 +58,6 @@ def _book(symbol: str = "BTCUSDT"):
 
 
 def test_binance_wsclient_build_streams_includes_required_channels():
-    import cryptobot.market_data.manager as mgr_mod
 
     ws = BinanceWSClient()
     ws._symbols = ["BTCUSDT", "ETHUSDT"]
@@ -167,12 +159,12 @@ def test_market_data_manager_get_mid_price_orderbook_first(monkeypatch):
     mgr = MarketDataManager()
     mgr.cache = MarketDataCache()
     book = _book()
-    mgr.cache.local_cache[f"orderbook:BTCUSDT"] = {
+    mgr.cache.local_cache["orderbook:BTCUSDT"] = {
         "symbol": "BTCUSDT",
         "bids": [[99.5, 1.0]],
         "asks": [[100.5, 1.0]],
         "sequence": 1,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "source": "binance_ws",
     }
     mid = mgr.get_mid_price("BTCUSDT")

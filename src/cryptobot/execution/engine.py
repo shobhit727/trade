@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 from uuid import uuid4
 
 from cryptobot.config import settings
@@ -32,12 +31,12 @@ class ExecutionEngine:
     risk_manager: RiskManager = field(default_factory=get_risk_manager)
     event_bus: EventBus = field(default_factory=get_event_bus)
     orders: dict[str, OrderEvent] = field(default_factory=dict)
-    router: Optional[SmartOrderRouter] = None
+    router: SmartOrderRouter | None = None
 
     async def submit_order(self, order: OrderEvent) -> OrderEvent:
         if not order.order_id:
             order.order_id = str(uuid4())
-        
+
         # For market orders, try to get current market price for risk check
         risk_price = order.price
         if risk_price is None and order.type == OrderType.MARKET:
@@ -45,7 +44,7 @@ class ExecutionEngine:
                 risk_price = await self.venue.get_price(order.symbol)
             except Exception:
                 risk_price = None
-        
+
         risk = self.risk_manager.check_order(order, risk_price)
         await self.event_bus.publish(risk.to_event("pre_trade", order))
         if not risk.passed:

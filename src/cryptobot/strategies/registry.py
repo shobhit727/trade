@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
-from decimal import Decimal
 from dataclasses import fields
+from typing import Any
 
 from cryptobot.strategies.base import StrategyRegistry, registry
-from cryptobot.strategies.mean_reversion import MeanReversionStrategy, MeanReversionConfig
-from cryptobot.strategies.trend_following import TrendFollowingStrategy, TrendFollowingConfig
-from cryptobot.strategies.stat_arb import StatArbStrategy, StatArbConfig
-from cryptobot.strategies.funding_arb import FundingArbStrategy, FundingArbConfig
-from cryptobot.strategies.market_making import MarketMakingStrategy, MarketMakingConfig
+from cryptobot.strategies.funding_arb import FundingArbConfig, FundingArbStrategy
+from cryptobot.strategies.market_making import MarketMakingConfig, MarketMakingStrategy
+from cryptobot.strategies.mean_reversion import MeanReversionConfig, MeanReversionStrategy
 from cryptobot.strategies.ml_strategy import MLStrategy, MLStrategyConfig
-
+from cryptobot.strategies.stat_arb import StatArbConfig, StatArbStrategy
+from cryptobot.strategies.trend_following import TrendFollowingConfig, TrendFollowingStrategy
 
 # Map strategy names to (class, config_class) tuples
 _STRATEGY_REGISTRY_MAP = {
@@ -24,7 +22,7 @@ _STRATEGY_REGISTRY_MAP = {
 }
 
 
-def _instantiate_config(config_class, config_dict: Dict[str, Any]):
+def _instantiate_config(config_class, config_dict: dict[str, Any]):
     """Instantiate a config dataclass from a dict, ignoring unknown keys."""
     if config_dict is None:
         config_dict = {}
@@ -34,9 +32,9 @@ def _instantiate_config(config_class, config_dict: Dict[str, Any]):
 
 
 def load_strategies_from_config(
-    strategies_config: Dict[str, Any],
-    enabled_names: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    strategies_config: dict[str, Any],
+    enabled_names: list[str] | None = None,
+) -> dict[str, Any]:
     """Load and instantiate strategies from config.
 
     Args:
@@ -46,7 +44,7 @@ def load_strategies_from_config(
     Returns:
         Dict mapping strategy_name -> strategy instance.
     """
-    loaded: Dict[str, Any] = {}
+    loaded: dict[str, Any] = {}
 
     if not strategies_config:
         return loaded

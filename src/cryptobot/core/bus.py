@@ -1,12 +1,14 @@
 from __future__ import annotations
+
 import asyncio
 import uuid
 from collections import defaultdict, deque
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional, Set, Callable, List, Dict, Union
+from typing import Any
 
 from cryptobot.core.events import Event, EventType
 
@@ -19,11 +21,11 @@ class EventBusMode(str, Enum):
 @dataclass
 class Subscription:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    event_types: Set[str] = field(default_factory=set)
-    callback: Optional[Callable[[Event], Any]] = None
-    async_callback: Optional[Callable[[Event], Any]] = None
+    event_types: set[str] = field(default_factory=set)
+    callback: Callable[[Event], Any] | None = None
+    async_callback: Callable[[Event], Any] | None = None
     wildcard: bool = False
-    filter_fn: Optional[Callable[[Event], bool]] = None
+    filter_fn: Callable[[Event], bool] | None = None
     created_at: datetime = field(default_factory=datetime.utcnow)
     event_count: int = 0
 
@@ -33,15 +35,15 @@ class EventBus:
         if mode == EventBusMode.REDIS:
             raise NotImplementedError("Redis-backed event bus not implemented in this build")
         self.mode = mode
-        self._subscriptions: Dict[str, Subscription] = {}
-        self._type_index: Dict[EventType, Set[str]] = defaultdict(set)
-        self._wildcard_subs: Set[str] = set()
+        self._subscriptions: dict[str, Subscription] = {}
+        self._type_index: dict[EventType, set[str]] = defaultdict(set)
+        self._wildcard_subs: set[str] = set()
         self._history: deque = deque(maxlen=max_history)
         self._lock = asyncio.Lock()
         self._max_history = max_history
         self._closed = False
 
-    def _normalize_event_type(self, event_type: Union[EventType, str]) -> tuple[Optional[EventType], bool]:
+    def _normalize_event_type(self, event_type: EventType | str) -> tuple[EventType | None, bool]:
         if isinstance(event_type, EventType):
             if event_type == EventType.ALL:
                 return None, True
@@ -55,11 +57,11 @@ class EventBus:
 
     async def subscribe(
         self,
-        event_type: Union[EventType, str],
-        callback: Optional[Callable[[Event], Any]] = None,
-        async_callback: Optional[Callable[[Event], Any]] = None,
-        filter_fn: Optional[Callable[[Event], bool]] = None,
-        filter: Optional[Callable[[Event], bool]] = None,
+        event_type: EventType | str,
+        callback: Callable[[Event], Any] | None = None,
+        async_callback: Callable[[Event], Any] | None = None,
+        filter_fn: Callable[[Event], bool] | None = None,
+        filter: Callable[[Event], bool] | None = None,
     ) -> str:
         et, wildcard = self._normalize_event_type(event_type)
         effective_filter = filter_fn if filter_fn is not None else filter
@@ -95,7 +97,7 @@ class EventBus:
                         del self._type_index[et]
             return True
 
-    async def publish(self, event_or_topic: Union[Event, str], payload: Optional[dict] = None) -> int:
+    async def publish(self, event_or_topic: Event | str, payload: dict | None = None) -> int:
         if isinstance(event_or_topic, Event):
             event = event_or_topic
         else:
@@ -113,12 +115,12 @@ class EventBus:
             et = EventType.ERROR
         return await self._dispatch(Event(type=et, payload=payload or {}))
 
-    async def publish_batch(self, events: List[Event]) -> int:
+    async def publish_batch(self, events: list[Event]) -> int:
         total = 0
         async with self._lock:
             for event in events:
                 self._history.append(event)
-                target_ids: Set[str] = set(self._type_index.get(event.type, set()))
+                target_ids: set[str] = set(self._type_index.get(event.type, set()))
                 target_ids.update(self._wildcard_subs)
                 subs = [self._subscriptions[sid] for sid in target_ids if sid in self._subscriptions]
 
@@ -142,7 +144,7 @@ class EventBus:
     async def _dispatch(self, event: Event) -> int:
         async with self._lock:
             self._history.append(event)
-            target_ids: Set[str] = set(self._type_index.get(event.type, set()))
+            target_ids: set[str] = set(self._type_index.get(event.type, set()))
             target_ids.update(self._wildcard_subs)
             subs = [self._subscriptions[sid] for sid in target_ids if sid in self._subscriptions]
 
@@ -165,7 +167,7 @@ class EventBus:
                 logging.getLogger(__name__).exception("Error in subscriber %s: %s", sub.id, e)
         return delivered
 
-    def get_history(self, limit: int = 100, event_type: Optional[Union[EventType, str]] = None) -> List[Event]:
+    def get_history(self, limit: int = 100, event_type: EventType | str | None = None) -> list[Event]:
         history = list(self._history)
         if event_type is not None:
             et, wildcard = self._normalize_event_type(event_type)
@@ -175,7 +177,7 @@ class EventBus:
             history = [e for e in history if e.type == et]
         return history[-limit:]
 
-    def get_subscribers(self, event_type: Optional[EventType] = None) -> List[Subscription]:
+    def get_subscribers(self, event_type: EventType | None = None) -> list[Subscription]:
         if event_type is None:
             return list(self._subscriptions.values())
         return [
@@ -183,7 +185,7 @@ class EventBus:
             for sid in self._type_index.get(event_type, set())
         ]
 
-    def get_subscriber_count(self, event_type: Optional[EventType] = None) -> int:
+    def get_subscriber_count(self, event_type: EventType | None = None) -> int:
         if event_type:
             return len(self._type_index.get(event_type, set()))
         return len(self._subscriptions)
@@ -201,14 +203,14 @@ class EventBus:
         return self._closed
 
     @asynccontextmanager
-    async def replay(self, from_event: Optional[Event] = None, limit: int = 1000):
+    async def replay(self, from_event: Event | None = None, limit: int = 1000):
         history = self.get_history(limit=limit)
         if from_event:
             history = [e for e in history if e.timestamp > from_event.timestamp]
         yield history
 
 
-_bus: Optional[EventBus] = None
+_bus: EventBus | None = None
 
 
 def get_event_bus() -> EventBus:

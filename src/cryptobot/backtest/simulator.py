@@ -1,14 +1,13 @@
 from __future__ import annotations
-import asyncio
-from dataclasses import dataclass, field
+
+import random
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import List, Dict, Optional
-import random
 
-from cryptobot.core.events import Event, EventType, OrderEvent, PositionEvent
 from cryptobot.core.clock import Clock
-from cryptobot.utils.types import Trade, OrderBook
+from cryptobot.core.events import OrderEvent
+from cryptobot.utils.types import OrderBook
 
 
 @dataclass
@@ -32,7 +31,7 @@ class FillResult:
     fill_time: datetime
     is_partial: bool = False
     is_maker: bool = False
-    funding_payment: Optional[Decimal] = None
+    funding_payment: Decimal | None = None
 
 
 class FillSimulator:
@@ -46,10 +45,10 @@ class FillSimulator:
     - Partial fills
     """
 
-    def __init__(self, params: Optional[FillParams] = None):
+    def __init__(self, params: FillParams | None = None):
         self.params = params or FillParams()
-        self._volatility: Dict[str, Decimal] = {}
-        self._order_book: Dict[str, OrderBook] = {}
+        self._volatility: dict[str, Decimal] = {}
+        self._order_book: dict[str, OrderBook] = {}
 
     def update_volatility(self, symbol: str, volatility: float):
         """Update symbol volatility estimate."""
@@ -62,9 +61,9 @@ class FillSimulator:
     async def simulate_fill(
         self,
         order_event: OrderEvent,
-        current_price: Optional[Decimal] = None,
-        clock: Optional[Clock] = None,
-    ) -> Optional[FillResult]:
+        current_price: Decimal | None = None,
+        clock: Clock | None = None,
+    ) -> FillResult | None:
         """Simulate order fill with realistic parameters."""
         symbol = order_event.symbol
         order_side = order_event.side
@@ -88,7 +87,7 @@ class FillSimulator:
         fill_probability = self._calculate_fill_probability(
             symbol, order_quantity, current_price
         )
-        
+
         if random.random() > fill_probability:
             # Partial fill
             fill_quantity = order_quantity * Decimal(str(random.uniform(0.5, 1.0)))
@@ -139,7 +138,7 @@ class FillSimulator:
     ) -> float:
         """Calculate probability of full fill based on market depth."""
         order_book = self._order_book.get(symbol)
-        
+
         if not order_book:
             # Default to 95% fill probability
             return 0.95
@@ -149,13 +148,13 @@ class FillSimulator:
             book_depth = sum(
                 level.quantity for level in order_book.bids[:5]
             ) + sum(level.quantity for level in order_book.asks[:5])
-            
+
             order_size_pct = float(quantity / book_depth) if book_depth > 0 else 1.0
-            
+
             # Larger orders have lower fill probability
             base_prob = 0.95
             size_penalty = min(order_size_pct * 0.3, 0.3)
-            
+
             return base_prob - size_penalty
 
         return 0.95

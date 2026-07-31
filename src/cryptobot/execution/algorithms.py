@@ -1,19 +1,15 @@
 from __future__ import annotations
 
-import math
 import random
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from dataclasses import dataclass
 from decimal import Decimal
-from typing import Callable, List, Optional, Sequence
-
-from cryptobot.core.events import OrderEvent, OrderSide, OrderType
-
 
 TWAP_DEFAULT_PERIODS = 12
 VWAP_DEFAULT_SLICES = 12
 
 
-def twap_slices(quantity: Decimal, periods: int) -> List[Decimal]:
+def twap_slices(quantity: Decimal, periods: int) -> list[Decimal]:
     if periods <= 0 or quantity <= 0:
         return []
     base = quantity / Decimal(periods)
@@ -22,7 +18,7 @@ def twap_slices(quantity: Decimal, periods: int) -> List[Decimal]:
     return slices
 
 
-def vwap_slices(quantity: Decimal, volume_profile: Sequence[Decimal]) -> List[Decimal]:
+def vwap_slices(quantity: Decimal, volume_profile: Sequence[Decimal]) -> list[Decimal]:
     total_volume = sum(volume_profile)
     if quantity <= 0 or total_volume <= 0:
         return []
@@ -35,7 +31,7 @@ def pov_quantity(
     market_volume: Decimal,
     participation_rate: Decimal,
     remaining_quantity: Decimal,
-    cap: Optional[Decimal] = None,
+    cap: Decimal | None = None,
 ) -> Decimal:
     if market_volume <= 0 or participation_rate <= 0 or remaining_quantity <= 0:
         return Decimal("0")
@@ -50,7 +46,7 @@ def pov_quantity_randomized(
     participation_rate: Decimal,
     remaining_quantity: Decimal,
     jitter: float = 0.25,
-    seed: Optional[int] = None,
+    seed: int | None = None,
 ) -> Decimal:
     raw = pov_quantity(market_volume, participation_rate, remaining_quantity)
     if raw <= 0:
@@ -66,7 +62,7 @@ def implementation_shortfall_slices(
     duration_periods: int = TWAP_DEFAULT_PERIODS,
     arrival_fraction: float = 0.10,
     alpha: float = 1.5,
-) -> List[Decimal]:
+) -> list[Decimal]:
     """Perée-Clark-style implementation shortfall slicing.
 
     Front-loads the parent quantity: ``arrival_fraction`` of total goes first,
@@ -96,7 +92,7 @@ def implementation_shortfall_slices(
 class IcebergConfig:
     display_quantity: Decimal
     randomization: float = 0.0
-    cap: Optional[Decimal] = None
+    cap: Decimal | None = None
 
     def __post_init__(self):
         if self.display_quantity <= 0:
@@ -108,12 +104,12 @@ class IcebergConfig:
 def iceberg_slices(
     quantity: Decimal,
     config: IcebergConfig,
-    seed: Optional[int] = None,
-) -> List[Decimal]:
+    seed: int | None = None,
+) -> list[Decimal]:
     if quantity <= 0:
         return []
     rng = random.Random(seed) if seed is not None else None
-    out: List[Decimal] = []
+    out: list[Decimal] = []
     remaining = quantity
     while remaining > 0:
         size = config.display_quantity
@@ -131,7 +127,7 @@ def iceberg_slices(
 
 @dataclass
 class VWAPSchedule:
-    slices: List[Decimal]
+    slices: list[Decimal]
     total: Decimal
     is_constant_volume: bool = False
     horizon_minutes: int = 0
@@ -171,8 +167,8 @@ def liquidity_seek_slices(
     levels: Sequence[Decimal],
     level_quantities: Sequence[Decimal],
     fill_probability: float = 0.95,
-    seed: Optional[int] = None,
-) -> List[Decimal]:
+    seed: int | None = None,
+) -> list[Decimal]:
     """Walk the book, slicing the parent across price levels.
 
     For each level we attempt a fraction proportional to ``min(level_quantity, parent)``
@@ -185,7 +181,7 @@ def liquidity_seek_slices(
     p = min(max(fill_probability, 0.0), 1.0)
     rng = random.Random(seed)
     remaining = quantity
-    out: List[Decimal] = []
+    out: list[Decimal] = []
     for lvl_qty in level_quantities:
         if remaining <= 0:
             break
@@ -216,11 +212,11 @@ def build_pov_schedule(
     duration_periods: int,
     participation_rate: Decimal,
     market_volume_per_period: Decimal,
-    cap_per_period: Optional[Decimal] = None,
-) -> List[Decimal]:
+    cap_per_period: Decimal | None = None,
+) -> list[Decimal]:
     if quantity <= 0 or duration_periods <= 0 or market_volume_per_period <= 0:
         return []
-    out: List[Decimal] = []
+    out: list[Decimal] = []
     remaining = quantity
     for _ in range(duration_periods):
         take = pov_quantity(market_volume_per_period, participation_rate, remaining, cap=cap_per_period)

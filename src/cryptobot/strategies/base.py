@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import Dict, List, Any
-import asyncio
 import logging
-from datetime import datetime
+from abc import ABC, abstractmethod
 from decimal import Decimal
+from typing import Any
+
 from cryptobot.core.events import Event, OrderEvent, OrderSide, OrderType, PositionSide
 from cryptobot.utils.decorators import timeout_decorator
-
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +16,11 @@ class BaseStrategy(ABC):
     All custom strategies MUST inherit from this class to ensure compatibility with
     the EventBus and BacktestEngine.
     """
-    def __init__(self, strategy_name: str, config: Dict[str, Any]):
+    def __init__(self, strategy_name: str, config: dict[str, Any]):
         self.strategy_name = strategy_name
         self._config = config
         # Store internal state (e.g., indicator buffers, historical data slice)
-        self.internal_state: Dict[str, Any] = {}
+        self.internal_state: dict[str, Any] = {}
 
     @abstractmethod
     async def initialize(self, initial_data: Any):
@@ -33,7 +31,7 @@ class BaseStrategy(ABC):
         pass
 
     @abstractmethod
-    async def on_market_data(self, event: "Event") -> List["OrderEvent"]:
+    async def on_market_data(self, event: Event) -> list[OrderEvent]:
         """
         The primary entry point for market data updates.
         Processes the raw market tick and determines if any trading action is required.
@@ -44,7 +42,7 @@ class BaseStrategy(ABC):
         """
         pass
 
-    async def on_order_update(self, event: "Event") -> List["OrderEvent"]:
+    async def on_order_update(self, event: Event) -> list[OrderEvent]:
         """
         Callback called when an order is filled, cancelled, or rejected.
         This method allows strategies to react dynamically to execution confirmations.
@@ -66,12 +64,12 @@ class StrategyRegistry:
     _instance = None
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(StrategyRegistry, cls).__new__(cls)
-            cls._instance.strategies: Dict[str, BaseStrategy] = {}
+            cls._instance = super().__new__(cls)
+            cls._instance.strategies: dict[str, BaseStrategy] = {}
             logger.debug("StrategyRegistry initialized.")
         return cls._instance
 
-    def register(self, strategy_class: type[BaseStrategy], config: Dict[str, Any]):
+    def register(self, strategy_class: type[BaseStrategy], config: dict[str, Any]):
         """Registers a new strategy instance."""
         if not issubclass(strategy_class, BaseStrategy):
              raise TypeError("Provided class must inherit from BaseStrategy.")
@@ -79,7 +77,7 @@ class StrategyRegistry:
         instance = strategy_class(strategy_name=config.get('name', strategy_class.__name__), config=config)
         self.strategies[instance.get_name()] = instance
 
-    def get_all_active_strategies(self) -> List[BaseStrategy]:
+    def get_all_active_strategies(self) -> list[BaseStrategy]:
         """Returns a list of all strategies currently loaded and ready to run."""
         return list(self.strategies.values())
 
@@ -87,7 +85,7 @@ class StrategyRegistry:
 # --- Example Implementation: Mean Reversion (A simple placeholder strategy) ---
 
 class MeanReversionStrategyPlaceholder(BaseStrategy):
-    def __init__(self, strategy_name: str, config: Dict[str, Any]):
+    def __init__(self, strategy_name: str, config: dict[str, Any]):
         super().__init__(strategy_name, config)
 
     @timeout_decorator(timeout=0.5) # Use timeout decorator for safety
@@ -96,7 +94,7 @@ class MeanReversionStrategyPlaceholder(BaseStrategy):
         logger.info("[%s] Initializing with %s data points.", self.get_name(), len(initial_data) if initial_data is not None else 0)
         self.internal_state['z_score'] = [] # Placeholder for indicator history
 
-    async def on_market_data(self, event: Event) -> List[OrderEvent]:
+    async def on_market_data(self, event: Event) -> list[OrderEvent]:
         """Simple logic: if price deviates more than 2 STD from mean, attempt a reversal trade."""
         price = event.payload.get("price")
         if price is None: return []

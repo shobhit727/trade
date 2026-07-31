@@ -3,15 +3,12 @@ from __future__ import annotations
 from decimal import Decimal
 
 import numpy as np
-import pytest
 
 from cryptobot.backtest.data import load_bars
-from cryptobot.ml.features import FeatureConfig, build_features, future_returns
+from cryptobot.ml.features import build_features, future_returns
 from cryptobot.ml.models.direction import (
     DirectionClassifier,
-    DirectionConfig,
     features_and_labels,
-    labels_from_returns,
 )
 from cryptobot.ml.online import DriftConfig, DriftDetector, WalkForwardTrainer
 from cryptobot.strategies.funding_arb import (

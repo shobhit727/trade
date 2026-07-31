@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import asyncio
 from decimal import Decimal
-from typing import List
 
 import pytest
 
 from cryptobot.core.events import OrderEvent, OrderSide, OrderType
-from cryptobot.execution.router import RouterConfig, SmartOrderRouter, VenueScore
+from cryptobot.execution.router import SmartOrderRouter
 
 
 class _FastVenue:
@@ -16,7 +15,7 @@ class _FastVenue:
         self._price = price
         self._fail = fail_submit
         self._latency = latency_ms
-        self.submits: List[OrderEvent] = []
+        self.submits: list[OrderEvent] = []
 
     async def submit_order(self, order: OrderEvent) -> OrderEvent:
         if self._fail:
@@ -43,7 +42,6 @@ def _make_order() -> OrderEvent:
 
 def test_record_venue_quote_latency_no_prometheus_safe(monkeypatch):
     """Helpers must tolerate missing prometheus_client without raising."""
-    import importlib
 
     import cryptobot.monitoring.metrics as metrics
 

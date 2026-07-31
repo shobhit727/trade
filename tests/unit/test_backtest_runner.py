@@ -11,7 +11,6 @@ from cryptobot.backtest.runner import (
     make_strategy,
     run_backtest,
 )
-from cryptobot.core.events import OrderSide
 from cryptobot.execution.engine import ExecutionEngine
 from cryptobot.execution.venue.simulated import SimulatedVenue
 

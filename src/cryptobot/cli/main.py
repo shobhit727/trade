@@ -5,9 +5,7 @@ import asyncio
 import json
 import logging
 import sys
-from datetime import datetime
 from decimal import Decimal
-
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +120,7 @@ async def _run(args: argparse.Namespace) -> int:
         from cryptobot.execution.engine import ExecutionEngine
         from cryptobot.execution.venue.simulated import SimulatedVenue
         from cryptobot.risk.manager import RiskManager
-        from cryptobot.strategies.market_making import MarketMakingStrategy, MarketMakingConfig
+        from cryptobot.strategies.market_making import MarketMakingConfig, MarketMakingStrategy
 
         ds = load_bars(source=args.source, symbol=args.symbol, timeframe="1h")
         ds.bars = ds.bars[: args.bars]
@@ -164,9 +162,9 @@ async def _run(args: argparse.Namespace) -> int:
         return 0
 
     if args.command == "ml":
+        from cryptobot.backtest.data import load_bars
         from cryptobot.ml.features import build_features
         from cryptobot.ml.models.direction import DirectionClassifier
-        from cryptobot.backtest.data import load_bars
 
         ds = load_bars(source=args.source, symbol="BTCUSDT", timeframe="1h")
         bars = ds.bars[: args.bars]
@@ -207,8 +205,8 @@ async def _run(args: argparse.Namespace) -> int:
         return 0
 
     if args.command == "validate":
-        from cryptobot.backtest.validation import run_validation
         from cryptobot.backtest.data import load_bars
+        from cryptobot.backtest.validation import run_validation
 
         ds = load_bars(source=args.source, symbol="BTCUSDT", timeframe="1h")
         bars = ds.bars[: args.bars]

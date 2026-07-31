@@ -4,12 +4,10 @@ import csv
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Any
 
 from cryptobot.backtest.runner import OhlcvBar
-
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +19,7 @@ REQUIRED_COLUMNS = ("timestamp", "open", "high", "low", "close")
 class OhlcvDataset:
     """Container for historical OHLCV bars."""
 
-    bars: List[OhlcvBar] = field(default_factory=list)
+    bars: list[OhlcvBar] = field(default_factory=list)
     symbol: str = "BTCUSDT"
     source: str = "memory"
 
@@ -33,10 +31,10 @@ class OhlcvDataset:
 
     def filter_range(
         self,
-        start: Optional[datetime] = None,
-        end: Optional[datetime] = None,
-    ) -> "OhlcvDataset":
-        out: List[OhlcvBar] = []
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> OhlcvDataset:
+        out: list[OhlcvBar] = []
         for bar in self.bars:
             if start is not None and bar.timestamp < start:
                 continue
@@ -45,11 +43,11 @@ class OhlcvDataset:
             out.append(bar)
         return OhlcvDataset(bars=out, symbol=self.symbol, source=self.source)
 
-    def to_runner_bars(self) -> List[OhlcvBar]:
+    def to_runner_bars(self) -> list[OhlcvBar]:
         return list(self.bars)
 
 
-def _row_to_bar(row: Dict[str, Any], default_symbol: str) -> OhlcvBar:
+def _row_to_bar(row: dict[str, Any], default_symbol: str) -> OhlcvBar:
     ts_raw = row.get("timestamp") or row.get("open_time") or row.get("time") or row.get("datetime")
     if isinstance(ts_raw, str):
         ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
@@ -75,11 +73,11 @@ def _row_to_bar(row: Dict[str, Any], default_symbol: str) -> OhlcvBar:
     )
 
 
-def load_csv(path: Union[str, Path], symbol: str = "BTCUSDT") -> OhlcvDataset:
+def load_csv(path: str | Path, symbol: str = "BTCUSDT") -> OhlcvDataset:
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(p)
-    bars: List[OhlcvBar] = []
+    bars: list[OhlcvBar] = []
     with p.open() as f:
         reader = csv.DictReader(f)
         for row in reader:
@@ -92,10 +90,10 @@ def load_csv(path: Union[str, Path], symbol: str = "BTCUSDT") -> OhlcvDataset:
 
 
 def load_parquet(
-    path: Union[str, Path],
+    path: str | Path,
     symbol: str = "BTCUSDT",
-    start: Optional[datetime] = None,
-    end: Optional[datetime] = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
 ) -> OhlcvDataset:
     try:
         import pyarrow.parquet as pq
@@ -121,7 +119,7 @@ def load_parquet(
     for col in REQUIRED_COLUMNS:
         if col not in df.columns:
             raise ValueError(f"parquet missing required column: {col}")
-    bars: List[OhlcvBar] = []
+    bars: list[OhlcvBar] = []
     for _, row in df.iterrows():
         row_d = row.to_dict()
         try:
@@ -136,8 +134,8 @@ def load_parquet(
 async def load_timescale(
     symbol: str = "BTCUSDT",
     timeframe: str = "15m",
-    start: Optional[datetime] = None,
-    end: Optional[datetime] = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
     settings: Any = None,
 ) -> OhlcvDataset:
     """Async loader backed by TimescaleDB via the project's storage layer.
@@ -159,7 +157,7 @@ async def load_timescale(
         logger.debug("timescale loader error: %s", exc)
         return OhlcvDataset(bars=[], symbol=symbol, source="timescale")
 
-    bars: List[OhlcvBar] = []
+    bars: list[OhlcvBar] = []
     if df is None or df.empty:
         return OhlcvDataset(bars=bars, symbol=symbol, source="timescale")
     for _, row in df.iterrows():
@@ -181,10 +179,10 @@ def _default_settings():
 
 def load_bars(
     source: str,
-    path: Optional[Union[str, Path]] = None,
+    path: str | Path | None = None,
     symbol: str = "BTCUSDT",
-    start: Optional[datetime] = None,
-    end: Optional[datetime] = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
     timeframe: str = "15m",
 ) -> OhlcvDataset:
     s = source.lower()

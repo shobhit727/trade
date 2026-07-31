@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from math import sqrt
+from typing import Any
+
 import numpy as np
 import pandas as pd
-from math import sqrt
 
 from cryptobot.core.portfolio import PortfolioState
 
@@ -20,9 +21,9 @@ class PerformanceMetrics:
     """
     def __init__(self):
         # Store historical data points that contribute to the final scores
-        self._equity_curve: Optional[pd.Series] = None # Daily/Interval-based equity value
-        self._returns: List[float] = []               # Log returns or simple percentage changes
-        self._drawdown_series: List[float] = []
+        self._equity_curve: pd.Series | None = None # Daily/Interval-based equity value
+        self._returns: list[float] = []               # Log returns or simple percentage changes
+        self._drawdown_series: list[float] = []
 
     def add_value(self, value: float):
         """Adds a new data point (e.g., daily total equity value) to the curve."""
@@ -43,7 +44,7 @@ class PerformanceMetrics:
         drawdown = (peak - equity_curve) / peak
         return float(drawdown.fillna(0).max() * 100)
 
-    def calculate_sharpe_ratio(self, returns: List[float], risk_free_rate: float = 0.02) -> float:
+    def calculate_sharpe_ratio(self, returns: list[float], risk_free_rate: float = 0.02) -> float:
         """
         Calculates the annualized Sharpe Ratio.
         Assumes returns are measured over a period (e.g., log returns).
@@ -64,7 +65,7 @@ class PerformanceMetrics:
         sharpe = (mean_return * annualization_factor - risk_free_rate) / (std_dev * sqrt(annualization_factor))
         return sharpe
 
-    def calculate_sortino_ratio(self, returns: List[float], target_rate: float = 0.02) -> float:
+    def calculate_sortino_ratio(self, returns: list[float], target_rate: float = 0.02) -> float:
         """Calculates the annualized Sortino Ratio (focusing only on downside risk)."""
         if not returns:
             return 0.0
@@ -93,13 +94,13 @@ class BacktestMetricsRecorder:
     """
     def __init__(self, initial_capital: float):
         self._initial_capital = initial_capital
-        self._equity_history: List[float] = [] # History of total equity values
+        self._equity_history: list[float] = [] # History of total equity values
 
     def record_equity(self, value: float):
         """Records a new total equity value."""
         self._equity_history.append(value)
 
-    def finalize_metrics(self) -> Dict[str, Any]:
+    def finalize_metrics(self) -> dict[str, Any]:
         """Calculates all metrics based on the recorded history."""
         if not self._equity_history:
             return {"error": "No data points recorded."}
@@ -176,7 +177,7 @@ class BacktestResults:
         self.final_equity = final_equity
         self.portfolio = portfolio
 
-    def generate_full_report(self) -> Dict[str, Any]:
+    def generate_full_report(self) -> dict[str, Any]:
         """Aggregates all required performance metrics into one object."""
         recorder = BacktestMetricsRecorder(initial_capital=self.initial_capital)
         # Simulate populating the recorder from the final portfolio state's journey (needs implementation)

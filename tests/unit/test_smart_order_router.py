@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import List
 
 import pytest
 
 from cryptobot.core.events import OrderEvent, OrderSide, OrderType
 from cryptobot.execution.router import (
     RouterConfig,
-    RoutedOrder,
     SmartOrderRouter,
     VenueScore,
     best_effort_ranker,
@@ -24,7 +22,7 @@ class _RecordingVenue:
         self._price = price
         self._fee_bps = fee_bps
         self._fail = fail
-        self.submits: List[OrderEvent] = []
+        self.submits: list[OrderEvent] = []
 
     async def submit_order(self, order: OrderEvent) -> OrderEvent:
         if self._fail:

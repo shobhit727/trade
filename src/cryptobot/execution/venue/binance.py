@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Mapping
 from decimal import Decimal
-from typing import Any, Dict, Mapping, Optional
+from typing import Any
 
 from cryptobot.config import settings
 from cryptobot.core.events import OrderEvent, OrderSide, OrderStatus, OrderType
@@ -18,7 +19,6 @@ else:
     _IMPORT_ERROR = None
 
 from cryptobot.execution.venue.base import Venue
-
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +35,10 @@ class BinanceVenue(Venue):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        api_secret: Optional[str] = None,
+        api_key: str | None = None,
+        api_secret: str | None = None,
         market_type: str = "future",
-        sandbox: Optional[bool] = None,
+        sandbox: bool | None = None,
         rate_limit_ms: int = 200,
         max_retries: int = 3,
     ):
@@ -50,7 +50,7 @@ class BinanceVenue(Venue):
         self.sandbox = sandbox
         self.rate_limit_ms = rate_limit_ms
         self.max_retries = max_retries
-        self._exchange: Optional[Any] = None
+        self._exchange: Any | None = None
         self._closed = False
 
     def _ensure_exchange(self) -> Any:
@@ -58,8 +58,8 @@ class BinanceVenue(Venue):
             raise RuntimeError(f"ccxt is not installed: {_IMPORT_ERROR}")
         if self._exchange is not None:
             return self._exchange
-        cls = getattr(ccxt_async, "binance")
-        options: Dict[str, Any] = {
+        cls = ccxt_async.binance
+        options: dict[str, Any] = {
             "defaultType": self.market_type,
             "adjustForTimeDifference": True,
             "rateLimit": self.rate_limit_ms,
@@ -134,7 +134,7 @@ class BinanceVenue(Venue):
         type_ = self._map_order_type(order.type)
         amount = float(order.quantity)
 
-        params: Dict[str, Any] = {"type": self.market_type}
+        params: dict[str, Any] = {"type": self.market_type}
         if order.client_order_id:
             params["newClientOrderId"] = order.client_order_id
         if order.reduce_only:
@@ -142,11 +142,11 @@ class BinanceVenue(Venue):
 
         params_typed: Mapping[str, Any] = params
 
-        last_exc: Optional[Exception] = None
+        last_exc: Exception | None = None
         for attempt in range(self.max_retries):
             start = time.perf_counter()
             try:
-                price: Optional[float] = None
+                price: float | None = None
                 if type_ == "limit":
                     if order.price is None:
                         return self._reject(order, OrderStatus.REJECTED, "Limit order missing price")

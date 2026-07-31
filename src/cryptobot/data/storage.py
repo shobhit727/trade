@@ -1,25 +1,17 @@
 from __future__ import annotations
 
 import asyncio
-import gzip
-import json
-import os
-import shutil
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from decimal import Decimal
 from pathlib import Path
-from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
-from uuid import uuid4
+from typing import Any
 
 import asyncpg
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-import pyarrow.compute as pc
 
 from cryptobot.config import settings
 
@@ -38,7 +30,7 @@ class StorageConfig:
     # Parquet (local/remote)
     parquet_base_path: str = "/app/data/parquet"
     parquet_compression: str = "zstd"
-    parquet_partition_cols: List[str] = field(default_factory=lambda: ["symbol", "year", "month"])
+    parquet_partition_cols: list[str] = field(default_factory=lambda: ["symbol", "year", "month"])
 
     # General
     batch_size: int = 1000
@@ -57,19 +49,19 @@ class StorageBackend(ABC):
         pass
 
     @abstractmethod
-    async def write_klines(self, klines: List[Dict]) -> int:
+    async def write_klines(self, klines: list[dict]) -> int:
         pass
 
     @abstractmethod
-    async def write_tickers(self, tickers: List[Dict]) -> int:
+    async def write_tickers(self, tickers: list[dict]) -> int:
         pass
 
     @abstractmethod
-    async def write_trades(self, trades: List[Dict]) -> int:
+    async def write_trades(self, trades: list[dict]) -> int:
         pass
 
     @abstractmethod
-    async def write_funding_rates(self, rates: List[Dict]) -> int:
+    async def write_funding_rates(self, rates: list[dict]) -> int:
         pass
 
     @abstractmethod
@@ -97,7 +89,7 @@ class TimescaleDBStorage(StorageBackend):
 
     def __init__(self, config: StorageConfig):
         self.config = config
-        self.pool: Optional[asyncpg.Pool] = None
+        self.pool: asyncpg.Pool | None = None
 
     async def initialize(self):
         self.pool = await asyncpg.create_pool(
@@ -208,11 +200,11 @@ class TimescaleDBStorage(StorageBackend):
                 ON funding_rates (symbol, time DESC);
             """)
 
-    async def _execute_batch(self, query: str, records: List[Tuple]):
+    async def _execute_batch(self, query: str, records: list[tuple]):
         async with self.pool.acquire() as conn:
             await conn.executemany(query, records)
 
-    async def write_klines(self, klines: List[Dict]) -> int:
+    async def write_klines(self, klines: list[dict]) -> int:
         if not klines:
             return 0
         query = """
@@ -239,7 +231,7 @@ class TimescaleDBStorage(StorageBackend):
         await self._execute_batch(query, records)
         return len(records)
 
-    async def write_tickers(self, tickers: List[Dict]) -> int:
+    async def write_tickers(self, tickers: list[dict]) -> int:
         if not tickers:
             return 0
         query = """
@@ -270,7 +262,7 @@ class TimescaleDBStorage(StorageBackend):
         await self._execute_batch(query, records)
         return len(records)
 
-    async def write_trades(self, trades: List[Dict]) -> int:
+    async def write_trades(self, trades: list[dict]) -> int:
         if not trades:
             return 0
         query = """
@@ -288,7 +280,7 @@ class TimescaleDBStorage(StorageBackend):
         await self._execute_batch(query, records)
         return len(records)
 
-    async def write_funding_rates(self, rates: List[Dict]) -> int:
+    async def write_funding_rates(self, rates: list[dict]) -> int:
         if not rates:
             return 0
         query = """
@@ -352,8 +344,8 @@ class ParquetStorage(StorageBackend):
 
     def __init__(self, config: StorageConfig):
         self.config = config
-        self._buffers: Dict[str, List[Dict]] = defaultdict(list)
-        self._flush_tasks: Dict[str, asyncio.Task] = {}
+        self._buffers: dict[str, list[dict]] = defaultdict(list)
+        self._flush_tasks: dict[str, asyncio.Task] = {}
         self._lock = asyncio.Lock()
 
     async def initialize(self):
@@ -401,25 +393,25 @@ class ParquetStorage(StorageBackend):
                 table = pa.Table.from_pandas(group.drop(columns=["date", "year", "month"]))
                 pq.write_table(table, path, compression=self.config.parquet_compression)
 
-    def _buffer_data(self, data_type: str, records: List[Dict]):
+    def _buffer_data(self, data_type: str, records: list[dict]):
         self._buffers[data_type].extend(records)
         if len(self._buffers[data_type]) >= self.config.batch_size:
             if data_type not in self._flush_tasks or self._flush_tasks[data_type].done():
                 self._flush_tasks[data_type] = asyncio.create_task(self._flush_buffer(data_type))
 
-    async def write_klines(self, klines: List[Dict]) -> int:
+    async def write_klines(self, klines: list[dict]) -> int:
         self._buffer_data("klines", klines)
         return len(klines)
 
-    async def write_tickers(self, tickers: List[Dict]) -> int:
+    async def write_tickers(self, tickers: list[dict]) -> int:
         self._buffer_data("tickers", tickers)
         return len(tickers)
 
-    async def write_trades(self, trades: List[Dict]) -> int:
+    async def write_trades(self, trades: list[dict]) -> int:
         self._buffer_data("trades", trades)
         return len(trades)
 
-    async def write_funding_rates(self, rates: List[Dict]) -> int:
+    async def write_funding_rates(self, rates: list[dict]) -> int:
         self._buffer_data("funding_rates", rates)
         return len(rates)
 
@@ -536,7 +528,7 @@ class ParquetDataFrameStorage:
         d = self._symbol_dir("trades", symbol)
         return d / f"{symbol.upper()}_{pd.Timestamp(ts).strftime('%Y%m')}.parquet"
 
-    def store_ohlcv(self, df: pd.DataFrame) -> Optional[Path]:
+    def store_ohlcv(self, df: pd.DataFrame) -> Path | None:
         if df is None or df.empty:
             return None
         if "symbol" not in df.columns:
@@ -544,7 +536,7 @@ class ParquetDataFrameStorage:
         ts_col = "open_time" if "open_time" in df.columns else df.columns[0]
         df = df.copy()
         df[ts_col] = pd.to_datetime(df[ts_col])
-        written: List[Path] = []
+        written: list[Path] = []
         for symbol, group in df.groupby("symbol"):
             group = group.sort_values(ts_col)
             target = self._bar_path(str(symbol), group[ts_col].iloc[0])
@@ -561,9 +553,9 @@ class ParquetDataFrameStorage:
     def load_ohlcv(
         self,
         symbol: str,
-        start: Optional[Any] = None,
-        end: Optional[Any] = None,
-        timeframe: Optional[str] = None,
+        start: Any | None = None,
+        end: Any | None = None,
+        timeframe: str | None = None,
     ) -> pd.DataFrame:
         sym_dir = self._symbol_dir("ohlcv", symbol)
         files = sorted(sym_dir.glob("*.parquet"))
@@ -583,7 +575,7 @@ class ParquetDataFrameStorage:
             df = df[df["timeframe"] == timeframe]
         return df.sort_values(ts_col).reset_index(drop=True)
 
-    def store_trades(self, df: pd.DataFrame) -> Optional[Path]:
+    def store_trades(self, df: pd.DataFrame) -> Path | None:
         if df is None or df.empty:
             return None
         if "symbol" not in df.columns:
@@ -591,7 +583,7 @@ class ParquetDataFrameStorage:
         ts_col = "time" if "time" in df.columns else ("timestamp" if "timestamp" in df.columns else df.columns[0])
         df = df.copy()
         df[ts_col] = pd.to_datetime(df[ts_col])
-        written: List[Path] = []
+        written: list[Path] = []
         for symbol, group in df.groupby("symbol"):
             group = group.sort_values(ts_col)
             target = self._trades_path(str(symbol), group[ts_col].iloc[0])
@@ -610,8 +602,8 @@ class ParquetDataFrameStorage:
     def load_trades(
         self,
         symbol: str,
-        start: Optional[Any] = None,
-        end: Optional[Any] = None,
+        start: Any | None = None,
+        end: Any | None = None,
     ) -> pd.DataFrame:
         sym_dir = self._symbol_dir("trades", symbol)
         files = sorted(sym_dir.glob("*.parquet"))
@@ -647,22 +639,22 @@ class HybridStorage(StorageBackend):
         await self.tsdb.close()
         await self.parquet.close()
 
-    async def write_klines(self, klines: List[Dict]) -> int:
+    async def write_klines(self, klines: list[dict]) -> int:
         await self.tsdb.write_klines(klines)
         await self.parquet.write_klines(klines)
         return len(klines)
 
-    async def write_tickers(self, tickers: List[Dict]) -> int:
+    async def write_tickers(self, tickers: list[dict]) -> int:
         await self.tsdb.write_tickers(tickers)
         await self.parquet.write_tickers(tickers)
         return len(tickers)
 
-    async def write_trades(self, trades: List[Dict]) -> int:
+    async def write_trades(self, trades: list[dict]) -> int:
         await self.tsdb.write_trades(trades)
         await self.parquet.write_trades(trades)
         return len(trades)
 
-    async def write_funding_rates(self, rates: List[Dict]) -> int:
+    async def write_funding_rates(self, rates: list[dict]) -> int:
         await self.tsdb.write_funding_rates(rates)
         await self.parquet.write_funding_rates(rates)
         return len(rates)
@@ -704,10 +696,10 @@ class HybridStorage(StorageBackend):
 
 
 # Global storage instance
-_storage: Optional[HybridStorage] = None
+_storage: HybridStorage | None = None
 
 
-def get_storage(config: Optional[StorageConfig] = None) -> HybridStorage:
+def get_storage(config: StorageConfig | None = None) -> HybridStorage:
     global _storage
     if _storage is None:
         if config is None:
@@ -723,7 +715,7 @@ def get_storage(config: Optional[StorageConfig] = None) -> HybridStorage:
     return _storage
 
 
-async def init_storage(config: Optional[StorageConfig] = None) -> HybridStorage:
+async def init_storage(config: StorageConfig | None = None) -> HybridStorage:
     storage = get_storage(config)
     await storage.initialize()
     return storage

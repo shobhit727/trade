@@ -16,11 +16,21 @@ from __future__ import annotations
 
 try:
     from prometheus_client import (
-        Counter as _RealCounter,
-        Gauge as _RealGauge,
-        Histogram as _RealHistogram,
-        Info as _RealInfo,
         CollectorRegistry as _RealCollectorRegistry,
+    )
+    from prometheus_client import (
+        Counter as _RealCounter,
+    )
+    from prometheus_client import (
+        Gauge as _RealGauge,
+    )
+    from prometheus_client import (
+        Histogram as _RealHistogram,
+    )
+    from prometheus_client import (
+        Info as _RealInfo,
+    )
+    from prometheus_client import (
         generate_latest as _real_generate_latest,
     )
     PROMETHEUS_AVAILABLE = True
@@ -88,7 +98,6 @@ else:
 
 
 from cryptobot.config import settings
-
 
 # Create custom registry for isolation
 registry = CollectorRegistry()

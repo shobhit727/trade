@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
-from typing import Awaitable, Callable, Deque, Dict, List, Optional
 
-from cryptobot.core.events import Event, EventType, OrderEvent, OrderStatus
+from cryptobot.core.events import OrderEvent
 
 
 class AdverseAction(Enum):
@@ -61,7 +59,7 @@ class TopOfBook:
     imbalance: float = 0.0
 
     @classmethod
-    def from_levels(cls, bids: List[Decimal], asks: List[Decimal], top_levels: int = 5) -> "TopOfBook":
+    def from_levels(cls, bids: list[Decimal], asks: list[Decimal], top_levels: int = 5) -> TopOfBook:
         if not bids or not asks:
             return cls(bid=Decimal("0"), ask=Decimal("0"), mid=Decimal("0"))
         bid = bids[0]
@@ -82,12 +80,12 @@ class AdverseSelectionGuard:
     or directly call ``step(queue, snapshot)`` from a market-making strategy.
     """
 
-    def __init__(self, config: Optional[AdverseSelectionConfig] = None):
+    def __init__(self, config: AdverseSelectionConfig | None = None):
         self.config = config or AdverseSelectionConfig()
-        self._positions: Dict[str, QueuePosition] = {}
-        self._toxicity_history: Deque[float] = deque(maxlen=self.config.toxicity_lookback)
+        self._positions: dict[str, QueuePosition] = {}
+        self._toxicity_history: deque[float] = deque(maxlen=self.config.toxicity_lookback)
         self._last_toxicity = 0.0
-        self._last_actions: List[str] = []
+        self._last_actions: list[str] = []
 
     def note_top(self, snapshot: TopOfBook) -> None:
         self._toxicity_history.append(abs(snapshot.imbalance))
@@ -110,7 +108,7 @@ class AdverseSelectionGuard:
         self._positions[order.order_id or ""] = pos
         return pos
 
-    def step(self, order_id: str, top: TopOfBook) -> "AdverseAction":
+    def step(self, order_id: str, top: TopOfBook) -> AdverseAction:
         pos = self._positions.get(order_id)
         if pos is None:
             return AdverseAction.NONE
@@ -142,7 +140,7 @@ class AdverseSelectionGuard:
         pos: QueuePosition,
         top: TopOfBook,
         side: str,
-    ) -> Optional[Decimal]:
+    ) -> Decimal | None:
         if pos.quantity <= 0 or pos.mid_at_place <= 0:
             return None
         skew_bps = self.config.cancel_replace_extra_bps
@@ -158,7 +156,7 @@ class AdverseSelectionGuard:
         return self._last_toxicity
 
     @property
-    def tracked(self) -> List[str]:
+    def tracked(self) -> list[str]:
         return list(self._positions.keys())
 
 

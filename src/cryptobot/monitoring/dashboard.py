@@ -8,13 +8,12 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Dict, List, Any
-
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-def create_pnl_dashboard() -> Dict[str, Any]:
+def create_pnl_dashboard() -> dict[str, Any]:
     """Create PnL overview dashboard."""
     return {
         "dashboard": {
@@ -175,7 +174,7 @@ def create_pnl_dashboard() -> Dict[str, Any]:
     }
 
 
-def create_risk_dashboard() -> Dict[str, Any]:
+def create_risk_dashboard() -> dict[str, Any]:
     """Create Risk monitoring dashboard."""
     return {
         "dashboard": {
@@ -300,7 +299,7 @@ def create_risk_dashboard() -> Dict[str, Any]:
     }
 
 
-def create_system_dashboard() -> Dict[str, Any]:
+def create_system_dashboard() -> dict[str, Any]:
     """Create System health dashboard."""
     return {
         "dashboard": {
@@ -420,7 +419,7 @@ def create_system_dashboard() -> Dict[str, Any]:
     }
 
 
-def create_strategy_dashboard() -> Dict[str, Any]:
+def create_strategy_dashboard() -> dict[str, Any]:
     """Create Strategy performance dashboard."""
     return {
         "dashboard": {
@@ -487,7 +486,7 @@ def create_strategy_dashboard() -> Dict[str, Any]:
     }
 
 
-def create_ml_dashboard() -> Dict[str, Any]:
+def create_ml_dashboard() -> dict[str, Any]:
     """Create ML monitoring dashboard."""
     return {
         "dashboard": {
@@ -559,7 +558,7 @@ def create_ml_dashboard() -> Dict[str, Any]:
     }
 
 
-def create_execution_dashboard() -> Dict[str, Any]:
+def create_execution_dashboard() -> dict[str, Any]:
     """Create Execution quality dashboard."""
     return {
         "dashboard": {
@@ -613,7 +612,7 @@ def create_execution_dashboard() -> Dict[str, Any]:
     }
 
 
-def create_all_dashboards() -> List[Dict[str, Any]]:
+def create_all_dashboards() -> list[dict[str, Any]]:
     """Generate all dashboards."""
     return [
         create_pnl_dashboard(),
@@ -625,12 +624,12 @@ def create_all_dashboards() -> List[Dict[str, Any]]:
     ]
 
 
-def save_dashboards(output_dir: str = "/app/grafana/dashboards") -> List[str]:
+def save_dashboards(output_dir: str = "/app/grafana/dashboards") -> list[str]:
     """Save all dashboards to JSON files. Returns list of written paths."""
     import os
     os.makedirs(output_dir, exist_ok=True)
 
-    written: List[str] = []
+    written: list[str] = []
     for db in create_all_dashboards():
         title = db["dashboard"]["title"].replace(" - ", "_").replace(" ", "_").lower()
         filepath = os.path.join(output_dir, f"{title}.json")

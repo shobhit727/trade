@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -21,10 +20,10 @@ class DriftDetector:
     std, both normalized by baseline magnitude.
     """
 
-    def __init__(self, config: Optional[DriftConfig] = None):
+    def __init__(self, config: DriftConfig | None = None):
         self.config = config or DriftConfig()
-        self._baseline: List[float] = []
-        self._recent: List[float] = []
+        self._baseline: list[float] = []
+        self._recent: list[float] = []
 
     def update(self, value: float) -> None:
         self._recent.append(value)
@@ -64,7 +63,7 @@ class WalkForwardTrainer:
         self,
         n: int,
         min_train: int = 60,
-    ) -> List[Tuple[int, int, int, int]]:
+    ) -> list[tuple[int, int, int, int]]:
         if n < min_train + self.n_splits:
             return []
         fold = (n - min_train) // self.n_splits

@@ -11,7 +11,6 @@ test coverage. Touches:
 
 from __future__ import annotations
 
-import asyncio
 from decimal import Decimal
 
 import pytest
@@ -19,9 +18,7 @@ import pytest
 from cryptobot.risk.correlation import max_abs_correlation
 from cryptobot.risk.kill_switch import KillSwitch
 from cryptobot.risk.limits import RiskLimits
-from cryptobot.risk.manager import RiskCheckResult, RiskManager
 from cryptobot.risk.sizing import fixed_fraction_size, kelly_size, volatility_target_size
-
 
 # --- RiskLimits ---------------------------------------------------------
 
@@ -55,8 +52,8 @@ def test_kill_switch_disabled_in_settings_returns_false(monkeypatch):
     import os
     os.environ["RISK_KILL_SWITCH_ENABLED"] = "false"
     # Need to reload or patch - easier: just test the logic directly
-    from cryptobot.risk.kill_switch import KillSwitch
     from cryptobot.core.portfolio import PortfolioManager
+    from cryptobot.risk.kill_switch import KillSwitch
 
     pm = PortfolioManager()
     ks = KillSwitch()

@@ -4,12 +4,14 @@ from cryptobot.execution.adverse_selection import (
     AdverseSelectionGuard,
     QueuePosition,
     TopOfBook,
+)
+from cryptobot.execution.adverse_selection import (
     attach_to_engine as attach_adverse_selection,
 )
 from cryptobot.execution.algorithms import (
-    IcebergConfig,
     TWAP_DEFAULT_PERIODS,
     VWAP_DEFAULT_SLICES,
+    IcebergConfig,
     VWAPSchedule,
     arrival_price_benchmark,
     build_pov_schedule,
@@ -25,8 +27,8 @@ from cryptobot.execution.algorithms import (
 )
 from cryptobot.execution.engine import ExecutionEngine, build_venue, get_execution_engine
 from cryptobot.execution.router import (
-    RouterConfig,
     RoutedOrder,
+    RouterConfig,
     SmartOrderRouter,
     VenueScore,
     best_effort_ranker,

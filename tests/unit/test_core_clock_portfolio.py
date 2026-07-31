@@ -9,11 +9,9 @@ import pytest
 from cryptobot.core.clock import (
     AcceleratedClock,
     ClockFactory,
-    ClockMode,
     RealtimeClock,
     SimulatedClock,
     get_clock,
-    init_clock,
     set_clock,
 )
 from cryptobot.core.portfolio import PortfolioManager, PortfolioMode

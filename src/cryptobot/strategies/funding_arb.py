@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import List, Optional
 
 from cryptobot.core.events import OrderEvent, OrderSide
 from cryptobot.execution.engine import ExecutionEngine
@@ -32,16 +31,16 @@ class FundingArbState:
 class FundingArbStrategy:
     name = "funding_arb"
 
-    def __init__(self, config: Optional[FundingArbConfig] = None):
+    def __init__(self, config: FundingArbConfig | None = None):
         self.config = config or FundingArbConfig()
-        self._exec: Optional[ExecutionEngine] = None
-        self.fills: List[OrderEvent] = []
-        self.last_action: Optional[str] = None
+        self._exec: ExecutionEngine | None = None
+        self.fills: list[OrderEvent] = []
+        self.last_action: str | None = None
 
     def attach_execution(self, engine: ExecutionEngine) -> None:
         self._exec = engine
 
-    def feed(self, state: FundingArbState) -> Optional[tuple[OrderSide, OrderSide]]:
+    def feed(self, state: FundingArbState) -> tuple[OrderSide, OrderSide] | None:
         cfg = self.config
         if state.spot_price <= 0 or state.perp_price <= 0:
             return None
@@ -61,7 +60,7 @@ class FundingArbStrategy:
         self.last_action = "hold"
         return None
 
-    def feed_and_signal(self, state: FundingArbState) -> Optional[tuple[OrderSide, OrderSide]]:
+    def feed_and_signal(self, state: FundingArbState) -> tuple[OrderSide, OrderSide] | None:
         return self.feed(state)
 
 

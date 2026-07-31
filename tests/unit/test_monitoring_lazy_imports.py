@@ -112,8 +112,6 @@ def test_noop_fallback_classes_work_standalone():
     This test runs the no-op code path directly without depending on the
     environment. It exercises every method callers rely on.
     """
-    import importlib
-    import importlib.util
     import sys
     import textwrap
 

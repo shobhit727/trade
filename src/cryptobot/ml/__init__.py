@@ -11,7 +11,6 @@ from cryptobot.ml.online import (
     WalkForwardTrainer,
 )
 
-
 __all__ = [
     "DirectionClassifier",
     "DirectionConfig",

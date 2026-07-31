@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
@@ -24,19 +24,19 @@ class DirectionClassifier:
 
     name = "direction_logreg"
 
-    def __init__(self, config: Optional[DirectionConfig] = None):
+    def __init__(self, config: DirectionConfig | None = None):
         self.config = config or DirectionConfig()
-        self._weights: Optional[np.ndarray] = None
+        self._weights: np.ndarray | None = None
         self._bias: float = 0.0
         self._fitted = False
-        self._feature_means: Optional[np.ndarray] = None
-        self._feature_stds: Optional[np.ndarray] = None
+        self._feature_means: np.ndarray | None = None
+        self._feature_stds: np.ndarray | None = None
 
     @staticmethod
     def _sigmoid(z: np.ndarray) -> np.ndarray:
         return 1.0 / (1.0 + np.exp(-z))
 
-    def fit(self, features: np.ndarray, labels: np.ndarray) -> "DirectionClassifier":
+    def fit(self, features: np.ndarray, labels: np.ndarray) -> DirectionClassifier:
         if features.size == 0:
             self._fitted = False
             return self
@@ -56,7 +56,7 @@ class DirectionClassifier:
         return self
 
     @staticmethod
-    def _fit_logreg(X: np.ndarray, y: np.ndarray, lr: float = 0.1, epochs: int = 1000) -> Tuple[np.ndarray, float]:
+    def _fit_logreg(X: np.ndarray, y: np.ndarray, lr: float = 0.1, epochs: int = 1000) -> tuple[np.ndarray, float]:
         n, d = X.shape
         w = np.zeros(d)
         b = 0.0
@@ -71,7 +71,7 @@ class DirectionClassifier:
         return w, b
 
     @staticmethod
-    def _normalize(X: np.ndarray, means: Optional[np.ndarray] = None, stds: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _normalize(X: np.ndarray, means: np.ndarray | None = None, stds: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         if means is None:
             means = X.mean(axis=0)
         if stds is None:
@@ -94,7 +94,7 @@ class DirectionClassifier:
     def walk_forward_score(
         self,
         features: np.ndarray,
-        labels: Optional[np.ndarray] = None,
+        labels: np.ndarray | None = None,
         n_splits: int = 4,
     ) -> float:
         n = features.shape[0]
@@ -102,7 +102,7 @@ class DirectionClassifier:
             return 0.0
         if labels is None:
             labels = (np.random.default_rng(7).uniform(size=n) > 0.5).astype(int)
-        scores: List[float] = []
+        scores: list[float] = []
         fold = (n - n_splits - 1) // n_splits
         for k in range(n_splits):
             train_end = (k + 1) * fold
@@ -124,7 +124,7 @@ class DirectionClassifier:
                 continue
         return float(np.mean(scores)) if scores else 0.0
 
-    def summary(self) -> Dict[str, Any]:
+    def summary(self) -> dict[str, Any]:
         return {
             "model": self.name,
             "fitted": self._fitted,
@@ -137,7 +137,7 @@ def labels_from_returns(returns: np.ndarray, threshold: float = 0.0) -> np.ndarr
     return (returns > threshold).astype(int)
 
 
-def features_and_labels(bars, horizon: int = 5) -> Tuple[np.ndarray, np.ndarray]:
+def features_and_labels(bars, horizon: int = 5) -> tuple[np.ndarray, np.ndarray]:
     features = build_features(bars)
     future = future_returns(bars, horizon=horizon)
     n_labels = future.size

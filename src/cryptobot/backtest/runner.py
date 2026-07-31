@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Any, AsyncIterator, Dict, List, Optional, Sequence, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -11,8 +12,8 @@ from cryptobot.backtest.engine import BacktestEngine
 from cryptobot.core.events import Event, EventType
 from cryptobot.execution.engine import ExecutionEngine
 from cryptobot.execution.venue.simulated import SimulatedVenue
-from cryptobot.strategies.mean_reversion import MeanReversionStrategy, MeanReversionConfig
-from cryptobot.strategies.trend_following import TrendFollowingStrategy, TrendFollowingConfig
+from cryptobot.strategies.mean_reversion import MeanReversionConfig, MeanReversionStrategy
+from cryptobot.strategies.trend_following import TrendFollowingConfig, TrendFollowingStrategy
 
 
 @dataclass
@@ -24,7 +25,7 @@ class OhlcvBar:
     close: float
     volume: float = 0.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "open_time": self.timestamp.isoformat(),
             "open": self.open,
@@ -43,9 +44,9 @@ def generate_synthetic_ohlcv(
     drift: float = 0.0005,
     vol: float = 0.01,
     seed: int = 42,
-) -> List[OhlcvBar]:
+) -> list[OhlcvBar]:
     rng = np.random.default_rng(seed)
-    bars: List[OhlcvBar] = []
+    bars: list[OhlcvBar] = []
     price = start_price
     for i in range(n_bars):
         ts = start + timedelta(minutes=i * freq_minutes)
@@ -84,9 +85,9 @@ class BacktestRunResult:
     final_equity: Decimal
     total_return: float
     n_trades: int
-    equity_curve: List[Tuple[datetime, Decimal]] = field(default_factory=list)
+    equity_curve: list[tuple[datetime, Decimal]] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "initial_capital": str(self.initial_capital),
             "final_equity": str(self.final_equity),
@@ -148,7 +149,7 @@ async def run_backtest(
     initial_capital: Decimal = Decimal("10000"),
     slippage_bps: int = 3,
     commission_bps: int = 5,
-    execution_engine: Optional[ExecutionEngine] = None,
+    execution_engine: ExecutionEngine | None = None,
 ) -> BacktestRunResult:
     if not bars:
         raise ValueError("no bars supplied")

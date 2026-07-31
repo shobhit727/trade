@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
-from typing import Any, Callable
+from typing import Any
 
 import pytest
 
@@ -12,14 +11,10 @@ from cryptobot.monitoring.health import (
     CacheHealthChecker,
     ComponentHealth,
     ComponentType,
-    HealthCheck,
-    HealthMonitor,
-    HealthResult,
-    HealthStatus,
     DatabaseHealthChecker,
     DataFeedHealthChecker,
     ExchangeHealthChecker,
-    HealthChecker,
+    HealthCheck,
     HealthMonitor,
     HealthResult,
     RiskEngineHealthChecker,

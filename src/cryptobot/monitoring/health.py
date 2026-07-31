@@ -11,17 +11,15 @@ import asyncio
 import inspect
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set
-from uuid import uuid4
+from typing import Any
 
 from cryptobot.config import settings
-from cryptobot.core.events import Event, EventType, create_event
-from cryptobot.core.bus import get_event_bus
+from cryptobot.core.events import EventType
 from cryptobot.utils.logging import get_logger
-
 
 logger = get_logger(__name__)
 
@@ -54,7 +52,7 @@ class HealthCheck:
     interval_seconds: float = 30.0
     timeout_seconds: float = 5.0
     critical: bool = True
-    tags: Dict[str, str] = field(default_factory=dict)
+    tags: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         if isinstance(self.check_fn, str):
@@ -70,8 +68,8 @@ class HealthResult:
     timestamp: datetime = field(default_factory=datetime.utcnow)
     latency_ms: float = 0.0
     message: str = ""
-    details: Dict[str, Any] = field(default_factory=dict)
-    error: Optional[str] = None
+    details: dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
 
 
 @dataclass
@@ -79,9 +77,9 @@ class ComponentHealth:
     """Aggregated health for a component."""
     component: ComponentType
     status: HealthStatus
-    checks: List[HealthResult] = field(default_factory=list)
-    last_check: Optional[datetime] = None
-    uptime_start: Optional[datetime] = None
+    checks: list[HealthResult] = field(default_factory=list)
+    last_check: datetime | None = None
+    uptime_start: datetime | None = None
     total_checks: int = 0
     failed_checks: int = 0
 
@@ -119,20 +117,20 @@ class HealthMonitor:
     def __init__(
         self,
         check_interval: float = 30.0,
-        event_bus: Optional[Any] = None,
+        event_bus: Any | None = None,
     ):
         self.check_interval = check_interval
         self._event_bus = event_bus
-        self._checks: Dict[str, HealthCheck] = {}
-        self._checkers: Dict[ComponentType, HealthChecker] = {}
-        self._results: Dict[str, HealthResult] = {}
-        self._component_health: Dict[ComponentType, ComponentHealth] = {}
+        self._checks: dict[str, HealthCheck] = {}
+        self._checkers: dict[ComponentType, HealthChecker] = {}
+        self._results: dict[str, HealthResult] = {}
+        self._component_health: dict[ComponentType, ComponentHealth] = {}
         self._running = False
-        self._monitor_task: Optional[asyncio.Task] = None
+        self._monitor_task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
 
         # Callbacks
-        self._status_change_callbacks: List[Callable[[ComponentType, HealthStatus, HealthStatus], Any]] = []
+        self._status_change_callbacks: list[Callable[[ComponentType, HealthStatus, HealthStatus], Any]] = []
 
     def register_check(self, check: HealthCheck):
         """Register a health check."""
@@ -166,7 +164,7 @@ class HealthMonitor:
             return True
         return False
 
-    def get_check(self, check_name: str) -> Optional[HealthCheck]:
+    def get_check(self, check_name: str) -> HealthCheck | None:
         """Get a health check by name."""
         return self._checks.get(check_name)
 
@@ -198,7 +196,7 @@ class HealthMonitor:
                 logger.error(f"Health monitor error: {e}")
             await asyncio.sleep(self.check_interval)
 
-    async def run_all_checks(self) -> Dict[ComponentType, ComponentHealth]:
+    async def run_all_checks(self) -> dict[ComponentType, ComponentHealth]:
         """Run all registered health checks."""
         async with self._lock:
             # Run check functions
@@ -239,7 +237,7 @@ class HealthMonitor:
                 latency_ms=latency,
                 message=message or ("OK" if healthy else "check returned false"),
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             latency = (time.perf_counter() - start) * 1000
             result = HealthResult(
                 check_name=check.name,
@@ -358,11 +356,11 @@ class HealthMonitor:
                         }
                     ))
 
-    def get_component_health(self, component: ComponentType) -> Optional[ComponentHealth]:
+    def get_component_health(self, component: ComponentType) -> ComponentHealth | None:
         """Get health for a specific component."""
         return self._component_health.get(component)
 
-    def get_all_health(self) -> Dict[ComponentType, ComponentHealth]:
+    def get_all_health(self) -> dict[ComponentType, ComponentHealth]:
         """Get health for all components."""
         return self._component_health.copy()
 
@@ -382,7 +380,7 @@ class HealthMonitor:
         else:
             return HealthStatus.HEALTHY
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """Get health summary."""
         overall = self.get_overall_status()
         return {
@@ -680,7 +678,7 @@ def create_standard_checks(
     redis_client: Any = None,
     db_pool: Any = None,
     strategy_manager: Any = None,
-) -> List[HealthCheck]:
+) -> list[HealthCheck]:
     """Create standard health checks for the system."""
     checks = []
 
@@ -688,7 +686,7 @@ def create_standard_checks(
     if exchange_client:
         async def _exchange_ping():
             return await _ping_exchange(exchange_client)
-        
+
         checks.append(HealthCheck(
             name="exchange_ping",
             component=ComponentType.EXCHANGE,
@@ -701,7 +699,7 @@ def create_standard_checks(
     if market_data_manager:
         async def _data_freshness():
             return await _check_data_freshness(market_data_manager)
-        
+
         checks.append(HealthCheck(
             name="data_freshness",
             component=ComponentType.DATA_FEED,
@@ -714,7 +712,7 @@ def create_standard_checks(
     if db_pool:
         async def _database_ping():
             return await _ping_database(db_pool)
-        
+
         checks.append(HealthCheck(
             name="database_ping",
             component=ComponentType.DATABASE,
@@ -727,7 +725,7 @@ def create_standard_checks(
     if redis_client:
         async def _cache_ping():
             return await _ping_cache(redis_client)
-        
+
         checks.append(HealthCheck(
             name="cache_ping",
             component=ComponentType.CACHE,
@@ -775,7 +773,7 @@ async def _ping_cache(redis_client: Any):
 
 
 # Global health monitor
-_health_monitor: Optional[HealthMonitor] = None
+_health_monitor: HealthMonitor | None = None
 
 
 def get_health_monitor() -> HealthMonitor:

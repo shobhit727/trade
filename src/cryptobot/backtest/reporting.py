@@ -2,31 +2,31 @@ from __future__ import annotations
 
 import html
 from collections import Counter
+from collections.abc import Iterable, Sequence
 from datetime import datetime
-from decimal import Decimal
 from math import sqrt
-from typing import Any, Dict, Iterable, List, Sequence, Tuple
+from typing import Any
 
 
 def equity_curve_from_trades(
     initial_capital: float,
-    trades: Sequence[Tuple[datetime, float]],
-) -> List[Tuple[datetime, float]]:
+    trades: Sequence[tuple[datetime, float]],
+) -> list[tuple[datetime, float]]:
     if not trades:
         return [(datetime.utcnow(), initial_capital)]
-    series: List[Tuple[datetime, float]] = [(trades[0][0], initial_capital + trades[0][1])]
+    series: list[tuple[datetime, float]] = [(trades[0][0], initial_capital + trades[0][1])]
     for i in range(1, len(trades)):
         ts, pnl = trades[i]
         series.append((ts, series[-1][1] + pnl))
     return series
 
 
-def compute_drawdown_series(equity: Sequence[float]) -> List[float]:
+def compute_drawdown_series(equity: Sequence[float]) -> list[float]:
     if not equity:
         return []
-    peaks: List[float] = []
+    peaks: list[float] = []
     peak = equity[0]
-    out: List[float] = []
+    out: list[float] = []
     for v in equity:
         peak = max(peak, v)
         peaks.append(peak)
@@ -53,9 +53,9 @@ def render_html(
     initial_capital: float,
     final_equity: float,
     returns: Sequence[float],
-    equity_curve: Sequence[Tuple[datetime, float]],
-    trades: Iterable[Dict[str, Any]],
-    metrics_extra: Optional[Dict[str, Any]] = None,
+    equity_curve: Sequence[tuple[datetime, float]],
+    trades: Iterable[dict[str, Any]],
+    metrics_extra: Optional[dict[str, Any]] = None,
 ) -> str:
     n_trades = sum(1 for _ in trades)
     wins = sum(1 for t in trades if t.get("pnl", 0) > 0)
@@ -66,7 +66,7 @@ def render_html(
     max_dd = min(dd_series) * 100 if dd_series else 0.0
     sr = sharpe_ratio(returns)
     win_rate = (wins / n_trades * 100) if n_trades else 0.0
-    rows: List[str] = []
+    rows: list[str] = []
     for t in trades:
         rows.append(
             "<tr>"
@@ -126,7 +126,7 @@ th {{ background: #f5f5f5; }}
 """
 
 
-def render_trade_distribution(trades: Sequence[Dict[str, Any]]) -> str:
+def render_trade_distribution(trades: Sequence[dict[str, Any]]) -> str:
     pnls = [float(t.get("pnl", 0.0)) for t in trades]
     if not pnls:
         return "<p>No trades.</p>"
@@ -146,13 +146,13 @@ def generate_report(
     end_time: datetime,
     initial_capital: float,
     final_equity: float,
-    equity_curve: Sequence[Tuple[datetime, float]],
-    trades: Sequence[Dict[str, Any]],
-    metrics_extra: Optional[Dict[str, Any]] = None,
+    equity_curve: Sequence[tuple[datetime, float]],
+    trades: Sequence[dict[str, Any]],
+    metrics_extra: Optional[dict[str, Any]] = None,
 ) -> str:
     if not equity_curve:
         equity_curve = [(start_time, initial_capital), (end_time, final_equity)]
-    returns: List[float] = []
+    returns: list[float] = []
     for i in range(1, len(equity_curve)):
         prev = equity_curve[i - 1][1]
         curr = equity_curve[i][1]

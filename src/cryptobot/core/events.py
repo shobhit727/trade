@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from enum import Enum
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Optional
+from enum import Enum
+from typing import Any
 from uuid import uuid4
 
 
@@ -290,11 +290,11 @@ class SignalEvent(Event):
     side: SignalSide = SignalSide.BUY
     strength: SignalStrength = SignalStrength.MODERATE
     price: Decimal = Decimal("0")
-    quantity: Optional[Decimal] = None
-    stop_loss: Optional[Decimal] = None
-    take_profit: Optional[Decimal] = None
+    quantity: Decimal | None = None
+    stop_loss: Decimal | None = None
+    take_profit: Decimal | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
-    expires_at: Optional[datetime] = None
+    expires_at: datetime | None = None
 
     def __post_init__(self):
         if self.type not in (
@@ -324,11 +324,11 @@ class OrderEvent(Event):
     side: OrderSide = OrderSide.BUY
     type: OrderType = OrderType.LIMIT
     quantity: Decimal = Decimal("0")
-    price: Optional[Decimal] = None
-    stop_price: Optional[Decimal] = None
+    price: Decimal | None = None
+    stop_price: Decimal | None = None
     status: OrderStatus = OrderStatus.NEW
     filled_quantity: Decimal = Decimal("0")
-    avg_fill_price: Optional[Decimal] = None
+    avg_fill_price: Decimal | None = None
     commission: Decimal = Decimal("0")
     commission_asset: str = ""
     time_in_force: TimeInForce = TimeInForce.GTC
@@ -373,7 +373,7 @@ class PositionEvent(Event):
     leverage: int = 1
     margin_type: str = "ISOLATED"
     isolated_margin: Decimal = Decimal("0")
-    liquidation_price: Optional[Decimal] = None
+    liquidation_price: Decimal | None = None
     strategy: str = ""
 
     def __post_init__(self):
@@ -421,8 +421,8 @@ class RiskEvent(Event):
     check_type: str = ""
     passed: bool = True
     message: str = ""
-    current_value: Optional[float] = None
-    limit_value: Optional[float] = None
+    current_value: float | None = None
+    limit_value: float | None = None
     symbol: str = ""
     strategy: str = ""
 
@@ -479,7 +479,7 @@ class ErrorEvent(Event):
     component: str = ""
     error_type: str = ""
     message: str = ""
-    stack_trace: Optional[str] = None
+    stack_trace: str | None = None
     severity: str = "error"
     recoverable: bool = True
 

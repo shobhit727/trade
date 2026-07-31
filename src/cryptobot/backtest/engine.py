@@ -1,20 +1,18 @@
 from __future__ import annotations
-import asyncio
-import logging
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from decimal import Decimal
-from typing import List, Dict, Any, Optional, AsyncIterator
-from uuid import uuid4
 
+import logging
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
-from cryptobot.core.events import Event, EventType, OrderEvent, PositionEvent, PnLEvent, PositionSide
-from cryptobot.core.clock import Clock, SimulatedClock, ClockFactory, ClockMode
-from cryptobot.core.portfolio import get_portfolio_manager, PortfolioMode
+from cryptobot.core.clock import ClockFactory, SimulatedClock
+from cryptobot.core.events import Event, EventType, OrderEvent, PositionSide
+from cryptobot.core.portfolio import PortfolioMode, get_portfolio_manager
 from cryptobot.core.state import Position
-from cryptobot.utils.types import Candle, OrderBook, Trade
 
 
 @dataclass
@@ -35,9 +33,9 @@ class BacktestResult:
     losing_trades: int
     avg_win: Decimal
     avg_loss: Decimal
-    equity_curve: List[tuple[datetime, Decimal]]
-    
-    def to_dict(self) -> Dict[str, Any]:
+    equity_curve: list[tuple[datetime, Decimal]]
+
+    def to_dict(self) -> dict[str, Any]:
         return {
             "start_time": self.start_time.isoformat(),
             "end_time": self.end_time.isoformat(),
@@ -95,13 +93,13 @@ class BacktestEngine:
         self.commission_bps = Decimal(str(commission_bps))
         self.slippage_bps = Decimal(str(slippage_bps))
         self.funding_included = funding_included
-        
-        self._clock: Optional[SimulatedClock] = None
+
+        self._clock: SimulatedClock | None = None
         self._portfolio = get_portfolio_manager(PortfolioMode.BACKTEST)
-        self._positions: Dict[str, Position] = {}
-        self._orders: Dict[str, OrderEvent] = {}
-        self._trades: List[TradeRecord] = []
-        self._events: List[Event] = []
+        self._positions: dict[str, Position] = {}
+        self._orders: dict[str, OrderEvent] = {}
+        self._trades: list[TradeRecord] = []
+        self._events: list[Event] = []
         self._initialized = False
 
     async def initialize(self):
@@ -117,7 +115,7 @@ class BacktestEngine:
 
         # Initialize portfolio
         await self._portfolio.initialize()
-        
+
         # Set initial equity
         await self._portfolio.update_equity(self.initial_capital)
 
@@ -230,7 +228,7 @@ class BacktestEngine:
         symbol = event.payload.get("symbol", "")
         if symbol and symbol in self._positions:
             pos = self._positions[symbol]
-            
+
             # Update mark price
             current_price = Decimal(str(event.payload.get("price") or event.payload.get("close_price") or "0"))
             if current_price <= 0:
@@ -238,7 +236,7 @@ class BacktestEngine:
                 pass
             else:
                 pos.mark_price = current_price
-            
+
             # Recalculate unrealized PnL
             if pos.side == PositionSide.LONG:
                 pos.unrealized_pnl = (current_price - pos.entry_price) * pos.quantity
@@ -257,7 +255,7 @@ class BacktestEngine:
 
         # Get position
         pos = self._positions.get(symbol)
-        
+
         if pos is None:
             # Open new position
             pos = Position(
@@ -322,11 +320,11 @@ class BacktestEngine:
         """Handle PnL update events."""
         await self._portfolio.on_pnl_update(event)
 
-    def get_trades(self) -> List[TradeRecord]:
+    def get_trades(self) -> list[TradeRecord]:
         """Get all trade records."""
         return self._trades
 
-    def get_positions(self) -> Dict[str, Position]:
+    def get_positions(self) -> dict[str, Position]:
         """Get current positions."""
         return self._positions
 

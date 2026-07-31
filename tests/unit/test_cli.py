@@ -3,16 +3,11 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
-import contextlib
-import io
-import sys
 
 import pytest
 
-from cryptobot.cli import main as cli_main_module
-from cryptobot.cli.main import build_parser, main as _main, _run
-
+from cryptobot.cli.main import _run, build_parser
+from cryptobot.cli.main import main as _main
 
 # --- parser -------------------------------------------------------------
 

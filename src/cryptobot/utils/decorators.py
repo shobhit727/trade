@@ -5,8 +5,9 @@ Utility decorators for resilience, timeouts, and circuit breaking.
 import asyncio
 import logging
 import random
+from collections.abc import Callable
 from functools import wraps
-from typing import Callable, Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +98,7 @@ def timeout_decorator(timeout: float):
         async def wrapper(*args, **kwargs):
             try:
                 return await asyncio.wait_for(func(*args, **kwargs), timeout=timeout)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.error(f"Function '{func.__name__}' timed out after {timeout} seconds.")
                 raise TimeoutError(f"Operation exceeded time limit of {timeout}s")
 
@@ -128,7 +129,7 @@ class CircuitBreaker:
         self._state = "CLOSED"
         self._failure_count = 0
         self._success_count = 0
-        self._last_failure_time: Optional[float] = None
+        self._last_failure_time: float | None = None
         self._lock = asyncio.Lock()
 
     @property
@@ -157,7 +158,7 @@ class CircuitBreaker:
                 self._on_success()
             return result
 
-        except self.exceptions as e:
+        except self.exceptions:
             async with self._lock:
                 self._on_failure()
             raise

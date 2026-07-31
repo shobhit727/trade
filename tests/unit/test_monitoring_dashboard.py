@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 
 from cryptobot.monitoring.dashboard import (
+    create_all_dashboards,
+    create_execution_dashboard,
+    create_ml_dashboard,
     create_pnl_dashboard,
     create_risk_dashboard,
-    create_system_dashboard,
     create_strategy_dashboard,
-    create_ml_dashboard,
-    create_execution_dashboard,
-    create_all_dashboards,
+    create_system_dashboard,
     save_dashboards,
 )
 

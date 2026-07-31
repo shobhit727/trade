@@ -3,11 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
-from typing import Any, Callable, Dict, Optional
-
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -18,15 +17,15 @@ METRICS_PATH = "/metrics"
 
 class _HealthSnapshot:
     def __init__(self):
-        self.started_at = datetime.now(timezone.utc)
+        self.started_at = datetime.now(UTC)
 
-    def snapshot(self) -> Dict[str, Any]:
-        uptime = (datetime.now(timezone.utc) - self.started_at).total_seconds()
+    def snapshot(self) -> dict[str, Any]:
+        uptime = (datetime.now(UTC) - self.started_at).total_seconds()
         return {
             "status": "ok",
             "service": "cryptobot",
             "uptime_seconds": round(uptime, 3),
-            "now": datetime.now(timezone.utc).isoformat(),
+            "now": datetime.now(UTC).isoformat(),
         }
 
 
@@ -73,8 +72,8 @@ class HealthServer:
     def __init__(self, host: str = "127.0.0.1", port: int = 8080):
         self.host = host
         self.port = port
-        self._httpd: Optional[ThreadingHTTPServer] = None
-        self._thread: Optional[Thread] = None
+        self._httpd: ThreadingHTTPServer | None = None
+        self._thread: Thread | None = None
 
     def start(self) -> None:
         if self._httpd is not None:

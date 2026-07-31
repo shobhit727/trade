@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import math
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from decimal import Decimal
-from typing import Deque, Dict, List, Optional
 
-from cryptobot.core.events import Event, EventType, OrderEvent, OrderSide, OrderStatus
+from cryptobot.core.events import OrderEvent, OrderSide, OrderStatus
 from cryptobot.execution.adverse_selection import AdverseSelectionGuard, TopOfBook
 from cryptobot.execution.engine import ExecutionEngine
-from cryptobot.execution.venue.base import Venue
 
 
 @dataclass
@@ -29,24 +27,24 @@ class MarketMakingConfig:
 class MarketMakingStrategy:
     name = "market_making"
 
-    def __init__(self, config: Optional[MarketMakingConfig] = None):
+    def __init__(self, config: MarketMakingConfig | None = None):
         self.config = config or MarketMakingConfig()
         self.inventory: Decimal = Decimal("0")
-        self._bid_price: Optional[Decimal] = None
-        self._ask_price: Optional[Decimal] = None
-        self._bid_id: Optional[str] = None
-        self._ask_id: Optional[str] = None
-        self._exec: Optional[ExecutionEngine] = None
-        self._guard: Optional[AdverseSelectionGuard] = None
-        self._last_mid: Optional[Decimal] = None
-        self._last_top: Optional[TopOfBook] = None
-        self._equity_curve: Deque[float] = deque(maxlen=10_000)
-        self.history: List[OrderEvent] = []
+        self._bid_price: Decimal | None = None
+        self._ask_price: Decimal | None = None
+        self._bid_id: str | None = None
+        self._ask_id: str | None = None
+        self._exec: ExecutionEngine | None = None
+        self._guard: AdverseSelectionGuard | None = None
+        self._last_mid: Decimal | None = None
+        self._last_top: TopOfBook | None = None
+        self._equity_curve: deque[float] = deque(maxlen=10_000)
+        self.history: list[OrderEvent] = []
 
     def attach_execution(
         self,
         engine: ExecutionEngine,
-        guard: Optional[AdverseSelectionGuard] = None,
+        guard: AdverseSelectionGuard | None = None,
     ) -> None:
         self._exec = engine
         self._guard = guard
@@ -140,8 +138,8 @@ class MarketMakingStrategy:
                 self._guard.register(sell, snapshot)
         return None
 
-    def run_on_history(self, bars) -> List[OrderEvent]:
-        fills: List[OrderEvent] = []
+    def run_on_history(self, bars) -> list[OrderEvent]:
+        fills: list[OrderEvent] = []
         for i, bar in enumerate(bars):
             mid = Decimal(str(bar.close))
             bid = mid - Decimal("0.5")

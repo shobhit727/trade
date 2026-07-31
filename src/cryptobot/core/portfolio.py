@@ -1,19 +1,20 @@
 from __future__ import annotations
+
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Dict, List, Optional, Set, Tuple
-from uuid import uuid4
 
-from cryptobot.core.events import (
-    Event, EventType, OrderEvent, PositionEvent, PnLEvent,
-    OrderSide, OrderStatus, PositionSide, OrderType, TimeInForce,
-    SignalEvent, SignalSide, SignalStrength
-)
-from cryptobot.core.state import state_manager, Order, Position, AccountState
 from cryptobot.config import settings
+from cryptobot.core.events import (
+    OrderEvent,
+    OrderStatus,
+    PnLEvent,
+    PositionEvent,
+    PositionSide,
+)
+from cryptobot.core.state import state_manager
 
 
 class PortfolioMode(str, Enum):
@@ -113,13 +114,13 @@ class PortfolioManager:
 
     def __init__(self, mode: PortfolioMode = PortfolioMode.PAPER):
         self.mode = mode
-        self._allocations: Dict[str, StrategyAllocation] = {}
+        self._allocations: dict[str, StrategyAllocation] = {}
         self._state = PortfolioState()
         self._daily_pnl_start: Decimal = Decimal("0")
-        self._equity_curve: List[Tuple[datetime, Decimal]] = []
+        self._equity_curve: list[tuple[datetime, Decimal]] = []
         self._lock = asyncio.Lock()
         self._initialized = False
-        self._daily_returns: List[Decimal] = []
+        self._daily_returns: list[Decimal] = []
 
     async def initialize(self):
         """Initialize from persistent state."""
@@ -151,8 +152,8 @@ class PortfolioManager:
         self,
         strategy: str,
         target_weight: Decimal,
-        max_weight: Optional[Decimal] = None,
-        risk_budget: Optional[Decimal] = None,
+        max_weight: Decimal | None = None,
+        risk_budget: Decimal | None = None,
     ):
         """Register a strategy with capital allocation."""
         if strategy in self._allocations:
@@ -165,10 +166,10 @@ class PortfolioManager:
             risk_budget=risk_budget or Decimal(str(settings.risk.max_daily_loss_pct)) / Decimal("10"),
         )
 
-    def get_allocation(self, strategy: str) -> Optional[StrategyAllocation]:
+    def get_allocation(self, strategy: str) -> StrategyAllocation | None:
         return self._allocations.get(strategy)
 
-    def get_all_allocations(self) -> List[StrategyAllocation]:
+    def get_all_allocations(self) -> list[StrategyAllocation]:
         return list(self._allocations.values())
 
     async def update_equity(self, equity: Decimal):
@@ -236,7 +237,7 @@ class PortfolioManager:
         """Get current portfolio state."""
         return self._state
 
-    def get_equity_curve(self) -> List[Tuple[datetime, Decimal]]:
+    def get_equity_curve(self) -> list[tuple[datetime, Decimal]]:
         return self._equity_curve.copy()
 
     def get_daily_pnl_pct(self) -> float:
@@ -247,7 +248,7 @@ class PortfolioManager:
     def get_drawdown_pct(self) -> float:
         return float(self._state.max_drawdown)
 
-    def check_kill_switch(self) -> Tuple[bool, str]:
+    def check_kill_switch(self) -> tuple[bool, str]:
         """Check if kill switch should trigger."""
         daily_loss_pct = self.get_daily_pnl_pct()
         max_allowed = float(settings.risk.kill_switch_daily_loss_pct)
@@ -311,7 +312,7 @@ class PortfolioManager:
             "enabled": alloc.enabled,
         }
 
-    def get_position_metrics(self) -> List[PositionMetrics]:
+    def get_position_metrics(self) -> list[PositionMetrics]:
         """Get metrics for all positions."""
         positions = state_manager.get_positions()
         metrics = []
@@ -391,7 +392,7 @@ class PortfolioManager:
 
 
 # Global portfolio manager
-_portfolio_manager: Optional[PortfolioManager] = None
+_portfolio_manager: PortfolioManager | None = None
 
 
 def get_portfolio_manager(mode: PortfolioMode = PortfolioMode.PAPER) -> PortfolioManager:

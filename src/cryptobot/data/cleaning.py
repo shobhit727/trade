@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import numpy as np
-import pandas as pd
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from decimal import Decimal
-from typing import Dict, List, Optional, Tuple, Any
 from enum import Enum
+from typing import Any
+
+import pandas as pd
 
 
 class DataQualityIssue(str, Enum):
@@ -27,11 +26,11 @@ class QualityReport:
     """Data quality assessment report."""
     symbol: str
     timeframe: str
-    start: Optional[datetime] = None
-    end: Optional[datetime] = None
+    start: datetime | None = None
+    end: datetime | None = None
     total_rows: int = 0
-    issues: Dict[DataQualityIssue, int] = None
-    details: Dict[str, Any] = None
+    issues: dict[DataQualityIssue, int] = None
+    details: dict[str, Any] = None
 
     def __post_init__(self):
         if self.issues is None:
@@ -76,19 +75,19 @@ class DataCleaner:
         self.max_gap_multiplier = max_gap_multiplier
         self.min_volume = min_volume
 
-    def clean_klines(self, df: pd.DataFrame, symbol: str, timeframe: str) -> Tuple[pd.DataFrame, QualityReport]:
+    def clean_klines(self, df: pd.DataFrame, symbol: str, timeframe: str) -> tuple[pd.DataFrame, QualityReport]:
         """Clean and validate kline data."""
         if df is None:
             df = pd.DataFrame()
         required = ["open_time", "close_time", "open_price", "high_price", "low_price", "close_price", "volume"]
         missing = [c for c in required if c not in df.columns]
-        
+
         start_time = None
         end_time = None
         if not df.empty and "open_time" in df.columns:
             start_time = df["open_time"].min()
             end_time = df["open_time"].max()
-        
+
         report = QualityReport(
             symbol=symbol,
             timeframe=timeframe,
@@ -175,7 +174,7 @@ class DataCleaner:
 
         return df, report
 
-    def clean_tickers(self, df: pd.DataFrame, symbol: str) -> Tuple[pd.DataFrame, QualityReport]:
+    def clean_tickers(self, df: pd.DataFrame, symbol: str) -> tuple[pd.DataFrame, QualityReport]:
         """Clean and validate ticker data."""
         if df is None:
             df = pd.DataFrame()
@@ -219,7 +218,7 @@ class DataCleaner:
         report.total_rows = len(df)
         return df, report
 
-    def clean_trades(self, df: pd.DataFrame, symbol: str) -> Tuple[pd.DataFrame, QualityReport]:
+    def clean_trades(self, df: pd.DataFrame, symbol: str) -> tuple[pd.DataFrame, QualityReport]:
         """Clean and validate trade data."""
         if df is None:
             df = pd.DataFrame()
@@ -342,7 +341,7 @@ class DataCleaner:
 
         return resampled
 
-    def _get_interval_timedelta(self, timeframe: str) -> Optional[timedelta]:
+    def _get_interval_timedelta(self, timeframe: str) -> timedelta | None:
         """Convert timeframe string to timedelta."""
         tf_map = {
             "1m": timedelta(minutes=1), "3m": timedelta(minutes=3), "5m": timedelta(minutes=5),
@@ -395,24 +394,24 @@ class DataCleaner:
 
 
 # Convenience functions
-def clean_klines(df: pd.DataFrame, symbol: str, timeframe: str) -> Tuple[pd.DataFrame, QualityReport]:
+def clean_klines(df: pd.DataFrame, symbol: str, timeframe: str) -> tuple[pd.DataFrame, QualityReport]:
     cleaner = DataCleaner()
     return cleaner.clean_klines(df, symbol, timeframe)
 
 
-def clean_tickers(df: pd.DataFrame, symbol: str) -> Tuple[pd.DataFrame, QualityReport]:
+def clean_tickers(df: pd.DataFrame, symbol: str) -> tuple[pd.DataFrame, QualityReport]:
     cleaner = DataCleaner()
     return cleaner.clean_tickers(df, symbol)
 
 
-def clean_trades(df: pd.DataFrame, symbol: str) -> Tuple[pd.DataFrame, QualityReport]:
+def clean_trades(df: pd.DataFrame, symbol: str) -> tuple[pd.DataFrame, QualityReport]:
     cleaner = DataCleaner()
     return cleaner.clean_trades(df, symbol)
 
 
-def validate_ohlcv(df: pd.DataFrame) -> Tuple[bool, List[str]]:
+def validate_ohlcv(df: pd.DataFrame) -> tuple[bool, list[str]]:
     """Validate OHLCV data: required columns, no NaN, monotonic time, OHLC relationships."""
-    issues: List[str] = []
+    issues: list[str] = []
     required = ["open", "high", "low", "close"]
     if df is None or df.empty:
         return False, ["empty dataframe"]

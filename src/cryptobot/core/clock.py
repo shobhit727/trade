@@ -3,13 +3,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
-from decimal import Decimal
 from enum import Enum
-from typing import AsyncIterator, Callable, Dict, List, Optional, Set
-from uuid import uuid4
-
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +18,8 @@ class ClockMode(str, Enum):
 @dataclass
 class ClockConfig:
     mode: ClockMode = ClockMode.REALTIME
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
     speed_factor: float = 1.0
     tick_interval: float = 1.0
     timezone: str = "UTC"
@@ -78,7 +74,7 @@ class SimulatedClock(Clock):
     def __init__(
         self,
         start_time: datetime,
-        end_time: Optional[datetime] = None,
+        end_time: datetime | None = None,
         speed_factor: float = 1.0,
     ):
         self._current_time = start_time
@@ -89,7 +85,7 @@ class SimulatedClock(Clock):
         self._paused = False
         self._step_event = asyncio.Event()
         self._step_event.set()
-        self._waiters: Dict[datetime, List[asyncio.Future]] = {}
+        self._waiters: dict[datetime, list[asyncio.Future]] = {}
         self._lock = asyncio.Lock()
 
     @property
@@ -105,7 +101,7 @@ class SimulatedClock(Clock):
         return self._start_time
 
     @property
-    def end_time(self) -> Optional[datetime]:
+    def end_time(self) -> datetime | None:
         return self._end_time
 
     @property
@@ -185,7 +181,7 @@ class SimulatedClock(Clock):
                     del self._waiters[target]
             raise
 
-    def reset(self, start_time: Optional[datetime] = None):
+    def reset(self, start_time: datetime | None = None):
         """Reset clock to start time."""
         self._current_time = start_time or self._start_time
         self._waiters.clear()
@@ -195,7 +191,7 @@ class SimulatedClock(Clock):
     def get_elapsed(self) -> timedelta:
         return self._current_time - self._start_time
 
-    def get_remaining(self) -> Optional[timedelta]:
+    def get_remaining(self) -> timedelta | None:
         if self._end_time:
             return self._end_time - self._current_time
         return None
@@ -292,10 +288,10 @@ BacktestClock = SimulatedClock
 class ClockContext:
     """Context manager for clock management."""
     clock: Clock
-    _original_clock: Optional[Clock] = None
+    _original_clock: Clock | None = None
 
     @classmethod
-    async def back(cls, start_time: datetime, end_time: datetime) -> 'ClockContext':
+    async def back(cls, start_time: datetime, end_time: datetime) -> ClockContext:
         """Create backtest clock context."""
         from cryptobot.core.clock import SimulatedClock
         clock = SimulatedClock(
@@ -317,7 +313,7 @@ class ClockContext:
 
 
 # Global clock instance
-_clock: Optional[Clock] = None
+_clock: Clock | None = None
 
 
 def get_clock() -> Clock:

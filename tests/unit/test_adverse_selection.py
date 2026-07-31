@@ -9,7 +9,6 @@ from cryptobot.execution.adverse_selection import (
     AdverseAction,
     AdverseSelectionConfig,
     AdverseSelectionGuard,
-    QueuePosition,
     TopOfBook,
     attach_to_engine,
 )
