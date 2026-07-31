@@ -53,7 +53,7 @@ def test_alerting_does_not_import_aiohttp_at_module_level():
 
     src = pathlib.Path("src/cryptobot/monitoring/alerting.py").read_text()
     tree = ast.parse(src)
-    module_level = [n for n in tree.body if isinstance(n, (ast.Import, ast.ImportFrom))]
+    module_level = [n for n in tree.body if isinstance(n, ast.Import | ast.ImportFrom)]
     for node in module_level:
         if isinstance(node, ast.Import):
             names = [alias.name for alias in node.names]

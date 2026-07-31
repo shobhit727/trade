@@ -51,7 +51,7 @@ def _row_to_bar(row: dict[str, Any], default_symbol: str) -> OhlcvBar:
     ts_raw = row.get("timestamp") or row.get("open_time") or row.get("time") or row.get("datetime")
     if isinstance(ts_raw, str):
         ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
-    elif isinstance(ts_raw, (int, float)):
+    elif isinstance(ts_raw, int | float):
         ts = datetime.utcfromtimestamp(float(ts_raw))
     elif isinstance(ts_raw, datetime):
         ts = ts_raw
