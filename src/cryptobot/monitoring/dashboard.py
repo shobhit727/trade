@@ -625,18 +625,20 @@ def create_all_dashboards() -> List[Dict[str, Any]]:
     ]
 
 
-def save_dashboards(output_dir: str = "/app/grafana/dashboards"):
-    """Save all dashboards to JSON files."""
+def save_dashboards(output_dir: str = "/app/grafana/dashboards") -> List[str]:
+    """Save all dashboards to JSON files. Returns list of written paths."""
     import os
     os.makedirs(output_dir, exist_ok=True)
 
-    dashboards = create_all_dashboards()
-    for db in dashboards:
+    written: List[str] = []
+    for db in create_all_dashboards():
         title = db["dashboard"]["title"].replace(" - ", "_").replace(" ", "_").lower()
         filepath = os.path.join(output_dir, f"{title}.json")
         with open(filepath, "w") as f:
             json.dump(db, f, indent=2)
+        written.append(filepath)
         logger.info("Saved: %s", filepath)
+    return written
 
 
 if __name__ == "__main__":

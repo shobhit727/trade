@@ -177,10 +177,10 @@ class PortfolioManager:
             now = datetime.utcnow()
             if not self._equity_curve:
                 self._daily_pnl_start = equity
-            else:
-                last_time = self._equity_curve[-1][0]
-                if last_time.date() < now.date():
-                    self.reset_daily_pnl()
+            elif self._equity_curve[-1][0].date() < now.date():
+                self._daily_pnl_start = equity
+                self._state.daily_pnl = Decimal("0")
+                state_manager.reset_daily_pnl()
 
             if self._state.total_equity > 0:
                 daily_return = (equity - self._state.total_equity) / self._state.total_equity
