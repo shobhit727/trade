@@ -1,7 +1,38 @@
-# 24. Agent Log
+## Session 2026-07-31 (audit v5 — final cleanups)
 
-> **Last Updated**: 2026-07-31 (audit v4 — B051 close-out)
-> **Confidence**: High.
+### Goal
+
+Resolve remaining low/medium items from audit v4 blockers list:
+- BinanceWSClient silent fallback → add warning log (B066 was fixed but didn't warn)
+- Dockerfile USER directive (already present in production stage)
+- Dead empty dirs (already removed from repo)
+- Dead seccomp/ dir (already gone)
+- Refresh plan.md status + Section 11
+
+### Sequence
+
+1. Added warning logs in `BinanceWSClient.__init__` when `settings.exchange.symbols` or `timeframes` are empty (falls back to `default_symbol` / `["1m"]`).
+2. Verified `Dockerfile` already has `USER 1000:1000` in production stage (build-as-root, run-as-non-root).
+3. Confirmed dead dirs (`allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/`) already removed from repo.
+4. Confirmed `seccomp/` dir already gone.
+5. Updated `plan.md` status + blockers + Section 11 to mark all items resolved/deferred.
+
+### Verified
+
+- `cargo build` + `cargo test` still clean.
+- `pytest tests/unit/test_monitoring_lazy_imports.py` → 5 passed, 2 skipped (prometheus_client present in env).
+- `python -m py_compile` on modified files clean.
+
+### Updated plan.md
+
+- Status: "all blockers resolved"
+- Section 12 blockers: all items marked resolved/deferred
+- Section 11 "To Create Next": all items marked ✅
+
+### Remaining after this pass
+
+- ML volatility/regime/ensemble models (deferred — out of audit scope)
+- Integration test fixtures for TimescaleDB/Redis/Prometheus (out of audit scope)
 
 ## Session 2026-07-31 (audit v4 — B051 close-out)
 

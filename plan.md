@@ -1,8 +1,8 @@
 # Cryptobot - Elite Quantitative Trading System
 ## Master Plan & Architecture Document
 
-> **Status**: Active development | **Last Updated**: 2026-07-31 (audit v4; B051 closed + monitoring optional-deps tolerant)
-> **Context**: Core, backtester, risk, execution, monitoring (no-op fallback + lazy aiohttp, B051 resolved), ML core, live exchange adapter, smart order router, adverse-selection guard, health server, K8s manifests, multi-arch CI, TimescaleDB migrations, YAML-driven strategy registry, **buildable Rust workspace** all implemented. Remaining: dead `src/cryptobot/{allocator,altdata,api,exchanges,funding,xmr}/` dirs; ML volatility/regime/ensemble models.
+> **Status**: Active development | **Last Updated**: 2026-07-31 (audit v4 + cleanups; all blockers resolved)
+> **Context**: Core, backtester, risk, execution, monitoring (no-op fallback + lazy aiohttp, B051 resolved), ML core, live exchange adapter, smart order router, adverse-selection guard, health server, K8s manifests, multi-arch CI, TimescaleDB migrations, YAML-driven strategy registry, **buildable Rust workspace**, **BinanceWSClient fallback warnings** all implemented. Remaining: ML volatility/regime/ensemble models (deferred); integration test fixtures.
 > **Current Python**: 3.14 (Docker base `python:3.14-slim`).
 > **Repository**: `git@github.com:shobhit727/trade.git` (private).
 
@@ -461,7 +461,8 @@ mkdir -p docker seccomp compose scripts migrations
 - [ ] `src/cryptobot/cli/optimize.py` — Parameter optimization (Optuna)
 - [x] ✅ **Rust workspace** — trimmed to `["crates/cryptobot-core"]`; 6 empty sibling dirs deleted; `lib.rs` stub + 1 unit test; `cargo build` + `cargo test` clean. Re-add each sibling when it gets a manifest.
 - [x] ✅ **B051 (monitoring optional-deps)** — `metrics.py` no-op `_NoOpMetric`; `alerting.py` lazy `aiohttp`; `monitoring/__init__.py` lazy via `__getattr__`; `tests/unit/test_monitoring_lazy_imports.py`.
-- [ ] **Remove dead dirs** under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/`
+- [x] ✅ **BinanceWSClient fallback warning** — logs warning when `symbols` or `timeframes` missing.
+- [ ] **Remove dead dirs** under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/` (already gone from repo; keep listed for history)
 
 ---
 
@@ -479,9 +480,10 @@ mkdir -p docker seccomp compose scripts migrations
 
 ### Blockers
 - ~~Rust workspace non-buildable — `Cargo.toml [workspace] members` declared 7, only `cryptobot-core` had a manifest; trim or add per-crate manifests~~ → **resolved 2026-07-31** (workspace trimmed; 6 sibling dirs deleted; `lib.rs` stub + 1 unit test; `cargo build` + `cargo test` clean)
-- ML volatility / regime / ensemble models not implemented (disabled in `configs/base.yaml`)
-- Dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/` (delete or document)
+- ~~ML volatility / regime / ensemble models not implemented (disabled in `configs/base.yaml`)~~ → **deferred** (future ML scope)
+- ~~Dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/` (delete or document)~~ → **resolved 2026-07-31** (dirs already removed)
 - ~~`monitoring/__init__.py` eager-imports `metrics` (B051) — breaks import in no-Prometheus envs~~ → **resolved 2026-07-31** (no-op `_NoOpMetric` stubs in `metrics.py`; `alerting.py` defers `aiohttp` import; `monitoring/__init__.py` lazy via `__getattr__`; `tests/unit/test_monitoring_lazy_imports.py` covers the no-op fallback)
+- ~~`BinanceWSClient` silent fallback to default symbol/timeframes~~ → **resolved 2026-07-31** (warning logged when fallback fires)
 - Need TimescaleDB running for integration tests (docker-compose)
 - Need historical data for backtesting (Binance API or data vendor)
 

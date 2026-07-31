@@ -38,7 +38,11 @@ class BinanceWSClient:
         self._last_ping = 0
         self._ping_interval = 20
         self._symbols = settings.exchange.symbols or [settings.exchange.default_symbol]
+        if not settings.exchange.symbols:
+            logger.warning("BinanceWSClient: no symbols configured; falling back to default_symbol=%s", settings.exchange.default_symbol)
         self._timeframes = settings.exchange.timeframes or ["1m"]
+        if not settings.exchange.timeframes:
+            logger.warning("BinanceWSClient: no timeframes configured; falling back to ['1m']")
 
     async def start(self):
         self.running = True
