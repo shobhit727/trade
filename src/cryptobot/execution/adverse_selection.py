@@ -143,7 +143,6 @@ class AdverseSelectionGuard:
     ) -> Decimal | None:
         if pos.quantity <= 0 or pos.mid_at_place <= 0:
             return None
-        skew_bps = self.config.cancel_replace_extra_bps
         if pos.side == side:
             return pos.mid_at_place
         return None

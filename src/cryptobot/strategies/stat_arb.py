@@ -87,7 +87,7 @@ class StatArbStrategy:
         n = min(len(self._prices_a), len(self._prices_b))
         return [
             a - self._hedge_ratio(list(self._prices_a), list(self._prices_b)) * b
-            for a, b in zip(list(self._prices_a)[-n:], list(self._prices_b)[-n:])
+            for a, b in zip(list(self._prices_a)[-n:], list(self._prices_b)[-n:], strict=False)
         ]
 
     def step(self) -> tuple[OrderSide, OrderSide] | None:

@@ -55,11 +55,11 @@ def render_html(
     returns: Sequence[float],
     equity_curve: Sequence[tuple[datetime, float]],
     trades: Iterable[dict[str, Any]],
-    metrics_extra: Optional[dict[str, Any]] = None,
+    metrics_extra: dict[str, Any] | None = None,
 ) -> str:
     n_trades = sum(1 for _ in trades)
     wins = sum(1 for t in trades if t.get("pnl", 0) > 0)
-    losses = sum(1 for t in trades if t.get("pnl", 0) < 0)
+    sum(1 for t in trades if t.get("pnl", 0) < 0)
     total_return = (final_equity - initial_capital) / initial_capital * 100 if initial_capital else 0.0
     equity = [v for _, v in equity_curve]
     dd_series = compute_drawdown_series(equity)
@@ -148,7 +148,7 @@ def generate_report(
     final_equity: float,
     equity_curve: Sequence[tuple[datetime, float]],
     trades: Sequence[dict[str, Any]],
-    metrics_extra: Optional[dict[str, Any]] = None,
+    metrics_extra: dict[str, Any] | None = None,
 ) -> str:
     if not equity_curve:
         equity_curve = [(start_time, initial_capital), (end_time, final_equity)]

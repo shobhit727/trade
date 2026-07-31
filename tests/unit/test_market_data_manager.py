@@ -158,7 +158,7 @@ def test_market_data_cache_returns_none_on_miss():
 def test_market_data_manager_get_mid_price_orderbook_first(monkeypatch):
     mgr = MarketDataManager()
     mgr.cache = MarketDataCache()
-    book = _book()
+    _book()
     mgr.cache.local_cache["orderbook:BTCUSDT"] = {
         "symbol": "BTCUSDT",
         "bids": [[99.5, 1.0]],

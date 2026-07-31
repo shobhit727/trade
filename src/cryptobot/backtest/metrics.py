@@ -75,7 +75,7 @@ class PerformanceMetrics:
         if not downside_returns:
             return float('inf') # Perfect performance regarding downside risk
 
-        mean_downside = np.mean(downside_returns)
+        np.mean(downside_returns)
         std_downside = np.std(downside_returns)
 
         # Annualization
@@ -142,14 +142,16 @@ class BacktestMetricsRecorder:
 
     def calculate_sharpe_ratio(self, returns: list[float], risk_free_rate: float = 0.02) -> float:
         """Calculates the annualized Sharpe Ratio."""
-        if not returns: return 0.0
+        if not returns:
+            return 0.0
 
         # We use numpy functions for better numerical stability
-        mean_return = np.mean(returns)
+        np.mean(returns)
         std_dev = np.std(returns)
 
-        annualization_factor = 252 # Assuming daily/high frequency data sampled over years
-        if std_dev == 0: return 0.0
+        annualization_factor = 252  # Assuming daily/high frequency data sampled over years
+        if std_dev == 0:
+            return 0.0
 
         sharpe = (np.mean([r * annualization_factor for r in returns]) - risk_free_rate) / (std_dev * sqrt(annualization_factor))
         return sharpe

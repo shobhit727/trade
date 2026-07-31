@@ -5,11 +5,11 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from enum import Enum
+from enum import StrEnum
 
 logger = logging.getLogger(__name__)
 
-class ClockMode(str, Enum):
+class ClockMode(StrEnum):
     REALTIME = "realtime"
     SIMULATED = "simulated"
     ACCELERATED = "accelerated"
@@ -147,7 +147,7 @@ class SimulatedClock(Clock):
     async def _notify_waiters(self):
         """Notify all waiters whose target time has arrived."""
         ready = []
-        for target, futures in self._waiters.items():
+        for target, _futures in self._waiters.items():
             if target <= self._current_time:
                 ready.append(target)
 

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 import pandas as pd
 
 
-class DataQualityIssue(str, Enum):
+class DataQualityIssue(StrEnum):
     MISSING_TIMESTAMPS = "missing_timestamps"
     DUPLICATE_TIMESTAMPS = "duplicate_timestamps"
     OUT_OF_ORDER = "out_of_order"

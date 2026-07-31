@@ -3,12 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
 
-class EventType(str, Enum):
+class EventType(StrEnum):
     # Market Data
     TICKER = "ticker"
     ORDERBOOK = "orderbook"
@@ -61,26 +61,26 @@ class EventType(str, Enum):
     ALL = "*"
 
 
-class SignalSide(str, Enum):
+class SignalSide(StrEnum):
     BUY = "buy"
     SELL = "sell"
     CLOSE_LONG = "close_long"
     CLOSE_SHORT = "close_short"
 
 
-class SignalStrength(str, Enum):
+class SignalStrength(StrEnum):
     WEAK = "weak"
     MODERATE = "moderate"
     STRONG = "strong"
     VERY_STRONG = "very_strong"
 
 
-class OrderSide(str, Enum):
+class OrderSide(StrEnum):
     BUY = "BUY"
     SELL = "SELL"
 
 
-class OrderType(str, Enum):
+class OrderType(StrEnum):
     MARKET = "MARKET"
     LIMIT = "LIMIT"
     STOP_LOSS = "STOP_LOSS"
@@ -90,7 +90,7 @@ class OrderType(str, Enum):
     LIMIT_MAKER = "LIMIT_MAKER"
 
 
-class OrderStatus(str, Enum):
+class OrderStatus(StrEnum):
     NEW = "NEW"
     PARTIALLY_FILLED = "PARTIALLY_FILLED"
     FILLED = "FILLED"
@@ -100,14 +100,14 @@ class OrderStatus(str, Enum):
     PENDING_CANCEL = "PENDING_CANCEL"
 
 
-class TimeInForce(str, Enum):
+class TimeInForce(StrEnum):
     GTC = "GTC"
     IOC = "IOC"
     FOK = "FOK"
     GTX = "GTX"
 
 
-class PositionSide(str, Enum):
+class PositionSide(StrEnum):
     LONG = "LONG"
     SHORT = "SHORT"
     BOTH = "BOTH"

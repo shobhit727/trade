@@ -97,7 +97,7 @@ def build_features(bars: list[OhlcvBar], config: FeatureConfig | None = None) ->
     cfg = config or FeatureConfig()
     if not bars:
         return np.zeros((0, 8), dtype=float)
-    opens = _to_array(bars, "open")
+    _to_array(bars, "open")
     highs = _to_array(bars, "high")
     lows = _to_array(bars, "low")
     closes = _to_array(bars, "close")

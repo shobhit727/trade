@@ -97,7 +97,8 @@ class MeanReversionStrategyPlaceholder(BaseStrategy):
     async def on_market_data(self, event: Event) -> list[OrderEvent]:
         """Simple logic: if price deviates more than 2 STD from mean, attempt a reversal trade."""
         price = event.payload.get("price")
-        if price is None: return []
+        if price is None:
+            return []
 
         # Placeholder Logic (needs full Indicator Calculation):
         is_overbought = float(price) > self._config.get("high_trigger", 1.2) * 65000 # Example trigger

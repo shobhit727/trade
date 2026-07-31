@@ -7,12 +7,12 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-logger = logging.getLogger(__name__)
-
 from cryptobot.core.clock import ClockFactory, SimulatedClock
 from cryptobot.core.events import Event, EventType, OrderEvent, PositionSide
 from cryptobot.core.portfolio import PortfolioMode, get_portfolio_manager
 from cryptobot.core.state import Position
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -74,7 +74,7 @@ class TradeRecord:
 class BacktestEngine:
     """
     Event-driven backtesting engine.
-    
+
     Manages time progression, event dispatch, and strategy execution.
     """
 

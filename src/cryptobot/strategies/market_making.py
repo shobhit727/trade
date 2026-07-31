@@ -53,7 +53,6 @@ class MarketMakingStrategy:
         gamma = self.config.gamma
         sigma = self.config.sigma
         kappa = self.config.kappa
-        A = self.config.A
         reservation = mid - (self._inventory_to_float() * gamma * sigma * sigma * t_remaining)
         spread = (gamma * sigma * sigma * t_remaining) + ((2.0 / gamma) * math.log1p(gamma / kappa))
         half = max(spread / 2.0, self.config.quote_step_bps / 10_000.0 * mid)

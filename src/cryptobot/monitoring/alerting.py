@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from cryptobot.config import settings
@@ -24,14 +24,14 @@ from cryptobot.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-class AlertSeverity(str, Enum):
+class AlertSeverity(StrEnum):
     INFO = "info"
     WARNING = "warning"
     CRITICAL = "critical"
     EMERGENCY = "emergency"
 
 
-class AlertCategory(str, Enum):
+class AlertCategory(StrEnum):
     SYSTEM = "system"
     TRADING = "trading"
     RISK = "risk"
@@ -525,7 +525,7 @@ class AlertManager:
         # Auto-resolve stale alerts
         async with self._lock:
             to_resolve = []
-            for fingerprint, alert in self.active_alerts.items():
+            for _fingerprint, alert in self.active_alerts.items():
                 for rule in self.rules:
                     if self._match_rule(alert, rule) and rule.auto_resolve:
                         if now - alert.timestamp > rule.resolve_after:

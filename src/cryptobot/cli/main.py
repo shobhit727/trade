@@ -7,6 +7,8 @@ import logging
 import sys
 from decimal import Decimal
 
+from cryptobot.core.events import OrderEvent, OrderSide, OrderStatus, OrderType
+
 logger = logging.getLogger(__name__)
 
 

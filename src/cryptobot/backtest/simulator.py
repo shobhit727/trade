@@ -37,7 +37,7 @@ class FillResult:
 class FillSimulator:
     """
     Realistic fill simulator with slippage, fees, and market impact.
-    
+
     Models:
     - Slippage based on order size and volatility
     - Market impact for large orders

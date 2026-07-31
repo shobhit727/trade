@@ -98,9 +98,9 @@ def timeout_decorator(timeout: float):
         async def wrapper(*args, **kwargs):
             try:
                 return await asyncio.wait_for(func(*args, **kwargs), timeout=timeout)
-            except TimeoutError:
+            except TimeoutError as err:
                 logger.error(f"Function '{func.__name__}' timed out after {timeout} seconds.")
-                raise TimeoutError(f"Operation exceeded time limit of {timeout}s")
+                raise TimeoutError(f"Operation exceeded time limit of {timeout}s") from err
 
         return wrapper
 

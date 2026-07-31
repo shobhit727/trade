@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from cryptobot.config import settings
 from cryptobot.core.bus import EventBus, get_event_bus
-from cryptobot.core.events import Event, EventType, OrderEvent, OrderStatus
+from cryptobot.core.events import Event, EventType, OrderEvent, OrderStatus, OrderType
 from cryptobot.execution.router import SmartOrderRouter
 from cryptobot.execution.venue.base import Venue
 from cryptobot.execution.venue.simulated import SimulatedVenue

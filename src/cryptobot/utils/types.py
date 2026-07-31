@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, TypedDict
 
 
 @dataclass
@@ -124,12 +124,12 @@ class OrderBook:
         """Get order book depth."""
         return {
             'bids': [
-                {'price': str(l.price), 'quantity': str(l.quantity)}
-                for l in self.bids[:levels]
+                {'price': str(level.price), 'quantity': str(level.quantity)}
+                for level in self.bids[:levels]
             ],
             'asks': [
-                {'price': str(l.price), 'quantity': str(l.quantity)}
-                for l in self.asks[:levels]
+                {'price': str(level.price), 'quantity': str(level.quantity)}
+                for level in self.asks[:levels]
             ],
         }
 
@@ -138,8 +138,8 @@ class OrderBook:
         if not self.bids or not self.asks:
             return None
 
-        bid_volume = sum(l.quantity for l in self.bids[:10])
-        ask_volume = sum(l.quantity for l in self.asks[:10])
+        bid_volume = sum(level.quantity for level in self.bids[:10])
+        ask_volume = sum(level.quantity for level in self.asks[:10])
 
         total = bid_volume + ask_volume
         if total == 0:
@@ -165,7 +165,6 @@ class Trade:
         return self.price * self.quantity
 
 
-from typing import TypedDict
 
 
 class TickData(TypedDict, total=False):

@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 
 from cryptobot.config import settings
 from cryptobot.core.events import (
@@ -17,7 +17,7 @@ from cryptobot.core.events import (
 from cryptobot.core.state import state_manager
 
 
-class PortfolioMode(str, Enum):
+class PortfolioMode(StrEnum):
     BACKTEST = "backtest"
     PAPER = "paper"
     LIVE = "live"
@@ -379,7 +379,7 @@ class PortfolioManager:
                 if total_losses > 0:
                     self._state.profit_factor = Decimal(str(total_wins / total_losses))
 
-            positive_returns = [r for r in daily_returns_array if r > 0]
+            [r for r in daily_returns_array if r > 0]
             negative_returns = [r for r in daily_returns_array if r < 0]
 
             if negative_returns:

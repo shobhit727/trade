@@ -116,7 +116,7 @@ def test_create_standard_checks_skips_missing_components():
         exchange_client=None,
         market_data_manager=None,
     )
-    names = {c.name for c in checks}
+    _ = {c.name for c in checks}
     assert "exchange_ping" not in {c.name for c in checks}
     assert "data_freshness" not in {c.name for c in checks}
 
@@ -152,28 +152,6 @@ def test_health_result_creation():
     )
     assert hr.check_name == "test"
     assert str(hr) == "test: HEALTHY (1.5ms)"
-
-
-def test_create_standard_checks_skips_missing_components():
-    checks = create_standard_checks(
-        exchange_client=None,
-        market_data_manager=None,
-    )
-    names = {c.name for c in checks}
-    assert "exchange_ping" not in {c.name for c in checks}
-    assert "data_freshness" not in {c.name for c in checks}
-
-
-def test_create_standard_checks_uses_present_components():
-    class FakeExchange:
-        async def ping(self):
-            return True
-        async def get_server_time(self):
-            return 12345
-
-    checks = create_standard_checks(exchange_client=object())
-    names = {c.name for c in checks}
-    assert "exchange_ping" in names
 
 
 def test_component_health_success_rate_starts_one():
@@ -265,53 +243,10 @@ def test_exchange_health_checker_instantiates():
     assert ch.component_type == "EXCHANGE"
 
 
-def test_data_feed_health_checker_component_type():
-    assert DataFeedHealthChecker(None).component_type == "DATA_FEED"
-
-
-def test_database_health_checker_component_type():
-    assert DatabaseHealthChecker(None).component_type == "DATABASE"
-
-
-def test_cache_health_checker_component_type():
-    assert CacheHealthChecker(None).component_type == "CACHE"
-
-
-def test_risk_engine_health_checker_component_type():
-    assert RiskEngineHealthChecker(None).component_type == "RISK"
-
-
-def test_strategy_engine_health_checker_component_type():
-    assert StrategyEngineHealthChecker(None).component_type == "STRATEGY"
-
-
 # --- Comprehensive test: HealthMonitor with multiple checkers ---
 
 
 @pytest.mark.asyncio
-async def test_health_monitor_with_multiple_checkers():
-    monitor = HealthMonitor(check_interval=0.01)
-    monitor.register_check(
-        HealthCheck(
-            name="exchange_ping",
-            component="EXCHANGE",
-            check_fn=lambda: True,
-            timeout_seconds=1.0,
-        )
-    )
-    monitor.register_check(
-        HealthCheck(
-            name="data_freshness",
-            component="DATA_FEED",
-            check_fn=lambda: True,
-            timeout_seconds=1.0,
-        )
-    )
-    results = await monitor.run_all_checks()
-    assert len(results) == 2
-    assert all(r.status == "HEALTHY" for r in results.values())
-
-
 @pytest.mark.asyncio
 async def test_health_check_handles_false_return():
     monitor = HealthMonitor(check_interval=0.01)

@@ -33,22 +33,22 @@ class TrendFollowingStrategy:
     def _buf(self, symbol: str) -> tuple[deque[float], deque[float], deque[float]]:
         n = max(self.config.slow, self.config.adx_period * 2 + 1, self.config.atr_period + 1)
         h = self._highs.setdefault(symbol, deque(maxlen=n))
-        l = self._lows.setdefault(symbol, deque(maxlen=n))
+        low_q = self._lows.setdefault(symbol, deque(maxlen=n))
         c = self._closes.setdefault(symbol, deque(maxlen=n))
-        return h, l, c
+        return h, low_q, c
 
     def feed(self, symbol: str, high: float, low: float, close: float) -> OrderEvent | None:
-        h, l, c = self._buf(symbol)
+        h, low_q, c = self._buf(symbol)
         h.append(high)
-        l.append(low)
+        low_q.append(low)
         c.append(close)
         if len(c) < self.config.slow:
             return None
         closes = np.fromiter(c, dtype=float)
         ema_fast = self._ema(closes, self.config.fast)
         ema_slow = self._ema(closes, self.config.slow)
-        adx = self._adx(np.fromiter(h, dtype=float), np.fromiter(l, dtype=float), closes, self.config.adx_period)
-        atr = self._atr(np.fromiter(h, dtype=float), np.fromiter(l, dtype=float), closes, self.config.atr_period)
+        adx = self._adx(np.fromiter(h, dtype=float), np.fromiter(low_q, dtype=float), closes, self.config.adx_period)
+        atr = self._atr(np.fromiter(h, dtype=float), np.fromiter(low_q, dtype=float), closes, self.config.atr_period)
         if ema_fast > ema_slow and adx > self.config.adx_threshold and symbol not in self._entry_stop:
             self._entry_stop[symbol] = close - self.config.atr_multiplier * atr
             return OrderEvent(symbol=symbol, side=OrderSide.BUY, quantity=self.config.quantity, price=Decimal(str(round(close, 8))))

@@ -114,7 +114,7 @@ def test_reporting_generate_report_renders_html():
 def test_reporting_trade_distribution_buckets():
     from datetime import datetime
 
-    t0 = datetime(2024, 1, 1)
+    datetime(2024, 1, 1)
     trades = [{"pnl": v} for v in (3, 12, -7, 25, -1)]
     out = render_trade_distribution(trades)
     assert "PNL histogram" in out

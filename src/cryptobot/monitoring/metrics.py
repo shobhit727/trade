@@ -14,6 +14,10 @@ optional dependency (e.g. a slim test container).
 
 from __future__ import annotations
 
+import threading
+from collections import defaultdict
+from typing import Any
+
 try:
     from prometheus_client import (
         CollectorRegistry as _RealCollectorRegistry,
@@ -747,9 +751,6 @@ def timed(histogram: Histogram, **labels) -> MetricsContext:
 # Minimal Prometheus-free MetricsCollector
 # =============================================================================
 
-import threading
-from collections import defaultdict
-
 
 class _Counter:
     def __init__(self, name: str, help: str = "", labelnames: tuple = ()):
@@ -757,7 +758,7 @@ class _Counter:
         self.help = help
         self.labelnames = labelnames
         self._lock = threading.Lock()
-        self._values: Dict[tuple, float] = defaultdict(float)
+        self._values: dict[tuple, float] = defaultdict(float)
 
     def inc(self, amount: float = 1.0, **labels):
         key = self._key(labels)
@@ -774,7 +775,7 @@ class _Gauge:
         self.help = help
         self.labelnames = labelnames
         self._lock = threading.Lock()
-        self._values: Dict[tuple, float] = {}
+        self._values: dict[tuple, float] = {}
 
     def set(self, value: float, **labels):
         key = self._key(labels)
@@ -802,9 +803,9 @@ class _Histogram:
         self.labelnames = labelnames
         self.buckets = tuple(sorted(buckets or self.DEFAULT_BUCKETS))
         self._lock = threading.Lock()
-        self._counts: Dict[tuple, int] = defaultdict(int)
-        self._sums: Dict[tuple, float] = defaultdict(float)
-        self._bucket_counts: Dict[tuple, List[int]] = {}
+        self._counts: dict[tuple, int] = defaultdict(int)
+        self._sums: dict[tuple, float] = defaultdict(float)
+        self._bucket_counts: dict[tuple, list[int]] = {}
 
     def observe(self, value: float, **labels):
         key = self._key(labels)
@@ -830,7 +831,7 @@ class MetricsCollector:
 
     def __init__(self):
         self._lock = threading.Lock()
-        self._metrics: Dict[str, Any] = {}
+        self._metrics: dict[str, Any] = {}
 
     def counter(self, name: str, help: str = "", labelnames: tuple = ()) -> _Counter:
         with self._lock:
@@ -851,7 +852,7 @@ class MetricsCollector:
             return self._metrics[name]
 
     def to_prometheus_text(self) -> str:
-        lines: List[str] = []
+        lines: list[str] = []
         with self._lock:
             for name, metric in self._metrics.items():
                 if isinstance(metric, _Counter):
@@ -873,14 +874,14 @@ class MetricsCollector:
                         cumulative = 0
                         for i, b in enumerate(metric.buckets):
                             cumulative += counts[i]
-                            bucket_label = dict(zip(metric.labelnames, labels_tuple))
+                            bucket_label = dict(zip(metric.labelnames, labels_tuple, strict=False))
                             bucket_label["le"] = str(b)
-                            label_str = self._format_labels(list(metric.labelnames) + ["le"], tuple(bucket_label[l] for l in metric.labelnames) + (str(b),))
+                            label_str = self._format_labels(list(metric.labelnames) + ["le"], tuple(bucket_label[ln] for ln in metric.labelnames) + (str(b),))
                             lines.append(f"{name}_bucket{label_str} {cumulative}")
                         cumulative += counts[-1]
-                        bucket_label = dict(zip(metric.labelnames, labels_tuple))
+                        bucket_label = dict(zip(metric.labelnames, labels_tuple, strict=False))
                         bucket_label["le"] = "+Inf"
-                        label_str = self._format_labels(list(metric.labelnames) + ["le"], tuple(bucket_label[l] for l in metric.labelnames) + ("+Inf",))
+                        label_str = self._format_labels(list(metric.labelnames) + ["le"], tuple(bucket_label[ln] for ln in metric.labelnames) + ("+Inf",))
                         lines.append(f"{name}_bucket{label_str} {cumulative}")
                         label_str = self._format_labels(metric.labelnames, labels_tuple)
                         lines.append(f"{name}_sum{label_str} {metric._sums[labels_tuple]}")
@@ -890,7 +891,7 @@ class MetricsCollector:
     def _format_labels(self, labelnames: tuple, values: tuple) -> str:
         if not labelnames:
             return ""
-        parts = ",".join(f'{n}="{v}"' for n, v in zip(labelnames, values))
+        parts = ",".join(f'{n}="{v}"' for n, v in zip(labelnames, values, strict=False))
         return "{" + parts + "}"
 
     def reset(self):
@@ -898,7 +899,7 @@ class MetricsCollector:
             self._metrics.clear()
 
 
-_collector: Optional[MetricsCollector] = None
+_collector: MetricsCollector | None = None
 _collector_lock = threading.Lock()
 
 

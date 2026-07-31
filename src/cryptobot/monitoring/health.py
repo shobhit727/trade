@@ -14,7 +14,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from cryptobot.config import settings
@@ -24,14 +24,14 @@ from cryptobot.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-class HealthStatus(str, Enum):
+class HealthStatus(StrEnum):
     HEALTHY = "healthy"
     DEGRADED = "degraded"
     UNHEALTHY = "unhealthy"
     UNKNOWN = "unknown"
 
 
-class ComponentType(str, Enum):
+class ComponentType(StrEnum):
     EXCHANGE = "exchange"
     DATA_FEED = "data_feed"
     RISK_ENGINE = "risk_engine"

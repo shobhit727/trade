@@ -7,13 +7,13 @@ from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from cryptobot.core.events import Event, EventType
 
 
-class EventBusMode(str, Enum):
+class EventBusMode(StrEnum):
     LOCAL = "local"
     REDIS = "redis"
 

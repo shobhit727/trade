@@ -216,7 +216,7 @@ class SmartOrderRouter:
             return RoutedOrder(parent=parent)
         total = sum(ratio)
         routed = RoutedOrder(parent=parent)
-        for n, (idx, score) in enumerate(ordered[: len(ratio)]):
+        for n, (_idx, score) in enumerate(ordered[: len(ratio)]):
             qty = (parent.quantity * ratio[n] / total).quantize(Decimal("0.0001"))
             if qty <= 0:
                 continue

@@ -10,8 +10,6 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-logger = logging.getLogger(__name__)
-
 import aiohttp
 import redis.asyncio as redis
 
@@ -25,6 +23,8 @@ from cryptobot.core.events import (
     TickerEvent,
     TradeEvent,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class BinanceWSClient:
