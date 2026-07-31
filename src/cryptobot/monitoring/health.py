@@ -152,6 +152,24 @@ class HealthMonitor:
         """Add callback for status changes."""
         self._status_change_callbacks.append(callback)
 
+    def unregister_check(self, check_name: str) -> bool:
+        """Unregister a health check by name."""
+        if check_name in self._checks:
+            del self._checks[check_name]
+            return True
+        return False
+
+    def update_check_interval(self, check_name: str, interval_seconds: float) -> bool:
+        """Update the interval of an existing check."""
+        if check_name in self._checks:
+            self._checks[check_name].interval_seconds = interval_seconds
+            return True
+        return False
+
+    def get_check(self, check_name: str) -> Optional[HealthCheck]:
+        """Get a health check by name."""
+        return self._checks.get(check_name)
+
     async def start(self):
         """Start the health monitor."""
         if self._running:
@@ -668,40 +686,52 @@ def create_standard_checks(
 
     # Exchange connectivity
     if exchange_client:
+        async def _exchange_ping():
+            return await _ping_exchange(exchange_client)
+        
         checks.append(HealthCheck(
             name="exchange_ping",
             component=ComponentType.EXCHANGE,
-            check_fn=lambda: _ping_exchange(exchange_client),
+            check_fn=_exchange_ping,
             interval_seconds=30,
             critical=True,
         ))
 
     # Data feed freshness
     if market_data_manager:
+        async def _data_freshness():
+            return await _check_data_freshness(market_data_manager)
+        
         checks.append(HealthCheck(
             name="data_freshness",
             component=ComponentType.DATA_FEED,
-            check_fn=lambda: _check_data_freshness(market_data_manager),
+            check_fn=_data_freshness,
             interval_seconds=15,
             critical=True,
         ))
 
     # Database
     if db_pool:
+        async def _database_ping():
+            return await _ping_database(db_pool)
+        
         checks.append(HealthCheck(
             name="database_ping",
             component=ComponentType.DATABASE,
-            check_fn=lambda: _ping_database(db_pool),
+            check_fn=_database_ping,
             interval_seconds=60,
             critical=True,
         ))
 
     # Cache
     if redis_client:
+        async def _cache_ping():
+            return await _ping_cache(redis_client)
+        
         checks.append(HealthCheck(
             name="cache_ping",
             component=ComponentType.CACHE,
-            check_fn=lambda: _ping_cache(redis_client),
+            check_fn=_cache_ping,
             interval_seconds=60,
             critical=False,
         ))

@@ -147,15 +147,15 @@ ml:
   models:
     direction:
       enabled: true
-      type: "lightgbm"
+      type: "sklearn_logreg"
       threshold: 0.55
       retrain_hours: 168
     volatility:
-      enabled: true
-      type: "lightgbm"
+      enabled: false
+      type: "sklearn_logreg"
       horizon_hours: 4
     regime:
-      enabled: true
+      enabled: false
       type: "hmm"
       n_states: 4
   min_samples_train: 10000

@@ -9,6 +9,8 @@ resources:
   - 02-secret.yaml
   - 03-pvc.yaml
   - 04-deployment.yaml
+  - 05-service.yaml
+  - 06-hpa.yaml
 
 commonLabels:
   app.kubernetes.io/name: cryptobot

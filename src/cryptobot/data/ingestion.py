@@ -148,28 +148,40 @@ class BinanceDataIngestion(DataIngestion):
 
     def __init__(self, config: DataSourceConfig):
         self.config = config
-        self.session: Optional[aiohttp.ClientSession] = None
-        self.ws_client = None
+        self._session: Optional[aiohttp.ClientSession] = None
+        self._ws_client = None
         self._running = False
         self._event_bus = get_event_bus()
         self._semaphore: Optional[asyncio.Semaphore] = None
+        self._session_lock = asyncio.Lock()
+
+    @property
+    def session(self) -> Optional[aiohttp.ClientSession]:
+        return self._session
+
+    async def _ensure_session(self):
+        """Ensure aiohttp session exists (created once)."""
+        async with self._session_lock:
+            if self._session is None or self._session.closed:
+                self._session = aiohttp.ClientSession()
+            return self._session
 
     async def start(self):
         self._running = True
-        self.session = aiohttp.ClientSession()
+        await self._ensure_session()
         self._semaphore = asyncio.Semaphore(self.config.rate_limit // 60)
-        # WebSocket client would be initialized here
 
     async def stop(self):
         self._running = False
-        if self.session:
-            await self.session.close()
-        if self.ws_client:
-            await self.ws_client.stop()
+        if self._session and not self._session.closed:
+            await self._session.close()
+        if self._ws_client:
+            await self._ws_client.stop()
 
     async def _rate_limited_get(self, url: str, params: dict = None) -> dict:
         async with self._semaphore:
-            async with self.session.get(url, params=params) as resp:
+            session = await self._ensure_session()
+            async with session.get(url, params=params) as resp:
                 resp.raise_for_status()
                 return await resp.json()
 
@@ -181,7 +193,7 @@ class BinanceDataIngestion(DataIngestion):
         end: datetime,
     ) -> List[Dict]:
         """Fetch historical klines from Binance REST API."""
-        if not self.session:
+        if self._session is None or self._session.closed:
             await self.start()
 
         all_klines = []
@@ -228,28 +240,28 @@ class BinanceDataIngestion(DataIngestion):
 
     async def fetch_ticker_24h(self, symbol: str) -> Dict:
         """Fetch 24h ticker statistics."""
-        if not self.session:
+        if self._session is None or self._session.closed:
             await self.start()
         url = f"{self.config.base_url}/api/v3/ticker/24hr"
         return await self._rate_limited_get(url, {"symbol": symbol})
 
     async def fetch_order_book(self, symbol: str, limit: int = 100) -> Dict:
         """Fetch order book snapshot."""
-        if not self.session:
+        if self._session is None or self._session.closed:
             await self.start()
         url = f"{self.config.base_url}/api/v3/depth"
         return await self._rate_limited_get(url, {"symbol": symbol, "limit": limit})
 
     async def fetch_funding_rate(self, symbol: str, limit: int = 100) -> List[Dict]:
         """Fetch funding rate history."""
-        if not self.session:
+        if self._session is None or self._session.closed:
             await self.start()
         url = f"{self.config.base_url}/fapi/v1/fundingRate"
         return await self._rate_limited_get(url, {"symbol": symbol, "limit": limit})
 
     async def fetch_mark_price(self, symbol: str) -> Dict:
         """Fetch mark price and funding rate."""
-        if not self.session:
+        if self._session is None or self._session.closed:
             await self.start()
         url = f"{self.config.base_url}/fapi/v1/premiumIndex"
         return await self._rate_limited_get(url, {"symbol": symbol})
