@@ -64,16 +64,16 @@
 | `.github/workflows/ci.yml` | ✅ | Lint + unit + compose-validate + buildx matrix (amd64 + arm64). |
 | `.github/workflows/release.yml` | ✅ | Tag-driven multi-arch publish + SBOM + provenance. |
 | `scripts/build_multiarch.sh` | ✅ | Local multi-arch build via buildx + QEMU. |
-| `crates/cryptobot-core/` | 🔲 | Manifest + empty `src/{events,math,time,types}/`. |
-| `crates/cryptobot-backtest/` | 🔲 | Manifest + empty `src/`. |
-| `crates/cryptobot-features/` | 🔲 | Manifest + empty `src/`. |
-| `crates/cryptobot-risk/` | 🔲 | Manifest + empty `src/`. |
-| `crates/cryptobot-stats/` | 🔲 | Manifest + empty `src/`. |
-| `crates/cryptobot-orderbook/` | 🔲 | Manifest + empty `src/`. |
-| `crates/cryptobot-py/` | 🔲 | Manifest + empty `src/`. |
+| `crates/cryptobot-core/` | 🔲 | Manifest + empty `src/{events,math,time,types}/` (no `lib.rs`). |
+| `crates/cryptobot-backtest/` | 🔲 | Manifest + empty `src/` (no `lib.rs`). |
+| `crates/cryptobot-features/` | 🔲 | Manifest + empty `src/` (no `lib.rs`). |
+| `crates/cryptobot-risk/` | 🔲 | Manifest + empty `src/` (no `lib.rs`). |
+| `crates/cryptobot-stats/` | 🔲 | Manifest + empty `src/` (no `lib.rs`). |
+| `crates/cryptobot-orderbook/` | 🔲 | Manifest + empty `src/` (no `lib.rs`). |
+| `crates/cryptobot-py/` | 🔲 | Manifest + empty `src/` (no `lib.rs`). |
 | `pyproject.toml` | ✅ | setuptools build + `cryptobot` CLI entry point. |
 | `migrations/*.sql` | ✅ | `001_extension.sql`, `002_hypertables.sql`. |
-| `docker-compose.yml` | ⚠️ | Test profile ✅. Default profile references missing `monitoring/{loki,promtail,nginx}` dirs. |
+| `docker-compose.yml` | ✅ | Test + default profiles valid (monitoring dirs scaffolded). |
 
 ## Fixed this session (2026-07-29)
 

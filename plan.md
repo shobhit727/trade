@@ -1,8 +1,8 @@
 # Cryptobot - Elite Quantitative Trading System
 ## Master Plan & Architecture Document
 
-> **Status**: Active development | **Last Updated**: 2026-07-31 (audit sync)
-> **Context**: Core, backtester, risk, execution, monitoring, ML core (features + direction + walk-forward), live exchange adapter, smart order router, adverse-selection guard, health server, K8s manifests, multi-arch CI all implemented. Concrete `ml_strategy.py` wiring still pending. Rust crate members are empty scaffolding (workspace manifest only). Default `docker-compose.yml` profile references missing `monitoring/{loki,promtail,nginx}` dirs. Verified against `PROJECT_MEMORY/25_Audit_2026-07-31.md`.
+> **Status**: Active development | **Last Updated**: 2026-07-31 (audit sync + docs align)
+> **Context**: Core, backtester, risk, execution, monitoring, ML core (features + direction + walk-forward), live exchange adapter, smart order router, adverse-selection guard, health server, K8s manifests, multi-arch CI all implemented. Concrete `ml_strategy.py` wiring still pending. Rust crate members are empty scaffolding (workspace manifest + empty `src/` dirs, no `lib.rs`). Default `docker-compose.yml` profile now valid (monitoring dirs scaffolded). Verified against `PROJECT_MEMORY/25_Audit_2026-07-31.md`.
 > **Current Python**: 3.14 (Docker base `python:3.14-slim`).
 > **Repository**: `git@github.com:shobhit727/trade.git` (private).
 
@@ -43,7 +43,7 @@
 | Backtest Engine | `src/cryptobot/backtest/engine.py` | ✅ Event-driven, fills, equity curve. |
 | Backtest Metrics | `src/cryptobot/backtest/metrics.py` | ✅ Sharpe, Sortino, drawdown, profit factor. |
 | Backtest Simulator | `src/cryptobot/backtest/simulator.py` | ✅ FillSimulator + factory. |
-| Backtest Validation | `src/cryptobot/backtest/validation.py` | ⚠️ Walk-forward + Monte Carlo stubs; needs real math. |
+| Backtest Validation | `src/cryptobot/backtest/validation.py` | ✅ Real walk-forward (rolling + embargo) + Monte Carlo block-permutation + deflated Sharpe. |
 | Strategy Base | `src/cryptobot/strategies/base.py` | ✅ BaseStrategy, registry, MeanReversionStrategy placeholder. |
 | Risk Manager | `src/cryptobot/risk/manager.py` | ✅ Pre-trade checks (kill switch, notional, exposure). |
 | Risk Limits | `src/cryptobot/risk/limits.py` | ✅ |
@@ -66,10 +66,10 @@
 | Utils Health Server | `src/cryptobot/utils/health_server.py` | ✅ stdlib ThreadingHTTPServer `/health` + `/metrics`. |
 | Tests | `tests/unit/` | ✅ 22 unit test files. |
 | Dockerfile | `Dockerfile` | ✅ Multi-stage (`base`/`production`/`test`), `python:3.14-slim`. |
-| Compose | `docker-compose.yml` | ⚠️ Test profile ✅. Default profile references missing `monitoring/{loki,promtail,nginx}` dirs. |
+| Compose | `docker-compose.yml` | ✅ Test + default profiles valid (monitoring dirs scaffolded). |
 | `.dockerignore` | `.dockerignore` | ✅ Minimal context. |
 | `.gitignore` | `.gitignore` | ✅ Includes `__pycache__/`. |
-| Cargo workspace | `Cargo.toml` + 7 member crates | 🔲 Manifest + empty `src/` dirs in 6/7; `cargo build` does not work. |
+| Cargo workspace | `Cargo.toml` + 7 member crates | 🔲 Manifest + empty `src/` dirs in all 7; no `lib.rs`; `cargo build` fails. |
 | `pyproject.toml` | `pyproject.toml` | ✅ setuptools build + CLI entry. |
 | Migrations SQL | `migrations/001_extension.sql`, `002_hypertables.sql` | ✅ TimescaleDB schema. |
 | ML Features | `src/cryptobot/ml/features.py` | ✅ 8 features (returns, RSI, MACD, ATR ratio, BB pos+width, log volume). |
@@ -196,7 +196,7 @@ src/cryptobot/
 ### Phase 3: Strategy Framework (Week 3-4) ⭐ — ⚠️ partial
 - [x] Base strategy class with lifecycle hooks (`strategies/base.py`)
 - [x] Signal generation interface (returns `List[OrderEvent]`)
-- [x] Position management primitives in BaseStrategy and StrategyAllocation
+- [ ] Position management primitives (scaling, stops) — BaseStrategy exposes lifecycle only
 - [x] Strategy registry (`StrategyRegistry` singleton)
 - [ ] Parameter optimization (Optuna) — no integration yet
 
@@ -210,7 +210,7 @@ src/cryptobot/
 
 ### Phase 5: Risk Management (Week 6-7) ⭐ — ⚠️ partial
 - [x] Pre-trade risk checks (exposure, drawdown via kill switch, notional bounds)
-- [x] Notional check skipped when no price available (market order pre-trade)
+- [x] Notional check skipped when no price available (market order pre-trade) — implemented (B038)
 - [x] Dynamic position sizing helpers (Kelly, vol-target, fixed-fraction)
 - [ ] Portfolio optimization (HRP, mean-CVaR) — not implemented
 - [x] Kill switch (`risk/kill_switch.py` driven by portfolio signal)
@@ -242,8 +242,8 @@ src/cryptobot/
       record their own round-trip on submit/cancel.
 
 ### Phase 8: Live Trading & Monitoring (Week 10-12) — ⚠️ partial
-- [x] Compose stack (`docker-compose.yml`: Timescale, Redis, Prometheus, Grafana, Alertmanager)
-- [⚠️] `monitoring/{loki,promtail,nginx}` directories referenced but missing — default profile broken
+- [x] Compose stack (`docker-compose.yml`: Timescale, Redis, Prometheus, Grafana, Alertmanager, Loki, Promtail, Nginx)
+- [x] Default profile valid (monitoring dirs scaffolded)
 - [x] Paper trading profile (`cryptobot-paper` service, `EXECUTION_MODE=paper` env)
 - [x] Live trading profile fully wired (BinanceVenue, build_venue factory)
 - [x] Grafana dashboards (JSON under `monitoring/grafana/` and `docker/grafana/`)
@@ -262,11 +262,11 @@ src/cryptobot/
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | **Primary Language** | Python 3.14 | ML ecosystem, rapid iteration. `Dockerfile` uses `python:3.14-slim`. |
-| **Performance-Critical** | **Rust (via PyO3/maturin)** — pending | Backtest engine, fill simulator, feature computation, order book math. Currently: `Cargo.toml` + 7 member crates with empty `src/` dirs (6/7). `cargo build` fails. |
+| **Performance-Critical** | **Rust (via PyO3/maturin)** — pending | Backtest engine, fill simulator, feature computation, order book math. Currently: `Cargo.toml` + 7 member crates with empty `src/` dirs (all 7). No `lib.rs` files. `cargo build` fails. CI does not run cargo. |
 | **Async Framework** | asyncio + aiohttp | Native, high-performance, WebSocket support |
 | **Database** | TimescaleDB + SQLite | Time-series optimized, local dev friendly |
 | **Message Bus** | Redis Streams + local asyncio | Pub/sub, replay, persistence |
-| **ML Framework** | sklearn + LightGBM (optional) | DirectionClassifier uses sklearn logreg preferred; numpy fallback. LightGBM in `requirements/prod.txt` but not yet used. |
+| **ML Framework** | sklearn + LightGBM (optional) | DirectionClassifier uses sklearn logreg preferred; numpy fallback. LightGBM in `requirements/prod.txt` but `ml/models/direction.py` does not import it — config mismatch (`ml.models.direction.type: lightgbm` in YAML). Remove dep or implement. |
 | **Optimization** | Optuna | Bayesian optimization, pruning, distributed |
 | **Backtesting** | Custom event-driven (Rust core) | Full control over fill logic, microstructure |
 | **Config** | Pydantic + YAML | Type safety, validation, env overrides |
@@ -310,6 +310,8 @@ crates/
 ├── cryptobot-orderbook/     # Order book operations, VPIN, microstructure
 └── cryptobot-py/            # PyO3 bindings for Python integration
 ```
+
+**Current state**: All 7 crates exist with `Cargo.toml` + empty `src/` dirs (no `lib.rs`). `cargo build` fails. Not integrated in CI.
 
 ### Build & Deploy
 - **Local**: `maturin develop` (auto-compiles Rust, installs Python package)
@@ -436,19 +438,21 @@ mkdir -p docker seccomp compose scripts migrations
 ## 11. File Tracking
 
 ### Created in This Plan
-- [ ] `plan.md` (this file)
+- [x] `plan.md` (this file)
 
 ### To Create Next
-- [ ] `src/cryptobot/core/bus.py`
-- [ ] `src/cryptobot/core/portfolio.py`
-- [ ] `src/cryptobot/core/clock.py`
-- [ ] `src/cryptobot/backtest/engine.py`
-- [ ] `src/cryptobot/backtest/simulator.py`
-- [ ] `src/cryptobot/backtest/metrics.py`
-- [ ] `src/cryptobot/strategies/base.py`
-- [ ] `src/cryptobot/strategies/registry.py`
-- [ ] `src/cryptobot/risk/manager.py`
-- [ ] `src/cryptobot/ml/features.py`
+- [ ] `src/cryptobot/strategies/ml_strategy.py` — ML-driven strategy (Phase 4)
+- [ ] `src/cryptobot/data/features.py` — or update references to use `ml/features.py`
+- [ ] `src/cryptobot/ml/models/volatility.py` — Quantile regression
+- [ ] `src/cryptobot/ml/models/regime.py` — HMM / Transformer
+- [ ] `src/cryptobot/ml/models/ensemble.py` — Stacking
+- [ ] `src/cryptobot/ml/training.py` — Purged CV + walk-forward
+- [ ] `src/cryptobot/ml/inference.py` — Online inference
+- [ ] `src/cryptobot/ml/auto_retrain.py` — Drift detection
+- [ ] `crates/*/src/lib.rs` — Rust crate implementations
+- [ ] `deploy/k8s/05-service.yaml` — K8s Service
+- [ ] `deploy/k8s/06-hpa.yaml` — K8s HPA
+- [ ] `src/cryptobot/cli/optimize.py` — Parameter optimization (Optuna)
 
 ---
 
@@ -462,9 +466,15 @@ mkdir -p docker seccomp compose scripts migrations
 - Requirements: `requirements/prod.txt`
 
 ### Current Phase
-**Phase 1: Core Infrastructure** - Building event bus, portfolio, clock, and data pipeline foundations before backtester.
+**Phase 4/6/8 overlap**: Core infrastructure ✅, Backtester ✅, Strategies 5/6 ✅, ML core ✅, Execution ✅, Risk ✅, Monitoring ✅, Live/Compose/K8s ⚠️. Next: `ml_strategy.py`, K8s Service/HPA, Rust crate implementations, remove unused `lightgbm` dep.
 
 ### Blockers
+- `ml_strategy.py` missing — ML strategy cannot be instantiated
+- Rust workspace non-functional — `cargo build` fails, no `lib.rs` in any crate
+- K8s incomplete — no Service, no HPA (cluster-internal only)
+- `configs/base.yaml` `ml.models.direction.type: lightgbm` but implementation uses sklearn — config mismatch
+- `strategies.enabled` in YAML not read by any code — strategies never auto-instantiated from config
+- `requirements/prod.txt` lists `lightgbm>=4.5` unused — heavy native dep bloats image
 - Need TimescaleDB running for integration tests (docker-compose)
 - Need historical data for backtesting (Binance API or data vendor)
 

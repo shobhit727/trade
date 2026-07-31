@@ -68,7 +68,7 @@
 | B035 | `monitoring/dashboard.py` | Dashboard JSON builders reference Prometheus expression names with `cryptobot_` prefix; not exercised. | Unknown. |
 | B042 | `data/ingestion.py` | `BinanceDataIngestion` uses `aiohttp.ClientSession` directly without session reuse; opens per-call. | Performance + leak. |
 | B043 | `monitoring/health.py` | `HealthMonitor.start` spawns a task but no mechanism to update config-driven checks at runtime. | Hardcoded list. |
-| B052 | `docker-compose.yml` | Default profile references missing `monitoring/{loki,promtail,nginx}` dirs — compose config fails on default profile. | Compose won't start. |
+| B052 | `docker-compose.yml` | Default profile references missing `monitoring/{loki,promtail,nginx}` dirs — compose config fails on default profile. | Compose won't start. | **RESOLVED** — scaffolded 3 dirs with minimal configs; `docker compose config` passes.
 | B053 | `deploy/k8s/` | Missing `Service` and `HPA` resources claimed in plan.md. | Cluster-internal only, no ingress. |
 | B054 | `src/cryptobot/strategies/ml_strategy.py` | File does not exist; plan.md Phase 4 claims `[x]`. | ML strategy cannot be instantiated. |
 | B055 | `requirements/prod.txt` | Lists `lightgbm>=4.5` but `ml/models/direction.py` uses sklearn/numpy only — no lightgbm import. | Heavy native dep unused. |

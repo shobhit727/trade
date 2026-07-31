@@ -18,7 +18,7 @@ Repo documents the goal of an institutional-grade retail-trading bot. Same proje
 - Storage: TimescaleDB (prod), SQLite (in-process), Parquet (local)
 - Cache/Bus: Redis (intended), asyncio EventBus (in-process)
 - Observability: Prometheus + Grafana, Loki/Promtail (referenced but missing dirs), Alertmanager
-- Run: `Dockerfile` + `docker-compose.yml` (test profile ✅; default profile ⚠️ broken)
+- Run: `Dockerfile` + `docker-compose.yml` (test profile ✅; default profile ✅ fixed)
 - CI: GitHub Actions (lint + unit + compose-validate + multi-arch buildx)
 
 ## Current state (verified)
@@ -35,7 +35,7 @@ Repo documents the goal of an institutional-grade retail-trading bot. Same proje
 - `src/cryptobot/cli/main.py`: argparse with `validate`, `paper`, `bot`, `serve` subcommands — implemented.
 - `src/cryptobot/ml/`: features (8), models/direction (sklearn logreg + numpy fallback), online (WalkForwardTrainer + DriftDetector) — implemented. volatility/regime/ensemble missing.
 - `tests/unit/`: 22 test files covering all major modules.
-- `docker-compose.yml`: full stack. Test profile ✅. Default profile references missing `monitoring/{loki,promtail,nginx}` dirs.
+- `docker-compose.yml`: full stack. Test profile ✅. Default profile ✅ (monitoring dirs scaffolded).
 - `deploy/k8s/`: namespace, ConfigMap, Secret, PVC, Deployment, kustomization. **No Service, no HPA.**
 - `migrations/`: `001_extension.sql`, `002_hypertables.sql`.
 - `Cargo.toml` + 7 crates: all empty scaffolding.
@@ -47,7 +47,6 @@ Repo documents the goal of an institutional-grade retail-trading bot. Same proje
 - `configs/base.yaml` `ml.models.direction.type: lightgbm` but `ml/models/direction.py` uses sklearn/numpy fallback — config unused.
 - `configs/base.yaml` `strategies.enabled` list not read by any code — strategies never auto-instantiated from config.
 - `plan.md` Phase 4 claims `[x] ML-driven strategy (strategies/ml_strategy.py)` — file does not exist.
-- `docker-compose.yml` default profile references missing `monitoring/{loki,promtail,nginx}` dirs — compose fails.
 - `deploy/k8s/` missing `Service` and `HPA` claimed in plan.md Phase 8.
 - Rust workspace: 7 crates with empty `src/` — `cargo build` fails.
 - 6 dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/`.
@@ -61,6 +60,7 @@ Repo documents the goal of an institutional-grade retail-trading bot. Same proje
 ## Recent changes
 
 - Audit 2026-07-31: synced `plan.md` and `PROJECT_MEMORY/` with actual repo state. 26 doc/code mismatches identified and documented in `25_Audit_2026-07-31.md`.
+- **Fixed 2026-07-31**: Scaffolded `monitoring/{loki,promtail,nginx}` directories with minimal configs; `docker compose config` (default profile) now passes.
 - Prior: Added `risk/`, `execution/`, `cli/`, smoke tests, `Dockerfile`, `requirements/test.txt`, `cryptobot-test` compose service, `.dockerignore`.
 - Patched imports, env imports, validation logic, sqlite fallback, health-check async detection.
 - See `23_Repository_History.md`, `24_Agent_Log.md`, `13_Bug_Tracker.md`.
