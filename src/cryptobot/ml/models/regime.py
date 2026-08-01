@@ -111,11 +111,6 @@ class RegimeDetector:
 
         n = features.shape[0]
         k = self.config.n_regimes
-        if features.shape[1] >= 2:
-            X = features[:, :2]
-        else:
-            X = features
-
         # Compute distance to centroids (need to recompute)
         proba = np.zeros((n, k))
         for i in range(n):

@@ -6,8 +6,8 @@ from typing import Any
 import numpy as np
 
 from cryptobot.ml.models.direction import DirectionClassifier, DirectionConfig
-from cryptobot.ml.models.volatility import VolatilityModel, VolatilityConfig
-from cryptobot.ml.models.regime import RegimeDetector, RegimeConfig
+from cryptobot.ml.models.regime import RegimeConfig, RegimeDetector
+from cryptobot.ml.models.volatility import VolatilityConfig, VolatilityModel
 
 
 @dataclass
