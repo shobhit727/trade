@@ -72,7 +72,15 @@ async def test_simulatedclock_sleep_until_waits_until_target():
         end_time=datetime(2024, 1, 1, 0, 1),
     )
     target = datetime(2024, 1, 1, 0, 0, 30)
+    
+    # Advance clock in background task
+    async def advance_clock():
+        await asyncio.sleep(0.01)  # yield control
+        await c.step_to(target)
+    
+    task = asyncio.create_task(advance_clock())
     await c.sleep_until(target)
+    await task
     assert c.now() == target
 
 

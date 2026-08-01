@@ -4,6 +4,7 @@ import asyncio
 from decimal import Decimal
 
 from cryptobot.core.events import OrderEvent, OrderSide
+from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
 from cryptobot.risk.manager import RiskCheckResult, RiskManager
 
 
@@ -17,7 +18,10 @@ def test_risk_check_result_to_event_preserves_decimal_via_str():
 
 
 def test_risk_manager_below_min_size_rejects():
-    rm = RiskManager()
+    # Use fresh portfolio with equity to avoid kill switch
+    pm = PortfolioManager(PortfolioMode.BACKTEST)
+    asyncio.run(pm.update_equity(Decimal("10000")))
+    rm = RiskManager(portfolio=pm)
     order = OrderEvent(symbol="BTCUSDT", side=OrderSide.BUY, quantity=Decimal("0.000001"), price=Decimal("100"))
     res = rm.check_order(order, price=Decimal("100"))
     assert res.passed is False
@@ -25,7 +29,9 @@ def test_risk_manager_below_min_size_rejects():
 
 
 def test_risk_manager_above_max_size_rejects():
-    rm = RiskManager()
+    pm = PortfolioManager(PortfolioMode.BACKTEST)
+    asyncio.run(pm.update_equity(Decimal("10000")))
+    rm = RiskManager(portfolio=pm)
     order = OrderEvent(symbol="BTCUSDT", side=OrderSide.BUY, quantity=Decimal("1000"), price=Decimal("100"))
     res = rm.check_order(order, price=Decimal("100"))
     assert res.passed is False
@@ -33,9 +39,9 @@ def test_risk_manager_above_max_size_rejects():
 
 
 def test_risk_manager_zero_price_uses_fallback():
-    rm = RiskManager()
-    pm = rm.portfolio
-    asyncio.run(pm.update_equity(Decimal("0")))
+    pm = PortfolioManager(PortfolioMode.BACKTEST)
+    asyncio.run(pm.update_equity(Decimal("10000")))
+    rm = RiskManager(portfolio=pm)
     order = OrderEvent(symbol="BTCUSDT", side=OrderSide.BUY, quantity=Decimal("0.5"))
     res = rm.check_order(order, price=None)
     assert res.passed is False or res.passed is True

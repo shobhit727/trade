@@ -42,7 +42,11 @@ def fake_exchange(monkeypatch):
     fake_class = type("binance_fake", (), {"__new__": lambda cls, cfg: _factory(**cfg)})
     import cryptobot.execution.venue.binance as bmod
 
-    monkeypatch.setattr(bmod.ccxt_async, "binance", fake_class, raising=False)
+    # Create a mock module for ccxt_async
+    import types
+    mock_ccxt = types.ModuleType("ccxt.async_support")
+    mock_ccxt.binance = fake_class
+    monkeypatch.setattr(bmod, "ccxt_async", mock_ccxt, raising=False)
     return fake_class
 
 

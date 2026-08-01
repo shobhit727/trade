@@ -25,8 +25,6 @@ from cryptobot.market_data.manager import (
 
 
 def _ticker(symbol: str = "BTCUSDT", price: str = "100"):
-    from cryptobot.core.events import EventType
-
     return TickerEvent(
         symbol=symbol,
         price=Decimal(price),
@@ -37,9 +35,6 @@ def _ticker(symbol: str = "BTCUSDT", price: str = "100"):
         volume_24h=Decimal("1000"),
         timestamp=datetime.now(UTC),
         source="binance_ws",
-        event_id="t1",
-        event_type=EventType.TICKER,
-        payload={},
     )
 
 
