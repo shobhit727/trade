@@ -1,10 +1,13 @@
 """Tests for cryptobot.ml.models.regime"""
 
+from __future__ import annotations
+
 import numpy as np
+import pytest
 
 from cryptobot.ml.models.regime import (
-    RegimeConfig,
     RegimeDetector,
+    RegimeConfig,
     rolling_regime_labels,
 )
 

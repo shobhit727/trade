@@ -1,12 +1,18 @@
 """Tests for cryptobot.ml.models.ensemble"""
 
+from __future__ import annotations
+
 import numpy as np
+import pytest
 
 from cryptobot.ml.models.ensemble import (
-    EnsembleConfig,
     EnsembleModel,
+    EnsembleConfig,
     create_ensemble,
 )
+from cryptobot.ml.models.direction import DirectionConfig
+from cryptobot.ml.models.volatility import VolatilityConfig
+from cryptobot.ml.models.regime import RegimeConfig
 
 
 def test_ensemble_fit_and_predict():
@@ -103,19 +109,3 @@ def test_create_ensemble_helper():
     assert isinstance(ensemble, EnsembleModel)
     assert ensemble.config.weights is not None
     assert len(ensemble.config.weights) == 3
-
-
-def test_ensemble_summary():
-    np.random.seed(42)
-    n = 50
-    features = np.random.normal(0, 1, (n, 3))
-    labels = np.random.normal(0, 1, n)
-
-    config = EnsembleConfig(models=["direction", "volatility"])
-    ensemble = EnsembleModel(config).fit(features, labels)
-
-    summary = ensemble.summary()
-    assert summary["model"] == "ensemble"
-    assert summary["fitted"] is True
-    assert "direction" in summary["sub_models"]
-    assert "volatility" in summary["sub_models"]

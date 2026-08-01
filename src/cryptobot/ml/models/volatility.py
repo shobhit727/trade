@@ -286,9 +286,12 @@ class VolatilityModel:
         return np.array([stats.norm.ppf(q) * vol for q in q])
 
     def summary(self) -> dict[str, Any]:
+        method = self.config.method
+        if hasattr(method, 'value'):
+            method = method.value
         return {
             "model": self.name,
-            "method": self.config.method.value,
+            "method": method,
             "fitted": self._fitted,
             "horizon": self.config.horizon,
             "window": self.config.window,
