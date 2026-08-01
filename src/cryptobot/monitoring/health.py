@@ -392,6 +392,10 @@ class HealthMonitor:
         else:
             return HealthStatus.HEALTHY
 
+    def is_healthy(self) -> bool:
+        """Check if overall system is healthy."""
+        return self.get_overall_status() == HealthStatus.HEALTHY
+
     def get_summary(self) -> dict[str, Any]:
         """Get health summary."""
         overall = self.get_overall_status()
