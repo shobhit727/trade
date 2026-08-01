@@ -90,21 +90,23 @@
 ### Recent Test Fixes (2026-08-01)
 - `validation.py`: `np.math.erf` → `math.erf` (numpy 2.x compatibility)
 - `requirements/test.txt`: added `ccxt>=4.0` for BinanceVenue tests
-- `test_binance_venue.py`: fixed ccxt mocking with ModuleType
+- `test_binance_venue.py`: fixed ccxt mocking with ModuleType, moved mock setup after reload
 - `test_core_foundation.py`: adjusted slippage/commission expectations for SimulatedVenue
 - `test_core_clock_portfolio.py`: fixed `sleep_until` async test with background task
 - `test_market_data_manager.py`: fixed TickerEvent constructor (removed deprecated `event_id`, `event_type`, `payload`)
 - `test_monitoring_alerting.py`: fixed Alert/AlertRule API (use Enum values, added `get_name()` to Dummy channel)
-- `test_monitoring_health.py`: updated to ComponentType enum, HealthStatus enum, HealthMonitor returns dict[ComponentType, ComponentHealth]
+- `test_monitoring_health.py`: updated to ComponentType enum, HealthStatus enum, HealthMonitor returns dict[ComponentType, ComponentHealth], added `is_healthy()`
 - `test_smart_order_router.py`: `split_and_route` now raises ValueError for empty ratio
 - `test_strategies_ml.py`: fixed MarketMakingStrategy `_step` call signature, StatArb lookback logic, FundingArb basis entry threshold
 - `test_risk_manager_str.py`: fixed portfolio setup with equity to avoid kill switch
-- `strategies/base.py` — valid `OrderEvent` construction, `from __future__ import annotations`.
-- `core/clock.py` — `import time`.
-- `core/state.py` — graceful SQLite fallback.
-- `tests/unit/test_core_foundation.py` — replaced broken tests with real smoke tests.
-- `Dockerfile` (new), `requirements/test.txt` (new), `cryptobot-test` service (new), `.dockerignore` (new).
-- `requirements/prod.txt` — modern `>=` ranges, removed `monero-rpc==0.3.0`.
+- `src/cryptobot/execution/router.py`: `split_and_route` raises on empty ratio
+- `src/cryptobot/monitoring/health.py`: case-insensitive ComponentType conversion, added `is_healthy()`
+- `src/cryptobot/monitoring/alerting.py`: fingerprint includes severity
+- `src/cryptobot/backtest/validation.py`: `np.math.erf` → `math.erf`
+- `src/cryptobot/strategies/market_making.py`: fixed `_step` signature
+- CI: pytest-timeout=60s prevents hangs
+- Python 3.13 in CI (ruff target py313)
+- Docker multi-arch tags fixed (sanitized platform strings)
 
 ## Fixed this session (2026-07-31)
 
