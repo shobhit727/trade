@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from enum import StrEnum
+from typing import Any
+
 import numpy as np
 import numpy.typing as npt
-from dataclasses import dataclass
-from typing import Any, Optional, Literal
-from enum import StrEnum
 
 try:
     import quantile_forest as qf
@@ -18,7 +19,6 @@ try:
 except ImportError:
     HAS_SKLEARN_QR = False
 
-from cryptobot.config import settings
 from cryptobot.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -61,12 +61,12 @@ class VolatilityModel:
     def __init__(self, config: VolatilityConfig | None = None):
         self.config = config or VolatilityConfig()
         self._fitted = False
-        self._vol: Optional[float] = None
+        self._vol: float | None = None
         self._model: Any = None
-        self._returns: Optional[np.ndarray] = None
-        self._conditional_quantiles: Optional[np.ndarray] = None
+        self._returns: np.ndarray | None = None
+        self._conditional_quantiles: np.ndarray | None = None
 
-    def fit(self, returns: npt.NDArray[np.float64]) -> "VolatilityModel":
+    def fit(self, returns: npt.NDArray[np.float64]) -> VolatilityModel:
         """Fit volatility model on return series."""
         if returns.size < 2:
             self._fitted = False
@@ -222,7 +222,7 @@ class VolatilityModel:
                 cond_quantiles[i, j] = np.quantile(window_data, q)
         self._conditional_quantiles = cond_quantiles
 
-    def forecast(self, horizon: Optional[int] = None) -> float:
+    def forecast(self, horizon: int | None = None) -> float:
         """Forecast volatility for given horizon."""
         if not self._fitted or self._vol is None:
             return 0.0
@@ -232,13 +232,12 @@ class VolatilityModel:
     def forecast_series(
         self,
         returns: npt.NDArray[np.float64],
-        horizon: Optional[int] = None
+        horizon: int | None = None
     ) -> np.ndarray:
         """Forecast rolling volatility."""
         if not self._fitted:
             self.fit(returns)
 
-        h = horizon or self.config.horizon
         n = len(returns)
         forecasts = np.full(n, np.nan)
 
@@ -253,7 +252,7 @@ class VolatilityModel:
     def get_conditional_quantiles(
         self,
         returns: npt.NDArray[np.float64] | None = None
-    ) -> Optional[np.ndarray]:
+    ) -> np.ndarray | None:
         """Get conditional quantile forecasts."""
         if self._conditional_quantiles is not None:
             return self._conditional_quantiles
@@ -266,7 +265,7 @@ class VolatilityModel:
         self,
         returns: npt.NDArray[np.float64],
         horizon: int = 1,
-        quantiles: Optional[tuple[float, ...]] = None
+        quantiles: tuple[float, ...] | None = None
     ) -> np.ndarray:
         """Forecast conditional quantiles for future horizon."""
         if not self._fitted:

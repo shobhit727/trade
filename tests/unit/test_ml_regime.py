@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from cryptobot.ml.models.regime import (
-    RegimeDetector,
     RegimeConfig,
+    RegimeDetector,
     rolling_regime_labels,
 )
 

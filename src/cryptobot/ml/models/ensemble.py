@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Any
+
 import numpy as np
 import numpy.typing as npt
-from dataclasses import dataclass
-from typing import Any, Optional
 
 from cryptobot.ml.models.direction import DirectionClassifier, DirectionConfig
-from cryptobot.ml.models.volatility import VolatilityModel, VolatilityConfig
-from cryptobot.ml.models.regime import RegimeDetector, RegimeConfig
+from cryptobot.ml.models.regime import RegimeConfig, RegimeDetector
+from cryptobot.ml.models.volatility import VolatilityConfig, VolatilityModel
 
 
 @dataclass
@@ -34,9 +35,9 @@ class EnsembleModel:
         self.config = config or EnsembleConfig()
         self.models: dict[str, Any] = {}
         self._fitted = False
-        self._weights: Optional[np.ndarray] = None
+        self._weights: np.ndarray | None = None
 
-    def fit(self, features: npt.NDArray[np.float64], labels: npt.NDArray[np.float64]) -> "EnsembleModel":
+    def fit(self, features: npt.NDArray[np.float64], labels: npt.NDArray[np.float64]) -> EnsembleModel:
         """Fit all sub-models and meta-learner."""
         model_names = self.config.models or ["direction", "volatility", "regime"]
         weights = self.config.weights or [1.0] * len(model_names)

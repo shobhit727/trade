@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
-
 import numpy as np
-import pytest
 
 from cryptobot.ml.models.volatility import (
-    VolatilityModel,
     VolatilityConfig,
-    realized_volatility,
+    VolatilityModel,
     ewma_volatility,
+    realized_volatility,
 )
 
 

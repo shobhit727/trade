@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from enum import StrEnum
+from typing import Any
+
 import numpy as np
 import numpy.typing as npt
-from dataclasses import dataclass
-from typing import Any, Optional
-from enum import StrEnum
-from collections import defaultdict
 
 try:
     from hmmlearn import hmm
@@ -14,13 +14,11 @@ except ImportError:
     HAS_HMM = False
 
 try:
-    from sklearn.cluster import KMeans
     from sklearn.mixture import GaussianMixture
     HAS_SKLEARN = True
 except ImportError:
     HAS_SKLEARN = False
 
-from cryptobot.config import settings
 from cryptobot.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -58,14 +56,14 @@ class RegimeDetector:
     def __init__(self, config: RegimeConfig | None = None):
         self.config = config or RegimeConfig()
         self._fitted = False
-        self._regime_labels: Optional[np.ndarray] = None
+        self._regime_labels: np.ndarray | None = None
         self._regime_stats: dict[int, dict[str, float]] = {}
         self._model: Any = None
-        self._transition_matrix: Optional[np.ndarray] = None
-        self._regime_means: Optional[np.ndarray] = None
-        self._regime_covs: Optional[np.ndarray] = None
+        self._transition_matrix: np.ndarray | None = None
+        self._regime_means: np.ndarray | None = None
+        self._regime_covs: np.ndarray | None = None
 
-    def fit(self, features: npt.NDArray[np.float64]) -> "RegimeDetector":
+    def fit(self, features: npt.NDArray[np.float64]) -> RegimeDetector:
         """Fit regime detector on feature matrix."""
         n = features.shape[0]
         if n < self.config.window:
@@ -120,7 +118,6 @@ class RegimeDetector:
             logger.warning("sklearn not available, using k-means")
             return self._kmeans_regimes(features)
 
-        n = features.shape[0]
         k = self.config.n_regimes
 
         # Use first 2 features for 2D visualization
@@ -144,7 +141,6 @@ class RegimeDetector:
             logger.warning("hmmlearn not available, using k-means")
             return self._kmeans_regimes(features)
 
-        n = features.shape[0]
         k = self.config.n_regimes
 
         # Use first feature (returns) for HMM

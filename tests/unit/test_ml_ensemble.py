@@ -3,16 +3,12 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from cryptobot.ml.models.ensemble import (
-    EnsembleModel,
     EnsembleConfig,
+    EnsembleModel,
     create_ensemble,
 )
-from cryptobot.ml.models.direction import DirectionConfig
-from cryptobot.ml.models.volatility import VolatilityConfig
-from cryptobot.ml.models.regime import RegimeConfig
 
 
 def test_ensemble_fit_and_predict():
