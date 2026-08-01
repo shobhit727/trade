@@ -139,4 +139,4 @@ mypy src
 
 ## License
 
-MIT
+MIT# CI trigger
