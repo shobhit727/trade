@@ -98,7 +98,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [linux/amd64, linux/arm64]
+        include:
+          - platform: linux/amd64
+            tag_platform: linux-amd64
+          - platform: linux/arm64
+            tag_platform: linux-arm64
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -119,8 +123,8 @@ jobs:
           target: production
           platforms: ${{ matrix.platform }}
           tags: |
-            ${{ env.REGISTRY_IMAGE }}:${{ github.sha }}-${{ replace(matrix.platform, '/', '-') }}
-            ${{ env.REGISTRY_IMAGE }}:latest-${{ replace(matrix.platform, '/', '-') }}
+            ${{ env.REGISTRY_IMAGE }}:${{ github.sha }}-${{ matrix.tag_platform }}
+            ${{ env.REGISTRY_IMAGE }}:latest-${{ matrix.tag_platform }}
           build-args: |
             REQUIREMENTS=requirements/prod.txt
             GIT_SHA=${{ github.sha }}
