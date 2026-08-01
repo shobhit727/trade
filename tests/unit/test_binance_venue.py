@@ -94,7 +94,7 @@ async def test_submit_order_returns_filled_event(fake_exchange, monkeypatch):
     importlib.reload(bmod)
 
     venue = bmod.BinanceVenue(api_key="k", api_secret="s")
-    fake_exchange_instance = await venue._ensure_exchange()
+    fake_exchange_instance = venue._ensure_exchange()
     fake_exchange_instance.create_order.return_value = FakeExchange._default()
     order = _make_order()
     filled = await venue.submit_order(order)
@@ -118,7 +118,7 @@ async def test_retries_then_rejects(fake_exchange, monkeypatch):
     importlib.reload(bmod)
 
     venue = bmod.BinanceVenue(api_key="k", api_secret="s", max_retries=2)
-    fake = await venue._ensure_exchange()
+    fake = venue._ensure_exchange()
     fake.create_order.side_effect = [RuntimeError("boom"), RuntimeError("boom")]
     order = _make_order()
     result = await venue.submit_order(order)
@@ -147,7 +147,7 @@ async def test_get_price_returns_decimal(fake_exchange, monkeypatch):
     importlib.reload(bmod)
 
     venue = bmod.BinanceVenue(api_key="k", api_secret="s")
-    fake = await venue._ensure_exchange()
+    fake = venue._ensure_exchange()
     fake.fetch_ticker.return_value = {"last": 123.45}
     price = await venue.get_price("BTCUSDT")
     assert price == Decimal("123.45")

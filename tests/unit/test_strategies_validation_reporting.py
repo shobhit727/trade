@@ -71,7 +71,8 @@ def test_simulated_venue_charges_fees_and_slippage():
     assert filled.filled_quantity == Decimal("1")
     assert filled.avg_fill_price > Decimal("100")
     assert filled.commission > Decimal("0")
-    assert abs(filled.avg_fill_price - Decimal("100.0005")) <= Decimal("0.001")
+    # 5 bps slippage on 100 = 0.05, so fill price = 100.05
+    assert abs(filled.avg_fill_price - Decimal("100.05")) <= Decimal("0.001")
 
 
 def test_reporting_drawdown_and_sharpe():

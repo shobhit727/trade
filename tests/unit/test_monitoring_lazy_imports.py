@@ -165,12 +165,16 @@ def test_noop_fallback_classes_work_standalone():
         """
     )
     import subprocess
+    import os
+
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    project_root = os.path.dirname(project_root)  # Go up from tests/unit to project root
 
     result = subprocess.run(
         [sys.executable, "-c", src],
         capture_output=True,
         text=True,
-        cwd="/home/phoenix/Desktop/crpto-test",
+        cwd=project_root,
         env={"PYTHONPATH": "src", "PATH": "/usr/bin:/bin"},
     )
     assert result.returncode == 0, f"subprocess failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"

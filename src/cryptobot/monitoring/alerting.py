@@ -58,7 +58,7 @@ class Alert:
 
     def __post_init__(self):
         if not self.fingerprint:
-            self.fingerprint = f"{self.category}:{self.source}:{self.title}"
+            self.fingerprint = f"{self.category}:{self.source}:{self.severity}:{self.title}"
 
 
 @dataclass

@@ -118,7 +118,7 @@ def test_market_data_cache_local_roundtrip_no_redis():
 
     result = asyncio.run(run())
     assert result is not None
-    assert result["symbol"] == "BTCUSDT"
+    assert result["payload"]["symbol"] == "BTCUSDT"
 
 
 def test_market_data_cache_orderbook_roundtrip_no_redis():
@@ -133,7 +133,7 @@ def test_market_data_cache_orderbook_roundtrip_no_redis():
 
     result = asyncio.run(run())
     assert result is not None
-    assert result["sequence"] == 1
+    assert result["payload"]["sequence"] == 1
 
 
 def test_market_data_cache_returns_none_on_miss():

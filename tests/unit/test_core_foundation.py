@@ -51,8 +51,14 @@ async def test_retry_decorator():
 
 @pytest.mark.asyncio
 async def test_execution_engine_simulated_fill():
+    # Use fresh portfolio with equity to avoid kill switch
+    from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
+    pm = PortfolioManager(PortfolioMode.BACKTEST)
+    import asyncio
+    asyncio.run(pm.update_equity(Decimal("10000")))
+    
     venue = SimulatedVenue(prices={"BTCUSDT": Decimal("100")}, slippage_bps=Decimal("0"), commission_bps=Decimal("0"))
-    engine = ExecutionEngine(venue=venue, risk_manager=RiskManager())
+    engine = ExecutionEngine(venue=venue, risk_manager=RiskManager(portfolio=pm))
     order = OrderEvent(
         symbol="BTCUSDT",
         type=OrderType.MARKET,

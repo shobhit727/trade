@@ -35,7 +35,9 @@ class ComponentType(StrEnum):
     EXCHANGE = "exchange"
     DATA_FEED = "data_feed"
     RISK_ENGINE = "risk_engine"
+    RISK = "risk"
     STRATEGY_ENGINE = "strategy_engine"
+    STRATEGY = "strategy"
     ORDER_MANAGER = "order_manager"
     DATABASE = "database"
     CACHE = "cache"
@@ -57,6 +59,8 @@ class HealthCheck:
     def __post_init__(self):
         if isinstance(self.check_fn, str):
             raise ValueError("check_fn must be callable, not string")
+        if isinstance(self.component, str):
+            self.component = ComponentType(self.component)
 
 
 @dataclass

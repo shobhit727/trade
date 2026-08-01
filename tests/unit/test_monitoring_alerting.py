@@ -102,10 +102,15 @@ def test_get_channels_for_alert_filters_by_rule():
     assert [c.get_name() for c in chosen] == ["a"]
 
 
+async def _send_true(self, alert):
+    await asyncio.sleep(0)
+    return True
+
+
 @pytest.mark.asyncio
 async def test_fire_routes_to_channels_and_appends_history():
     mgr = AlertManager()
-    ch_a = type("Ch", (), {"get_name": lambda self: "a", "send": lambda self, a: asyncio.sleep(0) or True})()
+    ch_a = type("Ch", (), {"get_name": lambda self: "a", "send": _send_true})()
     mgr.add_channel(ch_a)
     n = await mgr.fire(_alert())
     assert n == 1
@@ -115,7 +120,7 @@ async def test_fire_routes_to_channels_and_appends_history():
 @pytest.mark.asyncio
 async def test_fire_respects_cooldown():
     mgr = AlertManager()
-    ch = type("Ch", (), {"get_name": lambda self: "a", "send": lambda self, a: asyncio.sleep(0) or True})()
+    ch = type("Ch", (), {"get_name": lambda self: "a", "send": _send_true})()
     mgr.add_channel(ch)
     mgr.add_rule(
         AlertRule(

@@ -200,11 +200,11 @@ def test_cache_health_checker_component_type():
 
 
 def test_risk_engine_health_checker_component_type():
-    assert RiskEngineHealthChecker(None, None).component_type == ComponentType.RISK
+    assert RiskEngineHealthChecker(None, None).component_type == ComponentType.RISK_ENGINE
 
 
 def test_strategy_engine_health_checker_component_type():
-    assert StrategyEngineHealthChecker(None).component_type == ComponentType.STRATEGY
+    assert StrategyEngineHealthChecker(None).component_type == ComponentType.STRATEGY_ENGINE
 
 
 # --- Comprehensive test: HealthMonitor with multiple checkers ---
