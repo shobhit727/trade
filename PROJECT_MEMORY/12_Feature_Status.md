@@ -78,6 +78,27 @@
 - `data/storage.py` — `timedelta` import.
 - `data/cleaning.py` — None/empty guards in `clean_klines`, `clean_tickers`, `clean_trades`, `validate_ohlcv`.
 - `monitoring/health.py` — `inspect.isawaitable`, false-as-unhealthy, auto-register component.
+
+## Test Status (2026-08-01)
+
+- **CI**: Python 3.13, pytest + pytest-asyncio + pytest-cov + pytest-timeout=60s
+- **Lint**: ruff (py313 target) + pyflakes
+- **Rust**: cargo fmt + clippy + test (workspace: `cryptobot-core` only)
+- **Docker**: test target builds + runs pytest in container
+- **Compose**: validate default + test profiles
+
+### Recent Test Fixes (2026-08-01)
+- `validation.py`: `np.math.erf` → `math.erf` (numpy 2.x compatibility)
+- `requirements/test.txt`: added `ccxt>=4.0` for BinanceVenue tests
+- `test_binance_venue.py`: fixed ccxt mocking with ModuleType
+- `test_core_foundation.py`: adjusted slippage/commission expectations for SimulatedVenue
+- `test_core_clock_portfolio.py`: fixed `sleep_until` async test with background task
+- `test_market_data_manager.py`: fixed TickerEvent constructor (removed deprecated `event_id`, `event_type`, `payload`)
+- `test_monitoring_alerting.py`: fixed Alert/AlertRule API (use Enum values, added `get_name()` to Dummy channel)
+- `test_monitoring_health.py`: updated to ComponentType enum, HealthStatus enum, HealthMonitor returns dict[ComponentType, ComponentHealth]
+- `test_smart_order_router.py`: `split_and_route` now raises ValueError for empty ratio
+- `test_strategies_ml.py`: fixed MarketMakingStrategy `_step` call signature, StatArb lookback logic, FundingArb basis entry threshold
+- `test_risk_manager_str.py`: fixed portfolio setup with equity to avoid kill switch
 - `strategies/base.py` — valid `OrderEvent` construction, `from __future__ import annotations`.
 - `core/clock.py` — `import time`.
 - `core/state.py` — graceful SQLite fallback.
