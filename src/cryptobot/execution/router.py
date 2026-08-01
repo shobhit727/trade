@@ -52,9 +52,11 @@ class RoutedOrder:
 
     @property
     def is_complete(self) -> bool:
-        return bool(self.fills) and sum((c.quantity for c in self.children), Decimal("0")) <= Decimal("0") or sum(
-            (f.filled_quantity for f in self.fills), Decimal("0")
-        ) >= self.parent.quantity
+        if not self.fills:
+            return False
+        total_child_qty = sum((c.quantity for c in self.children), Decimal("0"))
+        total_filled_qty = sum((f.filled_quantity for f in self.fills), Decimal("0"))
+        return total_child_qty >= self.parent.quantity and total_filled_qty >= self.parent.quantity
 
 
 def best_price_ranker(symbol: str, scores: Sequence[VenueScore]) -> int:
