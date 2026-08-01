@@ -1,152 +1,277 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+"""
+Feature Engineering Pipeline
+
+Provides 8 core features for ML models:
+1. Returns (log returns at multiple horizons)
+2. RSI (Relative Strength Index)
+3. MACD (Moving Average Convergence Divergence)
+4. ATR Ratio (Average True Range ratio)
+5. Bollinger Bands Position + Width
+6. Log Volume
+7. Volume Ratio
+9. Price Momentum
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
 
 import numpy as np
+import numpy.typing as npt
 
-from cryptobot.backtest.runner import OhlcvBar
+from cryptobot.backtest.data import OhlcvDataset
 
 
 @dataclass
 class FeatureConfig:
+    """Configuration for feature computation."""
     rsi_period: int = 14
-    ema_fast: int = 12
-    ema_slow: int = 26
-    atr_period: int = 14
+    macd_fast: int = 12
+    macd_slow: int = 26
     macd_signal: int = 9
+    atr_period: int = 14
     bb_period: int = 20
     bb_std: float = 2.0
+    volume_lookback: int = 20
+    momentum_periods: list[int] = field(default_factory=lambda: [1, 5, 15, 60])
 
 
-def _to_array(bars: list[OhlcvBar], key: str):
-    fn = getattr(bars[0], key)
-    return np.asarray([float(fn(b)) for b in bars], dtype=float) if False else np.asarray(
-        [float(getattr(b, key)) for b in bars], dtype=float
+@dataclass
+class FeatureSet:
+    """Container for computed features."""
+    returns: npt.NDArray[np.float64]          # Log returns
+    rsi: npt.NDArray[np.float64]              # RSI values
+    macd: npt.NDArray[np.float64]             # MACD line
+    macd_signal: npt.NDArray[np.float64]      # MACD signal line
+    macd_histogram: npt.NDArray[np.float64]   # MACD histogram
+    atr_ratio: npt.NDArray[np.float64]        # ATR / close price
+    bb_position: npt.NDArray[np.float64]      # Position within Bollinger Bands (0-1)
+    bb_width: npt.NDArray[np.float64]         # Bollinger Band width
+    log_volume: npt.NDArray[np.float64]       # Log volume
+    volume_ratio: npt.NDArray[np.float64]     # Volume / rolling avg volume
+    momentum: dict[int, npt.NDArray[np.float64]]  # Momentum at different periods
+    timestamps: npt.NDArray[np.datetime64]     # Timestamps for each row
+
+    def to_array(self) -> npt.NDArray[np.float64]:
+        """Convert features to 2D array for ML models (n_samples, n_features)."""
+        features = [
+            self.returns,
+            self.rsi,
+            self.macd,
+            self.macd_signal,
+            self.macd_histogram,
+            self.atr_ratio,
+            self.bb_position,
+            self.bb_width,
+            self.log_volume,
+            self.volume_ratio,
+        ]
+        for period in sorted(self.momentum.keys()):
+            features.append(self.momentum[period])
+        return np.column_stack(features)
+
+    def feature_names(self) -> list[str]:
+        """Get feature names in order."""
+        names = [
+            "returns", "rsi", "macd", "macd_signal", "macd_histogram",
+            "atr_ratio", "bb_position", "bb_width", "log_volume", "volume_ratio"
+        ]
+        for period in sorted(self.momentum.keys()):
+            names.append(f"momentum_{period}")
+        return names
+
+
+def compute_returns(prices: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    """Compute log returns."""
+    returns = np.zeros_like(prices)
+    returns[1:] = np.log(prices[1:] / prices[:-1])
+    return returns
+
+
+def compute_rsi(prices: npt.NDArray[np.float64], period: int = 14) -> npt.NDArray[np.float64]:
+    """Compute RSI (Relative Strength Index)."""
+    if len(prices) < period + 1:
+        return np.full(len(prices), 50.0)
+
+    returns = np.diff(prices)
+    gains = np.where(returns > 0, returns, 0.0)
+    losses = np.where(returns < 0, -returns, 0.0)
+
+    avg_gain = np.zeros_like(prices)
+    avg_loss = np.zeros_like(prices)
+
+    # Initial average
+    avg_gain[period] = np.mean(gains[:period])
+    avg_loss[period] = np.mean(losses[:period])
+
+    # Smooth
+    for i in range(period + 1, len(prices)):
+        avg_gain[i] = (avg_gain[i - 1] * (period - 1) + gains[i - 1]) / period
+        avg_loss[i] = (avg_loss[i - 1] * (period - 1) + losses[i - 1]) / period
+
+    rs = np.where(avg_loss > 0, avg_gain / avg_loss, 0)
+    rsi = 100 - (100 / (1 + rs))
+    rsi[:period] = 50.0  # Neutral for initial period
+    return rsi
+
+
+def compute_macd(
+    prices: npt.NDArray[np.float64],
+    fast: int = 12,
+    slow: int = 26,
+    signal: int = 9
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+    """Compute MACD line, signal line, and histogram."""
+    ema_fast = pd_ema(prices, fast)
+    ema_slow = pd_ema(prices, slow)
+    macd_line = ema_fast - ema_slow
+    signal_line = pd_ema(macd_line, signal)
+    histogram = macd_line - signal_line
+    return macd_line, signal_line, histogram
+
+
+def pd_ema(series: npt.NDArray[np.float64], period: int) -> npt.NDArray[np.float64]:
+    """Pandas-style exponential moving average."""
+    alpha = 2.0 / (period + 1)
+    ema = np.zeros_like(series)
+    ema[0] = series[0]
+    for i in range(1, len(series)):
+        ema[i] = alpha * series[i] + (1 - alpha) * ema[i - 1]
+    return ema
+
+
+def compute_atr(
+    high: npt.NDArray[np.float64],
+    low: npt.NDArray[np.float64],
+    close: npt.NDArray[np.float64],
+    period: int = 14
+) -> npt.NDArray[np.float64]:
+    """Compute Average True Range."""
+    if len(high) < 2:
+        return np.zeros_like(close)
+
+    tr = np.zeros_like(close)
+    tr[0] = high[0] - low[0]
+    for i in range(1, len(close)):
+        tr[i] = max(
+            high[i] - low[i],
+            abs(high[i] - close[i - 1]),
+            abs(low[i] - close[i - 1])
+        )
+
+    atr = np.zeros_like(close)
+    atr[:period] = np.mean(tr[:period])
+    for i in range(period, len(close)):
+        atr[i] = (atr[i - 1] * (period - 1) + tr[i]) / period
+
+    return atr
+
+
+def compute_bollinger_bands(
+    prices: npt.NDArray[np.float64],
+    period: int = 20,
+    std_dev: float = 2.0
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+    """Compute Bollinger Bands (upper, middle, lower)."""
+    if len(prices) < period:
+        return np.full_like(prices, np.nan), np.full_like(prices, np.nan), np.full_like(prices, np.nan)
+
+    middle = np.full_like(prices, np.nan)
+    upper = np.full_like(prices, np.nan)
+    lower = np.full_like(prices, np.nan)
+
+    for i in range(period - 1, len(prices)):
+        window = prices[i - period + 1:i + 1]
+        mid = np.mean(window)
+        std = np.std(window, ddof=0)
+        middle[i] = mid
+        upper[i] = mid + std_dev * std
+        lower[i] = mid - std_dev * std
+
+    return upper, middle, lower
+
+
+def compute_features(dataset: OhlcvDataset, config: FeatureConfig | None = None) -> FeatureSet:
+    """
+    Compute all features from OHLCV dataset.
+
+    Args:
+        dataset: OHLCV dataset with bars
+        config: Feature computation configuration
+
+    Returns:
+        FeatureSet with all computed features
+    """
+    config = config or FeatureConfig()
+    bars = dataset.bars
+
+    # Extract arrays
+    len(bars)
+    np.array([float(b.open_price) for b in bars], dtype=np.float64)
+    highs = np.array([float(b.high_price) for b in bars], dtype=np.float64)
+    lows = np.array([float(b.low_price) for b in bars], dtype=np.float64)
+    closes = np.array([float(b.close_price) for b in bars], dtype=np.float64)
+    volumes = np.array([float(b.volume) for b in bars], dtype=np.float64)
+    timestamps = np.array([b.open_time for b in bars], dtype=np.datetime64)
+
+    # Compute features
+    returns = compute_returns(closes)
+    rsi = compute_rsi(closes, config.rsi_period)
+    macd_line, macd_signal, macd_hist = compute_macd(
+        closes, config.macd_fast, config.macd_slow, config.macd_signal
+    )
+    atr = compute_atr(highs, lows, closes, config.atr_period)
+    atr_ratio = np.where(closes > 0, atr / closes, 0)
+
+    bb_upper, bb_middle, bb_lower = compute_bollinger_bands(
+        closes, config.bb_period, config.bb_std
+    )
+    bb_width = np.where(bb_middle > 0, (bb_upper - bb_lower) / bb_middle, 0)
+    bb_position = np.where(
+        (bb_upper - bb_lower) > 0,
+        (closes - bb_lower) / (bb_upper - bb_lower),
+        0.5
     )
 
+    log_volume = np.log(np.maximum(volumes, 1))
+    vol_ma = pd_ema(volumes.astype(np.float64), config.volume_lookback)
+    volume_ratio = np.where(vol_ma > 0, volumes / vol_ma, 1.0)
 
-def _rsi(close: np.ndarray, period: int) -> np.ndarray:
-    n = close.size
-    out = np.full(n, 50.0)
-    if n < period + 1:
-        return out
-    diff = np.diff(close)
-    gains = np.clip(diff, 0, None)
-    losses = np.clip(-diff, 0, None)
-    avg_g = np.zeros(n)
-    avg_l = np.zeros(n)
-    avg_g[period] = gains[:period].mean()
-    avg_l[period] = losses[:period].mean()
-    for i in range(period + 1, n):
-        avg_g[i] = (avg_g[i - 1] * (period - 1) + gains[i - 1]) / period
-        avg_l[i] = (avg_l[i - 1] * (period - 1) + losses[i - 1]) / period
-    rs = np.divide(avg_g, np.where(avg_l == 0, 1e-12, avg_l))
-    out = 100 - 100 / (1 + rs)
-    return out
+    momentum = {}
+    for period in config.momentum_periods:
+        if len(closes) > period:
+            mom = np.zeros_like(closes)
+            mom[period:] = (closes[period:] - closes[:-period]) / closes[:-period]
+        else:
+            mom = np.zeros_like(closes)
+        momentum[period] = mom
 
-
-def _ema(series: np.ndarray, period: int) -> np.ndarray:
-    n = series.size
-    out = np.zeros(n)
-    if n == 0:
-        return out
-    k = 2.0 / (period + 1)
-    out[0] = series[0]
-    for i in range(1, n):
-        out[i] = series[i] * k + out[i - 1] * (1 - k)
-    return out
-
-
-def _atr(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int) -> np.ndarray:
-    n = close.size
-    out = np.full(n, np.nan)
-    if n < 2:
-        return out
-    prev_close = close[:-1]
-    tr = np.maximum(high[1:] - low[1:], np.maximum(np.abs(high[1:] - prev_close), np.abs(low[1:] - prev_close)))
-    out[1:] = tr
-    if n >= period:
-        for i in range(period, n):
-            out[i] = (out[i - 1] * (period - 1) + tr[i - 1]) / period
-    return out
-
-
-def _macd(close: np.ndarray, fast: int, slow: int, signal: int):
-    ema_fast = _ema(close, fast)
-    ema_slow = _ema(close, slow)
-    macd_line = ema_fast - ema_slow
-    return macd_line, _ema(macd_line, signal)
-
-
-def _bbands(close: np.ndarray, period: int, k: float):
-    n = close.size
-    mid = np.full(n, np.nan)
-    upper = np.full(n, np.nan)
-    lower = np.full(n, np.nan)
-    for i in range(period - 1, n):
-        window = close[i - period + 1 : i + 1]
-        mu = window.mean()
-        sd = window.std(ddof=0)
-        mid[i] = mu
-        upper[i] = mu + k * sd
-        lower[i] = mu - k * sd
-    return mid, upper, lower
-
-
-def build_features(bars: list[OhlcvBar], config: FeatureConfig | None = None) -> np.ndarray:
-    cfg = config or FeatureConfig()
-    if not bars:
-        return np.zeros((0, 8), dtype=float)
-    _to_array(bars, "open")
-    highs = _to_array(bars, "high")
-    lows = _to_array(bars, "low")
-    closes = _to_array(bars, "close")
-    volumes = _to_array(bars, "volume")
-    n = closes.size
-    rsi = _rsi(closes, cfg.rsi_period)
-    macd_line, macd_signal = _macd(closes, cfg.ema_fast, cfg.ema_slow, cfg.macd_signal)
-    atr = _atr(highs, lows, closes, cfg.atr_period)
-    bb_mid, bb_upper, bb_lower = _bbands(closes, cfg.bb_period, cfg.bb_std)
-    returns = np.zeros(n)
-    if n > 1:
-        returns[1:] = (closes[1:] - closes[:-1]) / closes[:-1]
-
-    sma_ratio = np.where(bb_mid > 0, closes / bb_mid, 1.0)
-    bb_width = np.where(bb_mid > 0, (bb_upper - bb_lower) / bb_mid, 0.0)
-    log_volume = np.log1p(np.where(volumes > 0, volumes, 1.0))
-
-    features = np.column_stack([
-        returns,
-        rsi / 100.0,
-        macd_line,
-        macd_signal,
-        np.where(np.isnan(atr), 0.0, atr) / closes,
-        sma_ratio,
-        bb_width,
-        log_volume,
-    ])
-    rows = []
-    for i in range(closes.size):
-        if np.isnan(features[i]).any():
-            continue
-        rows.append(features[i])
-    return np.asarray(rows, dtype=float)
-
-
-def future_returns(bars: list[OhlcvBar], horizon: int = 5) -> np.ndarray:
-    n = len(bars)
-    out = np.zeros(n - horizon)
-    closes = np.asarray([float(b.close) for b in bars], dtype=float)
-    for i in range(n - horizon):
-        prev = closes[i]
-        nxt = closes[i + horizon]
-        if prev > 0:
-            out[i] = (nxt - prev) / prev
-    return out
+    return FeatureSet(
+        returns=returns,
+        rsi=rsi,
+        macd=macd_line,
+        macd_signal=macd_signal,
+        macd_histogram=macd_hist,
+        atr_ratio=atr_ratio,
+        bb_position=bb_position,
+        bb_width=bb_width,
+        log_volume=log_volume,
+        volume_ratio=volume_ratio,
+        momentum=momentum,
+        timestamps=timestamps,
+    )
 
 
 __all__ = [
     "FeatureConfig",
-    "build_features",
-    "future_returns",
+    "FeatureSet",
+    "compute_features",
+    "compute_returns",
+    "compute_rsi",
+    "compute_macd",
+    "compute_atr",
+    "compute_bollinger_bands",
+    "pd_ema",
 ]

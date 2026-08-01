@@ -1,4 +1,21 @@
-from cryptobot.ml.features import FeatureConfig, build_features, future_returns
+from cryptobot.ml.auto_retrain import (
+    AutoRetrainer,
+    RetrainConfig,
+    RetrainEvent,
+    RetrainScheduler,
+    RetrainTrigger,
+)
+from cryptobot.ml.features import FeatureConfig, FeatureSet, build_features, future_returns
+from cryptobot.ml.inference import (
+    InferenceConfig,
+    InferenceMode,
+    InferencePipeline,
+    InferenceRequest,
+    InferenceResponse,
+    ModelCache,
+    ModelRegistry,
+    ModelVersion,
+)
 from cryptobot.ml.models import (
     DirectionClassifier,
     DirectionConfig,
@@ -20,6 +37,16 @@ from cryptobot.ml.online import (
     DriftDetector,
     WalkForwardTrainer,
 )
+from cryptobot.ml.training import (
+    FoldResult,
+    PurgedKFold,
+    SplitMethod,
+    TrainingConfig,
+    TrainingResult,
+    WalkForwardCV,
+    WalkForwardTrainer,
+    create_trainer,
+)
 
 __all__ = [
     "DirectionClassifier",
@@ -33,7 +60,31 @@ __all__ = [
     "DriftConfig",
     "DriftDetector",
     "FeatureConfig",
+    "FeatureSet",
     "WalkForwardTrainer",
+    "PurgedKFold",
+    "WalkForwardCV",
+    "WalkForwardTrainer",
+    "TrainingConfig",
+    "SplitMethod",
+    "FoldResult",
+    "TrainingResult",
+    "PurgedKFold",
+    "WalkForwardCV",
+    "create_trainer",
+    "InferenceConfig",
+    "InferenceMode",
+    "ModelVersion",
+    "InferenceRequest",
+    "InferenceResponse",
+    "InferencePipeline",
+    "ModelRegistry",
+    "ModelCache",
+    "AutoRetrainer",
+    "RetrainConfig",
+    "RetrainTrigger",
+    "RetrainEvent",
+    "RetrainScheduler",
     "build_features",
     "features_and_labels",
     "future_returns",
