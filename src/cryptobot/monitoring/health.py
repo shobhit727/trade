@@ -60,7 +60,15 @@ class HealthCheck:
         if isinstance(self.check_fn, str):
             raise ValueError("check_fn must be callable, not string")
         if isinstance(self.component, str):
-            self.component = ComponentType(self.component)
+            # Case-insensitive lookup for ComponentType enum
+            component_lower = self.component.lower()
+            for ct in ComponentType:
+                if ct.value == component_lower:
+                    self.component = ct
+                    break
+            else:
+                # If not found, try direct construction (will raise if invalid)
+                self.component = ComponentType(self.component)
 
 
 @dataclass
