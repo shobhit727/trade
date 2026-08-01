@@ -6,9 +6,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import aiohttp
+if TYPE_CHECKING:
+    import aiohttp
 
 from cryptobot.core.bus import get_event_bus
 from cryptobot.core.events import (
@@ -141,7 +142,7 @@ class BinanceDataIngestion(DataIngestion):
 
     def __init__(self, config: DataSourceConfig):
         self.config = config
-        self._session: aiohttp.ClientSession | None = None
+        self._session: "aiohttp.ClientSession | None" = None
         self._ws_client = None
         self._running = False
         self._event_bus = get_event_bus()
@@ -149,11 +150,12 @@ class BinanceDataIngestion(DataIngestion):
         self._session_lock = asyncio.Lock()
 
     @property
-    def session(self) -> aiohttp.ClientSession | None:
+    def session(self) -> "aiohttp.ClientSession | None":
         return self._session
 
     async def _ensure_session(self):
         """Ensure aiohttp session exists (created once)."""
+        import aiohttp
         async with self._session_lock:
             if self._session is None or self._session.closed:
                 self._session = aiohttp.ClientSession()

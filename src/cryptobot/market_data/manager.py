@@ -8,9 +8,12 @@ from collections import defaultdict
 from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import aiohttp
+if TYPE_CHECKING:
+    import aiohttp
+    import redis.asyncio as redis
+
 import redis.asyncio as redis
 
 from cryptobot.config import settings
@@ -30,8 +33,8 @@ logger = logging.getLogger(__name__)
 class BinanceWSClient:
     def __init__(self):
         self.ws_url = settings.exchange.ws_url
-        self.session: aiohttp.ClientSession | None = None
-        self.ws: aiohttp.ClientWebSocketResponse | None = None
+        self.session: "aiohttp.ClientSession | None" = None
+        self.ws: "aiohttp.ClientWebSocketResponse | None" = None
         self.running = False
         self.subscriptions: set[str] = set()
         self.callbacks: dict[str, list[Callable]] = defaultdict(list)
@@ -47,6 +50,7 @@ class BinanceWSClient:
             logger.warning("BinanceWSClient: no timeframes configured; falling back to ['1m']")
 
     async def start(self):
+        import aiohttp
         self.running = True
         self.session = aiohttp.ClientSession()
         await self._connect()
@@ -61,6 +65,7 @@ class BinanceWSClient:
             await self.session.close()
 
     async def _connect(self):
+        import aiohttp
         try:
             streams = self._build_streams()
             url = f"{self.ws_url}/stream?streams={'/'.join(streams)}"
@@ -93,6 +98,7 @@ class BinanceWSClient:
         await self._connect()
 
     async def _heartbeat(self):
+        import aiohttp
         while self.running:
             await asyncio.sleep(self._ping_interval)
             if self.ws and not self.ws.closed:
@@ -103,6 +109,7 @@ class BinanceWSClient:
                     await self._reconnect()
 
     async def _listen(self):
+        import aiohttp
         while self.running:
             try:
                 if not self.ws or self.ws.closed:
