@@ -56,7 +56,7 @@ async def test_execution_engine_simulated_fill():
     pm = PortfolioManager(PortfolioMode.BACKTEST)
     import asyncio
     asyncio.run(pm.update_equity(Decimal("10000")))
-    
+
     venue = SimulatedVenue(prices={"BTCUSDT": Decimal("100")}, slippage_bps=Decimal("0"), commission_bps=Decimal("0"))
     engine = ExecutionEngine(venue=venue, risk_manager=RiskManager(portfolio=pm))
     order = OrderEvent(

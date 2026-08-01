@@ -164,8 +164,8 @@ def test_noop_fallback_classes_work_standalone():
         assert ch.chat_id == 'c'
         """
     )
-    import subprocess
     import os
+    import subprocess
 
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     project_root = os.path.dirname(project_root)  # Go up from tests/unit to project root
