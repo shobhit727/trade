@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any
-
 import numpy as np
+import numpy.typing as npt
+from dataclasses import dataclass
+from typing import Any, Optional
 
 from cryptobot.ml.models.direction import DirectionClassifier, DirectionConfig
-from cryptobot.ml.models.regime import RegimeConfig, RegimeDetector
-from cryptobot.ml.models.volatility import VolatilityConfig, VolatilityModel
+from cryptobot.ml.models.volatility import VolatilityModel, VolatilityConfig
+from cryptobot.ml.models.regime import RegimeDetector, RegimeConfig
 
 
 @dataclass
@@ -21,7 +21,8 @@ class EnsembleConfig:
 
 
 class EnsembleModel:
-    """Ensemble of ML models for robust predictions.
+    """
+    Ensemble of ML models for robust predictions.
 
     Combines direction, volatility, and regime models with configurable
     aggregation methods (weighted voting, meta-learner).
@@ -31,11 +32,11 @@ class EnsembleModel:
 
     def __init__(self, config: EnsembleConfig | None = None):
         self.config = config or EnsembleConfig()
-        self.models = {}
+        self.models: dict[str, Any] = {}
         self._fitted = False
-        self._weights = None
+        self._weights: Optional[np.ndarray] = None
 
-    def fit(self, features: np.ndarray, labels: np.ndarray) -> EnsembleModel:
+    def fit(self, features: npt.NDArray[np.float64], labels: npt.NDArray[np.float64]) -> "EnsembleModel":
         """Fit all sub-models and meta-learner."""
         model_names = self.config.models or ["direction", "volatility", "regime"]
         weights = self.config.weights or [1.0] * len(model_names)
@@ -60,7 +61,7 @@ class EnsembleModel:
         self._fitted = True
         return self
 
-    def predict_proba(self, features: np.ndarray) -> np.ndarray:
+    def predict_proba(self, features: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """Get ensemble probability predictions."""
         if not self._fitted:
             self.fit(features, np.zeros(len(features)))
@@ -78,28 +79,30 @@ class EnsembleModel:
                 probs[:, 1] += self._weights[-1] * regime_probs[:, 1]
 
         # Normalize
-        probs = probs / probs.sum(axis=1, keepdims=True)
+        row_sums = probs.sum(axis=1, keepdims=True)
+        probs = probs / np.where(row_sums > 0, row_sums, 1)
+
         return probs
 
-    def predict(self, features: np.ndarray) -> np.ndarray:
+    def predict(self, features: npt.NDArray[np.float64]) -> npt.NDArray[np.int64]:
         """Predict class labels."""
         proba = self.predict_proba(features)
         return (proba[:, 1] > 0.5).astype(int)
 
-    def predict_with_confidence(self, features: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def predict_with_confidence(self, features: npt.NDArray[np.float64]) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.float64]]:
         """Predict with confidence scores."""
         proba = self.predict_proba(features)
         preds = self.predict(features)
         confidence = np.max(proba, axis=1)
         return preds, confidence
 
-    def predict_volatility(self, returns: np.ndarray, horizon: int = 5) -> float:
+    def predict_volatility(self, returns: npt.NDArray[np.float64], horizon: int = 5) -> float:
         """Predict volatility forecast."""
         if "volatility" in self.models:
             return self.models["volatility"].forecast(horizon)
         return 0.0
 
-    def current_regime(self, features: np.ndarray) -> int:
+    def current_regime(self, features: npt.NDArray[np.float64]) -> int:
         """Get current market regime."""
         if "regime" in self.models:
             return self.models["regime"].current_regime(features)
