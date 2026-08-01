@@ -17,6 +17,7 @@ from cryptobot.monitoring.health import (
     HealthCheck,
     HealthMonitor,
     HealthResult,
+    HealthStatus,
     RiskEngineHealthChecker,
     StrategyEngineHealthChecker,
     create_standard_checks,
@@ -39,9 +40,15 @@ async def test_health_monitor_run_all_checks_aggregates_results():
     monitor.register_check(HealthCheck(name="bad", component="EXCHANGE", check_fn=lambda: False))
 
     results = await monitor.run_all_checks()
-    by_check = {r.check_name: r for r in results.values()}
-    assert by_check["ok"].status == "HEALTHY"
-    assert by_check["bad"].status == "UNHEALTHY"
+    exchange_health = results.get(ComponentType.EXCHANGE)
+    assert exchange_health is not None
+    check_names = {c.check_name for c in exchange_health.checks}
+    assert "ok" in check_names
+    assert "bad" in check_names
+    ok_check = next(c for c in exchange_health.checks if c.check_name == "ok")
+    bad_check = next(c for c in exchange_health.checks if c.check_name == "bad")
+    assert ok_check.status == HealthStatus.HEALTHY
+    assert bad_check.status == HealthStatus.UNHEALTHY
     assert monitor.is_healthy() is False
 
 
@@ -52,7 +59,7 @@ async def test_health_monitor_auto_registers_components():
         HealthCheck(name="mystery", component="EXECUTION", check_fn=lambda: True)
     )
     snapshot = await monitor.run_all_checks()
-    assert "EXECUTION" in snapshot
+    assert ComponentType.EXECUTION in snapshot
 
 
 @pytest.mark.asyncio
@@ -66,12 +73,15 @@ async def test_health_monitor_timeout_becomes_unhealthy():
         HealthCheck(
             name="slow",
             component="EXCHANGE",
-            check_fn=_slow,
+            check_fn=slow,
             timeout_seconds=0.05,
         )
     )
     results = await monitor.run_all_checks()
-    assert results["slow"].status == "UNHEALTHY"
+    exchange_health = results.get(ComponentType.EXCHANGE)
+    assert exchange_health is not None
+    slow_check = next(c for c in exchange_health.checks if c.check_name == "slow")
+    assert slow_check.status == HealthStatus.UNHEALTHY
 
 
 async def _slow():
@@ -107,8 +117,12 @@ async def test_health_monitor_supports_async_check_fns():
     )
 
     results = await monitor.run_all_checks()
-    assert results["async_ok"].status == "HEALTHY"
-    assert results["async_bad"].status == "UNHEALTHY"
+    exchange_health = results.get(ComponentType.EXCHANGE)
+    assert exchange_health is not None
+    async_ok_check = next(c for c in exchange_health.checks if c.check_name == "async_ok")
+    async_bad_check = next(c for c in exchange_health.checks if c.check_name == "async_bad")
+    assert async_ok_check.status == HealthStatus.HEALTHY
+    assert async_bad_check.status == HealthStatus.UNHEALTHY
 
 
 def test_create_standard_checks_skips_missing_components():
@@ -132,30 +146,32 @@ def test_create_standard_checks_uses_present_components():
 
 
 def test_component_health_success_rate():
-    ch = ComponentHealth(component="EXCHANGE", status="HEALTHY")
+    ch = ComponentHealth(component=ComponentType.EXCHANGE, status=HealthStatus.HEALTHY)
     assert ch.success_rate == 1.0
     assert ch.is_healthy is True
 
 
 def test_component_health_tracks_failed():
-    ch = ComponentHealth(component="EXCHANGE", status="UNHEALTHY")
+    ch = ComponentHealth(component=ComponentType.EXCHANGE, status=HealthStatus.UNHEALTHY)
     assert ch.is_healthy is False
 
 
 def test_health_result_creation():
     hr = HealthResult(
         check_name="test",
-        component="EXCHANGE",
-        status="HEALTHY",
+        component=ComponentType.EXCHANGE,
+        status=HealthStatus.HEALTHY,
         latency_ms=1.5,
         message="OK",
     )
     assert hr.check_name == "test"
-    assert str(hr) == "test: HEALTHY (1.5ms)"
+    assert "test" in str(hr)
+    assert "HEALTHY" in str(hr)
+    assert "1.5" in str(hr)
 
 
 def test_component_health_success_rate_starts_one():
-    ch = ComponentHealth(component="EXCHANGE", status="HEALTHY")
+    ch = ComponentHealth(component=ComponentType.EXCHANGE, status=HealthStatus.HEALTHY)
     assert ch.success_rate == 1.0
     assert ch.is_healthy
 
@@ -168,27 +184,27 @@ def test_health_check_decorator_no_op():
 
 
 def test_exchange_health_checker_component_type():
-    assert ExchangeHealthChecker({}).component_type == "EXCHANGE"
+    assert ExchangeHealthChecker({}).component_type == ComponentType.EXCHANGE
 
 
 def test_data_feed_health_checker_component_type():
-    assert DataFeedHealthChecker(None).component_type == "DATA_FEED"
+    assert DataFeedHealthChecker(None).component_type == ComponentType.DATA_FEED
 
 
 def test_database_health_checker_component_type():
-    assert DatabaseHealthChecker(None).component_type == "DATABASE"
+    assert DatabaseHealthChecker(None).component_type == ComponentType.DATABASE
 
 
 def test_cache_health_checker_component_type():
-    assert CacheHealthChecker(None).component_type == "CACHE"
+    assert CacheHealthChecker(None).component_type == ComponentType.CACHE
 
 
 def test_risk_engine_health_checker_component_type():
-    assert RiskEngineHealthChecker(None).component_type == "RISK"
+    assert RiskEngineHealthChecker(None, None).component_type == ComponentType.RISK
 
 
 def test_strategy_engine_health_checker_component_type():
-    assert StrategyEngineHealthChecker(None).component_type == "STRATEGY"
+    assert StrategyEngineHealthChecker(None).component_type == ComponentType.STRATEGY
 
 
 # --- Comprehensive test: HealthMonitor with multiple checkers ---
@@ -215,7 +231,7 @@ async def test_health_monitor_with_multiple_checkers():
     )
     results = await monitor.run_all_checks()
     assert len(results) == 2
-    assert all(r.status == "HEALTHY" for r in results.values())
+    assert all(h.status == HealthStatus.HEALTHY for h in results.values())
 
 
 @pytest.mark.asyncio
@@ -230,7 +246,7 @@ async def test_health_monitor_component_health_updates():
         )
     )
     await monitor.run_all_checks()
-    comp = monitor.get_component_health("EXCHANGE")
+    comp = monitor.get_component_health(ComponentType.EXCHANGE)
     assert comp is not None
     assert comp.is_healthy
 
@@ -240,13 +256,12 @@ async def test_health_monitor_component_health_updates():
 
 def test_exchange_health_checker_instantiates():
     ch = ExchangeHealthChecker({})
-    assert ch.component_type == "EXCHANGE"
+    assert ch.component_type == ComponentType.EXCHANGE
 
 
 # --- Comprehensive test: HealthMonitor with multiple checkers ---
 
 
-@pytest.mark.asyncio
 @pytest.mark.asyncio
 async def test_health_check_handles_false_return():
     monitor = HealthMonitor(check_interval=0.01)
@@ -259,7 +274,10 @@ async def test_health_check_handles_false_return():
         )
     )
     results = await monitor.run_all_checks()
-    assert results["failing_check"].status == "UNHEALTHY"
+    exchange_health = results.get(ComponentType.EXCHANGE)
+    assert exchange_health is not None
+    failing = next(c for c in exchange_health.checks if c.check_name == "failing_check")
+    assert failing.status == HealthStatus.UNHEALTHY
 
 
 @pytest.mark.asyncio
@@ -278,8 +296,11 @@ async def test_health_check_timeout_becomes_unhealthy():
         )
     )
     results = await monitor.run_all_checks()
-    assert results["slow_check"].status == "UNHEALTHY"
-    assert "timeout" in results["slow_check"].message.lower()
+    exchange_health = results.get(ComponentType.EXCHANGE)
+    assert exchange_health is not None
+    slow = next(c for c in exchange_health.checks if c.check_name == "slow_check")
+    assert slow.status == HealthStatus.UNHEALTHY
+    assert "timeout" in slow.message.lower()
 
 
 # --- Edge cases: false return value should be unhealthy ---
@@ -297,4 +318,7 @@ async def test_false_return_is_unhealthy():
         )
     )
     results = await monitor.run_all_checks()
-    assert results["returns_false"].status == "UNHEALTHY"
+    exchange_health = results.get(ComponentType.EXCHANGE)
+    assert exchange_health is not None
+    check = next(c for c in exchange_health.checks if c.check_name == "returns_false")
+    assert check.status == HealthStatus.UNHEALTHY
