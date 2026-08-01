@@ -150,11 +150,11 @@ class MarketMakingStrategy:
             self.on_book_update(bid=bid, ask=ask, mid=mid, timestamp=ts)
 
             if i % 2 == 0:
-                self._step(ts, bid_q, qty=self.config.quantity)
+                self._step(ts, bid_q, ask_q, qty=self.config.quantity)
             if abs(self.inventory) >= float(self.config.max_inventory):
                 pass
             if i % 2 == 1:
-                self._step(ts, ask_q, qty=self.config.quantity)
+                self._step(ts, bid_q, ask_q, qty=self.config.quantity)
 
             fill = OrderEvent(
                 symbol=self.config.symbol,

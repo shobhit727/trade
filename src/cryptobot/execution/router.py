@@ -202,7 +202,7 @@ class SmartOrderRouter:
         ratio: Sequence[Decimal],
     ) -> RoutedOrder:
         if not ratio:
-            return await self.route(parent)
+            raise ValueError("ratio cannot be empty")
         if len(ratio) > len(self.venues):
             raise ValueError("ratio longer than number of venues")
         if sum(ratio, Decimal("0")) <= 0:

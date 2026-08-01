@@ -46,9 +46,14 @@ def test_market_making_run_on_history_emits_fills():
 def test_stat_arb_needs_history_before_signal():
     strat = StatArbStrategy(StatArbConfig(lookback=10))
     assert strat.step() is None
-    for v in range(20):
+    for v in range(5):  # Less than lookback
         strat.feed(100 + v * 0.1, 50 + v * 0.05)
-    assert strat.step() in (None, tuple())
+    assert strat.step() is None
+    for v in range(5, 15):  # Now we have enough
+        strat.feed(100 + v * 0.1, 50 + v * 0.05)
+    # After enough history, step may return a signal
+    signal = strat.step()
+    assert signal is None or isinstance(signal, tuple)
 
 
 def test_stat_arb_walks_history_and_yields_signal_after_warmup():
