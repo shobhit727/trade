@@ -70,7 +70,7 @@ jobs:
           pip install numpy pandas
           pip install -e .
       - name: Run tests
-        run: pytest -q --tb=short --cov=cryptobot --cov-report=term-missing
+        run: pytest -q --tb=short --cov=cryptobot --cov-report=term-missing --timeout=60
 
   docker-test:
     name: Docker test image
