@@ -111,7 +111,6 @@ class RegimeDetector:
 
         n = features.shape[0]
         k = self.config.n_regimes
-        # Compute distance to centroids (need to recompute)
         proba = np.zeros((n, k))
         for i in range(n):
             distances = np.fromiter(
@@ -122,8 +121,10 @@ class RegimeDetector:
                 dtype=float,
                 count=k
             )
+            # Use softmax on negative distances for proper probability distribution
             if distances.sum() > 0:
-                proba[i] = 1.0 / (1.0 + distances / distances.sum())
+                exp_neg_dist = np.exp(-distances)
+                proba[i] = exp_neg_dist / exp_neg_dist.sum()
             else:
                 proba[i] = 1.0 / k
 
