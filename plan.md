@@ -952,12 +952,12 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [ ] Replace `print`-based status with structlog
 
 ### Phase 6: ML Pipeline
-- [ ] Feature engineering pipeline (`ml/features.py`) — directory missing
+- [x] Feature engineering pipeline (`ml/features.py`) M-bM-^@M-^T 8 features
 - [ ] Feature store with versioning
-- [ ] Direction classifier (`ml/models/direction.py`)
-- [ ] Volatility forecasting (`ml/models/volatility.py`)
-- [ ] Regime detection (`ml/models/regime.py`)
-- [ ] Ensemble stacking (`ml/models/ensemble.py`)
+- [x] Direction classifier (`ml/models/direction.py`)
+- [x] Volatility forecasting (`ml/models/volatility.py`) M-bM-^@M-^T EWMA, GARCH, realized, quantile
+- [x] Regime detection (`ml/models/regime.py`) M-bM-^@M-^T HMM, k-means, GMM, threshold
+- [x] Ensemble stacking (`ml/models/ensemble.py`) M-bM-^@M-^T weighted voting
 - [ ] Walk-forward training with purged CV (`ml/training.py`)
 - [ ] Online inference (`ml/inference.py`)
 - [ ] Auto-retrain on drift (`ml/auto_retrain.py`)

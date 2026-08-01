@@ -34,9 +34,9 @@
 | `ml/features.py` | ✅ | 8 features: returns, RSI, MACD line + signal, ATR ratio, BB position + width, log volume. |
 | `ml/models/direction.py` | ✅ | `DirectionClassifier` (sklearn logreg preferred, numpy fallback), walk-forward score. |
 | `ml/online.py` | ✅ | `DriftDetector` (mean/std shift) + `WalkForwardTrainer` purged splits. |
-| `ml/models/volatility.py` | 🔲 | Missing. |
-| `ml/models/regime.py` | 🔲 | Missing. |
-| `ml/models/ensemble.py` | 🔲 | Missing. |
+| `ml/models/volatility.py` | ✅ | EWMA, GARCH, realized, quantile regression with softmax probabilities |
+| `ml/models/regime.py` | ✅ | HMM, k-means, GMM, threshold with softmax probabilities |
+| `ml/models/ensemble.py` | ✅ | Weighted voting ensemble with direction, volatility, regime |
 | `utils/health_server.py` | ✅ | stdlib ThreadingHTTPServer exposing `/health` JSON + `/metrics` Prometheus text. Used by Dockerfile HEALTHCHECK. |
 | `risk/manager.py` | ✅ | RiskManager pre-trade checks (kill switch, notional, total exposure). Notional check skipped when no price available. |
 | `risk/limits.py` | ✅ | RiskLimits from config. |
@@ -59,7 +59,7 @@
 | `utils/decorators.py` | ✅ | retry (jitter clamped to ≥0), timeout_decorator, circuit_breaker (raises RuntimeError in running loop). |
 | `utils/types.py` | ✅ | Candle, OrderBook, Trade, TickData, OHLCVBar, PerformanceMetrics. |
 | `market_data/manager.py` | ✅ | Binance WS client. Requires `aiohttp`, `redis`. `_symbols`/`_timeframes` fallback to `default_symbol` / `["1m"]` when settings empty. |
-| `ml/` | ✅ | Core pipeline: features, direction, online (WalkForwardTrainer + DriftDetector). |
+| `ml/` | ✅ | Core pipeline: features, direction, online (WalkForwardTrainer + DriftDetector). **New: `ml/models/volatility.py` (EWMA, GARCH, realized, quantile), `ml/models/regime.py` (HMM, k-means, GMM, threshold), `ml/models/ensemble.py` (weighted voting ensemble).** |
 | `deploy/k8s/` | ✅ | Namespace, ConfigMap, Secret, PVC, Deployment, **Service (ClusterIP)**, **HPA (CPU+memory)**, kustomization (B053). |
 | `.github/workflows/ci.yml` | ✅ | Lint + unit + compose-validate + buildx matrix (amd64 + arm64). |
 | `.github/workflows/release.yml` | ✅ | Tag-driven multi-arch publish + SBOM + provenance. |
