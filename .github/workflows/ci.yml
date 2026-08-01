@@ -68,6 +68,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements/test.txt
           pip install numpy pandas
+          pip install -e .
       - name: Run tests
         run: pytest -q --tb=short --cov=cryptobot --cov-report=term-missing
 

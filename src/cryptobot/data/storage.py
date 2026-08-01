@@ -6,12 +6,14 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import asyncpg
 import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
+
+if TYPE_CHECKING:
+    import asyncpg
+    import pyarrow as pa
+    import pyarrow.parquet as pq
 
 from cryptobot.config import settings
 
@@ -89,9 +91,10 @@ class TimescaleDBStorage(StorageBackend):
 
     def __init__(self, config: StorageConfig):
         self.config = config
-        self.pool: asyncpg.Pool | None = None
+        self.pool: "asyncpg.Pool | None" = None
 
     async def initialize(self):
+        import asyncpg
         self.pool = await asyncpg.create_pool(
             host=self.config.timescaledb_host,
             port=self.config.timescaledb_port,
@@ -364,6 +367,8 @@ class ParquetStorage(StorageBackend):
 
     async def _flush_buffer(self, data_type: str):
         """Flush buffer to parquet."""
+        import pyarrow as pa
+        import pyarrow.parquet as pq
         async with self._lock:
             if data_type not in self._buffers or not self._buffers[data_type]:
                 return
@@ -426,6 +431,7 @@ class ParquetStorage(StorageBackend):
         start: datetime,
         end: datetime,
     ) -> pd.DataFrame:
+        import pyarrow.parquet as pq
         base = Path(self.config.parquet_base_path) / "klines" / symbol
         if not base.exists():
             return pd.DataFrame()
@@ -468,6 +474,7 @@ class ParquetStorage(StorageBackend):
         start: datetime,
         end: datetime,
     ) -> pd.DataFrame:
+        import pyarrow.parquet as pq
         base = Path(self.config.parquet_base_path) / "tickers" / symbol
         if not base.exists():
             return pd.DataFrame()

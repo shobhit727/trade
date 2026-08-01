@@ -142,7 +142,7 @@ class BinanceDataIngestion(DataIngestion):
 
     def __init__(self, config: DataSourceConfig):
         self.config = config
-        self._session: "aiohttp.ClientSession | None" = None
+        self._session: aiohttp.ClientSession | None = None
         self._ws_client = None
         self._running = False
         self._event_bus = get_event_bus()
@@ -150,7 +150,7 @@ class BinanceDataIngestion(DataIngestion):
         self._session_lock = asyncio.Lock()
 
     @property
-    def session(self) -> "aiohttp.ClientSession | None":
+    def session(self) -> aiohttp.ClientSession | None:
         return self._session
 
     async def _ensure_session(self):

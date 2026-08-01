@@ -33,8 +33,8 @@ logger = logging.getLogger(__name__)
 class BinanceWSClient:
     def __init__(self):
         self.ws_url = settings.exchange.ws_url
-        self.session: "aiohttp.ClientSession | None" = None
-        self.ws: "aiohttp.ClientWebSocketResponse | None" = None
+        self.session: aiohttp.ClientSession | None = None
+        self.ws: aiohttp.ClientWebSocketResponse | None = None
         self.running = False
         self.subscriptions: set[str] = set()
         self.callbacks: dict[str, list[Callable]] = defaultdict(list)
@@ -65,7 +65,6 @@ class BinanceWSClient:
             await self.session.close()
 
     async def _connect(self):
-        import aiohttp
         try:
             streams = self._build_streams()
             url = f"{self.ws_url}/stream?streams={'/'.join(streams)}"
@@ -98,7 +97,6 @@ class BinanceWSClient:
         await self._connect()
 
     async def _heartbeat(self):
-        import aiohttp
         while self.running:
             await asyncio.sleep(self._ping_interval)
             if self.ws and not self.ws.closed:

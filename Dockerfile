@@ -28,6 +28,7 @@ RUN python -m pip install --upgrade pip setuptools wheel \
     && pip install --no-cache-dir -r /app/${REQUIREMENTS}
 
 COPY . /app
+RUN pip install -e .
 
 ARG GIT_SHA=dev
 ARG BUILD_DATE=unknown
