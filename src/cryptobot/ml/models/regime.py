@@ -114,8 +114,14 @@ class RegimeDetector:
         # Compute distance to centroids (need to recompute)
         proba = np.zeros((n, k))
         for i in range(n):
-            distances = np.sum((features[i, :2] - np.mean(features[self._regime_labels == j][:, :2], axis=0)) ** 2
-                               for j in range(k))
+            distances = np.fromiter(
+                (
+                    ((features[i, :2] - np.mean(features[self._regime_labels == j][:, :2], axis=0)) ** 2).sum()
+                    for j in range(k)
+                ),
+                dtype=float,
+                count=k
+            )
             if distances.sum() > 0:
                 proba[i] = 1.0 / (1.0 + distances / distances.sum())
             else:
