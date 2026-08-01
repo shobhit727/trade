@@ -1,9 +1,19 @@
 from cryptobot.ml.features import FeatureConfig, build_features, future_returns
-from cryptobot.ml.models.direction import (
+from cryptobot.ml.models import (
     DirectionClassifier,
     DirectionConfig,
+    VolatilityModel,
+    VolatilityConfig,
+    RegimeDetector,
+    RegimeConfig,
+    EnsembleModel,
+    EnsembleConfig,
     features_and_labels,
     labels_from_returns,
+    realized_volatility,
+    ewma_volatility,
+    rolling_regime_labels,
+    create_ensemble,
 )
 from cryptobot.ml.online import (
     DriftConfig,
@@ -14,6 +24,12 @@ from cryptobot.ml.online import (
 __all__ = [
     "DirectionClassifier",
     "DirectionConfig",
+    "VolatilityModel",
+    "VolatilityConfig",
+    "RegimeDetector",
+    "RegimeConfig",
+    "EnsembleModel",
+    "EnsembleConfig",
     "DriftConfig",
     "DriftDetector",
     "FeatureConfig",
@@ -22,4 +38,8 @@ __all__ = [
     "features_and_labels",
     "future_returns",
     "labels_from_returns",
+    "realized_volatility",
+    "ewma_volatility",
+    "rolling_regime_labels",
+    "create_ensemble",
 ]

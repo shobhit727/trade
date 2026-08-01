@@ -29,9 +29,14 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Extract version
+      - name: Validate tag and extract version
         id: meta
         run: |
+          if [[ ! "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "Error: This workflow only runs on version tags (refs/tags/v*)."
+            echo "Current ref: ${GITHUB_REF}"
+            exit 1
+          fi
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
