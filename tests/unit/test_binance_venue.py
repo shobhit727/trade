@@ -35,13 +35,13 @@ class FakeExchange:
 @pytest.fixture
 def fake_exchange(monkeypatch):
     import types
-    
+
     # Create a mock instance
     fake_instance = FakeExchange()
-    
+
     # Create a mock class that returns the instance
     fake_class = type("binance_fake", (), {"__new__": lambda cls, cfg: fake_instance})
-    
+
     # Create a mock module for ccxt_async
     import cryptobot.execution.venue.binance as bmod
     mock_ccxt = types.ModuleType("ccxt.async_support")
