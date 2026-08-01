@@ -16,5 +16,6 @@
 !Cargo.lock
 !.cargo/
 !.cargo/**
+!pyproject.toml
 !PROJECT_MEMORY/
 !PROJECT_MEMORY/12_Feature_Status.md
