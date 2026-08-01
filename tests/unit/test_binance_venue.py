@@ -33,20 +33,9 @@ class FakeExchange:
 
 
 @pytest.fixture
-def fake_exchange(monkeypatch):
-    import types
-
-    # Create a mock class that returns a mock instance
-    fake_instance = FakeExchange()
-
-    fake_class = type("binance_fake", (), {"__new__": lambda cls, cfg: fake_instance})
-
-    # Create a mock module for ccxt_async
-    import cryptobot.execution.venue.binance as bmod
-    mock_ccxt = types.ModuleType("ccxt.async_support")
-    mock_ccxt.binance = fake_class
-    monkeypatch.setattr(bmod, "ccxt_async", mock_ccxt, raising=False)
-    return fake_class
+def fake_exchange():
+    """Create a mock ccxt exchange instance."""
+    return FakeExchange()
 
 
 def _make_order(**kwargs) -> OrderEvent:
@@ -92,9 +81,15 @@ async def test_submit_order_returns_filled_event(fake_exchange, monkeypatch):
     import cryptobot.execution.venue.binance as bmod
     importlib.reload(bmod)
 
+    # Set up mock after reload
+    import types
+    fake_class = type("binance_fake", (), {"__new__": lambda cls, cfg: fake_exchange})
+    mock_ccxt = types.ModuleType("ccxt.async_support")
+    mock_ccxt.binance = fake_class
+    monkeypatch.setattr(bmod, "ccxt_async", mock_ccxt, raising=False)
+
     venue = bmod.BinanceVenue(api_key="k", api_secret="s")
-    fake_instance = fake_exchange({})
-    fake_instance.create_order.return_value = FakeExchange._default()
+    fake_exchange.create_order.return_value = FakeExchange._default()
     order = _make_order()
     filled = await venue.submit_order(order)
     assert filled.status == OrderStatus.FILLED
@@ -116,9 +111,15 @@ async def test_retries_then_rejects(fake_exchange, monkeypatch):
     import cryptobot.execution.venue.binance as bmod
     importlib.reload(bmod)
 
+    # Set up mock after reload
+    import types
+    fake_class = type("binance_fake", (), {"__new__": lambda cls, cfg: fake_exchange})
+    mock_ccxt = types.ModuleType("ccxt.async_support")
+    mock_ccxt.binance = fake_class
+    monkeypatch.setattr(bmod, "ccxt_async", mock_ccxt, raising=False)
+
     venue = bmod.BinanceVenue(api_key="k", api_secret="s", max_retries=2)
-    fake_instance = fake_exchange({})
-    fake_instance.create_order.side_effect = [RuntimeError("boom"), RuntimeError("boom")]
+    fake_exchange.create_order.side_effect = [RuntimeError("boom"), RuntimeError("boom")]
     order = _make_order()
     result = await venue.submit_order(order)
     assert result.status == OrderStatus.REJECTED
@@ -145,9 +146,15 @@ async def test_get_price_returns_decimal(fake_exchange, monkeypatch):
     import cryptobot.execution.venue.binance as bmod
     importlib.reload(bmod)
 
+    # Set up mock after reload
+    import types
+    fake_class = type("binance_fake", (), {"__new__": lambda cls, cfg: fake_exchange})
+    mock_ccxt = types.ModuleType("ccxt.async_support")
+    mock_ccxt.binance = fake_class
+    monkeypatch.setattr(bmod, "ccxt_async", mock_ccxt, raising=False)
+
     venue = bmod.BinanceVenue(api_key="k", api_secret="s")
-    fake_instance = fake_exchange({})
-    fake_instance.fetch_ticker.return_value = {"last": 123.45}
+    fake_exchange.fetch_ticker.return_value = {"last": 123.45}
     price = await venue.get_price("BTCUSDT")
     assert price == Decimal("123.45")
     importlib.reload(cfgmod)
