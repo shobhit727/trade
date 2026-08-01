@@ -250,11 +250,14 @@ class RegimeDetector:
         return self._regime_stats.copy()
 
     def summary(self) -> dict[str, Any]:
+        method = self.config.method
+        if hasattr(method, 'value'):
+            method = method.value
         return {
             "model": self.name,
             "fitted": self._fitted,
             "n_regimes": self.config.n_regimes,
-            "method": self.config.method.value,
+            "method": method,
             "window": self.config.window,
             "transition_matrix": self._transition_matrix.tolist() if self._transition_matrix is not None else None,
         }
