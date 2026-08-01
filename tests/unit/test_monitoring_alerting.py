@@ -15,6 +15,8 @@ from cryptobot.monitoring.alerting import (
     Alert,
     AlertManager,
     AlertRule,
+    AlertSeverity,
+    AlertCategory,
     NotificationChannel,
 )
 
@@ -32,7 +34,7 @@ class _RecordingChannel:
         return True
 
 
-def _alert(severity: str = "WARNING", category: str = "SYSTEM") -> Alert:
+def _alert(severity: AlertSeverity = AlertSeverity.WARNING, category: AlertCategory = AlertCategory.SYSTEM) -> Alert:
     return Alert(
         id=f"{severity.value}-{category.value}",
         title=f"{severity.value} {category.value}",
@@ -47,20 +49,20 @@ def _alert(severity: str = "WARNING", category: str = "SYSTEM") -> Alert:
 def test_match_rule_severity_and_category():
     rule = AlertRule(
         name="",
-        category="SYSTEM",
-        severity="WARNING",
+        category=AlertCategory.SYSTEM,
+        severity=AlertSeverity.WARNING,
         channels=["test"],
     )
     mgr = AlertManager()
     assert mgr._match_rule(_alert(), rule) is True
-    assert mgr._match_rule(_alert(severity="INFO"), rule) is False
-    assert mgr._match_rule(_alert(category="RISK"), rule) is False
+    assert mgr._match_rule(_alert(severity=AlertSeverity.INFO), rule) is False
+    assert mgr._match_rule(_alert(category=AlertCategory.RISK), rule) is False
 
 
 def test_match_rule_labels_must_match():
     rule = AlertRule(
         name="",
-        severity="WARNING",
+        severity=AlertSeverity.WARNING,
         channels=["test"],
         labels={"component": "x"},
     )
@@ -91,8 +93,8 @@ def test_get_channels_for_alert_filters_by_rule():
     mgr.add_rule(
         AlertRule(
             name="only_a",
-            category="SYSTEM",
-            severity="WARNING",
+            category=AlertCategory.SYSTEM,
+            severity=AlertSeverity.WARNING,
             channels=["a"],
         )
     )
@@ -118,7 +120,7 @@ async def test_fire_respects_cooldown():
     mgr.add_rule(
         AlertRule(
             name="r",
-            severity="WARNING",
+            severity=AlertSeverity.WARNING,
             channels=["test"],
             cooldown=timedelta(seconds=60),
         )
@@ -132,38 +134,38 @@ async def test_fire_respects_cooldown():
 
 
 def test_alert_fingerprint_is_stable():
-    a1 = Alert("WARNING", "SYSTEM", "msg")
-    a2 = Alert("WARNING", "SYSTEM", "msg")
-    a3 = Alert("CRITICAL", "SYSTEM", "msg")
+    a1 = Alert(severity=AlertSeverity.WARNING, category=AlertCategory.SYSTEM, message="msg", title="SYSTEM")
+    a2 = Alert(severity=AlertSeverity.WARNING, category=AlertCategory.SYSTEM, message="msg", title="SYSTEM")
+    a3 = Alert(severity=AlertSeverity.CRITICAL, category=AlertCategory.SYSTEM, message="msg", title="SYSTEM")
     assert a1.fingerprint == a2.fingerprint
     assert a1.fingerprint != a3.fingerprint
 
 
 def test_alert_to_dict_round_trip():
-    a = Alert("WARNING", "SYSTEM", "msg")
-    d = a.to_dict()
+    a = Alert(severity=AlertSeverity.WARNING, category=AlertCategory.SYSTEM, message="msg", title="SYSTEM")
+    d = a.__dict__
     assert d["id"] == a.id
-    assert d["severity"] == "WARNING"
-    assert d["category"] == "SYSTEM"
+    assert d["severity"] == AlertSeverity.WARNING
+    assert d["category"] == AlertCategory.SYSTEM
 
 
 def test_alert_rule_matches_severity_and_category():
     rule = AlertRule(
         name="",
-        category="SYSTEM",
-        severity="WARNING",
+        category=AlertCategory.SYSTEM,
+        severity=AlertSeverity.WARNING,
         channels=["test"],
     )
     mgr = AlertManager()
-    assert mgr._match_rule(Alert("WARNING", "SYSTEM", "msg"), rule) is True
-    assert mgr._match_rule(Alert("INFO", "SYSTEM", "msg"), rule) is False
-    assert mgr._match_rule(Alert("WARNING", "RISK", "msg"), rule) is False
+    assert mgr._match_rule(Alert(severity=AlertSeverity.WARNING, category=AlertCategory.SYSTEM, message="msg", title="SYSTEM"), rule) is True
+    assert mgr._match_rule(Alert(severity=AlertSeverity.INFO, category=AlertCategory.SYSTEM, message="msg", title="SYSTEM"), rule) is False
+    assert mgr._match_rule(Alert(severity=AlertSeverity.WARNING, category=AlertCategory.RISK, message="msg", title="RISK"), rule) is False
 
 
 def test_alert_rule_label_filtering():
     rule = AlertRule(
         name="",
-        severity="WARNING",
+        severity=AlertSeverity.WARNING,
         channels=["test"],
         labels={"component": "x"},
     )
@@ -175,8 +177,6 @@ def test_alert_rule_label_filtering():
     assert mgr._match_rule(a, rule) is False
 
 
-@pytest.mark.asyncio
-@pytest.mark.asyncio
 # --- NotificationChannel abstract base ---
 
 
@@ -186,8 +186,11 @@ def test_notification_channel_abstract():
         async def send(self, alert):
             return True
 
+        def get_name(self) -> str:
+            return "dummy"
+
     d = Dummy()
-    assert hasattr(d, "send")
+    assert d.get_name() == "dummy"
 
 
 # --- AlertManager.get_alert_manager singleton ---

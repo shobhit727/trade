@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from math import sqrt
+from math import erf, sqrt
 from typing import Any
 
 import numpy as np
@@ -97,7 +97,7 @@ def monte_carlo_significance(
 
 
 def _normal_cdf(z: float) -> float:
-    return 0.5 * (1.0 + float(np.math.erf(z / sqrt(2.0))))
+    return 0.5 * (1.0 + float(erf(z / sqrt(2.0))))
 
 
 def _sharpe(returns: np.ndarray) -> float:
