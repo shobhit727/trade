@@ -13,10 +13,10 @@ import pytest
 
 from cryptobot.monitoring.alerting import (
     Alert,
+    AlertCategory,
     AlertManager,
     AlertRule,
     AlertSeverity,
-    AlertCategory,
     NotificationChannel,
 )
 

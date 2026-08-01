@@ -73,7 +73,7 @@ def test_funding_arb_emits_pair_on_funding_signal():
 
     strat = FundingArbStrategy()
     state = FundingArbState(
-        spot_price=Decimal("100"), perp_price=Decimal("100.02"), funding_rate=0.0008, next_funding_seconds=60
+        spot_price=Decimal("100"), perp_price=Decimal("100.06"), funding_rate=0.0008, next_funding_seconds=60
     )
     sides = strat.feed(state)
     assert sides in {(OrderSide.SELL, OrderSide.BUY), (OrderSide.BUY, OrderSide.SELL)}
