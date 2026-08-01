@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import aiohttp
-    import redis.asyncio as redis
 
 import redis.asyncio as redis
 

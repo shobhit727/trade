@@ -12,8 +12,6 @@ import pandas as pd
 
 if TYPE_CHECKING:
     import asyncpg
-    import pyarrow as pa
-    import pyarrow.parquet as pq
 
 from cryptobot.config import settings
 
@@ -91,7 +89,7 @@ class TimescaleDBStorage(StorageBackend):
 
     def __init__(self, config: StorageConfig):
         self.config = config
-        self.pool: "asyncpg.Pool | None" = None
+        self.pool: asyncpg.Pool | None = None
 
     async def initialize(self):
         import asyncpg
