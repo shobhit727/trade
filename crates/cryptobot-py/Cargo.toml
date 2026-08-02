@@ -7,19 +7,18 @@ authors = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-cryptobot-core = { path = "../cryptobot-core", features = ["python"] }
-cryptobot-backtest = { path = "../cryptobot-backtest", features = ["python"] }
-cryptobot-features = { path = "../cryptobot-features", features = ["python"] }
-cryptobot-risk = { path = "../cryptobot-risk", features = ["python"] }
-cryptobot-stats = { path = "../cryptobot-stats", features = ["python"] }
-cryptobot-orderbook = { path = "../cryptobot-orderbook", features = ["python"] }
+cryptobot-core = { path = "../cryptobot-core", features = [] }
+cryptobot-backtest = { path = "../cryptobot-backtest", features = [] }
+cryptobot-features = { path = "../cryptobot-features", features = [] }
+cryptobot-risk = { path = "../cryptobot-risk", features = [] }
+cryptobot-stats = { path = "../cryptobot-stats", features = [] }
+cryptobot-orderbook = { path = "../cryptobot-orderbook", features = [] }
 pyo3 = { version = "0.21", features = ["extension-module", "abi3-py38", "generate-abi3"] }
-maturin = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
 criterion = { workspace = true }
 
 [features]
-default = ["maturin"]
-maturin = ["maturin"]
+default = []
+# python = ["cryptobot-core/python", "cryptobot-backtest/python", "cryptobot-features/python", "cryptobot-risk/python", "cryptobot-stats/python", "cryptobot-orderbook/python", "pyo3"]
