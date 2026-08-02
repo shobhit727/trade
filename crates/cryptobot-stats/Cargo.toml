@@ -25,7 +25,6 @@ uuid = { version = "1.6", features = ["v4", "serde", "fast-rng"] }
 rand = { workspace = true }
 rand_distr = { workspace = true }
 statrs = { workspace = true }
-robust = { workspace = true }
 pyo3 = { version = "0.21", features = ["extension-module", "abi3-py38", "generate-abi3"], optional = true }
 
 [dev-dependencies]
