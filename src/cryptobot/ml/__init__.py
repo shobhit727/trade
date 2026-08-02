@@ -35,7 +35,6 @@ from cryptobot.ml.models import (
 from cryptobot.ml.online import (
     DriftConfig,
     DriftDetector,
-    WalkForwardTrainer,
 )
 from cryptobot.ml.training import (
     FoldResult,
@@ -64,13 +63,10 @@ __all__ = [
     "WalkForwardTrainer",
     "PurgedKFold",
     "WalkForwardCV",
-    "WalkForwardTrainer",
     "TrainingConfig",
     "SplitMethod",
     "FoldResult",
     "TrainingResult",
-    "PurgedKFold",
-    "WalkForwardCV",
     "create_trainer",
     "InferenceConfig",
     "InferenceMode",

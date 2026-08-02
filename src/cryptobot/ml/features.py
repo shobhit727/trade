@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """
 Feature Engineering Pipeline
@@ -14,9 +13,8 @@ Provides 8 core features for ML models:
 9. Price Momentum
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -34,244 +32,276 @@ class FeatureConfig:
     atr_period: int = 14
     bb_period: int = 20
     bb_std: float = 2.0
-    volume_lookback: int = 20
-    momentum_periods: list[int] = field(default_factory=lambda: [1, 5, 15, 60])
+    volume_period: int = 20
+    momentum_period: int = 10
+    return_horizons: list[int] = field(default_factory=lambda: [1, 5, 15, 60])
 
 
 @dataclass
 class FeatureSet:
-    """Container for computed features."""
-    returns: npt.NDArray[np.float64]          # Log returns
-    rsi: npt.NDArray[np.float64]              # RSI values
-    macd: npt.NDArray[np.float64]             # MACD line
-    macd_signal: npt.NDArray[np.float64]      # MACD signal line
-    macd_histogram: npt.NDArray[np.float64]   # MACD histogram
-    atr_ratio: npt.NDArray[np.float64]        # ATR / close price
-    bb_position: npt.NDArray[np.float64]      # Position within Bollinger Bands (0-1)
-    bb_width: npt.NDArray[np.float64]         # Bollinger Band width
-    log_volume: npt.NDArray[np.float64]       # Log volume
-    volume_ratio: npt.NDArray[np.float64]     # Volume / rolling avg volume
-    momentum: dict[int, npt.NDArray[np.float64]]  # Momentum at different periods
-    timestamps: npt.NDArray[np.datetime64]     # Timestamps for each row
-
-    def to_array(self) -> npt.NDArray[np.float64]:
-        """Convert features to 2D array for ML models (n_samples, n_features)."""
-        features = [
-            self.returns,
-            self.rsi,
-            self.macd,
-            self.macd_signal,
-            self.macd_histogram,
-            self.atr_ratio,
-            self.bb_position,
-            self.bb_width,
-            self.log_volume,
-            self.volume_ratio,
-        ]
-        for period in sorted(self.momentum.keys()):
-            features.append(self.momentum[period])
-        return np.column_stack(features)
-
-    def feature_names(self) -> list[str]:
-        """Get feature names in order."""
-        names = [
-            "returns", "rsi", "macd", "macd_signal", "macd_histogram",
-            "atr_ratio", "bb_position", "bb_width", "log_volume", "volume_ratio"
-        ]
-        for period in sorted(self.momentum.keys()):
-            names.append(f"momentum_{period}")
-        return names
+    """Computed feature set with metadata."""
+    features: npt.NDArray[np.float64]
+    feature_names: list[str]
+    timestamps: npt.NDArray[np.datetime64]
+    config: FeatureConfig
 
 
-def compute_returns(prices: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
-    """Compute log returns."""
-    returns = np.zeros_like(prices)
-    returns[1:] = np.log(prices[1:] / prices[:-1])
-    return returns
-
-
-def compute_rsi(prices: npt.NDArray[np.float64], period: int = 14) -> npt.NDArray[np.float64]:
-    """Compute RSI (Relative Strength Index)."""
-    if len(prices) < period + 1:
-        return np.full(len(prices), 50.0)
-
-    returns = np.diff(prices)
-    gains = np.where(returns > 0, returns, 0.0)
-    losses = np.where(returns < 0, -returns, 0.0)
-
-    avg_gain = np.zeros_like(prices)
-    avg_loss = np.zeros_like(prices)
-
-    # Initial average
-    avg_gain[period] = np.mean(gains[:period])
-    avg_loss[period] = np.mean(losses[:period])
-
-    # Smooth
-    for i in range(period + 1, len(prices)):
-        avg_gain[i] = (avg_gain[i - 1] * (period - 1) + gains[i - 1]) / period
-        avg_loss[i] = (avg_loss[i - 1] * (period - 1) + losses[i - 1]) / period
-
-    rs = np.where(avg_loss > 0, avg_gain / avg_loss, 0)
+def _rsi(close: npt.NDArray[np.float64], period: int = 14) -> npt.NDArray[np.float64]:
+    """Relative Strength Index."""
+    delta = np.diff(close, prepend=close[0])
+    gain = np.where(delta > 0, delta, 0.0)
+    loss = np.where(delta < 0, -delta, 0.0)
+    avg_gain = np.convolve(gain, np.ones(period) / period, mode="valid")
+    avg_loss = np.convolve(loss, np.ones(period) / period, mode="valid")
+    rs = np.divide(avg_gain, avg_loss, out=np.zeros_like(avg_gain), where=avg_loss != 0)
     rsi = 100 - (100 / (1 + rs))
-    rsi[:period] = 50.0  # Neutral for initial period
-    return rsi
+    return np.pad(rsi, (period - 1, 0), mode="edge")
 
 
-def compute_macd(
-    prices: npt.NDArray[np.float64],
+def _macd(
+    close: npt.NDArray[np.float64],
     fast: int = 12,
     slow: int = 26,
-    signal: int = 9
+    signal: int = 9,
 ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]:
-    """Compute MACD line, signal line, and histogram."""
-    ema_fast = pd_ema(prices, fast)
-    ema_slow = pd_ema(prices, slow)
+    """MACD line, signal line, histogram."""
+    ema_fast = _ema(close, fast)
+    ema_slow = _ema(close, slow)
     macd_line = ema_fast - ema_slow
-    signal_line = pd_ema(macd_line, signal)
+    signal_line = _ema(macd_line, signal)
     histogram = macd_line - signal_line
     return macd_line, signal_line, histogram
 
 
-def pd_ema(series: npt.NDArray[np.float64], period: int) -> npt.NDArray[np.float64]:
-    """Pandas-style exponential moving average."""
+def _ema(data: npt.NDArray[np.float64], period: int) -> npt.NDArray[np.float64]:
+    """Exponential Moving Average."""
     alpha = 2.0 / (period + 1)
-    ema = np.zeros_like(series)
-    ema[0] = series[0]
-    for i in range(1, len(series)):
-        ema[i] = alpha * series[i] + (1 - alpha) * ema[i - 1]
+    ema = np.zeros_like(data)
+    ema[0] = data[0]
+    for i in range(1, len(data)):
+        ema[i] = alpha * data[i] + (1 - alpha) * ema[i - 1]
     return ema
 
 
-def compute_atr(
+def _atr(
     high: npt.NDArray[np.float64],
     low: npt.NDArray[np.float64],
     close: npt.NDArray[np.float64],
-    period: int = 14
+    period: int = 14,
 ) -> npt.NDArray[np.float64]:
-    """Compute Average True Range."""
-    if len(high) < 2:
-        return np.zeros_like(close)
-
-    tr = np.zeros_like(close)
-    tr[0] = high[0] - low[0]
-    for i in range(1, len(close)):
-        tr[i] = max(
-            high[i] - low[i],
-            abs(high[i] - close[i - 1]),
-            abs(low[i] - close[i - 1])
-        )
-
-    atr = np.zeros_like(close)
-    atr[:period] = np.mean(tr[:period])
-    for i in range(period, len(close)):
-        atr[i] = (atr[i - 1] * (period - 1) + tr[i]) / period
-
-    return atr
+    """Average True Range."""
+    tr1 = high - low
+    tr2 = np.abs(high - np.roll(close, 1))
+    tr3 = np.abs(low - np.roll(close, 1))
+    tr2[0] = 0
+    tr3[0] = 0
+    tr = np.maximum(np.maximum(tr1, tr2), tr3)
+    atr = np.convolve(tr, np.ones(period) / period, mode="valid")
+    return np.pad(atr, (period - 1, 0), mode="edge")
 
 
-def compute_bollinger_bands(
-    prices: npt.NDArray[np.float64],
+def _bollinger_bands(
+    close: npt.NDArray[np.float64],
     period: int = 20,
-    std_dev: float = 2.0
+    std_mult: float = 2.0,
 ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]:
-    """Compute Bollinger Bands (upper, middle, lower)."""
-    if len(prices) < period:
-        return np.full_like(prices, np.nan), np.full_like(prices, np.nan), np.full_like(prices, np.nan)
-
-    middle = np.full_like(prices, np.nan)
-    upper = np.full_like(prices, np.nan)
-    lower = np.full_like(prices, np.nan)
-
-    for i in range(period - 1, len(prices)):
-        window = prices[i - period + 1:i + 1]
-        mid = np.mean(window)
-        std = np.std(window, ddof=0)
-        middle[i] = mid
-        upper[i] = mid + std_dev * std
-        lower[i] = mid - std_dev * std
-
-    return upper, middle, lower
+    """Bollinger Bands: middle, upper, lower."""
+    sma = np.convolve(close, np.ones(period) / period, mode="valid")
+    std = np.array([np.std(close[i - period + 1 : i + 1]) for i in range(period - 1, len(close))])
+    middle = sma
+    upper = sma + std_mult * std
+    lower = sma - std_mult * std
+    return (
+        np.pad(middle, (period - 1, 0), mode="edge"),
+        np.pad(upper, (period - 1, 0), mode="edge"),
+        np.pad(lower, (period - 1, 0), mode="edge"),
+    )
 
 
-def compute_features(dataset: OhlcvDataset, config: FeatureConfig | None = None) -> FeatureSet:
-    """
-    Compute all features from OHLCV dataset.
+def _log_volume(volume: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    """Log volume with zero handling."""
+    return np.log1p(volume)
 
-    Args:
-        dataset: OHLCV dataset with bars
-        config: Feature computation configuration
 
-    Returns:
-        FeatureSet with all computed features
-    """
+def _volume_ratio(volume: npt.NDArray[np.float64], period: int = 20) -> npt.NDArray[np.float64]:
+    """Volume ratio vs rolling average."""
+    vol_sma = np.convolve(volume, np.ones(period) / period, mode="valid")
+    ratio = volume[period - 1 :] / (vol_sma + 1e-10)
+    return np.pad(ratio, (period - 1, 0), mode="edge")
+
+
+def _momentum(close: npt.NDArray[np.float64], period: int = 10) -> npt.NDArray[np.float64]:
+    """Price momentum (rate of change)."""
+    mom = np.zeros_like(close)
+    mom[period:] = (close[period:] - close[:-period]) / close[:-period]
+    return mom
+
+
+def _returns(close: npt.NDArray[np.float64], horizons: list[int]) -> npt.NDArray[np.float64]:
+    """Log returns at multiple horizons."""
+    returns = np.zeros((len(close), len(horizons)))
+    for j, h in enumerate(horizons):
+        if h < len(close):
+            returns[h:, j] = np.log(close[h:] / close[:-h])
+    return returns
+
+
+def build_features(
+    dataset: OhlcvDataset,
+    config: FeatureConfig | None = None,
+) -> FeatureSet:
+    """Build feature matrix from OHLCV dataset."""
     config = config or FeatureConfig()
-    bars = dataset.bars
+    close = dataset.close
+    high = dataset.high
+    low = dataset.low
+    volume = dataset.volume
+    timestamps = dataset.timestamps
 
-    # Extract arrays
-    len(bars)
-    np.array([float(b.open_price) for b in bars], dtype=np.float64)
-    highs = np.array([float(b.high_price) for b in bars], dtype=np.float64)
-    lows = np.array([float(b.low_price) for b in bars], dtype=np.float64)
-    closes = np.array([float(b.close_price) for b in bars], dtype=np.float64)
-    volumes = np.array([float(b.volume) for b in bars], dtype=np.float64)
-    timestamps = np.array([b.open_time for b in bars], dtype=np.datetime64)
+    features_list = []
+    feature_names = []
 
-    # Compute features
-    returns = compute_returns(closes)
-    rsi = compute_rsi(closes, config.rsi_period)
-    macd_line, macd_signal, macd_hist = compute_macd(
-        closes, config.macd_fast, config.macd_slow, config.macd_signal
+    # Returns at multiple horizons
+    ret = _returns(close, config.return_horizons)
+    features_list.append(ret)
+    feature_names.extend([f"ret_{h}" for h in config.return_horizons])
+
+    # RSI
+    rsi = _rsi(close, config.rsi_period)
+    features_list.append(rsi.reshape(-1, 1))
+    feature_names.append("rsi")
+
+    # MACD
+    macd_line, signal_line, histogram = _macd(
+        close, config.macd_fast, config.macd_slow, config.macd_signal
     )
-    atr = compute_atr(highs, lows, closes, config.atr_period)
-    atr_ratio = np.where(closes > 0, atr / closes, 0)
+    features_list.append(macd_line.reshape(-1, 1))
+    features_list.append(signal_line.reshape(-1, 1))
+    features_list.append(histogram.reshape(-1, 1))
+    feature_names.extend(["macd", "macd_signal", "macd_hist"])
 
-    bb_upper, bb_middle, bb_lower = compute_bollinger_bands(
-        closes, config.bb_period, config.bb_std
-    )
-    bb_width = np.where(bb_middle > 0, (bb_upper - bb_lower) / bb_middle, 0)
-    bb_position = np.where(
-        (bb_upper - bb_lower) > 0,
-        (closes - bb_lower) / (bb_upper - bb_lower),
-        0.5
-    )
+    # ATR Ratio
+    atr = _atr(high, low, close, config.atr_period)
+    atr_ratio = atr / (close + 1e-10)
+    features_list.append(atr_ratio.reshape(-1, 1))
+    feature_names.append("atr_ratio")
 
-    log_volume = np.log(np.maximum(volumes, 1))
-    vol_ma = pd_ema(volumes.astype(np.float64), config.volume_lookback)
-    volume_ratio = np.where(vol_ma > 0, volumes / vol_ma, 1.0)
+    # Bollinger Bands
+    bb_middle, bb_upper, bb_lower = _bollinger_bands(close, config.bb_period, config.bb_std)
+    bb_position = (close - bb_lower) / (bb_upper - bb_lower + 1e-10)
+    bb_width = (bb_upper - bb_lower) / (bb_middle + 1e-10)
+    features_list.append(bb_position.reshape(-1, 1))
+    features_list.append(bb_width.reshape(-1, 1))
+    feature_names.extend(["bb_position", "bb_width"])
 
-    momentum = {}
-    for period in config.momentum_periods:
-        if len(closes) > period:
-            mom = np.zeros_like(closes)
-            mom[period:] = (closes[period:] - closes[:-period]) / closes[:-period]
-        else:
-            mom = np.zeros_like(closes)
-        momentum[period] = mom
+    # Log Volume
+    log_vol = _log_volume(volume)
+    features_list.append(log_vol.reshape(-1, 1))
+    feature_names.append("log_volume")
+
+    # Volume Ratio
+    vol_ratio = _volume_ratio(volume, config.volume_period)
+    features_list.append(vol_ratio.reshape(-1, 1))
+    feature_names.append("volume_ratio")
+
+    # Momentum
+    mom = _momentum(close, config.momentum_period)
+    features_list.append(mom.reshape(-1, 1))
+    feature_names.append("momentum")
+
+    features = np.hstack(features_list)
+
+    # Replace NaN/inf with 0
+    features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
 
     return FeatureSet(
-        returns=returns,
-        rsi=rsi,
-        macd=macd_line,
-        macd_signal=macd_signal,
-        macd_histogram=macd_hist,
-        atr_ratio=atr_ratio,
-        bb_position=bb_position,
-        bb_width=bb_width,
-        log_volume=log_volume,
-        volume_ratio=volume_ratio,
-        momentum=momentum,
+        features=features,
+        feature_names=feature_names,
         timestamps=timestamps,
+        config=config,
     )
 
 
-__all__ = [
-    "FeatureConfig",
-    "FeatureSet",
-    "compute_features",
-    "compute_returns",
-    "compute_rsi",
-    "compute_macd",
-    "compute_atr",
-    "compute_bollinger_bands",
-    "pd_ema",
-]
+def future_returns(
+    close: npt.NDArray[np.float64],
+    horizons: list[int],
+) -> npt.NDArray[np.float64]:
+    """Compute future log returns for labeling."""
+    return _returns(close, horizons)
+
+
+def features_and_labels(
+    dataset: OhlcvDataset,
+    config: FeatureConfig | None = None,
+    label_horizons: list[int] | None = None,
+) -> tuple[FeatureSet, npt.NDArray[np.float64]]:
+    """Build features and corresponding labels."""
+    config = config or FeatureConfig()
+    label_horizons = label_horizons or config.return_horizons
+    feature_set = build_features(dataset, config)
+    labels = future_returns(dataset.close, label_horizons)
+    return feature_set, labels
+
+
+def labels_from_returns(
+    returns: npt.NDArray[np.float64],
+    threshold: float = 0.0,
+) -> npt.NDArray[np.int64]:
+    """Convert returns to directional labels: 1 (up), -1 (down), 0 (flat)."""
+    labels = np.zeros_like(returns, dtype=np.int64)
+    labels[returns > threshold] = 1
+    labels[returns < -threshold] = -1
+    return labels
+
+
+def realized_volatility(
+    close: npt.NDArray[np.float64],
+    window: int = 20,
+) -> npt.NDArray[np.float64]:
+    """Realized volatility (standard deviation of log returns)."""
+    log_ret = np.diff(np.log(close), prepend=np.log(close[0]))
+    vol = np.array([np.std(log_ret[max(0, i - window + 1) : i + 1]) for i in range(len(log_ret))])
+    return vol * np.sqrt(252 * 24 * 60)  # Annualized assuming minute data
+
+
+def ewma_volatility(
+    close: npt.NDArray[np.float64],
+    lam: float = 0.94,
+) -> npt.NDArray[np.float64]:
+    """Exponentially Weighted Moving Average volatility (RiskMetrics)."""
+    log_ret = np.diff(np.log(close), prepend=np.log(close[0]))
+    var = np.zeros_like(log_ret)
+    var[0] = log_ret[0] ** 2
+    for i in range(1, len(log_ret)):
+        var[i] = lam * var[i - 1] + (1 - lam) * (log_ret[i] ** 2)
+    return np.sqrt(var) * np.sqrt(252 * 24 * 60)
+
+
+def rolling_regime_labels(
+    close: npt.NDArray[np.float64],
+    window: int = 100,
+    n_regimes: int = 3,
+) -> npt.NDArray[np.int64]:
+    """Rolling regime labels using volatility clustering."""
+    vol = realized_volatility(close, window)
+    labels = np.zeros_like(vol, dtype=np.int64)
+    for i in range(window, len(vol)):
+        window_vol = vol[i - window : i]
+        if len(window_vol) > 10:
+            quantiles = np.quantile(window_vol, np.linspace(0, 1, n_regimes + 1))
+            labels[i] = np.searchsorted(quantiles[1:-1], vol[i])
+    return labels
+
+
+def create_ensemble(
+    models: list[Any],
+    weights: list[float] | None = None,
+) -> Any:
+    """Create ensemble from multiple models (placeholder)."""
+    from cryptobot.ml.models import EnsembleConfig, EnsembleModel
+
+    config = EnsembleConfig(
+        models=[type(m).__name__ for m in models],
+        weights=weights or [1.0 / len(models)] * len(models),
+    )
+    return EnsembleModel(config)

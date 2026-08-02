@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Training Pipeline with Purged Cross-Validation
 
@@ -366,43 +364,6 @@ class WalkForwardTrainer:
             metrics={"accuracy": accuracy},
             model_params={},
         )
-
-
-class WalkForwardCV:
-    """Walk-Forward Cross-Validation for time series."""
-
-    def __init__(
-        self,
-        initial_train_size: int,
-        step_size: int,
-        min_train_size: int = 100,
-    ):
-        self.initial_train_size = initial_train_size
-        self.step_size = step_size
-        self.min_train_size = min_train_size
-
-    def split(
-        self,
-        X: npt.NDArray[np.float64],
-        y: npt.NDArray[np.float64] | None = None,
-    ) -> list[tuple[npt.NDArray[np.int64], npt.NDArray[np.int64]]]:
-        """Generate walk-forward splits."""
-        n_samples = len(X)
-        splits = []
-
-        train_end = self.initial_train_size
-        while train_end + self.step_size <= n_samples:
-            test_end = min(train_end + self.step_size, n_samples)
-
-            train_indices = np.arange(0, train_end)
-            test_indices = np.arange(train_end, test_end)
-
-            if len(train_indices) >= self.min_train_size and len(test_indices) > 0:
-                splits.append((train_indices, test_indices))
-
-            train_end += self.step_size
-
-        return splits
 
 
 def create_trainer(

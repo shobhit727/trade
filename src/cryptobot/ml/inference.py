@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """
 Online Inference Pipeline
@@ -6,8 +5,6 @@ Online Inference Pipeline
 Provides production-ready inference with model versioning,
 caching, and A/B testing support.
 """
-
-from __future__ import annotations
 
 import asyncio
 import time
@@ -59,28 +56,28 @@ class InferenceRequest:
     """Inference request."""
     request_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: datetime = field(default_factory=datetime.utcnow)
-    features: npt.NDArray[np.float64] | None = None
-    feature_set: FeatureSet | None = None
-    model_type: str = "ensemble"  # direction, volatility, regime, ensemble
-    version: ModelVersion = ModelVersion.LATEST
+    features: npt.NDArray[np.float64] | None = field(default=None)
+    feature_set: FeatureSet | None = field(default=None)
+    model_type: str = field(default="ensemble")
+    version: ModelVersion = field(default=ModelVersion.LATEST)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class InferenceResponse:
     """Inference response."""
-    request_id: str
+    request_id: str = field(default="")
     timestamp: datetime = field(default_factory=datetime.utcnow)
-    model_type: str
-    version: str
-    predictions: np.ndarray | None = None
-    probabilities: np.ndarray | None = None
-    confidence: np.ndarray | None = None
-    regime: int | None = None
-    volatility: float | None = None
-    latency_ms: float = 0.0
-    cache_hit: bool = False
-    ab_test_group: str = "control"
+    model_type: str = field(default="")
+    version: str = field(default="")
+    predictions: np.ndarray | None = field(default=None)
+    probabilities: np.ndarray | None = field(default=None)
+    confidence: np.ndarray | None = field(default=None)
+    regime: int | None = field(default=None)
+    volatility: float | None = field(default=None)
+    latency_ms: float = field(default=0.0)
+    cache_hit: bool = field(default=False)
+    ab_test_group: str = field(default="control")
 
 
 class ModelCache:

@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """
 Auto-Retraining Pipeline
@@ -6,8 +5,6 @@ Auto-Retraining Pipeline
 Automatically retrains models when data drift is detected.
 Integrates with DriftDetector and WalkForwardTrainer.
 """
-
-from __future__ import annotations
 
 import asyncio
 import time
