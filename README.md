@@ -2,6 +2,8 @@
 
 Elite Quantitative Trading System — Python + Rust
 
+**Latest Release**: v0.1.0 (multi-arch Docker images on GHCR)
+
 ## Quick Start
 
 ```bash
@@ -87,6 +89,8 @@ docker compose --profile test run --rm --build cryptobot-test
 | `docker-build` | multi-arch buildx (amd64 + arm64) |
 | `compose-validate` | compose config validation |
 
+**Release** (`.github/workflows/release.yml`): Tag-driven `v*` → multi-arch build + SBOM + provenance + GHCR push (`latest`, `vX.Y.Z`, `vX.Y.Z-multiarch`).
+
 ## Project Structure
 
 ```
@@ -133,7 +137,6 @@ mypy src
 
 ## Known Issues
 
-- `/health` endpoint not implemented (Docker HEALTHCHECK fails) — see `PROJECT_MEMORY/13_Bug_Tracker.md`
 - In-memory SQLite fallback when `_sqlite3` missing (`B024`)
 - Prometheus metrics optional dependency handled via lazy imports (`B051`)
 
