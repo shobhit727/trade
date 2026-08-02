@@ -2,6 +2,12 @@
 resolver = "2"
 members = [
     "crates/cryptobot-core",
+    "crates/cryptobot-backtest",
+    "crates/cryptobot-features",
+    "crates/cryptobot-risk",
+    "crates/cryptobot-stats",
+    "crates/cryptobot-orderbook",
+    "crates/cryptobot-py",
 ]
 
 [workspace.package]
