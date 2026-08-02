@@ -92,7 +92,8 @@ def test_build_features_returns_shape():
     feature_set = build_features(bars)
     X = feature_set.features
     assert X.ndim == 2
-    assert X.shape[1] == 8
+    # Features: 4 returns + 1 RSI + 3 MACD + 1 ATR + 2 BB + 1 log_vol + 1 vol_ratio + 1 momentum = 14
+    assert X.shape[1] == 14
     assert X.shape[0] > 0
 
 
