@@ -15,6 +15,10 @@ cryptobot-stats = { path = "../cryptobot-stats", features = [] }
 cryptobot-orderbook = { path = "../cryptobot-orderbook", features = [] }
 pyo3 = { version = "0.21", features = ["extension-module", "abi3-py38", "generate-abi3"] }
 
+[lib]
+name = "cryptobot_py"
+crate-type = ["cdylib"]
+
 [dev-dependencies]
 proptest = { workspace = true }
 criterion = { workspace = true }
