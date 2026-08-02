@@ -5,10 +5,9 @@ from decimal import Decimal
 import numpy as np
 
 from cryptobot.backtest.data import load_bars
-from cryptobot.ml.features import build_features, future_returns, features_and_labels
+from cryptobot.ml.features import build_features, features_and_labels, future_returns
 from cryptobot.ml.models.direction import (
     DirectionClassifier,
-    labels_from_returns,
 )
 from cryptobot.ml.online import DriftConfig, DriftDetector, WalkForwardTrainer
 from cryptobot.strategies.funding_arb import (
