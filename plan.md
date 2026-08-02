@@ -1,7 +1,7 @@
 # Cryptobot - Elite Quantitative Trading System
 ## Master Plan & Architecture Document
 
-> **Status**: Active development | **Last Updated**: 2026-08-01 (all tests passing; CI green; Docker multi-arch fixed)
+> **Status**: Active development | **Last Updated**: 2026-08-02 (CI green; release v0.1.0 published; Docker multi-arch images on GHCR)
 > **Context**: Core, backtester, risk, execution, monitoring (no-op fallback + lazy aiohttp, B051 resolved), ML core, live exchange adapter, smart order router, adverse-selection guard, health server, K8s manifests, multi-arch CI, TimescaleDB migrations, YAML-driven strategy registry, **buildable Rust workspace**, **BinanceWSClient fallback warnings** all implemented. Remaining: ML volatility/regime/ensemble models (deferred); integration test fixtures.
 > **Current Python**: 3.14 (Docker base `python:3.14-slim`).
 > **Repository**: `git@github.com:shobhit727/trade.git` (private).
@@ -476,7 +476,7 @@ mkdir -p docker seccomp compose scripts migrations
 - Requirements: `requirements/prod.txt`
 
 ### Current Phase
-**Phase 4/6/8 overlap**: Core infrastructure ✅, Backtester ✅, Strategies 6/6 ✅ (ml_strategy.py created), ML core ✅, Execution ✅, Risk ✅, Monitoring ✅, Live/Compose ✅, K8s ✅. Next: Rust crate implementations, ML volatility/regime/ensemble models.
+**Phase 4/6/8 complete**: Core infrastructure ✅, Backtester ✅, Strategies 6/6 ✅ (ml_strategy.py created), ML core ✅, Execution ✅, Risk ✅, Monitoring ✅, Live/Compose ✅, K8s ✅, **CI/CD green ✅**, **Release v0.1.0 published ✅**. Next: Rust crate implementations, ML volatility/regime/ensemble models.
 
 ### Blockers
 - ~~Rust workspace non-buildable — `Cargo.toml [workspace] members` declared 7, only `cryptobot-core` had a manifest; trim or add per-crate manifests~~ → **resolved 2026-07-31** (workspace trimmed; 6 sibling dirs deleted; `lib.rs` stub + 1 unit test; `cargo build` + `cargo test` clean)

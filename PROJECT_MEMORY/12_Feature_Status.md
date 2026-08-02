@@ -1,6 +1,6 @@
 # 12. Feature Status
 
-> **Last Updated**: 2026-07-31 (audit sync + plan.md align)
+> **Last Updated**: 2026-08-02 (CI green, release v0.1.0 published)
 > **Confidence**: High.
 
 ## Verified module status
