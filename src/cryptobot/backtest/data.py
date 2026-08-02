@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from cryptobot.backtest.runner import OhlcvBar
 
 logger = logging.getLogger(__name__)
@@ -28,6 +30,26 @@ class OhlcvDataset:
 
     def __iter__(self):
         return iter(self.bars)
+
+    @property
+    def close(self) -> np.ndarray:
+        return np.array([bar.close for bar in self.bars], dtype=np.float64)
+
+    @property
+    def high(self) -> np.ndarray:
+        return np.array([bar.high for bar in self.bars], dtype=np.float64)
+
+    @property
+    def low(self) -> np.ndarray:
+        return np.array([bar.low for bar in self.bars], dtype=np.float64)
+
+    @property
+    def volume(self) -> np.ndarray:
+        return np.array([bar.volume for bar in self.bars], dtype=np.float64)
+
+    @property
+    def timestamps(self) -> np.ndarray:
+        return np.array([bar.timestamp for bar in self.bars], dtype=np.datetime64)
 
     def filter_range(
         self,
