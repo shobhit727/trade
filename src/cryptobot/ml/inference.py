@@ -297,13 +297,6 @@ class InferencePipeline:
         else:
             return await asyncio.gather(*[self.predict(r) for r in requests])
 
-    def _select_ab_group(self) -> str:
-        """Select A/B test group."""
-        if not self.config.enable_ab_testing:
-            return "control"
-        # Simple hash-based assignment
-        return "treatment" if (time.time() * 1000) % 100 < (self.config.ab_test_split * 100) else "control"
-
     async def health_check(self) -> dict[str, Any]:
         """Health check for monitoring."""
         return {
