@@ -28,6 +28,7 @@ statrs = { workspace = true }
 polars = { workspace = true }
 arrow = { workspace = true }
 parquet = { workspace = true }
+pyo3 = { version = "0.21", features = ["extension-module", "abi3-py38", "generate-abi3"], optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
@@ -36,4 +37,3 @@ criterion = { workspace = true }
 [features]
 default = []
 python = ["cryptobot-core/python", "pyo3"]
-pyo3 = { version = "0.21", features = ["extension-module", "abi3-py38", "generate-abi3"], optional = true }
