@@ -13,7 +13,6 @@ cryptobot-features = { path = "../cryptobot-features", features = [] }
 cryptobot-risk = { path = "../cryptobot-risk", features = [] }
 cryptobot-stats = { path = "../cryptobot-stats", features = [] }
 cryptobot-orderbook = { path = "../cryptobot-orderbook", features = [] }
-pyo3 = { version = "0.21", features = ["extension-module", "abi3-py38", "generate-abi3"] }
 
 [lib]
 name = "cryptobot_py"
@@ -25,4 +24,5 @@ criterion = { workspace = true }
 
 [features]
 default = []
-# python = ["cryptobot-core/python", "cryptobot-backtest/python", "cryptobot-features/python", "cryptobot-risk/python", "cryptobot-stats/python", "cryptobot-orderbook/python", "pyo3"]
+python = ["cryptobot-core/python", "cryptobot-backtest/python", "cryptobot-features/python", "cryptobot-risk/python", "cryptobot-stats/python", "cryptobot-orderbook/python", "pyo3"]
+pyo3 = { version = "0.20", features = ["extension-module", "abi3-py38", "generate-abi3"], optional = true }
