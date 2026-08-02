@@ -90,7 +90,8 @@ def test_funding_arb_ignores_low_funding():
 def test_build_features_returns_shape():
     bars = load_bars(source="synthetic", symbol="BTCUSDT", timeframe="1h")
     bars.bars = bars.bars[:80]
-    X = build_features(bars)
+    feature_set = build_features(bars)
+    X = feature_set.features
     assert X.ndim == 2
     assert X.shape[1] == 8
     assert X.shape[0] > 0
@@ -100,7 +101,7 @@ def test_future_returns_length_matches_bars():
     bars = load_bars(source="synthetic", symbol="BTCUSDT", timeframe="1h")
     bars.bars = bars.bars[:60]
     out = future_returns(bars.close, horizons=[5])
-    assert len(out) == 60 - 5
+    assert out.shape == (60, 1)
 
 
 def test_direction_classifier_fits_and_predicts():
@@ -131,7 +132,8 @@ def test_direction_classifier_walk_forward_score_returns_float():
 def test_features_and_labels_aligned():
     bars = load_bars(source="synthetic", symbol="BTCUSDT", timeframe="1h")
     bars.bars = bars.bars[:80]
-    X, y = features_and_labels(bars, label_horizons=[3])
+    feature_set, y = features_and_labels(bars, label_horizons=[3])
+    X = feature_set.features
     assert X.shape[0] == y.shape[0]
 
 
