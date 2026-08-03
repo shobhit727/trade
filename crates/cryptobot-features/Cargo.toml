@@ -25,6 +25,7 @@ uuid = { version = "1.6", features = ["v4", "serde", "fast-rng"] }
 rand = { workspace = true }
 rand_distr = { workspace = true }
 statrs = { workspace = true }
+pyo3 = { version = "0.20", features = ["extension-module", "abi3-py38"], optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
@@ -32,3 +33,4 @@ criterion = { workspace = true }
 
 [features]
 default = []
+python = ["pyo3"]

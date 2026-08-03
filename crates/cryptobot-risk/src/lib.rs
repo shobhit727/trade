@@ -1,15 +1,12 @@
 //! Cryptobot Risk Management
-//! 
+//!
 //! Risk math: Kelly criterion, CVaR, HRP portfolio optimization, correlation analysis.
-//! 
-//! Provides high-performance risk calculations for position sizing, portfolio optimization,
-//! and real-time risk monitoring.
 
 pub mod sizing;
-pub mod limits;
 pub mod correlation;
-pub mod kill_switch;
-pub mod portfolio_optimization;
+
+#[cfg(feature = "python")]
+pub mod python_bindings;
 
 #[cfg(test)]
 mod tests {

@@ -1,0 +1,34 @@
+# Build configuration for maturin
+# Build wheels: maturin build --release
+# Develop install: maturin develop --release
+
+[project]
+name = "cryptobot-rs"
+version = "0.1.0"
+description = "Cryptobot Rust performance layer - Python bindings"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+
+[project.urls]
+Homepage = "https://github.com/shobhit727/trade"
+
+# Maturing-specific configuration
+[tool.maturin]
+# Path to Rust crate with PyO3 bindings (workspace member)
+manifest-path = "../Cargo.toml"
+
+# Module name exposed to Python
+module-name = "cryptobot_rs"
+
+# Build all workspace crates with the python feature
+features = ["pyo3/extension-module"]
+
+# Include Python source files in the wheel
+python-source = "python"
+
+# Strip symbols for smaller wheels
+strip = true
+
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
