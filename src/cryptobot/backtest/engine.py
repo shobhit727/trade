@@ -15,6 +15,22 @@ from cryptobot.core.state import Position
 logger = logging.getLogger(__name__)
 
 
+def _periods_per_year(equity_curve: list[tuple[datetime, Decimal]]) -> int:
+    """Estimate periods per year from equity curve timestamps."""
+    if len(equity_curve) < 2:
+        return 252  # default to daily
+    intervals = []
+    for i in range(1, len(equity_curve)):
+        delta = equity_curve[i][0] - equity_curve[i - 1][0]
+        intervals.append(delta.total_seconds())
+    if not intervals:
+        return 252
+    avg_interval = sum(intervals) / len(intervals)
+    # 1 year = 365.25 days = 31557600 seconds
+    periods = 31557600 / max(avg_interval, 1)
+    return max(int(round(periods)), 1)
+
+
 @dataclass
 class BacktestResult:
     """Result of a backtest run."""
@@ -156,10 +172,20 @@ class BacktestEngine:
 
         if returns:
             mean_ret = sum(returns) / len(returns)
-            std_ret = (sum((r - mean_ret) ** 2 for r in returns) / len(returns)) ** 0.5
-            sharpe = Decimal(str(mean_ret / std_ret * (252 ** 0.5))) if std_ret > 0 else Decimal("0")
+            std_ret = (sum((r - mean_ret) ** 2 for r in returns) / max(len(returns) - 1, 1)) ** 0.5
+            periods = _periods_per_year(equity_curve)
+            sharpe = Decimal(str(mean_ret / std_ret * (periods ** 0.5))) if std_ret > 0 else Decimal("0")
+
+            # Calculate Sortino ratio
+            negative_returns = [r for r in returns if r < 0]
+            if negative_returns:
+                downside_vol = (sum(r ** 2 for r in negative_returns) / max(len(negative_returns) - 1, 1)) ** 0.5
+                sortino = Decimal(str(mean_ret / downside_vol * (periods ** 0.5))) if downside_vol > 0 else Decimal("0")
+            else:
+                sortino = Decimal("0")
         else:
             sharpe = Decimal("0")
+            sortino = Decimal("0")
 
         # Calculate win rate and profit factor
         winning_trades = [t for t in self._trades if t.pnl > 0]
@@ -198,7 +224,7 @@ class BacktestEngine:
             total_return=total_return,
             max_drawdown=max_dd,
             Sharpe_ratio=sharpe,
-            Sortino_ratio=Decimal("0"),
+            Sortino_ratio=sortino,
             win_rate=win_rate,
             profit_factor=profit_factor,
             total_trades=len(self._trades),

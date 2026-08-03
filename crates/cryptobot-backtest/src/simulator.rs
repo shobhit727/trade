@@ -28,9 +28,15 @@ impl FillSimulator {
     pub fn simulate_fill(&self, symbol: &str, side: &str, quantity: f64, mid_price: f64) -> Fill {
         let qty = Decimal::from_f64_retain(quantity).unwrap_or_default();
         let price = Decimal::from_f64_retain(mid_price).unwrap_or_default();
-        let slippage = price * Decimal::from_f64_retain(self.slippage_bps / 10000.0).unwrap_or_default();
-        let fill_price = if side == "BUY" { price + slippage } else { price - slippage };
-        let commission = fill_price * qty
+        let slippage =
+            price * Decimal::from_f64_retain(self.slippage_bps / 10000.0).unwrap_or_default();
+        let fill_price = if side == "BUY" {
+            price + slippage
+        } else {
+            price - slippage
+        };
+        let commission = fill_price
+            * qty
             * Decimal::from_f64_retain(self.commission_bps / 10000.0).unwrap_or_default();
         Fill {
             timestamp: chrono::Utc::now().timestamp_millis(),

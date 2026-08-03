@@ -2,10 +2,10 @@
 //!
 //! High-performance feature computation for ML models.
 
-pub mod returns;
-pub mod volatility;
-pub mod trend;
 pub mod mean_reversion;
+pub mod returns;
+pub mod trend;
+pub mod volatility;
 
 #[cfg(feature = "python")]
 pub mod python_bindings;

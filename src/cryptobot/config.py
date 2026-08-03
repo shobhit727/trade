@@ -171,12 +171,7 @@ class Settings(BaseSettings):
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Settings":
-        with open(path) as f:
-            data = yaml.safe_load(f) or {}
-        return cls(**_flatten_yaml(data))
-
-    @classmethod
-    def from_yaml_safe(cls, path: str | Path) -> "Settings":
+        """Load settings from a YAML file (yaml.safe_load is used internally)."""
         with open(path) as f:
             data = yaml.safe_load(f) or {}
         return cls(**_flatten_yaml(data))
@@ -264,7 +259,12 @@ def _flatten_yaml(data: dict[str, Any]) -> dict[str, Any]:
 
 @lru_cache
 def get_settings() -> Settings:
-    config_path = Path(__file__).parent.parent.parent / "configs" / "base.yaml"
+    import os
+    config_path_str = os.environ.get("CRYPTOBOT_CONFIG")
+    if config_path_str:
+        config_path = Path(config_path_str)
+    else:
+        config_path = Path(__file__).parent.parent.parent / "configs" / "base.yaml"
     if config_path.exists():
         return Settings.from_yaml(config_path)
     return Settings()

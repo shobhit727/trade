@@ -4,7 +4,7 @@ import json
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -21,6 +21,10 @@ from cryptobot.core.events import (
     PositionSide,
     TimeInForce,
 )
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 try:
     import sqlite3
@@ -49,8 +53,8 @@ class Order:
     reduce_only: bool = False
     position_side: PositionSide = PositionSide.BOTH
     strategy: str = ""
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=_utcnow)
+    updated_at: datetime = field(default_factory=_utcnow)
 
     def to_event(self) -> OrderEvent:
         return OrderEvent(
@@ -111,8 +115,8 @@ class Position:
     isolated_margin: Decimal = Decimal("0")
     liquidation_price: Decimal | None = None
     strategy: str = ""
-    opened_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    opened_at: datetime = field(default_factory=_utcnow)
+    updated_at: datetime = field(default_factory=_utcnow)
 
     def to_event(self) -> PositionEvent:
         return PositionEvent(
@@ -159,7 +163,7 @@ class AccountState:
     daily_pnl: Decimal = Decimal("0")
     max_drawdown: Decimal = Decimal("0")
     peak_equity: Decimal = Decimal("0")
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    updated_at: datetime = field(default_factory=_utcnow)
 
     def to_event(self) -> PnLEvent:
         return PnLEvent(
@@ -359,7 +363,7 @@ class StateManager:
                 self._daily_pnl_start = self._account.total_equity - self._account.daily_pnl
 
     def save_order(self, order: Order):
-        order.updated_at = datetime.utcnow()
+        order.updated_at = _utcnow()
         self._orders[order.order_id] = order
         if sqlite3 is None:
             return
@@ -377,7 +381,7 @@ class StateManager:
             ))
 
     def save_position(self, position: Position):
-        position.updated_at = datetime.utcnow()
+        position.updated_at = _utcnow()
         self._positions[position.symbol] = position
         if sqlite3 is None:
             return
@@ -395,7 +399,7 @@ class StateManager:
             ))
 
     def save_account(self):
-        self._account.updated_at = datetime.utcnow()
+        self._account.updated_at = _utcnow()
         if sqlite3 is None:
             return
         with self._get_conn() as conn:

@@ -46,7 +46,7 @@ def test_settings_from_yaml_real_config_file():
     yaml_path = root / "configs" / "base.yaml"
     if not yaml_path.exists():
         return
-    s = Settings.from_yaml_safe(yaml_path)
+    s = Settings.from_yaml(yaml_path)
     assert s.exchange.symbols == [
         "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT",
         "XRPUSDT", "ADAUSDT", "DOGEUSDT", "AVAXUSDT",

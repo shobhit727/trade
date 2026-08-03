@@ -1,9 +1,13 @@
 //! deflated_sharpe
 
-pub fn placeholder() -> f64 { 1.0 }
+pub fn placeholder() -> f64 {
+    1.0
+}
 
 #[cfg(test)]
 mod tests {
     #[test]
-    fn placeholder() { assert_eq!(2+2, 4); }
+    fn placeholder() {
+        assert_eq!(2 + 2, 4);
+    }
 }

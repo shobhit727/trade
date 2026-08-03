@@ -6,11 +6,15 @@ from collections import defaultdict, deque
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
 from cryptobot.core.events import Event, EventType
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 class EventBusMode(StrEnum):
@@ -26,7 +30,7 @@ class Subscription:
     async_callback: Callable[[Event], Any] | None = None
     wildcard: bool = False
     filter_fn: Callable[[Event], bool] | None = None
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=_utcnow)
     event_count: int = 0
 
 

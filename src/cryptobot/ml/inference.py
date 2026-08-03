@@ -10,7 +10,7 @@ import asyncio
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -21,6 +21,10 @@ from cryptobot.ml.features import FeatureSet
 from cryptobot.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 class InferenceMode(StrEnum):
@@ -55,7 +59,7 @@ class InferenceConfig:
 class InferenceRequest:
     """Inference request."""
     request_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=_utcnow)
     features: npt.NDArray[np.float64] | None = field(default=None)
     feature_set: FeatureSet | None = field(default=None)
     model_type: str = field(default="ensemble")
@@ -67,7 +71,7 @@ class InferenceRequest:
 class InferenceResponse:
     """Inference response."""
     request_id: str = field(default="")
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=_utcnow)
     model_type: str = field(default="")
     version: str = field(default="")
     predictions: np.ndarray | None = field(default=None)
@@ -126,7 +130,7 @@ class ModelRegistry:
                 self._models[model_type] = {}
             self._models[model_type][version] = {
                 "model": model,
-                "registered_at": datetime.utcnow(),
+                "registered_at": _utcnow(),
                 "metadata": metadata or {},
             }
             logger.info(f"Registered {model_type} v{version}")

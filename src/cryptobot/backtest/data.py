@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +12,10 @@ import numpy as np
 from cryptobot.backtest.runner import OhlcvBar
 
 logger = logging.getLogger(__name__)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 REQUIRED_COLUMNS = ("timestamp", "open", "high", "low", "close")
@@ -170,7 +174,7 @@ async def load_timescale(
         logger.debug("timescale loader unavailable: %s", exc)
         return OhlcvDataset(bars=[], symbol=symbol, source="timescale")
 
-    end = end or datetime.utcnow()
+    end = end or _utcnow()
     start = start or (end - timedelta(days=30))
     try:
         store = init_storage(settings or _default_settings())

@@ -10,11 +10,11 @@
 
 use pyo3::prelude::*;
 
+mod backtest;
 /// Re-export submodule bindings
 mod features;
-mod risk;
 mod orderbook;
-mod backtest;
+mod risk;
 
 #[pymodule]
 fn cryptobot_py(m: &Bound<'_, PyModule>) -> PyResult<()> {

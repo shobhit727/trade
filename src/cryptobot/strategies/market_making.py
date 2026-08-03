@@ -101,7 +101,7 @@ class MarketMakingStrategy:
         bid_f, ask_f = self._avellaneda_stoikov(float(mid), t_remaining)
         return Decimal(str(round(bid_f, 8))), Decimal(str(round(ask_f, 8)))
 
-    async def on_book_update(
+    def on_book_update(
         self,
         bid: Decimal,
         ask: Decimal,

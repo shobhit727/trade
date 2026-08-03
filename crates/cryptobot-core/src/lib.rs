@@ -1,12 +1,12 @@
 //! Cryptobot core: shared types, events, math, time primitives.
 
-pub mod types;
 pub mod math;
 pub mod time;
+pub mod types;
 
-pub use types::*;
 pub use math::*;
 pub use time::*;
+pub use types::*;
 
 pub fn placeholder() -> &'static str {
     "cryptobot-core"

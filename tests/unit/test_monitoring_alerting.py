@@ -7,7 +7,7 @@ requiring real Telegram/Discord/Email channels.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -42,7 +42,7 @@ def _alert(severity: AlertSeverity = AlertSeverity.WARNING, category: AlertCateg
         severity=severity,
         category=category,
         source="test",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(UTC),
     )
 
 

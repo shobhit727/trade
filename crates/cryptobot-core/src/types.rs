@@ -15,13 +15,7 @@ pub struct OhlcvBar {
 }
 
 impl OhlcvBar {
-    pub fn new(
-        open: f64,
-        high: f64,
-        low: f64,
-        close: f64,
-        volume: f64,
-    ) -> Self {
+    pub fn new(open: f64, high: f64, low: f64, close: f64, volume: f64) -> Self {
         Self {
             timestamp: Utc::now(),
             open: Decimal::from_f64_retain(open).unwrap_or_default(),

@@ -10,7 +10,7 @@ import asyncio
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
@@ -21,6 +21,10 @@ from cryptobot.ml.online import DriftConfig, DriftDetector
 from cryptobot.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 class RetrainTrigger(StrEnum):
@@ -187,7 +191,7 @@ class AutoRetrainer:
             # Check cooldown
             last_retrain = self._last_retrain.get(model_type)
             if last_retrain:
-                elapsed = datetime.utcnow() - last_retrain
+                elapsed = _utcnow() - last_retrain
                 if elapsed < timedelta(hours=self.config.min_retrain_interval_hours):
                     logger.info(f"Retrain skipped for {model_type}: cooldown active")
                     return False
@@ -196,7 +200,7 @@ class AutoRetrainer:
                 today_retrains = sum(
                     1 for e in self._retrain_history
                     if e.model_type == model_type
-                    and e.timestamp > datetime.utcnow() - timedelta(days=1)
+                    and e.timestamp > _utcnow() - timedelta(days=1)
                 )
                 if today_retrains >= self.config.max_retrain_frequency_per_day:
                     logger.info(f"Retrain skipped for {model_type}: daily limit reached")
@@ -205,7 +209,7 @@ class AutoRetrainer:
         start_time = time.perf_counter()
         event = RetrainEvent(
             trigger=trigger.value,
-            timestamp=datetime.utcnow(),
+            timestamp=_utcnow(),
             model_type=model_type,
             old_performance=0.0,  # Would be filled from monitoring
         )
@@ -218,10 +222,10 @@ class AutoRetrainer:
             event.success = True
             event.new_performance = 0.55  # Placeholder
             event.duration_seconds = time.perf_counter() - start_time
-            event.model_version = f"v{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+            event.model_version = f"v{_utcnow().strftime('%Y%m%d%H%M%S')}"
 
             async with self._lock:
-                self._last_retrain[model_type] = datetime.utcnow()
+                self._last_retrain[model_type] = _utcnow()
                 self._retrain_history.append(event)
 
             if self.on_retrain_callback:
@@ -285,7 +289,7 @@ class AutoRetrainer:
             "retrain_count_24h": {
                 mt: sum(1 for e in self._retrain_history
                        if e.model_type == mt
-                       and e.timestamp > datetime.utcnow() - timedelta(hours=24))
+                       and e.timestamp > _utcnow() - timedelta(hours=24))
                 for mt in set(e.model_type for e in self._retrain_history)
             },
             "recent_events": [
@@ -329,7 +333,7 @@ class RetrainScheduler:
 
     async def _run(self) -> None:
         while self._running:
-            now = datetime.utcnow()
+            now = _utcnow()
             for model_type, cron_expr in self.schedule.items():
                 if self._should_run(now, cron_expr):
                     await self.auto_retrainer.trigger_retrain(

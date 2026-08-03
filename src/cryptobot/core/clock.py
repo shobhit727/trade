@@ -4,10 +4,15 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
 logger = logging.getLogger(__name__)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
+
 
 class ClockMode(StrEnum):
     REALTIME = "realtime"
@@ -57,7 +62,7 @@ class RealtimeClock(Clock):
         return self._mode
 
     def now(self) -> datetime:
-        return datetime.utcnow()
+        return _utcnow()
 
     async def sleep(self, seconds: float):
         await asyncio.sleep(seconds)
@@ -210,7 +215,7 @@ class AcceleratedClock(Clock):
         self._timezone = timezone
         self._mode = ClockMode.ACCELERATED
         self._start_wall = time.monotonic()
-        self._start_sim = datetime.utcnow()
+        self._start_sim = _utcnow()
 
     @property
     def mode(self) -> ClockMode:
@@ -243,7 +248,7 @@ class ClockFactory:
         if config.mode == ClockMode.REALTIME:
             return RealtimeClock(timezone=config.timezone)
         elif config.mode == ClockMode.SIMULATED:
-            start = config.start_time or datetime.utcnow()
+            start = config.start_time or _utcnow()
             return SimulatedClock(
                 start_time=start,
                 end_time=config.end_time,

@@ -163,14 +163,14 @@ Runs in separate `docker-manifest` job AFTER `docker-build` completes (both plat
 ### Environment Variables
 ```yaml
 env:
-  PYTHON_TAG: "3.14-slim"    # Docker base image
+  PYTHON_TAG: "3.13-slim"    # Docker base image
   CI_PYTHON: "3.13"          # Python version for CI (runners)
   REGISTRY_IMAGE: ghcr.io/${{ github.repository }}
 ```
 
 ### Python Version
 - **CI**: 3.13 (runners)
-- **Docker**: 3.14-slim (bleeding edge for prod)
+- **Docker**: 3.13-slim
 - **Local**: 3.13+ recommended
 
 ### Rust Toolchain
@@ -238,6 +238,9 @@ git tag v0.1.0 && git push origin v0.1.0
 
 # Debug in container
 make compose-shell
+
+# Rust workspace
+make cargo-lint && make cargo-test && make cargo-build
 ```
 
 ---

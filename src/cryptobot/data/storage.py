@@ -4,7 +4,7 @@ import asyncio
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -14,6 +14,10 @@ if TYPE_CHECKING:
     import asyncpg
 
 from cryptobot.config import settings
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 @dataclass
@@ -252,7 +256,7 @@ class TimescaleDBStorage(StorageBackend):
         """
         records = [
             (
-                t.get("timestamp", datetime.utcnow()), t["symbol"],
+                t.get("timestamp", _utcnow()), t["symbol"],
                 str(t["price"]), str(t.get("bid", 0)), str(t.get("ask", 0)),
                 str(t.get("bid_qty", 0)), str(t.get("ask_qty", 0)),
                 str(t.get("high_24h", 0)), str(t.get("low_24h", 0)),
@@ -273,7 +277,7 @@ class TimescaleDBStorage(StorageBackend):
         """
         records = [
             (
-                t.get("timestamp", datetime.utcnow()), t["symbol"], t["trade_id"],
+                t.get("timestamp", _utcnow()), t["symbol"], t["trade_id"],
                 str(t["price"]), str(t["quantity"]), t["side"], t.get("is_maker", False)
             )
             for t in trades
@@ -295,7 +299,7 @@ class TimescaleDBStorage(StorageBackend):
         """
         records = [
             (
-                r.get("timestamp", datetime.utcnow()), r["symbol"],
+                r.get("timestamp", _utcnow()), r["symbol"],
                 r["funding_rate"], str(r["mark_price"]), str(r["index_price"]),
                 r["next_funding_time"]
             )
@@ -378,7 +382,7 @@ class ParquetStorage(StorageBackend):
             return
 
         df = pd.DataFrame(buffer)
-        df["date"] = pd.to_datetime(df.get("open_time", df.get("time", datetime.utcnow())))
+        df["date"] = pd.to_datetime(df.get("open_time", df.get("time", _utcnow())))
         df["year"] = df["date"].dt.year
         df["month"] = df["date"].dt.month
 
@@ -672,7 +676,7 @@ class HybridStorage(StorageBackend):
         end: datetime,
     ) -> pd.DataFrame:
         # Recent data (last 30 days) from TimescaleDB, older from Parquet
-        cutoff = datetime.utcnow() - timedelta(days=30)
+        cutoff = _utcnow() - timedelta(days=30)
         if start >= cutoff:
             return await self.tsdb.read_klines(symbol, timeframe, start, end)
         elif end <= cutoff:
@@ -689,7 +693,7 @@ class HybridStorage(StorageBackend):
         start: datetime,
         end: datetime,
     ) -> pd.DataFrame:
-        cutoff = datetime.utcnow() - timedelta(days=7)
+        cutoff = _utcnow() - timedelta(days=7)
         if start >= cutoff:
             return await self.tsdb.read_tickers(symbol, start, end)
         elif end <= cutoff:

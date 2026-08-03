@@ -13,7 +13,7 @@ import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -22,6 +22,10 @@ from cryptobot.core.events import EventType
 from cryptobot.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 class HealthStatus(StrEnum):
@@ -77,7 +81,7 @@ class HealthResult:
     check_name: str
     component: ComponentType
     status: HealthStatus
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=_utcnow)
     latency_ms: float = 0.0
     message: str = ""
     details: dict[str, Any] = field(default_factory=dict)
@@ -151,7 +155,7 @@ class HealthMonitor:
             self._component_health[check.component] = ComponentHealth(
                 component=check.component,
                 status=HealthStatus.UNKNOWN,
-                uptime_start=datetime.utcnow(),
+                uptime_start=_utcnow(),
             )
 
     def register_checker(self, checker: HealthChecker):
@@ -205,7 +209,7 @@ class HealthMonitor:
             try:
                 await self.run_all_checks()
             except Exception as e:
-                logger.error(f"Health monitor error: {e}")
+                logger.error("Health monitor error: %s", e)
             await asyncio.sleep(self.check_interval)
 
     async def run_all_checks(self) -> dict[ComponentType, ComponentHealth]:
@@ -221,10 +225,10 @@ class HealthMonitor:
                     result = await checker.check()
                     await self._process_result(result)
                 except Exception as e:
-                    logger.error(f"Checker {checker.component_type} error: {e}")
+                    logger.error("Checker %s error: %s", checker.component_type, e)
 
             # Update component statuses
-            self._update_component_statuses()
+            await self._update_component_statuses()
 
         return self._component_health.copy()
 
@@ -281,7 +285,7 @@ class HealthMonitor:
             comp_health = ComponentHealth(
                 component=result.component,
                 status=HealthStatus.UNKNOWN,
-                uptime_start=datetime.utcnow(),
+                uptime_start=_utcnow(),
             )
             self._component_health[result.component] = comp_health
 
@@ -308,7 +312,7 @@ class HealthMonitor:
                 }
             )
 
-    def _update_component_statuses(self):
+    async def _update_component_statuses(self):
         """Update aggregated component statuses."""
         for component, health in self._component_health.items():
             old_status = health.status
@@ -354,11 +358,11 @@ class HealthMonitor:
                     try:
                         callback(component, old_status, health.status)
                     except Exception as e:
-                        logger.error(f"Status change callback error: {e}")
+                        logger.error("Status change callback error: %s", e)
 
                 # Publish status change event
                 if self._event_bus:
-                    asyncio.create_task(self._event_bus.publish(
+                    await self._event_bus.publish(
                         EventType.HEARTBEAT,
                         {
                             "type": "status_change",
@@ -366,7 +370,7 @@ class HealthMonitor:
                             "old_status": old_status.value,
                             "new_status": health.status.value,
                         }
-                    ))
+                    )
 
     def get_component_health(self, component: ComponentType) -> ComponentHealth | None:
         """Get health for a specific component."""
@@ -401,7 +405,7 @@ class HealthMonitor:
         overall = self.get_overall_status()
         return {
             "overall_status": overall.value,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _utcnow().isoformat(),
             "components": {
                 comp.value: {
                     "status": health.status.value,
@@ -409,7 +413,7 @@ class HealthMonitor:
                     "total_checks": health.total_checks,
                     "failed_checks": health.failed_checks,
                     "last_check": health.last_check.isoformat() if health.last_check else None,
-                    "uptime_seconds": (datetime.utcnow() - health.uptime_start).total_seconds() if health.uptime_start else 0,
+                    "uptime_seconds": (_utcnow() - health.uptime_start).total_seconds() if health.uptime_start else 0,
                 }
                 for comp, health in self._component_health.items()
             },
@@ -476,7 +480,7 @@ class DataFeedHealthChecker(HealthChecker):
             for symbol in symbols:
                 ticker = self.manager.get_ticker(symbol)
                 if ticker:
-                    age = (datetime.utcnow() - ticker.timestamp).total_seconds()
+                    age = (_utcnow() - ticker.timestamp).total_seconds()
                     staleness[symbol] = age
 
             max_staleness = max(staleness.values()) if staleness else 0
@@ -770,7 +774,7 @@ async def _check_data_freshness(manager: Any):
     for symbol in symbols:
         ticker = manager.get_ticker(symbol)
         if ticker:
-            age = (datetime.utcnow() - ticker.timestamp).total_seconds()
+            age = (_utcnow() - ticker.timestamp).total_seconds()
             max_age = max(max_age, age)
 
     if max_age > 60:

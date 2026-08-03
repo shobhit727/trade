@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from cryptobot.core.clock import Clock
 from cryptobot.core.events import OrderEvent
 from cryptobot.utils.types import OrderBook
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 @dataclass
@@ -120,7 +124,7 @@ class FillSimulator:
             funding_payment = fill_quantity * funding_rate
 
         # Calculate fill time
-        fill_time = clock.current_time if clock else datetime.utcnow()
+        fill_time = clock.current_time if clock else _utcnow()
 
         return FillResult(
             fill_price=fill_price,

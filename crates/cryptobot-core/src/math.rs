@@ -48,10 +48,7 @@ pub fn rolling_mean(values: &[f64], window: usize) -> Vec<f64> {
     if window == 0 || values.is_empty() {
         return vec![];
     }
-    values
-        .windows(window)
-        .map(|w| mean(w))
-        .collect()
+    values.windows(window).map(|w| mean(w)).collect()
 }
 
 pub fn rolling_std(values: &[f64], window: usize) -> Vec<f64> {

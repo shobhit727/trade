@@ -3,9 +3,13 @@ from __future__ import annotations
 import html
 from collections import Counter
 from collections.abc import Iterable, Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from math import sqrt
 from typing import Any
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 def equity_curve_from_trades(
@@ -13,7 +17,7 @@ def equity_curve_from_trades(
     trades: Sequence[tuple[datetime, float]],
 ) -> list[tuple[datetime, float]]:
     if not trades:
-        return [(datetime.utcnow(), initial_capital)]
+        return [(_utcnow(), initial_capital)]
     series: list[tuple[datetime, float]] = [(trades[0][0], initial_capital + trades[0][1])]
     for i in range(1, len(trades)):
         ts, pnl = trades[i]

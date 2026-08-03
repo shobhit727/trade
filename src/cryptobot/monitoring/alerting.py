@@ -12,7 +12,7 @@ import smtplib
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from enum import StrEnum
@@ -22,6 +22,10 @@ from cryptobot.config import settings
 from cryptobot.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 class AlertSeverity(StrEnum):
@@ -43,7 +47,7 @@ class AlertCategory(StrEnum):
 @dataclass
 class Alert:
     """Alert message with metadata."""
-    id: str = field(default_factory=lambda: f"alert_{datetime.utcnow().timestamp()}")
+    id: str = field(default_factory=lambda: f"alert_{_utcnow().timestamp()}")
     title: str = ""
     message: str = ""
     severity: AlertSeverity = AlertSeverity.INFO
@@ -51,7 +55,7 @@ class Alert:
     source: str = ""
     labels: dict[str, str] = field(default_factory=dict)
     annotations: dict[str, str] = field(default_factory=dict)
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=_utcnow)
     fingerprint: str = ""
     resolved: bool = False
     resolved_at: datetime | None = None
@@ -399,7 +403,7 @@ class AlertManager:
         if last_sent:
             for rule in self.rules:
                 if self._match_rule(alert, rule):
-                    if datetime.utcnow() - last_sent < rule.cooldown:
+                    if _utcnow() - last_sent < rule.cooldown:
                         return True
         return False
 
@@ -441,7 +445,7 @@ class AlertManager:
                 logger.error(f"Channel {channel.get_name()} error: {e}")
 
         if sent_count > 0:
-            self._cooldowns[alert.fingerprint] = datetime.utcnow()
+            self._cooldowns[alert.fingerprint] = _utcnow()
 
         return sent_count
 
@@ -452,7 +456,7 @@ class AlertManager:
             if not existing:
                 return 0
             existing.resolved = True
-            existing.resolved_at = datetime.utcnow()
+            existing.resolved_at = _utcnow()
             alert = existing
 
         # Send resolution notifications
@@ -514,7 +518,7 @@ class AlertManager:
 
     async def _cleanup(self):
         """Clean up old cooldowns and auto-resolve stale alerts."""
-        now = datetime.utcnow()
+        now = _utcnow()
 
         # Clean cooldowns older than 1 hour
         self._cooldowns = {

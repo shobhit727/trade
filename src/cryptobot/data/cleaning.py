@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
 import pandas as pd
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 class DataQualityIssue(StrEnum):
@@ -181,8 +185,8 @@ class DataCleaner:
         report = QualityReport(
             symbol=symbol,
             timeframe="tick",
-            start=df["time"].min() if not df.empty and "time" in df.columns else datetime.utcnow(),
-            end=df["time"].max() if not df.empty and "time" in df.columns else datetime.utcnow(),
+            start=df["time"].min() if not df.empty and "time" in df.columns else _utcnow(),
+            end=df["time"].max() if not df.empty and "time" in df.columns else _utcnow(),
             total_rows=len(df),
         )
 
@@ -225,8 +229,8 @@ class DataCleaner:
         report = QualityReport(
             symbol=symbol,
             timeframe="trade",
-            start=df["time"].min() if not df.empty and "time" in df.columns else datetime.utcnow(),
-            end=df["time"].max() if not df.empty and "time" in df.columns else datetime.utcnow(),
+            start=df["time"].min() if not df.empty and "time" in df.columns else _utcnow(),
+            end=df["time"].max() if not df.empty and "time" in df.columns else _utcnow(),
             total_rows=len(df),
         )
 
@@ -362,8 +366,8 @@ class DataCleaner:
         report = QualityReport(
             symbol=symbol,
             timeframe="cross_val",
-            start=datetime.utcnow(),
-            end=datetime.utcnow(),
+            start=_utcnow(),
+            end=_utcnow(),
             total_rows=0,
         )
 

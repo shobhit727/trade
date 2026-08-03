@@ -3,6 +3,7 @@ Utility decorators for resilience, timeouts, and circuit breaking.
 """
 
 import asyncio
+import inspect
 import logging
 import random
 from collections.abc import Callable
@@ -78,7 +79,7 @@ def retry(
                     time.sleep(sleep_time)
             raise last_exception
 
-        if asyncio.iscoroutinefunction(func):
+        if inspect.iscoroutinefunction(func):
             return async_wrapper
         return sync_wrapper
 
@@ -149,7 +150,7 @@ class CircuitBreaker:
                     raise CircuitBreakerOpenError(f"Circuit breaker OPEN for {func.__name__}")
 
         try:
-            if asyncio.iscoroutinefunction(func):
+            if inspect.iscoroutinefunction(func):
                 result = await func(*args, **kwargs)
             else:
                 result = func(*args, **kwargs)
@@ -237,7 +238,7 @@ def circuit_breaker(
                 )
             return asyncio.run(breaker.call(func, *args, **kwargs))
 
-        if asyncio.iscoroutinefunction(func):
+        if inspect.iscoroutinefunction(func):
             return async_wrapper
         return sync_wrapper
 

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 from uuid import uuid4
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 class EventType(StrEnum):
@@ -117,7 +121,7 @@ class PositionSide(StrEnum):
 class Event:
     id: str = field(default_factory=lambda: str(uuid4()))
     type: EventType = EventType.ERROR
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=_utcnow)
     source: str = ""
     correlation_id: str = ""
     payload: dict[str, Any] = field(default_factory=dict)
@@ -179,7 +183,7 @@ class OrderBookEvent(Event):
     bids: list[tuple[Decimal, Decimal]] = field(default_factory=list)
     asks: list[tuple[Decimal, Decimal]] = field(default_factory=list)
     sequence: int = 0
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=_utcnow)
 
     def __post_init__(self):
         self.type = EventType.ORDERBOOK
@@ -219,7 +223,7 @@ class TradeEvent(Event):
     quantity: Decimal = Decimal("0")
     side: OrderSide = OrderSide.BUY
     is_maker: bool = False
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=_utcnow)
 
     def __post_init__(self):
         self.type = EventType.TRADE
@@ -237,8 +241,8 @@ class TradeEvent(Event):
 class KlineEvent(Event):
     symbol: str = ""
     interval: str = ""
-    open_time: datetime = field(default_factory=datetime.utcnow)
-    close_time: datetime = field(default_factory=datetime.utcnow)
+    open_time: datetime = field(default_factory=_utcnow)
+    close_time: datetime = field(default_factory=_utcnow)
     open_price: Decimal = Decimal("0")
     high_price: Decimal = Decimal("0")
     low_price: Decimal = Decimal("0")
@@ -270,7 +274,7 @@ class FundingRateEvent(Event):
     funding_rate: float = 0.0
     mark_price: Decimal = Decimal("0")
     index_price: Decimal = Decimal("0")
-    next_funding_time: datetime = field(default_factory=datetime.utcnow)
+    next_funding_time: datetime = field(default_factory=_utcnow)
 
     def __post_init__(self):
         self.type = EventType.FUNDING_RATE
@@ -358,7 +362,7 @@ class OrderEvent(Event):
         }
 
     def to_dict(self) -> dict[str, Any]:
-        return dict(self.payload)
+        return {**super().to_dict(), **self.payload}
 
 
 @dataclass
@@ -505,21 +509,32 @@ def create_event(event_type: EventType, **kwargs) -> Event:
         EventType.SIGNAL: SignalEvent,
         EventType.SIGNAL_ENTRY: SignalEvent,
         EventType.SIGNAL_EXIT: SignalEvent,
+        EventType.SIGNAL_SCALE_IN: SignalEvent,
+        EventType.SIGNAL_SCALE_OUT: SignalEvent,
+        EventType.SIGNAL_HEDGE: SignalEvent,
         EventType.ORDER_NEW: OrderEvent,
         EventType.ORDER_ACK: OrderEvent,
+        EventType.ORDER_PARTIAL: OrderEvent,
         EventType.ORDER_FILLED: OrderEvent,
         EventType.ORDER_CANCELLED: OrderEvent,
         EventType.ORDER_REJECTED: OrderEvent,
+        EventType.ORDER_EXPIRED: OrderEvent,
         EventType.POSITION_OPEN: PositionEvent,
         EventType.POSITION_UPDATE: PositionEvent,
         EventType.POSITION_CLOSE: PositionEvent,
+        EventType.POSITION_LIQUIDATED: PositionEvent,
         EventType.PNL_UPDATE: PnLEvent,
+        EventType.PNL_REALIZED: PnLEvent,
+        EventType.PNL_UNREALIZED: PnLEvent,
         EventType.RISK_CHECK: RiskEvent,
         EventType.RISK_APPROVED: RiskEvent,
         EventType.RISK_REJECTED: RiskEvent,
+        EventType.RISK_WARNING: RiskEvent,
         EventType.KILL_SWITCH: KillSwitchEvent,
         EventType.HEARTBEAT: HeartbeatEvent,
         EventType.ERROR: ErrorEvent,
     }
-    cls = event_map.get(event_type, Event)
+    cls = event_map.get(event_type)
+    if cls is None:
+        raise ValueError(f"No event class registered for EventType {event_type!r}")
     return cls(type=event_type, **kwargs)

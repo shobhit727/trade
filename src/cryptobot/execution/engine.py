@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from uuid import uuid4
 
@@ -11,6 +12,8 @@ from cryptobot.execution.venue.base import Venue
 from cryptobot.execution.venue.simulated import SimulatedVenue
 from cryptobot.risk.manager import RiskManager, get_risk_manager
 
+logger = logging.getLogger(__name__)
+
 
 def build_venue(mode: str | None = None) -> Venue:
     mode = (mode or settings.execution.mode or "paper").lower()
@@ -20,8 +23,12 @@ def build_venue(mode: str | None = None) -> Venue:
         try:
             from cryptobot.execution.venue.binance import BinanceVenue
             return BinanceVenue()
-        except Exception:
+        except ImportError as e:
+            logger.warning(f"BinanceVenue unavailable (missing ccxt?): {e}; falling back to SimulatedVenue")
             return SimulatedVenue()
+        except Exception as e:
+            logger.error(f"BinanceVenue initialization failed: {e}; re-raising for live mode")
+            raise
     return SimulatedVenue()
 
 
@@ -63,25 +70,8 @@ class ExecutionEngine:
             ))
             return order
 
-        if self.router is not None and len(self.router.venues) > 1:
-            routed = await self.router.route(order)
-            for child in routed.children:
-                self.orders[child.order_id] = child
-            first_fill = routed.fills[0] if routed.fills else None
-            if first_fill is None:
-                order.status = OrderStatus.REJECTED
-                order.__post_init__()
-                self.orders[order.order_id] = order
-                await self.event_bus.publish(Event(
-                    type=EventType.ORDER_REJECTED,
-                    source=order.strategy,
-                    correlation_id=order.order_id,
-                    payload={"reason": "smart router found no fill", "check_type": "routing"},
-                ))
-                return order
-            self.orders[first_fill.order_id] = first_fill
-            await self.event_bus.publish(Event(type=EventType.ORDER_FILLED, payload=first_fill.payload))
-            return first_fill
+        # SmartOrderRouter is not yet wired; this branch is dead code and removed
+        # if self.router is not None and len(self.router.venues) > 1:
 
         filled = await self.venue.submit_order(order)
         self.orders[filled.order_id] = filled

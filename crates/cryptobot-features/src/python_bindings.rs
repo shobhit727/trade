@@ -58,7 +58,9 @@ fn py_bollinger_bands(
     period: usize,
     std_mult: f64,
 ) -> PyResult<(Vec<f64>, Vec<f64>, Vec<f64>)> {
-    Ok(crate::mean_reversion::bollinger_bands(&prices, period, std_mult))
+    Ok(crate::mean_reversion::bollinger_bands(
+        &prices, period, std_mult,
+    ))
 }
 
 /// Python module definition

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
 
@@ -15,6 +15,10 @@ from cryptobot.core.events import (
     PositionSide,
 )
 from cryptobot.core.state import state_manager
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 class PortfolioMode(StrEnum):
@@ -82,7 +86,7 @@ class PortfolioState:
     max_drawdown_pct: Decimal = Decimal("0")
     win_rate: Decimal = Decimal("0")
     profit_factor: Decimal = Decimal("0")
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    updated_at: datetime = field(default_factory=_utcnow)
 
     def to_dict(self) -> dict:
         return {
@@ -145,7 +149,7 @@ class PortfolioManager:
             self._state.peak_equity = account.peak_equity
             self._state.max_drawdown = account.max_drawdown
             self._daily_pnl_start = account.total_equity - account.daily_pnl
-            self._equity_curve.append((datetime.utcnow(), account.total_equity))
+            self._equity_curve.append((datetime.now(UTC), account.total_equity))
 
             positions = state_manager.get_positions()
             self._state.open_positions = len([p for p in positions if p.quantity > 0])
@@ -182,7 +186,7 @@ class PortfolioManager:
     async def update_equity(self, equity: Decimal):
         """Update portfolio equity and recalculate metrics."""
         async with self._lock:
-            now = datetime.utcnow()
+            now = datetime.now(UTC)
             if not self._equity_curve:
                 self._daily_pnl_start = equity
             elif self._equity_curve[-1][0].date() < now.date():
@@ -365,7 +369,7 @@ class PortfolioManager:
 
             volatility = (
                 sum((r - mean_return) ** 2 for r in daily_returns_array)
-                / len(daily_returns_array)
+                / max(len(daily_returns_array) - 1, 1)
             ) ** 0.5
 
             self._state.volatility = Decimal(str(volatility * (252 ** 0.5)))
@@ -386,12 +390,11 @@ class PortfolioManager:
                 if total_losses > 0:
                     self._state.profit_factor = Decimal(str(total_wins / total_losses))
 
-            [r for r in daily_returns_array if r > 0]
             negative_returns = [r for r in daily_returns_array if r < 0]
 
             if negative_returns:
                 downside_vol = (
-                    sum(r ** 2 for r in negative_returns) / len(negative_returns)
+                    sum(r ** 2 for r in negative_returns) / max(len(negative_returns) - 1, 1)
                 ) ** 0.5
 
                 if downside_vol > 0:
@@ -415,4 +418,5 @@ async def init_portfolio_manager(mode: PortfolioMode = PortfolioMode.PAPER) -> P
     global _portfolio_manager
     _portfolio_manager = PortfolioManager(mode)
     await _portfolio_manager.initialize()
+    return _portfolio_manager
     return _portfolio_manager
