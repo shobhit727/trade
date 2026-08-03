@@ -206,6 +206,7 @@ def load_bars(
     start: datetime | None = None,
     end: datetime | None = None,
     timeframe: str = "15m",
+    n_bars: int | None = None,
 ) -> OhlcvDataset:
     s = source.lower()
     if s == "csv":
@@ -220,7 +221,7 @@ def load_bars(
         from cryptobot.backtest.runner import generate_synthetic_ohlcv
         bars = generate_synthetic_ohlcv(
             start or datetime(2024, 1, 1),
-            n_bars=200,
+            n_bars=n_bars or 200,
             freq_minutes=_freq_to_minutes(timeframe),
             seed=42,
         )

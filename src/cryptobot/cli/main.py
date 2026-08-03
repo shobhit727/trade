@@ -83,6 +83,7 @@ async def _run(args: argparse.Namespace) -> int:
             path=args.path,
             symbol="BTCUSDT",
             timeframe="1h",
+            n_bars=args.bars,
         )
         if args.source == "synthetic":
             ds.bars = ds.bars[: args.bars]
@@ -272,6 +273,9 @@ async def _run(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from cryptobot.utils.logging import configure_logging_from_settings
+
+    configure_logging_from_settings()
     parser = build_parser()
     try:
         args = parser.parse_args(argv)
