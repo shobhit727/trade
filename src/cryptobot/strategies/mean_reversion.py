@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import numpy as np
 
-from cryptobot.core.events import OrderEvent, OrderSide
+from cryptobot.core.events import OrderEvent, OrderSide, OrderType
 
 
 @dataclass
@@ -58,5 +58,5 @@ class MeanReversionStrategy:
         if z >= self.config.z_entry and rsi >= self.config.rsi_overbought and price >= bb_upper:
             return OrderEvent(symbol=symbol, side=OrderSide.SELL, quantity=self.config.quantity, price=Decimal(str(round(price, 8))))
         if abs(z) <= self.config.z_exit:
-            return OrderEvent(symbol=symbol, side=OrderSide.BUY if z < 0 else OrderSide.SELL, quantity=self.config.quantity, price=Decimal("0"))
+            return OrderEvent(symbol=symbol, side=OrderSide.BUY if z < 0 else OrderSide.SELL, type=OrderType.MARKET, quantity=self.config.quantity, price=Decimal("0"))
         return None

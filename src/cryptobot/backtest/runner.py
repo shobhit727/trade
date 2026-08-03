@@ -9,9 +9,11 @@ from typing import Any
 import numpy as np
 
 from cryptobot.backtest.engine import BacktestEngine
-from cryptobot.core.events import Event, EventType
+from cryptobot.core.events import Event, EventType, OrderStatus
+from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
 from cryptobot.execution.engine import ExecutionEngine
 from cryptobot.execution.venue.simulated import SimulatedVenue
+from cryptobot.risk.manager import RiskManager
 from cryptobot.strategies.mean_reversion import MeanReversionConfig, MeanReversionStrategy
 from cryptobot.strategies.trend_following import TrendFollowingConfig, TrendFollowingStrategy
 
@@ -112,6 +114,15 @@ async def _stream_filled_events(
       3. Yield each filled order as an Event back to BacktestEngine.
     """
     for bar in bars:
+        yield Event(
+            type=EventType.TICKER,
+            timestamp=bar.timestamp,
+            payload={
+                "symbol": symbol,
+                "price": str(bar.close),
+                "close_price": str(bar.close),
+            },
+        )
         order = None
         if hasattr(strategy, "feed") and hasattr(strategy, "name"):
             if strategy.name == "trend_following":
@@ -125,8 +136,10 @@ async def _stream_filled_events(
         for o in order:
             if o is None:
                 continue
+            # Keep the venue's mark price current so market orders fill at bar close
+            execution_engine.venue.prices[symbol] = Decimal(str(bar.close))
             filled = await execution_engine.submit_order(o)
-            if filled.status.value in ("filled", "rejected", "canceled"):
+            if filled.status == OrderStatus.FILLED:
                 yield Event(
                     type=EventType.ORDER_FILLED,
                     timestamp=bar.timestamp,
@@ -154,11 +167,17 @@ async def run_backtest(
     if not bars:
         raise ValueError("no bars supplied")
     if execution_engine is None:
+        portfolio = PortfolioManager(PortfolioMode.BACKTEST)
         venue = SimulatedVenue(
             slippage_bps=Decimal(str(slippage_bps)),
             commission_bps=Decimal(str(commission_bps)),
         )
-        execution_engine = ExecutionEngine(venue=venue)
+        execution_engine = ExecutionEngine(
+            venue=venue,
+            risk_manager=RiskManager(portfolio=portfolio),
+        )
+    else:
+        portfolio = execution_engine.risk_manager.portfolio
 
     stream = _stream_filled_events(bars, strategy, symbol, execution_engine)
 
@@ -168,6 +187,7 @@ async def run_backtest(
         initial_capital=float(initial_capital),
         commission_bps=commission_bps,
         slippage_bps=slippage_bps,
+        portfolio=portfolio,
     )
     bt_result = await bt_engine.run(stream)
 

@@ -9,7 +9,7 @@ from typing import Any
 
 from cryptobot.core.clock import ClockFactory, SimulatedClock
 from cryptobot.core.events import Event, EventType, OrderEvent, PositionSide
-from cryptobot.core.portfolio import PortfolioMode, get_portfolio_manager
+from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
 from cryptobot.core.state import Position
 
 logger = logging.getLogger(__name__)
@@ -86,6 +86,7 @@ class BacktestEngine:
         commission_bps: int = 5,
         slippage_bps: int = 3,
         funding_included: bool = True,
+        portfolio: PortfolioManager | None = None,
     ):
         self.start_time = start_time
         self.end_time = end_time
@@ -95,11 +96,13 @@ class BacktestEngine:
         self.funding_included = funding_included
 
         self._clock: SimulatedClock | None = None
-        self._portfolio = get_portfolio_manager(PortfolioMode.BACKTEST)
+        self._owns_portfolio = portfolio is None
+        self._portfolio = portfolio or PortfolioManager(PortfolioMode.BACKTEST)
         self._positions: dict[str, Position] = {}
         self._orders: dict[str, OrderEvent] = {}
         self._trades: list[TradeRecord] = []
         self._events: list[Event] = []
+        self._cash: Decimal = Decimal("0")
         self._initialized = False
 
     async def initialize(self):
@@ -114,9 +117,11 @@ class BacktestEngine:
         )
 
         # Initialize portfolio
-        await self._portfolio.initialize()
+        if not self._owns_portfolio:
+            await self._portfolio.initialize()
 
         # Set initial equity
+        self._cash = self.initial_capital
         await self._portfolio.update_equity(self.initial_capital)
 
         self._initialized = True
@@ -275,12 +280,13 @@ class BacktestEngine:
                 pos.quantity += filled_qty
                 pos.entry_price = total_cost / pos.quantity
             else:
-                # Close position
+                # Opposite side: close (or over-close, flipping side)
+                close_qty = min(pos.quantity, filled_qty)
                 pnl = Decimal("0")
                 if pos.side == PositionSide.LONG:
-                    pnl = (avg_price - pos.entry_price) * filled_qty
+                    pnl = (avg_price - pos.entry_price) * close_qty
                 else:
-                    pnl = (pos.entry_price - avg_price) * filled_qty
+                    pnl = (pos.entry_price - avg_price) * close_qty
 
                 # Record trade
                 pnl_net_fees = pnl - fees
@@ -290,23 +296,44 @@ class BacktestEngine:
                     exit_time=self._clock.current_time,
                     entry_price=pos.entry_price,
                     exit_price=avg_price,
-                    quantity=filled_qty,
+                    quantity=close_qty,
                     side="long" if pos.side == PositionSide.LONG else "short",
                     pnl=pnl_net_fees,
-                    pnl_pct=(pnl_net_fees / (pos.entry_price * filled_qty) * Decimal("100")) if filled_qty > 0 and pos.entry_price > 0 else Decimal("0"),
+                    pnl_pct=(pnl_net_fees / (pos.entry_price * close_qty) * Decimal("100")) if close_qty > 0 and pos.entry_price > 0 else Decimal("0"),
                     fees=fees,
                     strategy=pos.strategy,
                 )
                 self._trades.append(trade)
 
                 pos.quantity -= filled_qty
-                if pos.quantity <= 0:
+                if pos.quantity < 0:
+                    # Over-close: flip to the opposite side with the remainder
+                    pos.side = PositionSide.LONG if side == "BUY" else PositionSide.SHORT
+                    pos.quantity = -pos.quantity
+                    pos.entry_price = avg_price
+                    pos.mark_price = avg_price
+                    pos.opened_at = self._clock.current_time
+                elif pos.quantity == 0:
                     del self._positions[symbol]
 
-        # Update account state - portfolio tracks equity via positions
-        # No need to manually add unrealized_pnl as portfolio.update_equity is called
-        # with the correct total equity from position updates
-        pass
+        # Cash accounting: buys spend cash, sells receive cash (net of fees)
+        if side == "BUY":
+            self._cash -= avg_price * filled_qty + fees
+        else:
+            self._cash += avg_price * filled_qty - fees
+
+        # Update portfolio equity (cash + mark-to-market positions)
+        await self._update_equity()
+
+    async def _update_equity(self):
+        """Recompute equity as cash plus mark-to-market position value."""
+        equity = self._cash
+        for pos in self._positions.values():
+            if pos.side == PositionSide.LONG:
+                equity += pos.quantity * pos.mark_price
+            else:
+                equity -= pos.quantity * pos.mark_price
+        await self._portfolio.update_equity(equity)
 
     async def _handle_position_update(self, event: Event):
         """Handle position update events."""

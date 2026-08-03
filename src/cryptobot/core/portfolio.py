@@ -128,6 +128,13 @@ class PortfolioManager:
             if self._initialized:
                 return
 
+            if self.mode == PortfolioMode.BACKTEST:
+                # Backtest starts from a clean slate: never inherit equity,
+                # peaks or drawdown from persistent/live account state
+                self._daily_pnl_start = Decimal("0")
+                self._initialized = True
+                return
+
             account = state_manager.get_account()
             self._state.total_equity = account.total_equity
             self._state.available_balance = account.available_balance
