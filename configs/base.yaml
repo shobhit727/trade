@@ -113,6 +113,13 @@ risk:
   volatility_target: 0.15           # 15% annual vol target
   min_order_size_usd: 10
   max_order_size_usd: 10000
+  max_leverage: 5.0                 # Max leverage per order
+  max_open_positions: 10            # Max concurrent positions
+  price_deviation_pct: 0.05         # Reject orders >5% from reference price
+  max_orders_per_minute: 60         # Rate limit for submissions
+  require_stop_loss_above_usd: 1000 # SL required for orders >$1000 notional
+  drawdown_scale_start_pct: 0.05    # Begin scaling positions after 5% DD
+  drawdown_scale_floor_pct: 0.25    # Floor: scale down to 25% of normal at max DD
 
 # Execution
 execution:

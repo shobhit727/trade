@@ -59,6 +59,13 @@ class RiskSettings(BaseSettings):
     volatility_target: float = 0.15
     min_order_size_usd: float = 10
     max_order_size_usd: float = 10000
+    max_leverage: float = 5.0
+    max_open_positions: int = 10
+    price_deviation_pct: float = 0.05
+    max_orders_per_minute: int = 60
+    require_stop_loss_above_usd: float = 1000.0
+    drawdown_scale_start_pct: float = 0.05
+    drawdown_scale_floor_pct: float = 0.25
 
     model_config = SettingsConfigDict(env_prefix="RISK_", extra="ignore")
 

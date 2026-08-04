@@ -339,6 +339,7 @@ class OrderEvent(Event):
     reduce_only: bool = False
     position_side: PositionSide = PositionSide.BOTH
     strategy: str = ""
+    leverage: int = 1
 
     def __post_init__(self):
         self.payload = {
@@ -359,6 +360,7 @@ class OrderEvent(Event):
             "reduce_only": self.reduce_only,
             "position_side": self.position_side.value,
             "strategy": self.strategy,
+            "leverage": self.leverage,
         }
 
     def to_dict(self) -> dict[str, Any]:
