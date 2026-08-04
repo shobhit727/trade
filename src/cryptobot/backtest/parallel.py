@@ -38,9 +38,10 @@ def _run_one(job: dict[str, Any]) -> dict[str, Any]:
             strategy=strategy,
             symbol=ds.symbol,
             initial_capital=Decimal(str(job["capital"])),
+            collect_trades=bool(job.get("show_trades", False)),
         )
     )
-    return {
+    out: dict[str, Any] = {
         "index": job.get("index"),
         "strategy": job["strategy"],
         "params": job.get("params", {}),
@@ -50,6 +51,9 @@ def _run_one(job: dict[str, Any]) -> dict[str, Any]:
         "total_return": result.total_return,
         "n_trades": result.n_trades,
     }
+    if job.get("show_trades", False):
+        out["trades"] = result.trades
+    return out
 
 
 def run_parallel(jobs: list[dict[str, Any]], workers: int | None = None) -> list[dict[str, Any]]:

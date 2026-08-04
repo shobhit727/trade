@@ -30,6 +30,11 @@ def build_parser() -> argparse.ArgumentParser:
     backtest.add_argument("--end", default="2024-01-02T00:00:00")
     backtest.add_argument("--json", action="store_true")
     backtest.add_argument(
+        "--show-trades",
+        action="store_true",
+        help="Print every closed trade from the backtest (entry/exit, prices, pnl)",
+    )
+    backtest.add_argument(
         "--algorithms",
         default=None,
         help="JSON file with a list of backtest jobs "
@@ -120,6 +125,7 @@ async def _run(args: argparse.Namespace) -> int:
             strategy=strategy,
             symbol=ds.symbol,
             initial_capital=args.capital,
+            collect_trades=args.show_trades,
         )
         if args.json:
             json.dump(
@@ -143,6 +149,19 @@ async def _run(args: argparse.Namespace) -> int:
                 result.final_equity,
                 result.total_return * 100,
             )
+            if args.show_trades:
+                for t in result.trades:
+                    logger.info(
+                        "%s %-5s %s @ %s -> %s  pnl=%s  pnl_pct=%s%%  fees=%s",
+                        t["exit_time"],
+                        t["side"],
+                        t["quantity"],
+                        t["entry_price"],
+                        t["exit_price"],
+                        t["pnl"],
+                        t["pnl_pct"],
+                        t["fees"],
+                    )
         return 0
 
     if args.command == "mm":
@@ -300,9 +319,8 @@ async def _run(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    from cryptobot.utils.logging import configure_logging_from_settings
+    from cryptobot.utils.logging import configure_logging_from_settings, setup_logging
 
-    configure_logging_from_settings()
     parser = build_parser()
     try:
         args = parser.parse_args(argv)
@@ -310,6 +328,18 @@ def main(argv: list[str] | None = None) -> int:
         if exc.code in (None, 0):
             raise
         return int(exc.code) if isinstance(exc.code, int) else 2
+    if getattr(args, "json", False):
+        # Route logs to stderr so machine-readable JSON stays clean on stdout.
+        from cryptobot.config import settings
+
+        setup_logging(
+            level=settings.app.log_level,
+            json_output=settings.app.env != "development",
+            include_caller=settings.app.env == "development",
+            stream=sys.stderr,
+        )
+    else:
+        configure_logging_from_settings()
     return asyncio.run(_run(args))
 
 

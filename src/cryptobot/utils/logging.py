@@ -91,6 +91,7 @@ def setup_logging(
     level: str = "INFO",
     json_output: bool = True,
     include_caller: bool = True,
+    stream: Any = sys.stdout,
 ) -> None:
     """
     Configure structured logging.
@@ -99,11 +100,13 @@ def setup_logging(
         level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         json_output: Whether to output JSON (True) or human-readable (False)
         include_caller: Whether to include caller info in logs
+        stream: Where to emit logs (defaults to stdout; CLI --json modes use stderr
+            so machine-readable results on stdout stay clean)
     """
     # Configure standard library logging
     logging.basicConfig(
         format="%(message)s",
-        stream=sys.stdout,
+        stream=stream,
         level=getattr(logging, level.upper()),
     )
 
@@ -147,7 +150,7 @@ def setup_logging(
         foreign_pre_chain=shared_processors,
     )
 
-    handler = logging.StreamHandler(sys.stdout)
+    handler = logging.StreamHandler(stream)
     handler.setFormatter(formatter)
     handler.addFilter(ContextFilter())
 

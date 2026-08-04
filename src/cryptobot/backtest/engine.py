@@ -378,6 +378,7 @@ class BacktestEngine:
                 entry_price=avg_price,
                 mark_price=avg_price,
                 strategy=event.payload.get("strategy", "backtest"),
+                opened_at=self._clock.current_time,
             )
             self._positions[symbol] = pos
         else:

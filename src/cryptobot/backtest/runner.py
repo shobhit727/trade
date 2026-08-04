@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 
-from cryptobot.backtest.engine import BacktestEngine
+from cryptobot.backtest.engine import BacktestEngine, TradeRecord
 from cryptobot.core.events import Event, EventType, OrderStatus
 from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
 from cryptobot.execution.engine import ExecutionEngine
@@ -130,6 +130,7 @@ class BacktestRunResult:
     total_return: float
     n_trades: int
     equity_curve: list[tuple[datetime, Decimal]] = field(default_factory=list)
+    trades: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -138,7 +139,23 @@ class BacktestRunResult:
             "total_return": self.total_return,
             "n_trades": self.n_trades,
             "n_equity_points": len(self.equity_curve),
+            "trades": self.trades,
         }
+
+
+def _trade_to_dict(trade: TradeRecord) -> dict[str, Any]:
+    return {
+        "entry_time": trade.entry_time.isoformat(),
+        "exit_time": trade.exit_time.isoformat(),
+        "entry_price": str(trade.entry_price),
+        "exit_price": str(trade.exit_price),
+        "quantity": str(trade.quantity),
+        "side": trade.side,
+        "pnl": str(trade.pnl),
+        "pnl_pct": str(trade.pnl_pct),
+        "fees": str(trade.fees),
+        "strategy": trade.strategy,
+    }
 
 
 async def _stream_filled_events(
@@ -205,6 +222,7 @@ async def run_backtest(
     slippage_bps: int = 3,
     commission_bps: int = 5,
     execution_engine: ExecutionEngine | None = None,
+    collect_trades: bool = False,
 ) -> BacktestRunResult:
     if not bars:
         raise ValueError("no bars supplied")
@@ -239,6 +257,7 @@ async def run_backtest(
         total_return=total_return,
         n_trades=bt_result.total_trades,
         equity_curve=bt_result.equity_curve,
+        trades=[_trade_to_dict(t) for t in bt_engine.get_trades()] if collect_trades else [],
     )
 
 
