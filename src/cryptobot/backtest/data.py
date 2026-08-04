@@ -177,7 +177,7 @@ async def load_timescale(
     end = end or _utcnow()
     start = start or (end - timedelta(days=30))
     try:
-        store = init_storage(settings or _default_settings())
+        store = await init_storage(settings or _default_settings())
         df = await store.read_klines(symbol, timeframe, start, end)
     except Exception as exc:
         logger.debug("timescale loader error: %s", exc)
