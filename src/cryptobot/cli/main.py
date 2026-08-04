@@ -29,6 +29,18 @@ def build_parser() -> argparse.ArgumentParser:
     backtest.add_argument("--start", default="2024-01-01T00:00:00")
     backtest.add_argument("--end", default="2024-01-02T00:00:00")
     backtest.add_argument("--json", action="store_true")
+    backtest.add_argument(
+        "--algorithms",
+        default=None,
+        help="JSON file with a list of backtest jobs "
+        '([{"strategy": "trend_following", "params": {"fast": 8}}, ...]) to run in parallel',
+    )
+    backtest.add_argument(
+        "--workers",
+        type=int,
+        default=0,
+        help="Number of parallel worker processes for --algorithms (default: one per CPU core)",
+    )
 
     market_maker = sub.add_parser("mm", help="Run the market-making strategy against order book")
     market_maker.add_argument("--symbol", default="BTCUSDT")
@@ -74,6 +86,21 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 async def _run(args: argparse.Namespace) -> int:
+    if args.command == "backtest" and args.algorithms:
+        import json as _json
+
+        from cryptobot.backtest.parallel import run_parallel
+
+        with open(args.algorithms, encoding="utf-8") as fh:
+            jobs = _json.load(fh)
+        if not isinstance(jobs, list):
+            raise ValueError("--algorithms file must contain a JSON list of jobs")
+        results = run_parallel(jobs, workers=args.workers or None)
+        for r in results:
+            _json.dump(r, sys.stdout, default=str)
+            sys.stdout.write("\n")
+        return 0
+
     if args.command == "backtest":
         from cryptobot.backtest.data import load_bars
         from cryptobot.backtest.runner import make_strategy, run_backtest

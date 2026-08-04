@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Any
 
 from cryptobot.core.clock import ClockFactory, SimulatedClock
-from cryptobot.core.events import Event, EventType, OrderEvent, PositionSide
+from cryptobot.core.events import Event, EventType, OrderEvent, OrderStatus, PositionSide
 from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
 from cryptobot.core.state import Position
 
@@ -143,7 +143,7 @@ class BacktestEngine:
         self._initialized = True
 
     async def run(self, data_stream: AsyncIterator[Event]) -> BacktestResult:
-        """Run the backtest simulation."""
+        """Run the backtest simulation from an event stream."""
         await self.initialize()
 
         logger.info("Starting: %s to %s", self.start_time, self.end_time)
@@ -153,6 +153,88 @@ class BacktestEngine:
         async for event in data_stream:
             await self._process_event(event)
 
+        return self._compute_result()
+
+    async def run_bars(self, bars, strategy, symbol: str, execution_engine) -> BacktestResult:
+        """Run the backtest simulation directly over bars.
+
+        Fast path: the strategy is fed synchronously bar-by-bar and only dips
+        into the async machinery (clock stepping, order submission, portfolio
+        accounting) when the strategy actually fires an order. This avoids
+        allocating a ticker Event and two coroutine hops per bar -- the common
+        case for long synthetic backtests.
+        """
+        await self.initialize()
+
+        logger.info("Starting: %s to %s", self.start_time, self.end_time)
+        logger.info("Initial capital: %s", self.initial_capital)
+
+        feed = strategy.feed
+        if getattr(strategy, "name", "") == "trend_following":
+            for bar in bars:
+                order = feed(symbol, bar.high, bar.low, bar.close)
+                if order is None:
+                    continue
+                await self._run_orders(order, execution_engine, bar, str(bar.close), strategy)
+        else:
+            for bar in bars:
+                order = feed(symbol, bar.close)
+                if order is None:
+                    continue
+                await self._run_orders(order, execution_engine, bar, str(bar.close), strategy)
+
+        return self._compute_result()
+
+    async def _run_orders(
+        self,
+        order,
+        execution_engine,
+        bar,
+        close_str: str,
+        strategy,
+    ) -> None:
+        """Submit a strategy order at bar close and process the resulting fills."""
+        if not isinstance(order, list):
+            order = [order]
+        for o in order:
+            if o is None:
+                continue
+            # Keep the venue's mark price current so market orders fill at bar close
+            execution_engine.venue.prices[o.symbol] = Decimal(close_str)
+            filled = await execution_engine.submit_order(o)
+            if filled.status == OrderStatus.FILLED:
+                fill_price = str(filled.avg_fill_price) if filled.avg_fill_price else close_str
+                # Refresh mark-to-market for open positions at this bar's close
+                # (mirrors what the per-bar ticker used to do) and record the fill.
+                await self._process_event(
+                    Event(
+                        type=EventType.TICKER,
+                        timestamp=bar.timestamp,
+                        payload={
+                            "symbol": filled.symbol,
+                            "price": fill_price,
+                            "close_price": fill_price,
+                        },
+                    )
+                )
+                await self._process_event(
+                    Event(
+                        type=EventType.ORDER_FILLED,
+                        timestamp=bar.timestamp,
+                        payload={
+                            "symbol": filled.symbol,
+                            "filled_quantity": str(filled.filled_quantity),
+                            "avg_fill_price": str(filled.avg_fill_price or Decimal("0")),
+                            "side": filled.side.value,
+                            "strategy": filled.strategy or strategy.name,
+                            "unrealized_pnl": "0",
+                            "fees": str(filled.commission),
+                        },
+                    )
+                )
+
+    def _compute_result(self) -> BacktestResult:
+        """Finalize and report statistics from the recorded trades/equity."""
         # Calculate final results
         final_equity = self._portfolio.get_state().total_equity
         initial = self.initial_capital

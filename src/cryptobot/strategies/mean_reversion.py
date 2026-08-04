@@ -51,7 +51,8 @@ class MeanReversionStrategy:
             rsi = 100.0
         else:
             rs = gains / losses
-            rsi = 100 - 100 / (1 + rs)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                rsi = 100 - 100 / (1 + rs)
 
         if z <= -self.config.z_entry and rsi <= self.config.rsi_oversold and price <= bb_lower:
             return OrderEvent(symbol=symbol, side=OrderSide.BUY, quantity=self.config.quantity, price=Decimal(str(round(price, 8))))

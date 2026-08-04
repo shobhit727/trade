@@ -87,3 +87,25 @@ async def test_run_backtest_total_return_equals_pct_change():
     result = await run_backtest(bars, strategy=strategy, initial_capital=Decimal("1000"))
     expected = float((result.final_equity - result.initial_capital) / result.initial_capital)
     assert abs(result.total_return - expected) < 1e-9
+
+
+def test_run_parallel_spreads_jobs_across_workers():
+    from cryptobot.backtest.parallel import run_parallel
+
+    jobs = [
+        {"strategy": "trend_following", "params": {"fast": 5, "slow": 12}, "bars": 200},
+        {"strategy": "mean_reversion", "params": {"lookback": 5}, "bars": 200},
+        {"strategy": "trend_following", "params": {"fast": 8, "slow": 21}, "bars": 200},
+    ]
+    results = run_parallel(jobs, workers=2)
+    assert len(results) == 3
+    assert [r["index"] for r in results] == [0, 1, 2]
+    assert all(r["n_trades"] >= 0 for r in results)
+    assert results[0]["strategy"] == "trend_following"
+    assert results[1]["strategy"] == "mean_reversion"
+
+
+def test_run_parallel_empty_jobs_returns_empty():
+    from cryptobot.backtest.parallel import run_parallel
+
+    assert run_parallel([], workers=2) == []

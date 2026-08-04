@@ -203,6 +203,9 @@ def _default_settings():
     return settings
 
 
+MAX_SYNTHETIC_BARS = 10_000_000
+
+
 def load_bars(
     source: str,
     path: str | Path | None = None,
@@ -222,6 +225,11 @@ def load_bars(
             raise ValueError("parquet source requires --path")
         return load_parquet(path, symbol=symbol, start=start, end=end)
     if s == "synthetic":
+        if n_bars and n_bars > MAX_SYNTHETIC_BARS:
+            raise ValueError(
+                f"--bars {n_bars} exceeds the synthetic data cap of {MAX_SYNTHETIC_BARS:,} "
+                "(each bar is held in memory; use a smaller count or csv/parquet source)"
+            )
         from cryptobot.backtest.runner import generate_synthetic_ohlcv
         bars = generate_synthetic_ohlcv(
             start or datetime(2024, 1, 1),

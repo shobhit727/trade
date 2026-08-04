@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
-
-import numpy as np
 
 from cryptobot.core.events import OrderEvent, OrderSide
 
@@ -20,81 +18,142 @@ class TrendFollowingConfig:
     quantity: Decimal = Decimal("1")
 
 
+@dataclass
+class _TrendState:
+    """Per-symbol streaming indicator state (O(1) per bar, Wilder-style)."""
+
+    bars: int = 0
+    ema_fast: float = 0.0
+    ema_slow: float = 0.0
+    ema_fast_seeded: bool = False
+    ema_slow_seeded: bool = False
+    prev_high: float = 0.0
+    prev_low: float = 0.0
+    prev_close: float = 0.0
+    tr_sum: float = 0.0
+    plus_sum: float = 0.0
+    minus_sum: float = 0.0
+    tr_window: deque[float] = field(default_factory=lambda: deque())
+    plus_window: deque[float] = field(default_factory=lambda: deque())
+    minus_window: deque[float] = field(default_factory=lambda: deque())
+    dx_sum: float = 0.0
+    dx_window: deque[float] = field(default_factory=lambda: deque())
+    atr: float = 0.0
+    adx: float = 0.0
+
+
 class TrendFollowingStrategy:
     name = "trend_following"
 
     def __init__(self, config: TrendFollowingConfig | None = None):
         self.config = config or TrendFollowingConfig()
-        self._highs: dict[str, deque[float]] = {}
-        self._lows: dict[str, deque[float]] = {}
-        self._closes: dict[str, deque[float]] = {}
+        self._state: dict[str, _TrendState] = {}
         self._entry_stop: dict[str, float] = {}
+        cfg = self.config
+        self._k_fast = 2.0 / (cfg.fast + 1)
+        self._k_slow = 2.0 / (cfg.slow + 1)
+        self._slow = cfg.slow
+        self._atr_p = cfg.atr_period
+        self._adx_p = cfg.adx_period
+        self._adx_gate = 2 * cfg.adx_period + 1
+        self._adx_thr = cfg.adx_threshold
+        self._atr_mult = cfg.atr_multiplier
+        self._qty = cfg.quantity
 
-    def _buf(self, symbol: str) -> tuple[deque[float], deque[float], deque[float]]:
-        n = max(self.config.slow, self.config.adx_period * 2 + 1, self.config.atr_period + 1)
-        h = self._highs.setdefault(symbol, deque(maxlen=n))
-        low_q = self._lows.setdefault(symbol, deque(maxlen=n))
-        c = self._closes.setdefault(symbol, deque(maxlen=n))
-        return h, low_q, c
+    def _st(self, symbol: str) -> _TrendState:
+        return self._state.setdefault(symbol, _TrendState())
+
+    def _update_indicators(self, st: _TrendState, high: float, low: float, close: float) -> None:
+        bars = st.bars + 1
+        st.bars = bars
+
+        if st.ema_fast_seeded:
+            kf = self._k_fast
+            st.ema_fast = close * kf + st.ema_fast * (1 - kf)
+        else:
+            st.ema_fast = close
+            st.ema_fast_seeded = True
+
+        if st.ema_slow_seeded:
+            ks = self._k_slow
+            st.ema_slow = close * ks + st.ema_slow * (1 - ks)
+        else:
+            st.ema_slow = close
+            st.ema_slow_seeded = True
+
+        if bars == 1:
+            st.prev_high, st.prev_low, st.prev_close = high, low, close
+            return
+
+        ph, pl, pc = st.prev_high, st.prev_low, st.prev_close
+        up_move = high - ph
+        down_move = pl - low
+        plus_dm = up_move if (up_move > down_move and up_move > 0) else 0.0
+        minus_dm = down_move if (down_move > up_move and down_move > 0) else 0.0
+        d1 = high - low
+        d2 = high - pc
+        d3 = low - pc
+        tr = d1 if d1 > d2 else d2
+        if d3 > tr:
+            tr = d3
+
+        atr_p = self._atr_p
+        adx_p = self._adx_p
+        tr_w = st.tr_window
+        plus_w = st.plus_window
+        minus_w = st.minus_window
+        tr_w.append(tr)
+        plus_w.append(plus_dm)
+        minus_w.append(minus_dm)
+        if len(tr_w) > atr_p:
+            st.tr_sum += tr - tr_w.popleft()
+        else:
+            st.tr_sum += tr
+        if len(plus_w) > adx_p:
+            st.plus_sum += plus_dm - plus_w.popleft()
+        else:
+            st.plus_sum += plus_dm
+        if len(minus_w) > adx_p:
+            st.minus_sum += minus_dm - minus_w.popleft()
+        else:
+            st.minus_sum += minus_dm
+
+        if len(tr_w) == atr_p:
+            st.atr = st.tr_sum / atr_p
+
+        st.prev_high, st.prev_low, st.prev_close = high, low, close
+
+        if len(plus_w) == adx_p and bars >= self._adx_gate:
+            s_tr = st.tr_sum
+            s_plus = st.plus_sum
+            s_minus = st.minus_sum
+            pdi = 100.0 * s_plus / s_tr if s_tr > 0 else 0.0
+            mdi = 100.0 * s_minus / s_tr if s_tr > 0 else 0.0
+            dx = 100.0 * abs(pdi - mdi) / (pdi + mdi) if (pdi + mdi) > 0 else 0.0
+            dx_w = st.dx_window
+            dx_w.append(dx)
+            st.dx_sum += dx
+            if len(dx_w) > adx_p:
+                st.dx_sum -= dx_w.popleft()
+            if len(dx_w) == adx_p:
+                st.adx = st.dx_sum / adx_p
 
     def feed(self, symbol: str, high: float, low: float, close: float) -> OrderEvent | None:
-        h, low_q, c = self._buf(symbol)
-        h.append(high)
-        low_q.append(low)
-        c.append(close)
-        if len(c) < self.config.slow:
+        st = self._state.get(symbol)
+        if st is None:
+            st = _TrendState()
+            self._state[symbol] = st
+        self._update_indicators(st, high, low, close)
+        if st.bars < self._slow:
             return None
-        closes = np.fromiter(c, dtype=float)
-        ema_fast = self._ema(closes, self.config.fast)
-        ema_slow = self._ema(closes, self.config.slow)
-        adx = self._adx(np.fromiter(h, dtype=float), np.fromiter(low_q, dtype=float), closes, self.config.adx_period)
-        atr = self._atr(np.fromiter(h, dtype=float), np.fromiter(low_q, dtype=float), closes, self.config.atr_period)
-        if ema_fast > ema_slow and adx > self.config.adx_threshold and symbol not in self._entry_stop:
-            self._entry_stop[symbol] = close - self.config.atr_multiplier * atr
-            return OrderEvent(symbol=symbol, side=OrderSide.BUY, quantity=self.config.quantity, price=Decimal(str(round(close, 8))))
-        if ema_fast < ema_slow and symbol in self._entry_stop:
-            self._entry_stop.pop(symbol, None)
-            return OrderEvent(symbol=symbol, side=OrderSide.SELL, quantity=self.config.quantity, price=Decimal(str(round(close, 8))))
-        if symbol in self._entry_stop and close <= self._entry_stop[symbol]:
-            self._entry_stop.pop(symbol, None)
-            return OrderEvent(symbol=symbol, side=OrderSide.SELL, quantity=self.config.quantity, price=Decimal(str(round(close, 8))))
+        entry_stop = self._entry_stop
+        if st.ema_fast > st.ema_slow and st.adx > self._adx_thr and symbol not in entry_stop:
+            entry_stop[symbol] = close - self._atr_mult * st.atr
+            return OrderEvent(symbol=symbol, side=OrderSide.BUY, quantity=self._qty, price=Decimal(str(round(close, 8))))
+        if st.ema_fast < st.ema_slow and symbol in entry_stop:
+            entry_stop.pop(symbol, None)
+            return OrderEvent(symbol=symbol, side=OrderSide.SELL, quantity=self._qty, price=Decimal(str(round(close, 8))))
+        if symbol in entry_stop and close <= entry_stop[symbol]:
+            entry_stop.pop(symbol, None)
+            return OrderEvent(symbol=symbol, side=OrderSide.SELL, quantity=self._qty, price=Decimal(str(round(close, 8))))
         return None
-
-    @staticmethod
-    def _ema(values: np.ndarray, period: int) -> float:
-        if len(values) < period:
-            return float(values.mean()) if len(values) else 0.0
-        k = 2.0 / (period + 1)
-        e = float(values[0])
-        for v in values[1:]:
-            e = float(v) * k + e * (1 - k)
-        return e
-
-    @staticmethod
-    def _atr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int) -> float:
-        if len(closes) < 2:
-            return 0.0
-        tr = np.maximum(highs[1:] - lows[1:], np.maximum(np.abs(highs[1:] - closes[:-1]), np.abs(lows[1:] - closes[:-1])))
-        if len(tr) < period:
-            return float(tr.mean()) if len(tr) else 0.0
-        return float(tr[-period:].mean())
-
-    @staticmethod
-    def _adx(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int) -> float:
-        if len(closes) < 2 * period + 1:
-            return 0.0
-        up_move = highs[1:] - highs[:-1]
-        down_move = lows[:-1] - lows[1:]
-        plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
-        minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
-        tr = np.maximum(highs[1:] - lows[1:], np.maximum(np.abs(highs[1:] - closes[:-1]), np.abs(lows[1:] - closes[:-1])))
-        atr = np.maximum.accumulate(tr) if len(tr) == 0 else tr
-        if len(atr) < period:
-            return 0.0
-        atr_smooth = np.convolve(atr, np.ones(period) / period, mode="valid")
-        plus_di = 100 * (np.convolve(plus_dm, np.ones(period) / period, mode="valid") / np.where(atr_smooth == 0, 1, atr_smooth))
-        minus_di = 100 * (np.convolve(minus_dm, np.ones(period) / period, mode="valid") / np.where(atr_smooth == 0, 1, atr_smooth))
-        dx = 100 * np.abs(plus_di - minus_di) / np.where(plus_di + minus_di == 0, 1, plus_di + minus_di)
-        if len(dx) < period:
-            return 0.0
-        return float(dx[-period:].mean())

@@ -192,7 +192,8 @@ class PortfolioManager:
             elif self._equity_curve[-1][0].date() < now.date():
                 self._daily_pnl_start = equity
                 self._state.daily_pnl = Decimal("0")
-                state_manager.reset_daily_pnl()
+                if self.mode != PortfolioMode.BACKTEST:
+                    state_manager.reset_daily_pnl()
 
             if self._state.total_equity > 0:
                 daily_return = (equity - self._state.total_equity) / self._state.total_equity
@@ -211,7 +212,12 @@ class PortfolioManager:
 
             self._state.daily_pnl = equity - self._daily_pnl_start
 
-            state_manager.update_account_equity(equity)
+            # Backtests are deterministic replays: persisting equity to SQLite on every
+            # fill is pure overhead (fresh SQLite connection per write). Keep the local
+            # StateManager accounting and the in-memory metrics -- the engine reads
+            # equity/drawdown from this portfolio, not from the database.
+            if self.mode != PortfolioMode.BACKTEST:
+                state_manager.update_account_equity(equity)
 
     async def on_position_update(self, event: PositionEvent):
         """Handle position update event."""

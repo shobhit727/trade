@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
+from math import log
 from typing import Any
 
 import numpy as np
@@ -18,7 +19,7 @@ from cryptobot.strategies.mean_reversion import MeanReversionConfig, MeanReversi
 from cryptobot.strategies.trend_following import TrendFollowingConfig, TrendFollowingStrategy
 
 
-@dataclass
+@dataclass(slots=True)
 class OhlcvBar:
     timestamp: datetime
     open: float
@@ -46,29 +47,70 @@ def generate_synthetic_ohlcv(
     drift: float = 0.0005,
     vol: float = 0.01,
     seed: int = 42,
+    mean_reversion_strength: float = 0.001,
 ) -> list[OhlcvBar]:
+    if n_bars < 1:
+        raise ValueError("n_bars must be >= 1")
     rng = np.random.default_rng(seed)
-    bars: list[OhlcvBar] = []
-    price = start_price
+    # Row-major draws preserve the exact per-bar RNG stream of the sequential generator.
+    z = rng.normal(0.0, 1.0, size=(n_bars, 4))
+    # Convert to plain Python floats once: the stateful AR(1) loop below runs
+    # per bar, and scalar arithmetic on numpy float64 is ~10x slower than on
+    # floats while computing identical IEEE-754 results.
+    noise = (drift + vol * z[:, 0]).tolist()
+    high_wiggle = 1.0 + (vol / 2) * np.abs(z[:, 1])
+    low_wiggle = 1.0 - (vol / 2) * np.abs(z[:, 2])
+    volumes = np.abs(1000.0 + 200.0 * z[:, 3])
+
+    # Mean-reverting (Ornstein-Uhlenbeck) random walk in log space. The log price snaps
+    # back toward its anchor (equilibrium = anchor + drift/k), so very long runs never
+    # overflow to inf NOR pin flat against a clamp -- price keeps moving forever, which
+    # matters for backtests that span millions of bars.
+    anchor = log(start_price)
+    frac = mean_reversion_strength
+    intercept = frac * anchor
+    decay = 1.0 - frac
+    log_price = anchor
+    log_prices = np.empty(n_bars)
     for i in range(n_bars):
-        ts = start + timedelta(minutes=i * freq_minutes)
-        ret = rng.normal(loc=drift, scale=vol)
-        new_close = max(price * (1.0 + ret), 1e-8)
-        high = max(price, new_close) * (1.0 + abs(rng.normal(0.0, vol / 2)))
-        low = min(price, new_close) * (1.0 - abs(rng.normal(0.0, vol / 2)))
-        low = max(low, 1e-8)
-        bars.append(
-            OhlcvBar(
-                timestamp=ts,
-                open=price,
-                high=high,
-                low=low,
-                close=new_close,
-                volume=float(abs(rng.normal(1000, 200))),
-            )
+        log_price = decay * log_price + intercept + noise[i]
+        log_prices[i] = log_price
+    log_prices = np.clip(log_prices, np.log(1e-8), np.log(1e12))
+    closes = np.exp(log_prices)
+    opens = np.empty_like(closes)
+    opens[0] = start_price
+    opens[1:] = closes[:-1]
+
+    highs = np.maximum(opens, closes) * high_wiggle
+    lows = np.maximum(np.minimum(opens, closes) * low_wiggle, 1e-8)
+    lows = np.minimum(lows, highs)
+
+    start64 = np.datetime64(start, "s")
+    deltas = np.arange(n_bars, dtype=np.int64) * np.int64(freq_minutes) * np.int64(60)
+    timestamps = (start64 + deltas.astype("timedelta64[s]")).astype("datetime64[us]").tolist()
+
+    # Convert price arrays to plain Python floats once. Keep the dataclass fields as
+    # native floats: scalar NPV float64 arithmetic in the per-bar strategy loop is
+    # several times slower than float arithmetic and changes nothing numerically.
+    opens = opens.tolist()
+    highs = highs.tolist()
+    lows = lows.tolist()
+    closes = closes.tolist()
+    volumes = volumes.tolist()
+
+    return [
+        OhlcvBar(
+            timestamp=ts,
+            open=open_p,
+            high=high,
+            low=low,
+            close=close,
+            volume=volume,
         )
-        price = new_close
-    return bars
+        for ts, open_p, high, low, close, volume in zip(
+            timestamps, opens, highs, lows, closes, volumes, strict=True
+        )
+    ]
 
 
 def make_strategy(name: str, **kwargs):
@@ -179,8 +221,6 @@ async def run_backtest(
     else:
         portfolio = execution_engine.risk_manager.portfolio
 
-    stream = _stream_filled_events(bars, strategy, symbol, execution_engine)
-
     bt_engine = BacktestEngine(
         start_time=bars[0].timestamp,
         end_time=bars[-1].timestamp,
@@ -189,7 +229,7 @@ async def run_backtest(
         slippage_bps=slippage_bps,
         portfolio=portfolio,
     )
-    bt_result = await bt_engine.run(stream)
+    bt_result = await bt_engine.run_bars(bars, strategy, symbol, execution_engine)
 
     initial = Decimal(str(initial_capital))
     total_return = float((bt_result.final_equity - initial) / initial) if initial else 0.0
