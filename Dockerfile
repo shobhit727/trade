@@ -63,6 +63,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["python", "-m", "cryptobot.cli.main", "bot", "--host=0.0.0.0", "--port=8080"]
 
-FROM builder AS test
+FROM base AS test
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["pytest", "-q", "tests"]
