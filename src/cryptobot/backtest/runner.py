@@ -75,8 +75,10 @@ def generate_synthetic_ohlcv(
     for i in range(n_bars):
         log_price = decay * log_price + intercept + noise[i]
         log_prices[i] = log_price
+    del noise
     log_prices = np.clip(log_prices, np.log(1e-8), np.log(1e12))
     closes = np.exp(log_prices)
+    del log_prices
     opens = np.empty_like(closes)
     opens[0] = start_price
     opens[1:] = closes[:-1]
@@ -84,32 +86,27 @@ def generate_synthetic_ohlcv(
     highs = np.maximum(opens, closes) * high_wiggle
     lows = np.maximum(np.minimum(opens, closes) * low_wiggle, 1e-8)
     lows = np.minimum(lows, highs)
+    del high_wiggle, low_wiggle
 
     start64 = np.datetime64(start, "s")
     deltas = np.arange(n_bars, dtype=np.int64) * np.int64(freq_minutes) * np.int64(60)
     timestamps = (start64 + deltas.astype("timedelta64[s]")).astype("datetime64[us]").tolist()
+    del start64, deltas
 
-    # Convert price arrays to plain Python floats once. Keep the dataclass fields as
-    # native floats: scalar NPV float64 arithmetic in the per-bar strategy loop is
-    # several times slower than float arithmetic and changes nothing numerically.
-    opens = opens.tolist()
-    highs = highs.tolist()
-    lows = lows.tolist()
-    closes = closes.tolist()
-    volumes = volumes.tolist()
-
+    # Build bars straight from the arrays (float() per element is C-fast and exact).
+    # Materializing separate boxed-float lists of every field would transiently
+    # consume gigabytes at 10M+ bars -- e.g. a 10M-bar synthetic run otherwise
+    # peaks well past 3GB and OOMs in constrained containers.
     return [
         OhlcvBar(
-            timestamp=ts,
-            open=open_p,
-            high=high,
-            low=low,
-            close=close,
-            volume=volume,
+            timestamp=timestamps[i],
+            open=float(opens[i]),
+            high=float(highs[i]),
+            low=float(lows[i]),
+            close=float(closes[i]),
+            volume=float(volumes[i]),
         )
-        for ts, open_p, high, low, close, volume in zip(
-            timestamps, opens, highs, lows, closes, volumes, strict=True
-        )
+        for i in range(n_bars)
     ]
 
 
