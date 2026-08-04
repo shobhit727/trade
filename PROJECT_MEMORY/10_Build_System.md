@@ -1,6 +1,6 @@
 # 10. Build System
 
-> **Last Updated**: 2026-07-31 (audit v2)
+> **Last Updated**: 2026-08-04 (full Rust workspace green)
 > **Confidence**: High.
 
 ## Build artifacts (verified)
@@ -9,9 +9,8 @@
 |----------|--------|-------|
 | `Dockerfile` | ✅ | Multi-stage (`base`, `test`, `production`). ARG `REQUIREMENTS` swaps deps list. `python:3.14-slim`. |
 | `docker-compose.yml` | ✅ | Names: `timescaledb`, `redis`, `prometheus`, `alertmanager`, `grafana`, `loki`, `promtail`, `cryptobot`, `cryptobot-paper`, `cryptobot-backtest`, `cryptobot-test`, `nginx`. Profiles: `paper`, `backtest`, `test`, `tracing`. Default profile validates; monitoring subdirs scaffolded. |
-| `Cargo.toml` (root) | ✅ | Workspace manifest with 1 member (`cryptobot-core`) + `[workspace.dependencies]`. `cargo build` + `cargo test` pass (verified 2026-07-31 with rustup stable 1.97.1). |
-| `crates/cryptobot-core/` | ✅ | Manifest + `lib.rs` stub (`pub fn placeholder`) + 1 unit test. Empty `src/{events,math,time,types}/` subdirs preserved for future surface. |
-| `crates/cryptobot-{backtest,features,orderbook,py,risk,stats}/` | 🔲 | Removed 2026-07-31 (no manifest). Re-add when each gets a `Cargo.toml` + `lib.rs`. |
+| `Cargo.toml` (root) | ✅ | Workspace manifest at repo root with 7 members (`cryptobot-core`, `cryptobot-backtest`, `cryptobot-features`, `cryptobot-risk`, `cryptobot-stats`, `cryptobot-orderbook`, `cryptobot-py`) + `[workspace.dependencies]`. Builds with stable Rust 1.97+. `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (31 tests) all pass (verified 2026-08-04). PyO3 0.29; `cryptobot_py` extension registers `features`, `risk`, `orderbook`, `backtest` submodules. |
+| `crates/` | ✅ | 7 crates with full source (backtest, features, risk, stats, orderbook, py, core). |
 | `pyproject.toml` | ✅ | setuptools build + `cryptobot` CLI entry point. |
 | `setup.py` | n/a | Not used. |
 | `migrations/` | ✅ | `001_extension.sql`, `002_hypertables.sql`. Compose mounts the directory into TimescaleDB entrypoint. |
@@ -41,9 +40,7 @@
 
 ## Recommendations
 
-- Trim `Cargo.toml [workspace] members` to `["crates/cryptobot-core"]` until Rust crates are populated, or add minimal `Cargo.toml` per empty crate.
-- Delete or document the 6 dead empty dirs under `src/cryptobot/`.
-- Add `USER` directive in `Dockerfile` (non-root runtime).
+- Delete or document the dead empty dirs under `src/cryptobot/` (Rust workspace is fully populated and green).
 - Add `seccomp/` profile files (dir exists but empty).
 
 ## Confidence

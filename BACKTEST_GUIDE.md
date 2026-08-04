@@ -30,27 +30,27 @@ python -m cryptobot.cli.main backtest \
 
 ```python
 import asyncio
+from cryptobot.backtest.data import load_bars
 from cryptobot.backtest.runner import run_backtest
 from cryptobot.strategies.trend_following import TrendFollowingStrategy, TrendFollowingConfig
 
 async def run():
-    config = TrendFollowingConfig(ema_fast=12, ema_slow=26, adx_threshold=25)
+    config = TrendFollowingConfig(fast=12, slow=26, adx_threshold=25)
     strategy = TrendFollowingStrategy(config)
-    
+
+    ds = load_bars(source="synthetic", symbol="BTCUSDT", timeframe="1h", n_bars=500)
     result = await run_backtest(
+        ds.bars,
         strategy=strategy,
-        symbol="BTCUSDT",
-        timeframe="1m",
-        bars=500,
+        symbol=ds.symbol,
         initial_capital=10000,
-        commission_bps=5,
-        slippage_bps=3,
+        collect_trades=True,   # include a per-trade list in result.trades
     )
-    
-    print(f"Return: {result.total_return}%")
-    print(f"Sharpe: {result.Sharpe_ratio}")
-    print(f"Max DD: {result.max_drawdown}%")
-    print(f"Trades: {result.total_trades}")
+
+    print(f"Return: {result.total_return * 100:.2f}%")
+    print(f"Trades: {result.n_trades}")
+    print(f"Final equity: {result.final_equity}")
+    print(f"First trade: {result.trades[0]}")
 
 asyncio.run(run())
 ```
@@ -67,18 +67,30 @@ asyncio.run(run())
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--bars` | 200 | Number of synthetic bars to generate |
+| `--strategy` | mean_reversion | Strategy name |
+| `--bars` | 200 | Number of synthetic bars (capped at 10,000,000) |
 | `--source` | synthetic | Data source: `synthetic`, `csv`, `parquet`, `timescale` |
 | `--path` | - | Path to data file (required for csv/parquet) |
-| `--symbol` | BTCUSDT | Trading symbol |
-| `--timeframe` | 1m | Timeframe (1m, 5m, 15m, 1h, 4h, 1d) |
-| `--initial-capital` | 10000 | Initial capital |
-| `--commission-bps` | 5 | Commission in basis points |
-| `--slippage-bps` | 3 | Slippage in basis points |
-| `--json` | false | Output results as JSON |
-| `--start` | - | Start date (YYYY-MM-DD) for timescale |
-| `--end` | - | End date (YYYY-MM-DD) for timescale |
-| `--validate` | false | Run walk-forward validation |
+| `--seed` | 42 | RNG seed for synthetic data |
+| `--vol` | 0.01 | Volatility for synthetic data |
+| `--capital` | 10000 | Initial capital |
+| `--json` | false | Output result as JSON (logs go to stderr) |
+| `--show-trades` | false | Emit every closed trade (`trades[]` in JSON output) |
+| `--algorithms` | - | JSON job list to sweep in parallel (`--workers` per core) |
+| `--workers` | 0 | Worker processes for `--algorithms` |
+| `--start` | 2024-01-01T00:00:00 | Start datetime |
+| `--end` | 2024-01-02T00:00:00 | End datetime |
+
+#### Parallel sweeps
+
+```bash
+python -m cryptobot.cli.main backtest \
+  --algorithms jobs.json --workers 8 --json > sweep_results.jsonl
+```
+
+Each job in `jobs.json` is `{"strategy": "...", "params": {...}}` with optional
+overrides (`bars`, `capital`, `seed`, `show_trades`). Results are emitted as one
+JSON object per line, in input order.
 
 ## Supported Strategies
 
@@ -161,7 +173,11 @@ FundingArbConfig(
 ## Data Sources
 
 ### Synthetic (Default)
-Generates realistic OHLCV data using geometric Brownian motion with volatility clustering.
+Generates OHLCV data via a vectorized, mean-reverting (Ornstein-Uhlenbeck) random
+walk in log space. Prices snap back toward an equilibrium, so very long runs never
+overflow to `inf` and never pin flat — price keeps moving for millions of bars.
+Generation is fully numpy-vectorized and preserves a deterministic RNG stream per
+seed (identical results for identical seeds).
 
 ```bash
 python -m cryptobot.cli.main backtest --strategy trend_following --bars 1000
@@ -209,23 +225,26 @@ docker compose --profile backtest run --rm cryptobot-backtest \
 
 ## Backtest Results
 
-The backtest returns a `BacktestResult` object with:
+`run_backtest()` returns a `BacktestRunResult`:
 
 | Field | Description |
 |-------|-------------|
-| `total_return` | Total return percentage |
-| `Sharpe_ratio` | Sharpe ratio (annualized) |
-| `Sortino_ratio` | Sortino ratio |
-| `max_drawdown` | Maximum drawdown percentage |
-| `win_rate` | Win rate percentage |
-| `profit_factor` | Gross profit / gross loss |
-| `total_trades` | Number of trades |
-| `winning_trades` | Number of winning trades |
-| `losing_trades` | Number of losing trades |
-| `avg_win` | Average winning trade |
-| `avg_loss` | Average losing trade |
+| `initial_capital` | Starting capital (Decimal) |
+| `final_equity` | Ending equity (Decimal) |
+| `total_return` | Total return as a fraction (e.g. 0.0953 = 9.53%) |
+| `n_trades` | Number of closed trades |
 | `equity_curve` | List of (timestamp, equity) tuples |
-| `trades` | List of TradeRecord objects |
+| `trades` | List of per-trade dicts — only when `collect_trades=True` |
+| `to_dict()` | JSON-friendly dict (used by `--json`) |
+
+Each trade dict: `entry_time`, `exit_time`, `entry_price`, `exit_price`,
+`quantity`, `side`, `pnl`, `pnl_pct`, `fees`, `strategy`.
+
+```python
+result = await run_backtest(bars, strategy=strategy, collect_trades=True)
+for t in result.trades:
+    print(t["exit_time"], t["side"], t["pnl"], t["fees"])
+```
 
 ## Advanced Configuration
 
@@ -248,15 +267,14 @@ strategy = TrendFollowingStrategy(config)
 ### Custom Backtest Parameters
 
 ```python
+ds = load_bars(source="synthetic", symbol="ETHUSDT", timeframe="5m", n_bars=2000)
 result = await run_backtest(
+    ds.bars,
     strategy=strategy,
-    symbol="ETHUSDT",
-    timeframe="5m",
-    bars=2000,
+    symbol=ds.symbol,
     initial_capital=50000,
-    commission_bps=3,
     slippage_bps=2,
-    funding_included=True,
+    commission_bps=3,
 )
 ```
 
@@ -264,35 +282,31 @@ result = await run_backtest(
 
 ### Text (Default)
 ```
-Results: final_equity=12345.67 total_return=23.46% max_dd=5.23% sharpe=1.87 trades=42
+Results: final_equity=8998.83330035 total_return=-10.011666996500 max_dd=0.11 sharpe=-218.3 trades=2232
 ```
 
 ### JSON
 ```bash
 python -m cryptobot.cli.main backtest \
   --strategy trend_following \
-  --json
+  --bars 500 --json --show-trades
 ```
 
-Output:
+Output (stdout is pure JSON; logs go to stderr):
 ```json
 {
-  "start_time": "2024-01-01T00:00:00",
-  "end_time": "2024-01-31T23:59:59",
-  "initial_capital": "10000.0",
-  "final_equity": "12345.67",
-  "total_return": "23.46",
-  "max_drawdown": "5.23",
-  "sharpe": "1.87",
-  "sortino": "2.15",
-  "win_rate": "58.33",
-  "profit_factor": "2.34",
-  "total_trades": 42,
-  "winning_trades": 25,
-  "losing_trades": 17,
-  "avg_win": "125.50",
-  "avg_loss": "-89.25",
-  "equity_curve": [[...], [...]]
+  "source": "synthetic",
+  "n_bars": 500,
+  "initial_capital": "10000",
+  "final_equity": "10095.36216725",
+  "total_return": 0.009536216725,
+  "n_trades": 71,
+  "n_equity_points": 36,
+  "trades": [
+    {"entry_time": "2024-01-01T21:00:00+00:00", "exit_time": "2024-01-02T13:00:00+00:00",
+     "entry_price": "95.65", "exit_price": "96.28", "quantity": "1",
+     "side": "long", "pnl": "0.578", "pnl_pct": "0.605", "fees": "0.048", "strategy": "trend_following"}
+  ]
 }
 ```
 
@@ -427,8 +441,9 @@ strategy = MLStrategy(config)
 # Train on historical data
 strategy.fit(historical_features, historical_labels)
 
-# Run backtest
-result = await run_backtest(strategy=strategy, ...)
+# Run backtest (bars first, then strategy)
+ds = load_bars(source="synthetic", symbol="BTCUSDT", timeframe="1h", n_bars=1000)
+result = await run_backtest(ds.bars, strategy=strategy, symbol=ds.symbol)
 ```
 
 ## Custom Data Sources
@@ -488,7 +503,11 @@ dataset = OhlcvDataset(bars=bars, symbol="BTCUSDT", source="custom")
 3. **Include costs**: Always set realistic commission and slippage
 4. **Walk-forward validation**: Use `run_validation()` for robust testing
 5. **Monte Carlo testing**: Use permutation tests to verify significance
-6. **Profile memory**: Large bar counts may need generator-based streaming
+6. **Sweep in parallel**: Use `--algorithms jobs.json --workers N` to run many
+   strategy/parameter combos across all CPU cores
+7. **Speed**: A 5M-bar synthetic backtest (generation + simulation) runs in ~30s
+   on a laptop; `run_bars` avoids per-bar events, and strategies use O(1)
+   streaming indicators
 
 ## Files Reference
 

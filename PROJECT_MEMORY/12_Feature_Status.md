@@ -1,6 +1,6 @@
 # 12. Feature Status
 
-> **Last Updated**: 2026-08-02 (CI green, release v0.1.0 published)
+> **Last Updated**: 2026-08-04 (backtest CLI sweep + Rust workspace green)
 > **Confidence**: High.
 
 ## Verified module status
@@ -54,7 +54,9 @@
 | `monitoring/alerting.py` | ✅ | AlertManager + Telegram/Discord/Email/PagerDuty channels. `init_alerting()` only starts background task when channels configured; `stop()` idempotent. |
 | `monitoring/health.py` | ✅ | HealthMonitor + HealthChecker subclasses. `inspect.isawaitable` + false-as-unhealthy fix. Auto-register component. |
 | `monitoring/dashboard.py` | ✅ | Dashboard JSON builders. |
-| `cli/main.py` | ✅ | argparse CLI with `validate`, `paper`, `bot`, `serve` subcommands. |
+| `cli/main.py` | ✅ | argparse CLI with `validate`, `paper`, `bot`, `serve` subcommands. Backtest subcommand supports `--show-trades` (print every closed trade; adds `trades[]` with `--json`), `--algorithms jobs.json` (parallel sweep), `--workers N`, `--seed`, `--vol`, `--capital`. With `--json`, logs route to stderr so stdout carries only JSON. |
+| `backtest/parallel.py` | ✅ | `run_parallel(jobs, workers)` multi-core algorithm sweep via `ProcessPoolExecutor`. |
+| `backtest/runner.py` | ✅ | `run_bars` fast path runs the whole backtest loop without per-bar event bus overhead. |
 | `utils/logging.py` | ✅ | structlog wrapper with context vars. |
 | `utils/decorators.py` | ✅ | retry (jitter clamped to ≥0), timeout_decorator, circuit_breaker (raises RuntimeError in running loop). |
 | `utils/types.py` | ✅ | Candle, OrderBook, Trade, TickData, OHLCVBar, PerformanceMetrics. |
@@ -64,8 +66,7 @@
 | `.github/workflows/ci.yml` | ✅ | Lint + unit + compose-validate + buildx matrix (amd64 + arm64). |
 | `.github/workflows/release.yml` | ✅ | Tag-driven multi-arch publish + SBOM + provenance. |
 | `scripts/build_multiarch.sh` | ✅ | Local multi-arch build via buildx + QEMU. |
-| `crates/cryptobot-core/` | ✅ | Manifest + `lib.rs` stub (`pub fn placeholder() -> &'static str`); 1 unit test passes. `cargo build` and `cargo test` succeed. Empty `src/{events,math,time,types}/` subdirs preserved for future surface. |
-| `crates/cryptobot-{backtest,features,risk,stats,orderbook,py}/` | 🔲 | Deleted 2026-07-31 (no manifest, only empty skeleton). Workspace `members` trimmed to `["crates/cryptobot-core"]`. Re-add when each gets a `Cargo.toml` + `lib.rs`. |
+| Rust workspace (`crates/cryptobot-{core,features,risk,stats,orderbook,backtest,py}/`) | ✅ | 7 crates + root workspace manifest. `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (31 tests) all green on stable Rust (1.97+). PyO3 0.29; `cryptobot_py` extension registers `features`, `risk`, `orderbook`, `backtest` submodules. |
 | `pyproject.toml` | ✅ | setuptools build + `cryptobot` CLI entry point. |
 | `migrations/*.sql` | ✅ | `001_extension.sql`, `002_hypertables.sql`. |
 | `docker-compose.yml` | ✅ | Test + default profiles valid (monitoring dirs scaffolded: `monitoring/{loki,promtail,nginx}`). |
@@ -83,7 +84,7 @@
 
 - **CI**: Python 3.13, pytest + pytest-asyncio + pytest-cov + pytest-timeout=60s
 - **Lint**: ruff (py313 target) + pyflakes
-- **Rust**: cargo fmt + clippy + test (workspace: `cryptobot-core` only)
+- **Rust**: cargo fmt + clippy + test (full workspace: 7 crates, 31 tests)
 - **Docker**: test target builds + runs pytest in container
 - **Compose**: validate default + test profiles
 

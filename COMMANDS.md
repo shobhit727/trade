@@ -24,6 +24,24 @@ python -m cryptobot.cli.main backtest --strategy trend_following
 # More bars, JSON output
 python -m cryptobot.cli.main backtest --strategy mean_reversion --bars 500 --json
 
+# Print every closed trade (entry/exit, prices, pnl) — human readable
+python -m cryptobot.cli.main backtest --strategy trend_following --bars 500 --show-trades
+
+# JSON mode also emits a `trades` array when --show-trades is set
+# (logs go to stderr; stdout carries only the JSON result)
+python -m cryptobot.cli.main backtest --strategy trend_following --bars 500 --json --show-trades \
+  > result.json 2> logs.txt
+
+# Sweep many strategies/parameter sets in parallel across CPU cores
+cat > jobs.json <<'EOF'
+[{"strategy": "trend_following", "params": {"fast": 8, "slow": 21}},
+ {"strategy": "trend_following", "params": {"fast": 12, "slow": 26}},
+ {"strategy": "mean_reversion", "params": {"rsi_period": 7}},
+ {"strategy": "mean_reversion", "params": {"rsi_period": 14}}]
+EOF
+python -m cryptobot.cli.main backtest --algorithms jobs.json --workers 4 --json
+# add "show_trades": true to a job to get its per-trade list back
+
 # Programmatic (2000 bars, custom size)
 python - <<'EOF'
 import asyncio
@@ -46,7 +64,8 @@ asyncio.run(main())
 EOF
 ```
 
-> Note: `--bars` > 200 has no effect on synthetic data (hardcoded in `load_bars`).
+> Note: `--bars` is respected for synthetic data (capped at 10M). Synthetic prices use a
+> mean-reverting (Ornstein-Uhlenbeck) process so long runs stay finite and keep trading.
 > Default strategy quantity is 1 BTC; risk limits cap orders at $10k notional — use a small quantity (e.g. 0.05).
 
 ## Backtest — Real Historical Data

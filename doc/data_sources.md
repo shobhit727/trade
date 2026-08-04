@@ -2,14 +2,14 @@
 
 ## Synthetic (Default)
 
-Generates realistic OHLCV data using geometric Brownian motion with volatility clustering.
+Generates realistic OHLCV data: synthetic prices use a vectorized, mean-reverting (Ornstein-Uhlenbeck) random walk in log space, so long runs never overflow and keep trading; generation is deterministic per `seed`.
 
 ```bash
 python -m cryptobot.cli.main backtest --strategy trend_following --bars 1000
 ```
 
 **Characteristics**:
-- Geometric Brownian motion with volatility clustering
+- Mean-reverting (Ornstein-Uhlenbeck) random walk in log space
 - Realistic fat tails and volatility clustering
 - Configurable drift, volatility, jump parameters
 - Deterministic with seed for reproducibility
@@ -302,9 +302,8 @@ bars = [
 dataset = OhlcvDataset(bars=bars, symbol="BTCUSDT", source="custom")
 
 # Use in backtest
-result = await run_backtest(
-    strategy=strategy,
-    data=dataset,
-    ...
-)
+from cryptobot.backtest.data import load_bars
+
+ds = load_bars(source="synthetic", symbol="BTCUSDT", timeframe="1h", n_bars=500)
+result = await run_backtest(ds.bars, strategy=strategy, symbol=ds.symbol)
 ```

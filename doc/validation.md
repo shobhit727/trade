@@ -232,15 +232,13 @@ Overall: PASSED
 ## Integration with Backtest
 
 ```python
+from cryptobot.backtest.data import load_bars
 from cryptobot.backtest.runner import run_backtest
 from cryptobot.backtest.validation import run_validation
 
 # Run backtest
-result = await run_backtest(
-    strategy=strategy,
-    symbol="BTCUSDT",
-    bars=1000,
-)
+ds = load_bars(source="synthetic", symbol="BTCUSDT", timeframe="1h", n_bars=1000)
+result = await run_backtest(ds.bars, strategy=strategy, symbol=ds.symbol)
 
 # Extract returns from equity curve
 equity_curve = result.equity_curve

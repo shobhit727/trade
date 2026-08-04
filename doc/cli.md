@@ -41,19 +41,19 @@ cryptobot backtest [OPTIONS]
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--strategy` | required | Strategy name |
-| `--bars` | 200 | Number of synthetic bars |
+| `--strategy` | mean_reversion | Strategy: mean_reversion, trend_following, stat_arb |
 | `--source` | synthetic | Data source: synthetic, csv, parquet, timescale |
-| `--path` | - | Path to data file |
-| `--symbol` | BTCUSDT | Trading symbol |
-| `--timeframe` | 1m | Timeframe (1m, 5m, 15m, 1h, 4h, 1d) |
-| `--initial-capital` | 10000 | Initial capital |
-| `--commission-bps` | 5 | Commission in basis points |
-| `--slippage-bps` | 3 | Slippage in basis points |
-| `--start` | - | Start date (YYYY-MM-DD) |
-| `--end` | - | End date (YYYY-MM-DD) |
-| `--validate` | false | Run validation |
-| `--json` | false | Output as JSON |
+| `--path` | - | Path to data file (csv/parquet) |
+| `--bars` | 200 | Number of bars (synthetic; capped at 10,000,000) |
+| `--seed` | 42 | RNG seed for synthetic data |
+| `--vol` | 0.01 | Volatility for synthetic data |
+| `--capital` | 10000 | Initial capital (Decimal) |
+| `--start` | 2024-01-01T00:00:00 | Start datetime |
+| `--end` | 2024-01-02T00:00:00 | End datetime |
+| `--json` | false | Output result as JSON (logs go to stderr; stdout is pure JSON) |
+| `--show-trades` | false | Include every closed trade in output (`trades[]` in JSON) |
+| `--algorithms` | - | JSON file with a list of jobs to sweep in parallel |
+| `--workers` | 0 | Worker processes for `--algorithms` (default: one per CPU core) |
 
 #### Examples
 
@@ -64,18 +64,19 @@ cryptobot backtest --strategy trend_following --bars 500
 # With CSV data
 cryptobot backtest --strategy trend_following --source csv --path data/btc.csv
 
-# With validation
-cryptobot backtest --strategy trend_following --validate --json
+# JSON + every trade
+cryptobot backtest --strategy trend_following --bars 5000 --json --show-trades
+
+# Parallel sweep across CPU cores
+cryptobot backtest --algorithms jobs.json --workers 8 --json
 
 # Custom parameters
 cryptobot backtest \
   --strategy trend_following \
   --bars 1000 \
-  --symbol ETHUSDT \
-  --timeframe 5m \
-  --initial-capital 50000 \
-  --commission-bps 3 \
-  --slippage-bps 2
+  --capital 50000 \
+  --seed 7 \
+  --vol 0.02
 ```
 
 ### paper

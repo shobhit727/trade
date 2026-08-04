@@ -1,3 +1,24 @@
+## Session 2026-08-04 (backtest CLI sweep + Rust workspace green)
+
+### Goal
+
+Parallel multi-core backtest sweeps, per-trade CLI output, JSON stdout purity, and a fully green Rust workspace.
+
+### Sequence
+
+1. Parallel multi-core algorithm sweeps: `--algorithms jobs.json` + `--workers N` via `ProcessPoolExecutor` (`backtest/parallel.py`, `run_parallel`).
+2. `--show-trades` prints every closed trade; adds `trades[]` array with `--json`.
+3. `--json` logs routed to stderr; stdout carries only JSON.
+4. Fixed backtest trade `entry_time` to use bar (clock) time instead of wall-clock — `Position.opened_at` stamped with clock time.
+5. 5M-bar synthetic backtest (generation + simulation) now ~30s (was ~13 min); synthetic OHLCV fully vectorized numpy (AR loop 17s → ~1.5s).
+6. Rust workspace (7 crates: core/features/risk/stats/orderbook/backtest/py) made buildable: pyo3 0.29 fixes, `cryptobot_py` submodule wiring (features/risk/orderbook/backtest), Kelly test correction. `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (31 tests) all green.
+7. Docs updated to match: quickstart/strategies/validation/data_sources (`run_backtest(bars, ...)` signature, `load_bars` usage), plan.md, feature status, bug tracker, performance.
+
+### Verified
+
+- All fixtures (B070-B072) closed.
+- Rust workspace builds + lints + tests green on stable 1.97+.
+
 ## Session 2026-07-31 (audit v5 — final cleanups)
 
 ### Goal

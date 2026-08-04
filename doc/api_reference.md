@@ -8,41 +8,57 @@
 
 ```python
 async def run_backtest(
-    strategy: BaseStrategy,
+    bars: Sequence[OhlcvBar],
+    strategy,
     symbol: str = "BTCUSDT",
-    timeframe: str = "1m",
-    bars: int = 200,
-    initial_capital: float = 10000.0,
-    commission_bps: int = 5,
+    initial_capital: Decimal = Decimal("10000"),
     slippage_bps: int = 3,
-    funding_included: bool = True,
-    data_source: str = "synthetic",
-    data_path: str | None = None,
-    start: datetime | None = None,
-    end: datetime | None = None,
-) -> BacktestResult
+    commission_bps: int = 5,
+    execution_engine: ExecutionEngine | None = None,
+    collect_trades: bool = False,
+) -> BacktestRunResult
 ```
 
 **Parameters:**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `strategy` | `BaseStrategy` | required | Strategy instance |
+| `bars` | `Sequence[OhlcvBar]` | required | Bar data (use `load_bars()` to fetch) |
+| `strategy` | strategy instance | required | Strategy with a `feed()` method |
 | `symbol` | `str` | "BTCUSDT" | Trading symbol |
-| `timeframe` | `str` | "1m" | Timeframe |
-| `bars` | `int` | 200 | Number of bars |
-| `initial_capital` | `float` | 10000.0 | Starting capital |
-| `commission_bps` | `int` | 5 | Commission (bps) |
+| `initial_capital` | `Decimal` | 10000 | Starting capital |
 | `slippage_bps` | `int` | 3 | Slippage (bps) |
-| `funding_included` | `bool` | True | Include funding |
-| `data_source` | `str` | "synthetic" | Data source |
-| `data_path` | `str \| None` | None | Data file path |
-| `start` | `datetime \| None` | None | Start date |
-| `end` | `datetime \| None` | None | End date |
+| `commission_bps` | `int` | 5 | Commission (bps) |
+| `execution_engine` | `ExecutionEngine` | None | Reuse an engine (else created) |
+| `collect_trades` | `bool` | False | Populate `result.trades` per-trade dicts |
 
-**Returns:** `BacktestResult`
+**Returns:** `BacktestRunResult` — `initial_capital`, `final_equity`,
+`total_return` (fraction), `n_trades`, `equity_curve`, `trades` (when
+`collect_trades=True`), and a `to_dict()` helper.
 
-#### `BacktestResult`
+```python
+from cryptobot.backtest.data import load_bars
+from cryptobot.backtest.runner import run_backtest
+
+ds = load_bars(source="synthetic", symbol="BTCUSDT", timeframe="1h", n_bars=500)
+result = await run_backtest(ds.bars, strategy=strategy, symbol=ds.symbol, collect_trades=True)
+```
+
+#### `load_bars`
+
+```python
+ds = load_bars(
+    source: str = "synthetic",       # synthetic, csv, parquet, timescale
+    path: str | None = None,         # file path for csv/parquet
+    symbol: str = "BTCUSDT",
+    timeframe: str = "1h",
+    n_bars: int = 200,               # respected for synthetic (max 10_000_000)
+)
+```
+
+Returns an `OhlcvDataset` with `.bars`, `.symbol`, `.source`.
+
+#### `BacktestRunResult`
 
 ```python
 @dataclass

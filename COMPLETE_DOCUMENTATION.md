@@ -128,35 +128,29 @@ _STRATEGY_REGISTRY_MAP = {
 
 ### `run_backtest()` API
 ```python
+from cryptobot.backtest.data import load_bars
+from cryptobot.backtest.runner import run_backtest
+
+ds = load_bars(source="synthetic", symbol="BTCUSDT", timeframe="1h", n_bars=500)
 result = await run_backtest(
-    strategy=strategy,
-    symbol="BTCUSDT",
-    timeframe="1m",
-    bars=500,
+    ds.bars,                     # bars first
+    strategy=strategy,           # strategy second
+    symbol=ds.symbol,
     initial_capital=10000,
-    commission_bps=5,
-    slippage_bps=3,
-    data_source="synthetic",  # or csv, parquet, timescale
+    collect_trades=True,         # include per-trade dicts in result.trades
 )
 ```
 
-### BacktestResult
+### BacktestRunResult
 ```python
 @dataclass
-class BacktestResult:
-    start_time: datetime
-    end_time: datetime
+class BacktestRunResult:
     initial_capital: Decimal
     final_equity: Decimal
-    total_return: Decimal
-    max_drawdown: Decimal
-    Sharpe_ratio: Decimal
-    Sortino_ratio: Decimal
-    win_rate: Decimal
-    profit_factor: Decimal
-    total_trades: int
+    total_return: float          # fraction (0.0953 = 9.53%)
+    n_trades: int
     equity_curve: list[tuple[datetime, Decimal]]
-    trades: list[TradeRecord]
+    trades: list[dict]           # per-trade dicts when collect_trades=True
 ```
 
 ### Validation Framework (`backtest/validation.py`)

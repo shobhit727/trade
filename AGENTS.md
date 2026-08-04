@@ -5,7 +5,7 @@ Cryptobot is an elite quantitative trading system written in Python 3.13+ with a
 
 **Key Stack:**
 - Python 3.13+ (src/cryptobot/)
-- Rust workspace (crates/cryptobot-core) — ready for PyO3 bindings
+- Rust workspace (crates/) — 7 crates (core, features, risk, stats, orderbook, backtest, py) with PyO3 0.29 bindings, executable locally via `rustup`
 - Docker multi-arch (amd64/arm64) via buildx
 - TimescaleDB + Redis for state
 - Prometheus/Grafana monitoring stack
@@ -75,7 +75,7 @@ src/cryptobot/          # Main Python package (src-layout)
 ├── strategies/         # Base + implementations (trend, MM, stat arb, funding, ML)
 └── utils/              # Logging, decorators, types, health server
 
-crates/cryptobot-core/  # Rust workspace (single member, lib.rs stub)
+crates/cryptobot-*/      # Rust workspace — 7 crates (core, features, risk, stats, orderbook, backtest, py)
 ```
 
 ### Key Conventions
@@ -175,7 +175,7 @@ env:
 
 ### Rust Toolchain
 - Uses `dtolnay/rust-toolchain@stable` (auto-installs)
-- Workspace: 7 crates in `crates/` (core, backtest, features, risk, stats, orderbook, py)
+- Workspace: 7 crates in `crates/` (core, features, risk, stats, orderbook, backtest, py); fully buildable locally via `rustup`
 - Targets: `cargo fmt --check`, `clippy -D warnings`, `test`
 - PyO3: `0.29` for Rust 1.97+ compatibility
 - All 31 Rust tests pass
@@ -243,6 +243,12 @@ make compose-shell
 
 # Rust workspace
 make cargo-lint && make cargo-test && make cargo-build
+
+# Backtest: per-trade output
+python -m cryptobot.cli.main backtest --strategy trend_following --bars 5000000 --show-trades
+
+# Backtest: parallel algorithm sweep (multi-core)
+python -m cryptobot.cli.main backtest --algorithms jobs.json --workers 8 --json
 ```
 
 ---

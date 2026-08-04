@@ -121,6 +121,7 @@ strategy = FundingArbStrategy(config)
 
 ## ML Strategy
 ```python
+from cryptobot.backtest.data import load_bars
 from cryptobot.strategies.ml_strategy import MLStrategy, MLStrategyConfig
 from cryptobot.ml.models.direction import DirectionConfig
 
@@ -135,5 +136,6 @@ strategy = MLStrategy(config)
 strategy.fit(historical_features, historical_labels)
 
 # Run backtest
-result = await run_backtest(strategy=strategy, ...)
+ds = load_bars(source="synthetic", symbol="BTCUSDT", timeframe="1h", n_bars=1000)
+result = await run_backtest(ds.bars, strategy=strategy, symbol=ds.symbol)
 ```

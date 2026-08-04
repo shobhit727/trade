@@ -1,6 +1,6 @@
 # 13. Bug Tracker
 
-> **Last Updated**: 2026-07-31 (audit v2)
+> **Last Updated**: 2026-08-04 (backtest CLI + Rust workspace fixes closed)
 > **Confidence**: High for resolved; medium for open.
 
 ## Resolved (verified)
@@ -76,20 +76,21 @@
 | B057 | `strategies/registry.py` | `ml_strategy` missing from strategy registry map. | Added `ml_strategy` to `_STRATEGY_REGISTRY_MAP`. |
 | B058 | `configs/base.yaml` | `ml.models.direction.type: lightgbm` but implementation uses sklearn. | Changed to `sklearn_logreg`; disabled `volatility`/`regime`. |
 | B059 | `configs/base.yaml` | `strategies.enabled` list not read by any code. | Added `load_strategies_from_config()` with `_STRATEGY_REGISTRY_MAP`. |
+| B070 | `backtest/engine.py` | Backtest trade `entry_time` used wall-clock instead of bar time. | **Fixed 2026-08-04**: `Position.opened_at` stamped with clock (bar) time. |
+| B071 | `cli/main.py` | `--json` CLI output polluted by log lines on stdout. | **Fixed 2026-08-04**: logs routed to stderr for JSON modes; stdout carries only JSON. |
+| B072 | Rust workspace | `cargo build` failed on invalid pyo3 `generate-abi3` feature; clippy/tests broken. | **Fixed 2026-08-04**: pyo3 0.29 feature fixes, submodule wiring, Kelly test correction. `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (31 tests) all green. |
 
 ## Open (verified)
 
 | ID | File | Bug | Risk |
 |----|------|------|------|
 | B051 | `monitoring/__init__.py` | Eagerly imports `cryptobot.monitoring.metrics` — no-Prometheus env crashes. | Medium. Lazy-import in downstream consumers; or convert `monitoring/__init__.py` to a thin facade. |
-| **NEW** | `Cargo.toml [workspace] members` + 6 empty `crates/*` | `cargo build` fails: 6 of 7 declared members have no `Cargo.toml`. | High for any Rust-aware CI / cross-crate refactor; Low otherwise (Python doesn't depend on Rust at runtime). |
 | **NEW** | `src/cryptobot/{allocator,altdata,api,exchanges,funding,xmr}/` | Dead empty dirs left in tree. | Cosmetic; bloat; hint to newcomers. |
 
 ## Will-surprise areas
 
 - `core/portfolio.py` `StrategyAllocation` initial `max_weight=0.2` is hardcoded; reads `settings.risk.max_single_position_pct` only if `register_strategy` is called with an explicit `max_weight` arg.
 - `risk/manager.py` uses `state.used_margin + notional` for total exposure. `used_margin` may not reflect actual margin usage for cross-margin venues.
-- `crates/cryptobot-core/src/{events,math,time,types}/` are empty subdirs; only the manifest exists.
 - `BinanceWSClient._symbols` / `_timeframes` fallback is silent (B044) — if YAML is misconfigured the bot quietly streams only `BTCUSDT 1m`. Add a `get_logger().warning` when fallback fires.
 
 ## Verification plan
@@ -97,5 +98,5 @@
 - `python3 -m py_compile` on all edited files: passes.
 - `docker compose --profile test config`: passes.
 - `docker compose config` (default profile): passes (scaffolded `monitoring/{loki,promtail,nginx}`).
-- `cargo build` from repo root: **fails** until workspace is trimmed or per-crate manifests added.
+- `cargo build` from repo root: ✅ workspace builds (verified 2026-08-04).
 - Full Docker runtime blocked by host daemon instability on some hosts.

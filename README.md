@@ -28,7 +28,7 @@ docker compose logs -f cryptobot-paper
 
 | Layer | Tech |
 |-------|------|
-| Core  | Python 3.13 (async), Rust workspace (`cryptobot-core`) |
+| Core  | Python 3.13 (async), Rust workspace (7 crates: core, features, risk, stats, orderbook, backtest, py) |
 | Exchange | Binance (REST + WebSocket) |
 | Risk  | Real-time position/portfolio limits |
 | Strategies | Trend following, market making, stat arb |
@@ -106,7 +106,8 @@ src/cryptobot/
 ├── strategies/    # Base, trend, market_making, stat_arb
 └── utils/         # Logging, decorators, types
 
-crates/cryptobot-core/   # Rust library (placeholder)
+crates/                        # Rust workspace (root Cargo.toml): core, features,
+│                              # risk, stats, orderbook, backtest, py (PyO3 bindings)
 ```
 
 ## Documentation

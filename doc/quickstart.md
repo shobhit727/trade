@@ -39,6 +39,7 @@ python -m cryptobot.cli.main backtest \
 
 ```python
 import asyncio
+from cryptobot.backtest.data import load_bars
 from cryptobot.backtest.runner import run_backtest
 from cryptobot.strategies.trend_following import TrendFollowingStrategy, TrendFollowingConfig
 
@@ -46,20 +47,17 @@ async def run():
     config = TrendFollowingConfig(ema_fast=12, ema_slow=26, adx_threshold=25)
     strategy = TrendFollowingStrategy(config)
     
+    ds = load_bars(source="synthetic", symbol="BTCUSDT", timeframe="1h", n_bars=500)
     result = await run_backtest(
+        ds.bars,
         strategy=strategy,
-        symbol="BTCUSDT",
-        timeframe="1m",
-        bars=500,
+        symbol=ds.symbol,
         initial_capital=10000,
-        commission_bps=5,
-        slippage_bps=3,
     )
     
-    print(f"Return: {result.total_return}%")
-    print(f"Sharpe: {result.Sharpe_ratio}")
-    print(f"Max DD: {result.max_drawdown}%")
-    print(f"Trades: {result.total_trades}")
+    print(f"Return: {result.total_return * 100:.2f}%")
+    print(f"Final equity: {result.final_equity}")
+    print(f"Trades: {result.n_trades}")
 
 asyncio.run(run())
 ```
