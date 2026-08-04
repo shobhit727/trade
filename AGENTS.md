@@ -175,8 +175,10 @@ env:
 
 ### Rust Toolchain
 - Uses `dtolnay/rust-toolchain@stable` (auto-installs)
-- Workspace: `crates/cryptobot-core` only
+- Workspace: 7 crates in `crates/` (core, backtest, features, risk, stats, orderbook, py)
 - Targets: `cargo fmt --check`, `clippy -D warnings`, `test`
+- PyO3: `0.29` for Rust 1.97+ compatibility
+- All 31 Rust tests pass
 
 ---
 
@@ -195,8 +197,8 @@ git push origin v0.1.0
 ```
 
 ### Version Sources
-- **Python**: `pyproject.toml` `[project].version`
-- **Rust**: `Cargo.toml` `[workspace.package].version`
+- **Python**: `pyproject.toml` `[project].version` (0.2.0)
+- **Rust**: `Cargo.toml` `[workspace.package].version` (0.2.0)
 - **Docker**: Git tag (stripped `v` prefix)
 
 ---
