@@ -53,7 +53,7 @@ fn py_vpin(buckets: Vec<f64>) -> PyResult<f64> {
 }
 
 #[pymodule]
-fn cryptobot_orderbook(m: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn cryptobot_orderbook(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyOrderBook>()?;
     m.add_function(wrap_pyfunction!(py_vpin, m)?)?;

@@ -1,3 +1,3 @@
 //! Re-export cryptobot-backtest Python bindings
 
-pub use cryptobot_backtest::python_bindings::*;
+pub use cryptobot_backtest::python_bindings::cryptobot_backtest;

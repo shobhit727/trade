@@ -33,7 +33,7 @@ fn py_max_abs_correlation(corr_matrix: Vec<Vec<f64>>) -> PyResult<f64> {
 }
 
 #[pymodule]
-fn cryptobot_risk(m: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn cryptobot_risk(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_function(wrap_pyfunction!(py_kelly_fraction, m)?)?;
     m.add_function(wrap_pyfunction!(py_kelly_from_stats, m)?)?;

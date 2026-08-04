@@ -76,7 +76,7 @@ mod tests {
             100.0, 101.0, 100.5, 102.0, 101.5, 103.0, 102.5, 104.0, 103.5, 105.0,
         ];
         let rsi = rsi(&prices, 5);
-        assert!(rsi.len() > 0);
-        assert!(rsi.iter().all(|&v| v >= 0.0 && v <= 100.0));
+        assert!(!rsi.is_empty());
+        assert!(rsi.iter().all(|&v| (0.0..=100.0).contains(&v)));
     }
 }

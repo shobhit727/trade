@@ -3,13 +3,11 @@
 pub fn max_abs_correlation(corr_matrix: &[Vec<f64>]) -> f64 {
     let n = corr_matrix.len();
     let mut max_corr = 0.0;
-    for i in 0..n {
-        for j in (i + 1)..n {
-            if j < corr_matrix[i].len() {
-                let c = corr_matrix[i][j].abs();
-                if c > max_corr {
-                    max_corr = c;
-                }
+    for (i, row) in corr_matrix.iter().take(n).enumerate() {
+        for c in row.iter().skip(i + 1).take(n) {
+            let c = c.abs();
+            if c > max_corr {
+                max_corr = c;
             }
         }
     }

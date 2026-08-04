@@ -15,6 +15,7 @@ pub fn placeholder() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rust_decimal::Decimal;
 
     #[test]
     fn placeholder_returns_name() {
@@ -24,7 +25,7 @@ mod tests {
     #[test]
     fn test_ohlcv_bar_creation() {
         let bar = OhlcvBar::new(50000.0, 50100.0, 49900.0, 50050.0, 1000.0);
-        assert_eq!(bar.open, 50000.0);
+        assert_eq!(bar.open, Decimal::from(50000));
         assert!(bar.is_valid());
     }
 

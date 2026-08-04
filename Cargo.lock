@@ -406,8 +406,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
+name = "cryptobot-backtest"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "chrono",
+ "criterion",
+ "cryptobot-core",
+ "dashmap",
+ "nalgebra",
+ "parking_lot",
+ "proptest",
+ "pyo3",
+ "rand 0.8.7",
+ "rand_distr",
+ "rmp-serde",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "statrs",
+ "thiserror",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "cryptobot-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "bincode",
@@ -418,6 +445,7 @@ dependencies = [
  "nalgebra",
  "parking_lot",
  "proptest",
+ "pyo3",
  "rmp-serde",
  "rust_decimal",
  "rust_decimal_macros",
@@ -425,6 +453,130 @@ dependencies = [
  "serde_json",
  "thiserror",
  "toml 0.8.23",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "cryptobot-features"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "chrono",
+ "criterion",
+ "cryptobot-core",
+ "dashmap",
+ "nalgebra",
+ "parking_lot",
+ "proptest",
+ "pyo3",
+ "rand 0.8.7",
+ "rand_distr",
+ "rmp-serde",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "statrs",
+ "thiserror",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "cryptobot-orderbook"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "chrono",
+ "criterion",
+ "cryptobot-core",
+ "dashmap",
+ "nalgebra",
+ "parking_lot",
+ "proptest",
+ "pyo3",
+ "rand 0.8.7",
+ "rand_distr",
+ "rmp-serde",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "statrs",
+ "thiserror",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "cryptobot-py"
+version = "0.2.0"
+dependencies = [
+ "criterion",
+ "cryptobot-backtest",
+ "cryptobot-core",
+ "cryptobot-features",
+ "cryptobot-orderbook",
+ "cryptobot-risk",
+ "cryptobot-stats",
+ "proptest",
+ "pyo3",
+ "rust_decimal",
+ "rust_decimal_macros",
+]
+
+[[package]]
+name = "cryptobot-risk"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "chrono",
+ "criterion",
+ "cryptobot-core",
+ "dashmap",
+ "nalgebra",
+ "parking_lot",
+ "proptest",
+ "pyo3",
+ "rand 0.8.7",
+ "rand_distr",
+ "rmp-serde",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "statrs",
+ "thiserror",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "cryptobot-stats"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "chrono",
+ "criterion",
+ "cryptobot-core",
+ "dashmap",
+ "nalgebra",
+ "parking_lot",
+ "proptest",
+ "rand 0.8.7",
+ "rand_distr",
+ "rmp-serde",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "statrs",
+ "thiserror",
  "tracing",
  "uuid",
 ]
@@ -587,6 +739,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
+name = "heck"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
+
+[[package]]
 name = "hermit-abi"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -687,6 +845,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 
 [[package]]
+name = "libm"
+version = "0.2.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
+
+[[package]]
 name = "linked-hash-map"
 version = "0.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -747,6 +911,8 @@ dependencies = [
  "num-complex",
  "num-rational",
  "num-traits",
+ "rand 0.8.7",
+ "rand_distr",
  "simba",
  "typenum",
 ]
@@ -807,6 +973,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
+ "libm",
 ]
 
 [[package]]
@@ -943,6 +1110,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "portable-atomic"
+version = "1.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d20d5497ef88037a52ff98267d066e7f11fcc5e99bbfbd58a42336193aacec3"
+
+[[package]]
 name = "ppv-lite86"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1006,6 +1179,63 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "pyo3"
+version = "0.29.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc153f5fd745cc038b5eed86622125969f8a39834a57bc96beaaf2512b1da729"
+dependencies = [
+ "libc",
+ "once_cell",
+ "portable-atomic",
+ "pyo3-build-config",
+ "pyo3-ffi",
+ "pyo3-macros",
+]
+
+[[package]]
+name = "pyo3-build-config"
+version = "0.29.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb77d9aa6d647507b55c69ee714d266d84c526c78ff0bc6dd8757f58591e64d1"
+dependencies = [
+ "target-lexicon",
+]
+
+[[package]]
+name = "pyo3-ffi"
+version = "0.29.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3160087aa5733bce7d9a729f8c55f85a2a53b74742a09613178eeebff0722253"
+dependencies = [
+ "libc",
+ "pyo3-build-config",
+]
+
+[[package]]
+name = "pyo3-macros"
+version = "0.29.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91f9d455db760a9a0b0ddeaac25f1390b8a36ba73dfbda9f127cac6fc340d4d5"
+dependencies = [
+ "proc-macro2",
+ "pyo3-macros-backend",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "pyo3-macros-backend"
+version = "0.29.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e343bcec300ff262f5806a33a4e51b6d097a8a46435f512fcb83e95592581625"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -1116,6 +1346,16 @@ name = "rand_core"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
+
+[[package]]
+name = "rand_distr"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32cb0b9bc82b0a0876c2dd994a7e7a2683d3e7390ca40e6886785ef0c7e3ee31"
+dependencies = [
+ "num-traits",
+ "rand 0.8.7",
+]
 
 [[package]]
 name = "rand_xorshift"
@@ -1446,6 +1686,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 
 [[package]]
+name = "statrs"
+version = "0.17.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f697a07e4606a0a25c044de247e583a330dbb1731d11bc7350b81f48ad567255"
+dependencies = [
+ "approx",
+ "nalgebra",
+ "num-traits",
+ "rand 0.8.7",
+]
+
+[[package]]
 name = "syn"
 version = "1.0.109"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1483,6 +1735,12 @@ name = "tap"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
+
+[[package]]
+name = "target-lexicon"
+version = "0.13.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca"
 
 [[package]]
 name = "tempfile"

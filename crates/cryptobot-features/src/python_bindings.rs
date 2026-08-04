@@ -65,7 +65,7 @@ fn py_bollinger_bands(
 
 /// Python module definition
 #[pymodule]
-fn cryptobot_features(m: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn cryptobot_features(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_function(wrap_pyfunction!(py_log_returns, m)?)?;
     m.add_function(wrap_pyfunction!(py_simple_returns, m)?)?;

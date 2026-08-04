@@ -1,6 +1,5 @@
 //! Performance Metrics - Sharpe, Sortino, Drawdown, Profit Factor
 
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

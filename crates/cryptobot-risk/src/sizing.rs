@@ -37,7 +37,7 @@ mod tests {
     #[test]
     fn test_kelly() {
         let f = kelly_fraction(0.6, 2.0);
-        assert!((f - 0.1).abs() < 1e-9);
+        assert!((f - 0.4).abs() < 1e-9);
     }
 
     #[test]

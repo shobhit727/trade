@@ -14,7 +14,7 @@ impl OrderBook {
     }
 
     pub fn best_bid(&self) -> Option<(i64, f64)> {
-        self.bids.iter().rev().next().map(|(p, s)| (*p, *s))
+        self.bids.iter().next_back().map(|(p, s)| (*p, *s))
     }
 
     pub fn best_ask(&self) -> Option<(i64, f64)> {

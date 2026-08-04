@@ -3,7 +3,7 @@
 use pyo3::prelude::*;
 
 /// Python wrapper for PerformanceMetrics
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone, Debug)]
 struct PyPerformanceMetrics {
     inner: crate::metrics::PerformanceMetrics,
@@ -76,7 +76,7 @@ fn py_simulate_fill(
 }
 
 #[pymodule]
-fn cryptobot_backtest(m: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn cryptobot_backtest(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyPerformanceMetrics>()?;
     m.add_function(wrap_pyfunction!(py_calculate_metrics, m)?)?;
