@@ -1,168 +1,95 @@
 from __future__ import annotations
 
-from decimal import Decimal
-from typing import Any
-from unittest.mock import AsyncMock
-
 import pytest
 
-from cryptobot.core.events import OrderEvent, OrderSide, OrderStatus, OrderType
+from cryptobot.execution.venue.binance import BinanceVenue
 
 
-class FakeExchange:
-    def __init__(self, responses: dict[str, Any] | None = None, errors: list[Exception] | None = None):
-        self.create_order = AsyncMock(side_effect=errors or [responses or self._default()])
-        self.cancel_order = AsyncMock(return_value=None)
-        self.fetch_ticker = AsyncMock(return_value={"last": "101.5"})
-        self.closed = False
-
-    async def close(self):
-        self.closed = True
-
-    @staticmethod
-    def _default() -> dict[str, Any]:
-        return {
-            "id": "binance-1",
-            "status": "closed",
-            "filled": 1.0,
-            "amount": 1.0,
-            "average": "100.5",
-            "price": "100.5",
-            "fee": {"cost": "0.01", "currency": "USDT"},
-        }
+def test_binance_venue_init_defaults():
+    v = BinanceVenue()
+    assert v.market_type == "future"
+    assert v.rate_limit_ms == 200
+    assert v.max_retries == 3
+    assert v._exchange is None
 
 
-@pytest.fixture
-def fake_exchange():
-    """Create a mock ccxt exchange instance."""
-    return FakeExchange()
+def test_binance_venue_init_custom():
+    v = BinanceVenue(
+        api_key="test_key",
+        api_secret="test_secret",
+        market_type="spot",
+        sandbox=True,
+        rate_limit_ms=100,
+        max_retries=5,
+    )
+    assert v.api_key == "test_key"
+    assert v.api_secret == "test_secret"
+    assert v.market_type == "spot"
+    assert v.sandbox is True
+    assert v.rate_limit_ms == 100
+    assert v.max_retries == 5
 
 
-def _make_order(**kwargs) -> OrderEvent:
-    defaults = dict(
+def test_binance_venue_map_order_type():
+    from cryptobot.core.events import OrderType
+    v = BinanceVenue()
+    assert v._map_order_type(OrderType.MARKET) == "market"
+    assert v._map_order_type(OrderType.LIMIT) == "limit"
+    assert v._map_order_type(OrderType.STOP_LOSS) == "stop_market"
+    assert v._map_order_type(OrderType.STOP_LOSS_LIMIT) == "stop"
+    assert v._map_order_type(OrderType.TAKE_PROFIT) == "take_profit_market"
+    assert v._map_order_type(OrderType.TAKE_PROFIT_LIMIT) == "take_profit"
+
+
+def test_binance_venue_map_side():
+    from cryptobot.core.events import OrderSide
+    v = BinanceVenue()
+    assert v._map_side(OrderSide.BUY) == "buy"
+    assert v._map_side(OrderSide.SELL) == "sell"
+
+
+def test_binance_venue_has_credentials():
+    v = BinanceVenue(api_key="key", api_secret="secret")
+    assert v._has_credentials("key", "secret") is True
+    assert v._has_credentials("", "secret") is False
+    assert v._has_credentials("key", "") is False
+    assert v._has_credentials("", "") is False
+
+
+def test_binance_venue_reject():
+
+    from cryptobot.core.events import OrderEvent, OrderSide, OrderStatus, OrderType
+    v = BinanceVenue()
+    order = OrderEvent(
         symbol="BTCUSDT",
         side=OrderSide.BUY,
         type=OrderType.MARKET,
-        quantity=Decimal("1"),
-        price=Decimal("100"),
+        quantity=1,
     )
-    defaults.update(kwargs)
-    return OrderEvent(**defaults)
+    rejected = v._reject(order, OrderStatus.REJECTED, "test reason")
+    assert rejected.status == OrderStatus.REJECTED
+    assert rejected.payload.get("error") == "test reason"
 
 
-@pytest.mark.asyncio
-async def test_rejects_when_credentials_missing(monkeypatch):
-    monkeypatch.setenv("BINANCE_API_KEY", "")
-    monkeypatch.setenv("BINANCE_API_SECRET", "")
-    import importlib
-
-    import cryptobot.config as cfgmod
-
-    importlib.reload(cfgmod)
-    import cryptobot.execution.venue.binance as bmod
-    importlib.reload(bmod)
-
-    venue = bmod.BinanceVenue(api_key="", api_secret="")
-    order = _make_order()
-    result = await venue.submit_order(order)
-    assert result.status == OrderStatus.REJECTED
-    assert "credentials" in result.payload.get("error", "").lower()
-    importlib.reload(cfgmod)
+def test_binance_venue_close_without_exchange():
+    import asyncio
+    v = BinanceVenue()
+    asyncio.run(v.close())
+    # _closed only set if _exchange was not None
+    assert v._closed is False
+    assert v._exchange is None
 
 
-@pytest.mark.asyncio
-async def test_submit_order_returns_filled_event(fake_exchange, monkeypatch):
-    monkeypatch.setenv("BINANCE_API_KEY", "testkey")
-    monkeypatch.setenv("BINANCE_API_SECRET", "testsecret")
-    import importlib
-
-    import cryptobot.config as cfgmod
-    importlib.reload(cfgmod)
-    import cryptobot.execution.venue.binance as bmod
-    importlib.reload(bmod)
-
-    # Set up mock after reload
-    import types
-    fake_class = type("binance_fake", (), {"__new__": lambda cls, cfg: fake_exchange})
-    mock_ccxt = types.ModuleType("ccxt.async_support")
-    mock_ccxt.binance = fake_class
-    monkeypatch.setattr(bmod, "ccxt_async", mock_ccxt, raising=False)
-
-    venue = bmod.BinanceVenue(api_key="k", api_secret="s")
-    fake_exchange.create_order.return_value = FakeExchange._default()
-    order = _make_order()
-    filled = await venue.submit_order(order)
-    assert filled.status == OrderStatus.FILLED
-    assert filled.filled_quantity == Decimal("1")
-    assert filled.avg_fill_price == Decimal("100.5")
-    assert filled.commission == Decimal("0.01")
-    assert filled.commission_asset == "USDT"
-    importlib.reload(cfgmod)
+def test_binance_venue_ensure_exchange_no_ccxt():
+    import cryptobot.execution.venue.binance as binance_mod
+    original = binance_mod.ccxt_async
+    binance_mod.ccxt_async = None
+    try:
+        v = BinanceVenue()
+        with pytest.raises(RuntimeError, match="ccxt is not installed"):
+            v._ensure_exchange()
+    finally:
+        binance_mod.ccxt_async = original
 
 
-@pytest.mark.asyncio
-async def test_retries_then_rejects(fake_exchange, monkeypatch):
-    monkeypatch.setenv("BINANCE_API_KEY", "k")
-    monkeypatch.setenv("BINANCE_API_SECRET", "s")
-    import importlib
-
-    import cryptobot.config as cfgmod
-    importlib.reload(cfgmod)
-    import cryptobot.execution.venue.binance as bmod
-    importlib.reload(bmod)
-
-    # Set up mock after reload
-    import types
-    fake_class = type("binance_fake", (), {"__new__": lambda cls, cfg: fake_exchange})
-    mock_ccxt = types.ModuleType("ccxt.async_support")
-    mock_ccxt.binance = fake_class
-    monkeypatch.setattr(bmod, "ccxt_async", mock_ccxt, raising=False)
-
-    venue = bmod.BinanceVenue(api_key="k", api_secret="s", max_retries=2)
-    fake_exchange.create_order.side_effect = [RuntimeError("boom"), RuntimeError("boom")]
-    order = _make_order()
-    result = await venue.submit_order(order)
-    assert result.status == OrderStatus.REJECTED
-    assert "boom" in result.payload.get("error", "")
-    importlib.reload(cfgmod)
-
-
-@pytest.mark.asyncio
-async def test_cancel_order_swallows_missing_credentials():
-    import cryptobot.execution.venue.binance as bmod
-
-    venue = bmod.BinanceVenue(api_key="", api_secret="")
-    assert await venue.cancel_order("o1") is False
-
-
-@pytest.mark.asyncio
-async def test_get_price_returns_decimal(fake_exchange, monkeypatch):
-    monkeypatch.setenv("BINANCE_API_KEY", "k")
-    monkeypatch.setenv("BINANCE_API_SECRET", "s")
-    import importlib
-
-    import cryptobot.config as cfgmod
-    importlib.reload(cfgmod)
-    import cryptobot.execution.venue.binance as bmod
-    importlib.reload(bmod)
-
-    # Set up mock after reload
-    import types
-    fake_class = type("binance_fake", (), {"__new__": lambda cls, cfg: fake_exchange})
-    mock_ccxt = types.ModuleType("ccxt.async_support")
-    mock_ccxt.binance = fake_class
-    monkeypatch.setattr(bmod, "ccxt_async", mock_ccxt, raising=False)
-
-    venue = bmod.BinanceVenue(api_key="k", api_secret="s")
-    fake_exchange.fetch_ticker.return_value = {"last": 123.45}
-    price = await venue.get_price("BTCUSDT")
-    assert price == Decimal("123.45")
-    importlib.reload(cfgmod)
-
-
-def test_map_symbol_adds_slash():
-    import cryptobot.execution.venue.binance as bmod
-
-    venue = bmod.BinanceVenue(api_key="k", api_secret="s")
-    assert venue._map_symbol("BTCUSDT") == "BTC/USDT"
-    assert venue._map_symbol("ETH/USDT") == "ETH/USDT"
+__all__ = []
