@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-
-import numpy as np
+from typing import TYPE_CHECKING
 
 from cryptobot.core.events import Event, OrderEvent, OrderSide, OrderType
 from cryptobot.ml.features import build_features, future_returns
 from cryptobot.ml.models.direction import DirectionClassifier, DirectionConfig
+
+if TYPE_CHECKING:
+    from cryptobot.backtest.data import OhlcvDataset
 
 
 @dataclass
@@ -74,11 +77,11 @@ class MLStrategy:
 
         # Build features from current buffer
         try:
-            arr = np.fromiter(buf, dtype=float)
-            features = build_features(arr)
-            if features.shape[0] == 0:
+            dataset = self._price_dataset(buf)
+            features = build_features(dataset)
+            if features.features.shape[0] == 0:
                 return None
-            latest_features = features[-1:]
+            latest_features = features.features[-1:]
         except Exception:
             return None
 
@@ -110,18 +113,37 @@ class MLStrategy:
             side=side,
         )
 
+    def _price_dataset(self, buf: deque[float]) -> OhlcvDataset:
+        """Wrap a price-only buffer as OHLCV so build_features accepts it."""
+        from cryptobot.backtest.data import OhlcvDataset
+        from cryptobot.backtest.runner import OhlcvBar
+
+        base = datetime.now(UTC)
+        bars = [
+            OhlcvBar(
+                timestamp=base + timedelta(seconds=i),
+                open=float(p),
+                high=float(p),
+                low=float(p),
+                close=float(p),
+                volume=0.0,
+            )
+            for i, p in enumerate(buf)
+        ]
+        return OhlcvDataset(bars=bars, symbol=next(iter(self._prices), "BTCUSDT"))
+
     def _retrain(self, buf: deque[float]) -> None:
         """Retrain the direction classifier on recent data."""
         try:
-            arr = np.fromiter(buf, dtype=float)
-            features = build_features(arr)
-            labels_arr = future_returns(arr, horizon=self.config.horizon)
-            if features.shape[0] == 0 or labels_arr.size == 0:
+            dataset = self._price_dataset(buf)
+            features = build_features(dataset)
+            labels_arr = future_returns(dataset.close, horizons=[self.config.horizon])
+            if features.features.shape[0] == 0 or labels_arr.size == 0:
                 return
             # Align features and labels
-            n_common = min(features.shape[0], labels_arr.size)
-            X = features[-n_common:]
-            y = (labels_arr[-n_common:] > 0).astype(int)
+            n_common = min(features.features.shape[0], labels_arr.shape[0])
+            X = features.features[-n_common:]
+            y = (labels_arr[-n_common:, 0] > 0).astype(int)
 
             clf_config = DirectionConfig(
                 threshold=self.config.threshold,

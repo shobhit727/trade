@@ -125,6 +125,11 @@ def make_strategy(name: str, **kwargs):
     if name == "trend_following":
         cfg = TrendFollowingConfig(**kwargs) if kwargs else TrendFollowingConfig()
         return TrendFollowingStrategy(cfg)
+    if name == "ml_strategy":
+        from cryptobot.strategies.ml_strategy import MLStrategy, MLStrategyConfig
+
+        cfg = MLStrategyConfig(**kwargs) if kwargs else MLStrategyConfig()
+        return MLStrategy(cfg)
     raise ValueError(f"Unknown strategy: {name}")
 
 

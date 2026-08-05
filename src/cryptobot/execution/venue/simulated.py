@@ -29,11 +29,13 @@ class SimulatedVenue(Venue):
         prices: dict[str, Decimal] | None = None,
         slippage_bps: Decimal = Decimal("2"),
         commission_bps: Decimal = Decimal("5"),
+        maker_commission_bps: Decimal | None = None,
         funding_rate: Decimal = Decimal("0.0001"),
     ):
         self.prices = prices or {}
         self.default_slippage_bps = slippage_bps
         self.commission_bps = commission_bps
+        self.maker_commission_bps = maker_commission_bps if maker_commission_bps is not None else commission_bps
         self.funding_rate = funding_rate
         self.orders: dict[str, OrderEvent] = {}
         self._position_qty: dict[str, Decimal] = {}
@@ -46,13 +48,18 @@ class SimulatedVenue(Venue):
             self.orders[order.order_id] = order
             order.__post_init__()
             return order
-        slip = self.default_slippage_bps
+
+        # Maker (limit) orders rest at their limit price and pay the maker fee;
+        # taker (market) orders pay the taker fee and are subject to slippage.
+        is_maker = order.type.value == "LIMIT"
+        slip = Decimal("0") if is_maker else self.default_slippage_bps
+        fee_bps = self.maker_commission_bps if is_maker else self.commission_bps
         if order.side.value == "BUY":
             fill_price = mark * (Decimal("1") + slip / Decimal("10000"))
         else:
             fill_price = mark * (Decimal("1") - slip / Decimal("10000"))
         fill_price = fill_price.quantize(Decimal("0.0001"))
-        fees = (order.quantity * fill_price * self.commission_bps / Decimal("10000")).quantize(Decimal("0.0001"))
+        fees = (order.quantity * fill_price * fee_bps / Decimal("10000")).quantize(Decimal("0.0001"))
         order.filled_quantity = order.quantity
         order.avg_fill_price = fill_price
         order.commission = fees
