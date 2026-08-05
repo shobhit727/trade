@@ -3,15 +3,15 @@ try:
 except Exception:
     BinanceVenue = None
 from cryptobot.execution.venue.base import Venue
-from cryptobot.execution.venue.simulated import SimulatedVenue
 from cryptobot.execution.venue.realistic import (
+    AdverseSelectionConfig,
+    LatencyConfig,
+    OrderBookSimulator,
+    QueueModelConfig,
     RealisticVenue,
     RealisticVenueConfig,
-    LatencyConfig,
-    AdverseSelectionConfig,
-    QueueModelConfig,
-    OrderBookSimulator,
 )
+from cryptobot.execution.venue.simulated import SimulatedVenue
 
 __all__ = [
     "BinanceVenue",
