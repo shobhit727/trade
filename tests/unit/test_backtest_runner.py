@@ -51,9 +51,8 @@ async def test_run_backtest_subsecond_freq_is_deterministic():
     bars = generate_synthetic_ohlcv(start, n_bars=2000, freq_seconds=0.1, seed=9)
     deltas = [bars[i + 1].timestamp - bars[i].timestamp for i in range(3)]
     assert all(d == timedelta(milliseconds=100) for d in deltas)
-    strategy = make_strategy("trend_following", fast=5, slow=12, adx_period=7)
-    r1 = await run_backtest(bars, strategy=strategy, initial_capital=Decimal("10000"))
-    r2 = await run_backtest(bars, strategy=strategy, initial_capital=Decimal("10000"))
+    r1 = await run_backtest(bars, strategy=make_strategy("trend_following", fast=5, slow=12, adx_period=7), initial_capital=Decimal("10000"))
+    r2 = await run_backtest(bars, strategy=make_strategy("trend_following", fast=5, slow=12, adx_period=7), initial_capital=Decimal("10000"))
     assert r1.final_equity == r2.final_equity
     assert r1.n_trades == r2.n_trades
     assert all(t["exit_time"].endswith("00") for t in r1.trades)

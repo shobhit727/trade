@@ -40,7 +40,7 @@ RUN apt-get update \
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-ARG REQUIREMENTS=requirements/prod.txt
+ARG REQUIREMENTS=requirements/test.txt
 COPY requirements /app/requirements
 RUN python -m pip install --no-cache-dir -r /app/${REQUIREMENTS}
 
@@ -60,9 +60,9 @@ FROM base AS production
 USER 1000:1000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3).read()" || exit 1
-ENTRYPOINT ["/usr/bin/tini", "--"]
+ENTRYPOINT ["python", "-m"]
 CMD ["python", "-m", "cryptobot.cli.main", "bot", "--host=0.0.0.0", "--port=8080"]
 
 FROM base AS test
-ENTRYPOINT ["/usr/bin/tini", "--"]
+ENTRYPOINT ["python", "-m"]
 CMD ["pytest", "-q", "tests"]

@@ -70,11 +70,24 @@ def test_ml_strategy_multi_symbol_state():
     assert s._prices["BTCUSDT"] != s._prices["ETHUSDT"]
 
 
-def test_ml_strategy_retrain_triggers():
-    s = MLStrategy(MLStrategyConfig(train_min_samples=3, retrain_every=2))
-    s.feed("BTCUSDT", 100)
-    s.feed("BTCUSDT", 101)
-    s.feed("BTCUSDT", 102)  # Should trigger retrain
+def test_ml_strategy_retrain_triggers(monkeypatch):
+    # Mock _retrain to set a dummy classifier
+    from cryptobot.ml.models.direction import DirectionClassifier, DirectionConfig
+    s = MLStrategy(MLStrategyConfig(train_min_samples=3, horizon=1, retrain_every=2))
+    
+    def mock_retrain(buf):
+        clf = DirectionClassifier(DirectionConfig(threshold=0.55, horizon=1))
+        # Create minimal training data
+        X = np.array([[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]])
+        y = np.array([1])
+        clf.fit(X, y)
+        s._classifier = clf
+    
+    import numpy as np
+    monkeypatch.setattr(s, "_retrain", mock_retrain)
+    
+    for p in [100, 101, 102, 103]:
+        s.feed("BTCUSDT", p)
     assert s._classifier is not None
 
 
