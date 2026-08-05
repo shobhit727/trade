@@ -43,6 +43,7 @@ def generate_synthetic_ohlcv(
     start: datetime,
     n_bars: int = 200,
     freq_minutes: int = 15,
+    freq_seconds: float | None = None,
     start_price: float = 100.0,
     drift: float = 0.0005,
     vol: float = 0.01,
@@ -51,6 +52,8 @@ def generate_synthetic_ohlcv(
 ) -> list[OhlcvBar]:
     if n_bars < 1:
         raise ValueError("n_bars must be >= 1")
+    if freq_seconds is not None and freq_seconds < 1e-6:
+        raise ValueError("freq_seconds must be >= 1e-6 (1 microsecond)")
     rng = np.random.default_rng(seed)
     # Row-major draws preserve the exact per-bar RNG stream of the sequential generator.
     z = rng.normal(0.0, 1.0, size=(n_bars, 4))
@@ -89,8 +92,13 @@ def generate_synthetic_ohlcv(
     del high_wiggle, low_wiggle
 
     start64 = np.datetime64(start, "s")
-    deltas = np.arange(n_bars, dtype=np.int64) * np.int64(freq_minutes) * np.int64(60)
-    timestamps = (start64 + deltas.astype("timedelta64[s]")).astype("datetime64[us]").tolist()
+    if freq_seconds is not None:
+        step_us = int(round(freq_seconds * 1_000_000))
+        deltas = (np.arange(n_bars, dtype=np.int64) * step_us).astype("timedelta64[us]")
+        timestamps = (start64 + deltas).astype("datetime64[us]").tolist()
+    else:
+        deltas = np.arange(n_bars, dtype=np.int64) * np.int64(freq_minutes) * np.int64(60)
+        timestamps = (start64 + deltas.astype("timedelta64[s]")).astype("datetime64[us]").tolist()
     del start64, deltas
 
     # Build bars straight from the arrays (float() per element is C-fast and exact).

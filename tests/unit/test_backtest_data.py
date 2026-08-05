@@ -8,6 +8,7 @@ import pytest
 from cryptobot.backtest.data import (
     OhlcvDataset,
     _freq_to_minutes,
+    _freq_to_seconds,
     load_bars,
     load_csv,
     load_timescale,
@@ -26,6 +27,24 @@ def test_freq_to_minutes_known():
     assert _freq_to_minutes("1h") == 60
     assert _freq_to_minutes("1d") == 1440
     assert _freq_to_minutes("xxx") == 15
+
+
+def test_freq_to_seconds_subsecond():
+    assert _freq_to_seconds("100ms") == 0.1
+    assert _freq_to_seconds("500ms") == 0.5
+    assert _freq_to_seconds("1s") == 1.0
+    assert _freq_to_seconds("5s") == 5.0
+    assert _freq_to_seconds("30s") == 30.0
+    assert _freq_to_seconds("1h") is None
+    assert _freq_to_seconds("15m") is None
+
+
+def test_load_bars_synthetic_subsecond_timestamps():
+    ds = load_bars(source="synthetic", timeframe="100ms", n_bars=50)
+    assert len(ds) == 50
+    deltas = [(ds.bars[i + 1].timestamp - ds.bars[i].timestamp) for i in range(5)]
+    assert all(d == timedelta(milliseconds=100) for d in deltas)
+    assert ds.bars[0].timestamp.microsecond in (0, 100000)
 
 
 def test_load_csv_reads_and_sorts(tmp_path: Path):

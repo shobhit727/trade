@@ -23,6 +23,11 @@ def build_parser() -> argparse.ArgumentParser:
     backtest.add_argument("--source", choices=["synthetic", "csv", "parquet", "timescale"], default="synthetic")
     backtest.add_argument("--path", default=None)
     backtest.add_argument("--bars", type=int, default=200)
+    backtest.add_argument(
+        "--timeframe",
+        default="1h",
+        help="Bar spacing for synthetic data (e.g. 1m, 5s, 1s, 100ms for sub-second HFT runs)",
+    )
     backtest.add_argument("--seed", type=int, default=42)
     backtest.add_argument("--vol", type=float, default=0.01)
     backtest.add_argument("--capital", type=Decimal, default=Decimal("10000"))
@@ -114,7 +119,7 @@ async def _run(args: argparse.Namespace) -> int:
             source=args.source,
             path=args.path,
             symbol="BTCUSDT",
-            timeframe="1h",
+            timeframe=args.timeframe,
             n_bars=args.bars,
         )
         if args.source == "synthetic":

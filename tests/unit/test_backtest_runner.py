@@ -46,6 +46,20 @@ async def test_generate_synthetic_ohlcv_runs_and_produces_bars():
 
 
 @pytest.mark.asyncio
+async def test_run_backtest_subsecond_freq_is_deterministic():
+    start = datetime(2024, 1, 1)
+    bars = generate_synthetic_ohlcv(start, n_bars=2000, freq_seconds=0.1, seed=9)
+    deltas = [bars[i + 1].timestamp - bars[i].timestamp for i in range(3)]
+    assert all(d == timedelta(milliseconds=100) for d in deltas)
+    strategy = make_strategy("trend_following", fast=5, slow=12, adx_period=7)
+    r1 = await run_backtest(bars, strategy=strategy, initial_capital=Decimal("10000"))
+    r2 = await run_backtest(bars, strategy=strategy, initial_capital=Decimal("10000"))
+    assert r1.final_equity == r2.final_equity
+    assert r1.n_trades == r2.n_trades
+    assert all(t["exit_time"].endswith("00") for t in r1.trades)
+
+
+@pytest.mark.asyncio
 async def test_run_backtest_mean_reversion_path_executes():
     strategy = make_strategy("mean_reversion", lookback=10, z_entry=0.5, z_exit=0.1)
     bars = _build_bars(n=120, vol=0.01)

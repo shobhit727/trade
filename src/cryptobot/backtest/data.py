@@ -231,10 +231,12 @@ def load_bars(
                 "(each bar is held in memory; use a smaller count or csv/parquet source)"
             )
         from cryptobot.backtest.runner import generate_synthetic_ohlcv
+        freq_seconds = _freq_to_seconds(timeframe)
         bars = generate_synthetic_ohlcv(
             start or datetime(2024, 1, 1),
             n_bars=n_bars or 200,
-            freq_minutes=_freq_to_minutes(timeframe),
+            freq_minutes=None if freq_seconds is not None else _freq_to_minutes(timeframe),
+            freq_seconds=freq_seconds,
             seed=42,
         )
         return OhlcvDataset(bars=bars, symbol=symbol, source="synthetic").filter_range(start=start, end=end)
@@ -244,6 +246,22 @@ def load_bars(
 def _freq_to_minutes(tf: str) -> int:
     mapping = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240, "1d": 1440}
     return mapping.get(tf, 15)
+
+
+def _freq_to_seconds(tf: str) -> float | None:
+    """Resolve a timeframe string to bar spacing in seconds.
+
+    Sub-second timeframes ("100ms", "500ms") and second-based timeframes
+    ("1s", "5s", "30s") return a float; minute+ timeframes go through the
+    integer-minute path (returning None keeps the original byte-identical
+    timestamp generation untouched).
+    """
+    tf = tf.strip().lower()
+    if tf.endswith("ms"):
+        return float(tf[:-2]) / 1000.0
+    if tf.endswith("s"):
+        return float(tf[:-1])
+    return None
 
 
 __all__ = [
