@@ -3,12 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from abc import ABC, abstractmethod
 from collections import deque
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import aiohttp
@@ -17,19 +18,18 @@ if TYPE_CHECKING:
 from cryptobot.core.bus import get_event_bus
 from cryptobot.core.events import (
     Event,
-    EventType,
     KlineEvent,
     OrderSide,
     TickerEvent,
     TradeEvent,
 )
-from cryptobot.utils.types import OrderBook, OrderBookLevel
+from cryptobot.utils.types import OrderBookLevel
 
 logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 @dataclass
@@ -138,11 +138,11 @@ class OrderBookSnapshot:
     sequence: int = 0
 
     @property
-    def best_bid(self) -> Optional[OrderBookLevel]:
+    def best_bid(self) -> OrderBookLevel | None:
         return self.bids[0] if self.bids else None
 
     @property
-    def best_ask(self) -> Optional[OrderBookLevel]:
+    def best_ask(self) -> OrderBookLevel | None:
         return self.asks[0] if self.asks else None
 
     @property
@@ -161,8 +161,8 @@ class OrderBookSnapshot:
         return {
             "symbol": self.symbol,
             "timestamp": self.timestamp.isoformat(),
-            "bids": [{"price": str(l.price), "quantity": str(l.quantity)} for l in self.bids],
-            "asks": [{"price": str(l.price), "quantity": str(l.quantity)} for l in self.asks],
+            "bids": [{"price": str(level.price), "quantity": str(level.quantity)} for level in self.bids],
+            "asks": [{"price": str(level.price), "quantity": str(level.quantity)} for level in self.asks],
             "sequence": self.sequence,
         }
 
@@ -280,12 +280,12 @@ class OrderBookReconstructor:
             sequence=self.last_update_id,
         )
 
-    def get_best_bid(self) -> Optional[OrderBookLevel]:
+    def get_best_bid(self) -> OrderBookLevel | None:
         if not self.bids:
             return None
         return max(self.bids.values(), key=lambda x: x.price)
 
-    def get_best_ask(self) -> Optional[OrderBookLevel]:
+    def get_best_ask(self) -> OrderBookLevel | None:
         if not self.asks:
             return None
         return min(self.asks.values(), key=lambda x: x.price)
@@ -308,19 +308,19 @@ class FundingRateTracker:
             if len(self.rates[rate.symbol]) > self.max_history:
                 self.rates[rate.symbol] = self.rates[rate.symbol][-self.max_history:]
 
-    async def get_latest(self, symbol: str) -> Optional[FundingRateData]:
+    async def get_latest(self, symbol: str) -> FundingRateData | None:
         async with self._lock:
             rates = self.rates.get(symbol, [])
             return rates[-1] if rates else None
 
-    async def get_history(self, symbol: str, since: Optional[datetime] = None, limit: int = 100) -> list[FundingRateData]:
+    async def get_history(self, symbol: str, since: datetime | None = None, limit: int = 100) -> list[FundingRateData]:
         async with self._lock:
             rates = self.rates.get(symbol, [])
             if since:
                 rates = [r for r in rates if r.timestamp >= since]
             return rates[-limit:]
 
-    async def get_funding_estimate(self, symbol: str) -> Optional[Decimal]:
+    async def get_funding_estimate(self, symbol: str) -> Decimal | None:
         """Estimate next funding rate based on recent history."""
         async with self._lock:
             rates = self.rates.get(symbol, [])
@@ -499,8 +499,8 @@ class BinanceDataIngestion(DataIngestion):
                 all_klines.append({
                     "symbol": symbol,
                     "interval": timeframe,
-                    "open_time": datetime.fromtimestamp(k[0] / 1000, tz=timezone.utc),
-                    "close_time": datetime.fromtimestamp(k[6] / 1000, tz=timezone.utc),
+                    "open_time": datetime.fromtimestamp(k[0] / 1000, tz=UTC),
+                    "close_time": datetime.fromtimestamp(k[6] / 1000, tz=UTC),
                     "open_price": Decimal(str(k[1])),
                     "high_price": Decimal(str(k[2])),
                     "low_price": Decimal(str(k[3])),
@@ -515,7 +515,7 @@ class BinanceDataIngestion(DataIngestion):
                 logger.warning(f"Potential gap in data for {symbol} {timeframe}: received {len(data)} < {limit}")
 
             # Move to next batch
-            current_start = datetime.fromtimestamp(data[-1][6] / 1000, tz=timezone.utc) + timedelta(milliseconds=1)
+            current_start = datetime.fromtimestamp(data[-1][6] / 1000, tz=UTC) + timedelta(milliseconds=1)
             await asyncio.sleep(0.1)
 
         logger.info(f"Fetched {len(all_klines)} klines for {symbol} {timeframe}")
@@ -618,8 +618,8 @@ class BinanceDataIngestion(DataIngestion):
             ohlcv = OHLCV(
                 symbol=msg.get("s", symbol),
                 timeframe=k.get("i", timeframe),
-                open_time=datetime.fromtimestamp(k.get("t", 0) / 1000, tz=timezone.utc),
-                close_time=datetime.fromtimestamp(k.get("T", 0) / 1000, tz=timezone.utc),
+                open_time=datetime.fromtimestamp(k.get("t", 0) / 1000, tz=UTC),
+                close_time=datetime.fromtimestamp(k.get("T", 0) / 1000, tz=UTC),
                 open_price=Decimal(str(k.get("o", "0"))),
                 high_price=Decimal(str(k.get("h", "0"))),
                 low_price=Decimal(str(k.get("l", "0"))),
@@ -658,7 +658,7 @@ class BinanceDataIngestion(DataIngestion):
                 quantity=Decimal(str(msg.get("q", "0"))),
                 side=OrderSide.BUY if msg.get("m") is False else OrderSide.SELL,
                 is_maker=bool(msg.get("m", False)),
-                timestamp=datetime.fromtimestamp(msg.get("T", 0) / 1000, tz=timezone.utc),
+                timestamp=datetime.fromtimestamp(msg.get("T", 0) / 1000, tz=UTC),
             )
 
             # Validate and track
@@ -712,11 +712,11 @@ class BinanceDataIngestion(DataIngestion):
             # Funding rate update
             funding = FundingRateData(
                 symbol=msg.get("s", symbol),
-                timestamp=datetime.fromtimestamp(msg.get("T", 0) / 1000, tz=timezone.utc),
+                timestamp=datetime.fromtimestamp(msg.get("T", 0) / 1000, tz=UTC),
                 funding_rate=Decimal(str(msg.get("r", "0"))),
                 mark_price=Decimal(str(msg.get("p", "0"))),
                 index_price=Decimal(str(msg.get("i", "0"))),
-                next_funding_time=datetime.fromtimestamp(msg.get("T", 0) / 1000 + 8 * 3600, tz=timezone.utc),
+                next_funding_time=datetime.fromtimestamp(msg.get("T", 0) / 1000 + 8 * 3600, tz=UTC),
             )
             await self.funding_tracker.add_rate(funding)
 
@@ -730,13 +730,6 @@ class BinanceDataIngestion(DataIngestion):
 
         return None
 
-    async def fetch_funding_rate(self, symbol: str, limit: int = 100) -> list[dict]:
-        """Fetch funding rate history."""
-        if self._session is None or self._session.closed:
-            await self.start()
-        url = f"{self.config.base_url}/fapi/v1/fundingRate"
-        return await self._rate_limited_get(url, {"symbol": symbol, "limit": limit})
-
     async def fetch_funding_history(self, symbol: str, start: datetime, end: datetime) -> list[FundingRateData]:
         """Fetch funding rate history from tracker."""
         return await self.funding_tracker.get_history(symbol, since=start, limit=1000)
@@ -747,7 +740,7 @@ class BinanceDataIngestion(DataIngestion):
             return self.order_books[symbol].get_snapshot(depth)
         return None
 
-    def get_funding_estimate(self, symbol: str) -> Optional[Decimal]:
+    def get_funding_estimate(self, symbol: str) -> Decimal | None:
         """Get estimated next funding rate."""
         return self.funding_tracker.get_funding_estimate(symbol)
 
