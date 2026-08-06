@@ -163,11 +163,15 @@ class OrderBookSimulator:
             ask_price = (ask_start + i_dec * tick).quantize(Decimal("0.01"))
 
             # Add liquidity - more at better prices (quantities kept for future use)
-            _bid_qty = Decimal(str(random.uniform(10, 100))) * (Decimal("20") - i_dec) / Decimal("20")
-            _ask_qty = Decimal(str(random.uniform(10, 100))) * (Decimal("20") - i_dec) / Decimal("20")
+            bid_qty = Decimal(str(random.uniform(10, 100))) * (Decimal("20") - i_dec) / Decimal("20")
+            ask_qty = Decimal(str(random.uniform(10, 100))) * (Decimal("20") - i_dec) / Decimal("20")
 
-            self.books[symbol][OrderBookSide.BID][bid_price] = PriceLevel(price=bid_price, side=OrderBookSide.BID)
-            self.books[symbol][OrderBookSide.ASK][ask_price] = PriceLevel(price=ask_price, side=OrderBookSide.ASK)
+            self.books[symbol][OrderBookSide.BID][bid_price] = PriceLevel(
+                price=bid_price, side=OrderBookSide.BID, total_quantity=bid_qty
+            )
+            self.books[symbol][OrderBookSide.ASK][ask_price] = PriceLevel(
+                price=ask_price, side=OrderBookSide.ASK, total_quantity=ask_qty
+            )
 
     def get_best_bid(self, symbol: str) -> Decimal | None:
         bids = self.books.get(symbol, {}).get(OrderBookSide.BID, {})
@@ -301,11 +305,15 @@ class OrderBookSimulator:
             bid_price = (bid_start - Decimal(str(i)) * tick).quantize(Decimal("0.01"))
             ask_price = (ask_start + Decimal(str(i)) * tick).quantize(Decimal("0.01"))
 
-            _bid_qty = Decimal(str(random.uniform(10, 100))) * (Decimal("20") - Decimal(str(i))) / Decimal("20")
-            _ask_qty = Decimal(str(random.uniform(10, 100))) * (Decimal("20") - Decimal(str(i))) / Decimal("20")
+            bid_qty = Decimal(str(random.uniform(10, 100))) * (Decimal("20") - Decimal(str(i))) / Decimal("20")
+            ask_qty = Decimal(str(random.uniform(10, 100))) * (Decimal("20") - Decimal(str(i))) / Decimal("20")
 
-            self.books[symbol][OrderBookSide.BID][bid_price] = PriceLevel(price=bid_price, side=OrderBookSide.BID)
-            self.books[symbol][OrderBookSide.ASK][ask_price] = PriceLevel(price=ask_price, side=OrderBookSide.ASK)
+            self.books[symbol][OrderBookSide.BID][bid_price] = PriceLevel(
+                price=bid_price, side=OrderBookSide.BID, total_quantity=bid_qty
+            )
+            self.books[symbol][OrderBookSide.ASK][ask_price] = PriceLevel(
+                price=ask_price, side=OrderBookSide.ASK, total_quantity=ask_qty
+            )
 
 
 class RealisticVenue(Venue):

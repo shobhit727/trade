@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -322,14 +321,8 @@ class WalkForwardOptimizer:
         if not _search_space:
             return self._train_default(symbol, model_type, features, labels, returns)
 
-        _trainer = WalkForwardTrainer(self.config, self.cv_splitter)
-        _all_trials: list = []
-
         def objective(trial) -> float:
-            nonlocal _all_trials
             """Optuna objective function."""
-            start_time = time.time()
-
             # Sample parameters
             params = _search_space.to_optuna_params(trial)
 
@@ -340,13 +333,11 @@ class WalkForwardOptimizer:
             model_config = self._create_model_config(model_type, params)
 
             # Cross-validation
-            _cv_scores = []
             metric_values = {}
 
-            _splits = self.cv_splitter.split(features, labels)
             for _fold_idx, (train_idx, test_idx) in enumerate(self.cv_splitter.split(features, labels)):
                 X_train, X_test = features[train_idx], features[test_idx]
-                y_train, _y_test = labels[train_idx], labels[test_idx]
+                y_train = labels[train_idx]
 
                 # Train model
                 model = self._create_model(model_type, model_config)
@@ -363,17 +354,6 @@ class WalkForwardOptimizer:
 
             # Calculate mean metrics
             mean_metrics = {k: np.mean(v) for k, v in metric_values.items()}
-
-            # Record trial
-            trial_result = OptimizationResult(
-                trial_number=trial.number,
-                params=params,
-                metrics=mean_metrics,
-                model_type=model_type,
-                symbol=symbol,
-                duration_seconds=time.time() - start_time,
-            )
-            _all_trials.append(trial_result)
 
             # Return objective metric
             objective_value = mean_metrics.get(self.objective_metric.value, float("-inf"))
