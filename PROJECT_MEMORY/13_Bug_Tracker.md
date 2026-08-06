@@ -82,10 +82,13 @@
 
 ## Open (verified)
 
+> **Updated 2026-08-06**: B051 (lazy import) and dead-dir rows removed — both resolved:
+> `monitoring/__init__.py` defers submodule imports via `__getattr__` (no-Prometheus safe);
+> `src/cryptobot/{allocator,altdata,api,exchanges,funding,xmr}/` dirs were deleted 2026-07-31.
+
 | ID | File | Bug | Risk |
 |----|------|------|------|
-| B051 | `monitoring/__init__.py` | Eagerly imports `cryptobot.monitoring.metrics` — no-Prometheus env crashes. | Medium. Lazy-import in downstream consumers; or convert `monitoring/__init__.py` to a thin facade. |
-| **NEW** | `src/cryptobot/{allocator,altdata,api,exchanges,funding,xmr}/` | Dead empty dirs left in tree. | Cosmetic; bloat; hint to newcomers. |
+| B073 | `git` (remote branch) | `origin/fix/realistic-venue-bugs` is **stale** — based on `f837152`; diverges from `main` by −2276 lines (deletes `execution/costs.py`, `ml/optimizer.py`, `live/paper_harness.py` etc.). Its realistic-venue changes were superseded by `932e7e2`. | Low. Delete branch or rebase onto `main`; do not merge as-is. |
 
 ## Will-surprise areas
 

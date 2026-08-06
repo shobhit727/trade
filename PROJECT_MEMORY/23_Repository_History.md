@@ -127,3 +127,15 @@
 - **Doc sync**: `plan.md` Phase 4/5/6 status corrected, dates bumped; `PROJECT_MEMORY/12_Feature_Status.md` Last-Updated bumped.
 - **Tests**: 413 Python + 31 Rust still green; lint clean; Docker test target passes.
 - **Git**: existing remote `git@github.com:shobhit727/trade.git` (main).
+
+## 2026-08-06 — Audit (post Phase 4): all green, two stale doc items fixed
+
+**Verified live:**
+- Python: 413 passed, 4 skipped (pyarrow/prometheus-not-applicable) via Docker test target.
+- Rust: 31 tests pass, `cargo fmt --all -- --check` clean, `cargo clippy --workspace --all-targets` clean (7 crates, PyO3 0.29).
+- 44 unit test files; `ml/models/{volatility,regime,ensemble}.py` present; `fix/realistic-venue-bugs` diverges from main by −2276 lines (superseded).
+- Local `.venv` unusable (Python 3.14.5 built without SSL/_ctypes) — all Python verification via Docker.
+
+**Doc fixes:**
+- `13_Bug_Tracker.md`: removed stale Open rows (B051 lazy-import, dead dirs — both long resolved); added B073 documenting stale remote branch `fix/realistic-venue-bugs`.
+- `plan.md`: Last-Updated note bumped to reflect audit result.
