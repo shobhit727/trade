@@ -9,6 +9,10 @@ on:
 env:
   REGISTRY_IMAGE: ghcr.io/${{ github.repository }}
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   packages: write
@@ -17,6 +21,7 @@ jobs:
   build:
     name: Build and push multi-arch images
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -40,7 +45,7 @@ jobs:
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
-      - name: Build and push manifest
+      - name: Build, push and attest
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -56,14 +61,6 @@ jobs:
             BUILD_DATE=${{ steps.meta.outputs.DATE }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          push: true
-      - name: SBOM + provenance (optional, requires registry support)
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          target: production
-          platforms: linux/amd64
-          tags: ${{ env.REGISTRY_IMAGE }}:sbom
           sbom: true
           provenance: true
-          push: false
+          push: true
