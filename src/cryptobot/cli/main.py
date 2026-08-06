@@ -97,7 +97,8 @@ def build_parser() -> argparse.ArgumentParser:
         "paper-funder",
         help="Live paper monitor for the funding-carry edge (public WS, no API keys)",
     )
-    funder_cmd.add_argument("--symbols", nargs="+", default=["BTCUSDT", "ETHUSDT"])
+    funder_cmd.add_argument("--symbols", nargs="+", default=["BTCUSDT", "ETHUSDT"],
+                            help="comma- or space-separated symbols")
     funder_cmd.add_argument("--hours", type=float, default=24, help="0 = run forever")
     funder_cmd.add_argument("--log", default="paper_funding.csv")
     funder_cmd.add_argument("--spot-ws", default=None)
@@ -298,10 +299,11 @@ async def _run(args: argparse.Namespace) -> int:
     if args.command == "paper-funder":
         from cryptobot.live.paper_harness import FundingPaperHarness
 
-        harness = FundingPaperHarness(symbols=args.symbols, log_path=args.log)
+        symbols = [s for item in args.symbols for s in item.split(",") if s]
+        harness = FundingPaperHarness(symbols=symbols, log_path=args.log)
         logger.info(
             "paper-funder monitoring %s for %.0fh (log=%s)",
-            ", ".join(args.symbols), args.hours, args.log,
+            ", ".join(symbols), args.hours, args.log,
         )
         await harness.run(
             hours=args.hours,
