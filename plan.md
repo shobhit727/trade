@@ -59,7 +59,7 @@
 | Monitoring Alerting | `src/cryptobot/monitoring/alerting.py` | ✅ Telegram/Discord/Email/PagerDuty. |
 | Monitoring Health | `src/cryptobot/monitoring/health.py` | ✅ HealthMonitor + checkers. |
 | Monitoring Dashboard | `src/cryptobot/monitoring/dashboard.py` | ✅ Grafana JSON builders. |
-| CLI Main | `src/cryptobot/cli/main.py` | ✅ argparse (validate + paper + bot subcommands). |
+| CLI Main | `src/cryptobot/cli/main.py` | ✅ argparse: backtest, mm, ml, serve, bot, validate, paper, paper-funder. |
 | Utils Logging | `src/cryptobot/utils/logging.py` | ✅ structlog wrapper. |
 | Utils Decorators | `src/cryptobot/utils/decorators.py` | ✅ retry (clamped jitter), timeout_decorator, circuit_breaker (raises in running loop). |
 | Utils Types | `src/cryptobot/utils/types.py` | ✅ Candle, OrderBook, Trade, etc. |
@@ -79,10 +79,15 @@
 | Backtest Runner | `src/cryptobot/backtest/runner.py` | ✅ OHLCV → strategy → exec → venue end-to-end. |
 | Backtest Data | `src/cryptobot/backtest/data.py` | ✅ CSV / Parquet / TimescaleDB / synthetic. |
 | Backtest Reporting | `src/cryptobot/backtest/reporting.py` | ✅ HTML tearsheet. |
-| Backtest Validation | `src/cryptobot/backtest/validation.py` | ✅ Real walk-forward (rolling + embargo) + Monte Carlo block-permutation + deflated Sharpe. |
-| Backtest Simulator | `src/cryptobot/backtest/simulator.py` | ✅ FillSimulator + factory. |
 | Smart Order Router | `src/cryptobot/execution/router.py` | ✅ Best-price + latency rankers, fallback, split. |
 | Adverse Selection | `src/cryptobot/execution/adverse_selection.py` | ✅ Mid-move / spread-widening / toxicity-spike cancel + `attach_to_engine`. |
+| Execution Costs | `src/cryptobot/execution/costs.py` | ✅ Phase 4 transaction cost model (spread/fees/slippage/funding). |
+| Realistic Venue | `src/cryptobot/execution/venue/realistic.py` | ✅ Seeded book + QueuePositions, partial fills, adverse selection. |
+| Live Paper Harness | `src/cryptobot/live/paper_harness.py` | ✅ `FundingPaperHarness` — spot bookTicker WS + fapi premiumIndex REST-poll, carry accumulation (Phase 3). |
+| Backtest Funding Sim | `src/cryptobot/backtest/funding_sim.py` | ✅ Funding rate simulator (Phase 2 edge research). |
+| Backtest Parallel | `src/cryptobot/backtest/parallel.py` | ✅ Parallel algorithm sweeps (multi-core). |
+| Risk Rate Limit | `src/cryptobot/risk/rate_limit.py` | ✅ Rate-limit tracking. |
+| Risk Strategy Tracker | `src/cryptobot/risk/strategy_tracker.py` | ✅ Strategy state tracking. |
 | Risk Manager | `src/cryptobot/risk/manager.py` | ✅ Pre-trade (kill switch, notional, exposure); notional skipped when no price. |
 | K8s | `deploy/k8s/` | ✅ Namespace, ConfigMap, Secret, PVC, Deployment, **Service (ClusterIP)**, **HPA (CPU+memory v2)**, kustomization (B053). |
 
@@ -99,11 +104,13 @@ src/cryptobot/
 │   ├── bus.py                # ✅ Pub/sub + history + replay
 │   ├── portfolio.py          # ✅ Multi-strategy portfolio
 │   └── clock.py              # ✅ Realtime / Simulated / Accelerated
+├── market_data/
+│   └── manager.py            # ✅ Binance WS client, REST helpers, Redis cache
 ├── data/
 │   ├── ingestion.py          # ✅ OHLCV + BinanceDataIngestion
 │   ├── storage.py            # ✅ TimescaleDB + Parquet + Hybrid
 │   ├── cleaning.py           # ✅ DataCleaner + helpers
-│   └── features.py           # 🔲 Missing (use ml/features.py)
+│   └── features.py           # ✅ Re-export of ml/features (B056)
 ├── strategies/
 │   ├── base.py               # ✅ BaseStrategy + registry
 │   ├── registry.py           # ✅ Re-export
@@ -123,39 +130,46 @@ src/cryptobot/
 │   ├── training.py           # ✅ Purged CV + walk-forward
 │   ├── optimizer.py          # ✅ Phase 3 walk-forward param search (Optuna)
 │   ├── inference.py          # ✅ Online inference
-│   └── auto_retrain.py       # ✅ Drift detection
-│   └── online.py             # ✅ WalkForwardTrainer (purged) + DriftDetector
+│   ├── auto_retrain.py       # ✅ Drift detection
+│   ├── online.py             # ✅ WalkForwardTrainer (purged) + DriftDetector
 ├── execution/
 │   ├── engine.py             # ✅ Order lifecycle + risk gate
 │   ├── algorithms.py         # ✅ TWAP / VWAP / POV / IS / Iceberg / sweep / arrival / vwap_schedule
 │   ├── router.py             # ✅ SmartOrderRouter (price + latency, fallback, split)
 │   ├── adverse_selection.py  # ✅ AdverseSelectionGuard + QueuePosition + TopOfBook
+│   ├── costs.py              # ✅ Phase 4 transaction cost model (spread/fees/slippage/funding)
 │   ├── venue/
 │   │   ├── base.py           # ✅ Abstract Venue
 │   │   ├── simulated.py      # ✅ SimulatedVenue (slippage + commission)
+│   │   ├── realistic.py      # ✅ Seeded book + QueuePositions, partial fills, adverse selection
 │   │   └── binance.py        # ✅ BinanceVenue (ccxt.async_support; sandbox, retries, guardrails)
-│   └── simulator.py          # 🔲 Realistic fill simulator (separate from backtest)
 ├── risk/
 │   ├── manager.py            # ✅ Pre-trade (kill switch, notional, exposure)
 │   ├── sizing.py             # ✅ Fixed / vol-target / Kelly
 │   ├── limits.py             # ✅ RiskLimits
 │   ├── correlation.py        # ✅ Helper
-│   └── kill_switch.py        # ✅ Portfolio-driven
+│   ├── kill_switch.py        # ✅ Portfolio-driven
+│   ├── rate_limit.py         # ✅ Rate-limit tracking
+│   └── strategy_tracker.py   # ✅ Strategy state tracking
 ├── backtest/
 │   ├── engine.py             # ✅ Event-driven backtester
+│   ├── funding_sim.py        # ✅ Funding-rate simulation (Phase 2 edge research)
+│   ├── parallel.py           # ✅ Parallel algorithm sweeps (multi-core)
 │   ├── data.py               # ✅ CSV / Parquet / TimescaleDB / synthetic replay
 │   ├── metrics.py            # ✅ Performance metrics (Sharpe, Sortino, DD, PF)
 │   ├── validation.py         # ✅ Real WFA (rolling+embargo) + MC (block perm) + deflated Sharpe
 │   ├── reporting.py          # ✅ HTML tearsheet
 │   ├── simulator.py          # ✅ FillSimulator + factory
 │   └── runner.py             # ✅ OHLCV → strategy → exec → venue end-to-end
+├── live/
+│   └── paper_harness.py      # ✅ Phase 3 FundingPaperHarness (spot WS + fapi REST-poll)
 ├── monitoring/
 │   ├── metrics.py            # ✅ Prometheus (Gauge for PnL, Counter for orders)
 │   ├── dashboard.py          # ✅ Grafana JSON builders
 │   ├── alerting.py           # ✅ Telegram/Discord/Email/PagerDuty (lazy init)
 │   └── health.py             # ✅ HealthMonitor + checkers (async-aware)
 ├── cli/
-│   ├── main.py               # ✅ argparse (validate/paper/bot/serve subcommands)
+│   ├── main.py               # ✅ argparse (backtest/mm/ml/serve/bot/validate/paper/paper-funder)
 │   ├── backtest.py           # 🔲 (folded into main.py)
 │   ├── paper.py              # 🔲 (folded into main.py)
 │   ├── live.py               # 🔲
@@ -199,7 +213,7 @@ src/cryptobot/
 - [x] Signal generation interface (returns `List[OrderEvent]`)
 - [ ] Position management primitives (scaling, stops) — BaseStrategy exposes lifecycle only
 - [x] Strategy registry (`StrategyRegistry` singleton)
-- [ ] Parameter optimization (Optuna) — no integration yet
+- [x] Parameter optimization — `ml/optimizer.py` (walk-forward, Optuna) ✅; `cli/optimize.py` still missing
 
 ### Phase 4: Core Strategies (Week 4-6) ⭐ — ✅ complete
 - [x] Mean Reversion: Z-score + RSI + BB (`strategies/mean_reversion.py`)
@@ -426,7 +440,7 @@ mkdir -p docker seccomp compose scripts migrations
 - Direction classifier (`ml/models/direction.py` sklearn logreg + numpy fallback) ✅
 - Walk-forward + drift detection (`ml/online.py`) ✅
 - `ml_strategy.py` concrete strategy ✅
-- Volatility / regime / ensemble models 🔲
+- Volatility / regime / ensemble models ✅ (EWMA/GARCH/realized, HMM/k-means/GMM, weighted voting; disabled in YAML until validated)
 
 ---
 
@@ -459,9 +473,9 @@ mkdir -p docker seccomp compose scripts migrations
 ### To Create Next
 - [x] ✅ `src/cryptobot/strategies/ml_strategy.py` — done (B054)
 - [x] ✅ `src/cryptobot/data/features.py` — done as re-export (B056)
-- [ ] `src/cryptobot/ml/models/volatility.py` — Quantile regression
-- [ ] `src/cryptobot/ml/models/regime.py` — HMM / Transformer
-- [ ] `src/cryptobot/ml/models/ensemble.py` — Stacking
+- [x] ✅ `src/cryptobot/ml/models/volatility.py` — EWMA, GARCH, realized, quantile
+- [x] ✅ `src/cryptobot/ml/models/regime.py` — HMM, k-means, GMM, threshold
+- [x] ✅ `src/cryptobot/ml/models/ensemble.py` — weighted voting
 - [x] ✅ `src/cryptobot/ml/online.py` — WalkForwardTrainer (purged) + DriftDetector
 - [x] ✅ `src/cryptobot/ml/optimizer.py` — Phase 3 walk-forward optimizer with regime-aware parameter search (Optuna)
 - [x] ✅ **Rust workspace** — 7 crates (`core`, `features`, `risk`, `stats`, `orderbook`, `backtest`, `py`) with PyO3 0.29; fmt/clippy/test all green in CI. `.cargo/config.toml` intentionally has no `target-cpu=native` (breaks cached builds across runner CPUs; opt in via `CARGO_RUSTFLAGS`).
@@ -915,9 +929,9 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [x] Add `Dockerfile` (`python:3.14-slim`)
 - [x] Add `.dockerignore`, `.gitignore`
 - [x] Add `pyproject.toml` + `pytest.ini` + `Settings.from_yaml_safe` (configs/settings mismatch fixed 2026-07-29)
-- [ ] Set up Rust workspace (`Cargo.toml` exists, `crates/cryptobot-core/Cargo.toml` manifest only)
-- [ ] Implement core Rust types (`cryptobot-core`)
-- [ ] Implement feature engine in Rust (`cryptobot-features`)
+- [x] Set up Rust workspace — 7 real crates with PyO3 0.29; fmt/clippy/test green (resolved 2026-08-04)
+- [x] Implement core Rust types (`cryptobot-core`)
+- [x] Implement feature engine in Rust (`cryptobot-features`)
 
 ### Phase 2: Backtesting Engine
 - [x] Event-driven backtester core (`backtest/engine.py`)
@@ -936,13 +950,13 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [x] Signal generation interface (`List[OrderEvent]`)
 - [x] Strategy registry (`StrategyRegistry`)
 - [ ] Position management primitives (scaling, stops)
-- [ ] Parameter optimization with Optuna (`cli/optimize.py`)
+- [ ] Parameter optimization with Optuna — `ml/optimizer.py` done; `cli/optimize.py` CLI missing
 
 ### Phase 4: Core Strategies
 - [x] Strategy base + registry + placeholder mean-reversion
-- [ ] Mean Reversion concrete (`strategies/mean_reversion.py`)
-- [ ] Trend Following concrete (`strategies/trend_following.py`)
-- [ ] Statistical Arbitrage concrete (`strategies/stat_arb.py`)
+- [x] Mean Reversion concrete (`strategies/mean_reversion.py`)
+- [x] Trend Following concrete (`strategies/trend_following.py`)
+- [x] Statistical Arbitrage concrete (`strategies/stat_arb.py`)
 - [x] Funding Arbitrage concrete (`strategies/funding_arb.py`)
 - [x] Market Making concrete (`strategies/market_making.py`)
 - [x] ML-driven strategy (`strategies/ml_strategy.py`)
