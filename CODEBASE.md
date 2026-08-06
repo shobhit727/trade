@@ -2,7 +2,7 @@
 
 ## Overview
 
-Cryptobot is an elite quantitative trading system built with Python 3.13+ (async/await) and a Rust workspace. It implements a full trading stack: market data ingestion, risk management, strategy execution, backtesting, and observability.
+Cryptobot is an elite quantitative trading system built with Python 3.14+ (async/await) and a Rust workspace. It implements a full trading stack: market data ingestion, risk management, strategy execution, backtesting, and observability.
 
 ---
 
@@ -383,9 +383,9 @@ See `PROJECT_MEMORY/13_Bug_Tracker.md` and `PROJECT_MEMORY/12_Feature_Status.md`
 |----|-------|--------|
 | B024 | `_sqlite3` missing → in-memory fallback | Workaround |
 | B051 | Prometheus optional deps | Fixed (lazy imports) |
-| — | `/health` endpoint not implemented | TODO |
-| — | BinanceVenue order placement incomplete | WIP |
-| — | ML strategy framework | Planned |
+| — | `/health` endpoint | Done (`utils/health_server.py` ThreadingHTTPServer) |
+| — | BinanceVenue order placement | Done (ccxt async, retries, sandbox) |
+| — | ML strategy framework | Done (`strategies/ml_strategy.py`) |
 
 ---
 

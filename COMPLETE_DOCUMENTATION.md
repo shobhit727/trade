@@ -30,7 +30,7 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Cryptobot Architecture                       │
 ├─────────────────────────────────────────────────────────────────┤
-│  Python 3.13+ (src-layout)          Rust Workspace (PyO3)      │
+│  Python 3.14+ (src-layout)          Rust Workspace (PyO3)      │
 │  ┌─────────────────────┐          ┌─────────────────────┐       │
 │  │ Async-first Python  │  ◄──►   │  cryptobot-core      │       │
 │  │  - Strategies       │  PyO3    │  - Events, Math    │       │

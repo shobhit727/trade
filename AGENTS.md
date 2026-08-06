@@ -1,10 +1,10 @@
 # AGENTS.md — Cryptobot Repository Guide
 
 ## Project Overview
-Cryptobot is an elite quantitative trading system written in Python 3.13+ with a Rust workspace (`cryptobot-core`). It's a production-grade trading bot with backtesting, live trading, risk management, monitoring, and multi-arch Docker deployments.
+Cryptobot is an elite quantitative trading system written in Python 3.14+ with a Rust workspace (`cryptobot-core`). It's a production-grade trading bot with backtesting, live trading, risk management, monitoring, and multi-arch Docker deployments.
 
 **Key Stack:**
-- Python 3.13+ (src/cryptobot/)
+- Python 3.14+ (src/cryptobot/)
 - Rust workspace (crates/) — 7 crates (core, features, risk, stats, orderbook, backtest, py) with PyO3 0.29 bindings, executable locally via `rustup`
 - Docker multi-arch (amd64/arm64) via buildx
 - TimescaleDB + Redis for state

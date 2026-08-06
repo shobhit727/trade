@@ -86,4 +86,4 @@ utils.{logging,decorators,types} ─ stdlib only
 ## Confidence
 
 - High: all of the above.
-- Notes: `monitoring/__init__.py` eagerly imports `cryptobot.monitoring.metrics` which depends on `prometheus_client`. If `prometheus_client` is missing, top-level import of `cryptobot.monitoring` fails. Today no source file imports `cryptobot.monitoring` directly outside its own submodules, but reactor health checks in compose may transitively trigger it.
+- Notes: `monitoring/__init__.py` uses lazy `__getattr__` (B051) — `import cryptobot.monitoring` succeeds even without `prometheus_client`; `metrics.py` falls back to `_NoOpMetric` no-ops. Verified by `tests/unit/test_monitoring_lazy_imports.py`.

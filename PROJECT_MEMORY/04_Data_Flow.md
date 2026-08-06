@@ -51,9 +51,9 @@ End-to-end wiring in `backtest.runner.run_backtest`: OHLCV → strategy → Exec
 
 `EventType` enum in `core/events.py` covers 40+ values across market data, signals, orders, positions, P&L, risk, system. Includes `ORDER_REJECTED`, `ORDER_FILLED`, `KILL_SWITCH`, `RISK`, `HEARTBEAT`, `ERROR`, plus ALL `ml_*` types.
 
-## Unverified / missing
+## Unverified / not-yet-validated
 
-- `cryptobot.ml.models.{volatility,regime,ensemble}`: implemented (EWMA/GARCH/realized, HMM/k-means/GMM, weighted voting). Volatility/regime disabled in YAML until validated.
+- `cryptobot.ml.models.{volatility,regime,ensemble}`: implemented (EWMA/GARCH/realized, HMM/k-means/GMM, weighted voting) but volatility/regime disabled in YAML until validated.
 - `cryptobot.execution.adverse_selection`: unit-tested via `test_adverse_selection.py`; not exercised end-to-end against real market data.
 - Live Binance behavior under load: not exercised in CI; needs sandbox credentials.
 

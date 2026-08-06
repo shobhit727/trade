@@ -105,6 +105,39 @@ fill_price = mark * (1 - slippage_bps / 10000)
 commission = quantity * fill_price * commission_bps / 10000
 ```
 
+### RealisticVenue
+
+```python
+from cryptobot.execution.venue.realistic import RealisticVenue
+
+venue = RealisticVenue(
+    prices={"BTCUSDT": Decimal("50000")},
+    bid_quantity=Decimal("1.5"),
+    ask_quantity=Decimal("1.5"),
+    bid_queue=[QueuePosition(id="q1", size=Decimal("1"))],
+    ask_queue=[QueuePosition(id="q2", size=Decimal("1"))],
+)
+
+# Limit fills execute at limit price (not mark); partial fills at qty × fill_ratio;
+# fees charged on filled qty; adverse-selection guard wired via attach_to_engine.
+```
+
+### Transaction Cost Model
+
+```python
+from cryptobot.execution.costs import CostModel
+
+costs = CostModel(
+    spread_bps=Decimal("1"),
+    taker_fee_bps=Decimal("2"),
+    maker_fee_bps=Decimal("1"),
+    slippage_bps=Decimal("1"),
+    funding_bps=Decimal("0.5"),
+    rebate_bps=Decimal("0"),
+)
+round_trip = costs.round_trip_bps(side=OrderSide.BUY)  # spread + fees + slippage
+```
+
 ### BinanceVenue (Live/Testnet)
 
 ```python
@@ -520,6 +553,8 @@ assert filled.avg_fill_price == Decimal("50000")
 - `src/cryptobot/execution/router.py` - SmartOrderRouter
 - `src/cryptobot/execution/venue/base.py` - Venue ABC
 - `src/cryptobot/execution/venue/simulated.py` - SimulatedVenue
+- `src/cryptobot/execution/venue/realistic.py` - RealisticVenue (seeded book, partial fills, adverse selection)
 - `src/cryptobot/execution/venue/binance.py` - BinanceVenue
+- `src/cryptobot/execution/costs.py` - Transaction cost model (spread/fees/slippage/funding/rebates)
 - `src/cryptobot/execution/algorithms.py` - Execution algorithms
 - `src/cryptobot/execution/adverse_selection.py` - AdverseSelectionGuard

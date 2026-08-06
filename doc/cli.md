@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Cryptobot CLI provides commands for backtesting, live trading, data ingestion, and system health checks.
+The Cryptobot CLI provides commands for backtesting, market-making, ML inference, paper trading, live paper-funding monitoring, and system health checks.
 
 ## Installation
 
@@ -148,53 +148,51 @@ cryptobot serve [OPTIONS]
 cryptobot serve --port 8080
 ```
 
-### ingest
+### mm
 
-Historical data ingestion.
+Run the market-making strategy against order book.
 
 ```bash
-cryptobot ingest [OPTIONS]
+cryptobot mm [OPTIONS]
+```
+
+### ml
+
+Train a direction classifier and emit predictions.
+
+```bash
+cryptobot ml [OPTIONS]
+```
+
+### validate
+
+Validate backtest statistical significance.
+
+```bash
+cryptobot validate [OPTIONS]
+```
+
+### paper-funder
+
+Live paper monitor for the funding-carry edge (public WS, no API keys).
+
+```bash
+cryptobot paper-funder [OPTIONS]
 ```
 
 #### Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--symbol` | BTCUSDT | Trading symbol |
-| `--timeframe` | 1m | Timeframe |
-| `--days` | 30 | Days of history |
-| `--source` | binance | Data source |
+| `--symbols` | BTCUSDT ETHUSDT | Comma- or space-separated symbols |
+| `--hours` | 24 | Hours to monitor (0 = run forever) |
+| `--log` | paper_funding.csv | CSV log path |
+| `--poll-fapi` | false | Use fapi REST polling for the perp leg (futures WS blocked on some networks) |
+| `--poll-interval` | 5.0 | fapi polling seconds |
+| `--json` | false | JSON output |
 
 ```bash
-cryptobot ingest --symbol ETHUSDT --timeframe 1h --days 90
-```
-
-### health
-
-System health check.
-
-```bash
-cryptobot health
-```
-
-### config
-
-Configuration management.
-
-```bash
-cryptobot config [OPTIONS]
-```
-
-#### Options
-
-| Option | Description |
-|--------|-------------|
-| `show` | Show current config |
-| `validate` | Validate config |
-
-```bash
-cryptobot config show
-cryptobot config validate
+cryptobot paper-funder --symbols BTC,ETH --hours 6 --poll-fapi --json
 ```
 
 ## Strategy-Specific Options

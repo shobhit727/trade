@@ -30,14 +30,15 @@
 | Data | `ingestion.py`, `storage.py`, `cleaning.py`, `features.py` | ✅ `data/features.py` re-exports `cryptobot.ml.features` (B056). `BinanceDataIngestion` reuses `aiohttp.ClientSession` via `_ensure_session()` (B042). |
 | Strategies | `base.py`, `registry.py` + 6 concrete (`mean_reversion`, `trend_following`, `stat_arb`, `funding_arb`, `market_making`, `ml_strategy`) | ✅ All 6 implemented. Registry wired to YAML via `load_strategies_from_config` (B057/B059). |
 | Risk | `manager.py`, `limits.py`, `sizing.py`, `kill_switch.py`, `correlation.py` | ✅ Implemented. Notional check skipped on no-price (B038, B060, B061). |
-| Execution | `engine.py`, `algorithms.py`, `router.py`, `adverse_selection.py`, `venue/{base,simulated,binance}.py` | ✅ Implemented. `BinanceVenue` via `ccxt.async_support` with sandbox, retries, guards. SOR + adverse-selection wired. |
+| Execution | `engine.py`, `algorithms.py`, `router.py`, `adverse_selection.py`, `costs.py`, `venue/{base,simulated,realistic,binance}.py` | ✅ Implemented. `BinanceVenue` via `ccxt.async_support` with sandbox, retries, guards. SOR + adverse-selection wired. Phase 4 transaction cost model (`costs.py`). |
 | Backtest | `engine.py`, `metrics.py`, `simulator.py`, `validation.py`, `reporting.py`, `runner.py`, `data.py` | ✅ Real WFA + MC + deflated Sharpe; equity double-count fix (B063); entry-price zero guard (B064). |
 | Monitoring | `metrics.py`, `alerting.py`, `health.py`, `dashboard.py` | ✅ Implemented. `total_pnl` is `Gauge` (B025). `ThreadPoolExecutor` shared for alert fan-out (B067). Health monitor exposes runtime register/unregister (B043). |
 | Utils | `logging.py`, `decorators.py`, `types.py`, `health_server.py` | ✅ stdlib `ThreadingHTTPServer` for `/health` + `/metrics`. |
 | Market Data | `manager.py` | ✅ Binance WS with fallback symbols+timeframes (B044). |
-| CLI | `main.py` | ✅ argparse `validate/paper/bot/serve` with real logic. |
-| ML | `features.py`, `online.py`, `models/direction.py` | ✅ Core. `volatility.py`, `regime.py`, `ensemble.py` 🔲 missing. Walk-forward stats persistence (B065). |
-| Rust | `crates/*` | ✅ Workspace trimmed to 1 member (`cryptobot-core`) with `lib.rs` stub + 1 unit test. `cargo build` + `cargo test` pass. Empty `src/{events,math,time,types}/` subdirs preserved. Sibling crates removed (planned to be re-added when each gets a manifest). |
+| Live | `live/paper_harness.py` | ✅ Phase 3 `FundingPaperHarness` — spot bookTicker WS + fapi premiumIndex REST-poll. |
+| CLI | `main.py` | ✅ argparse `backtest/mm/ml/serve/bot/validate/paper/paper-funder` with real logic. |
+| ML | `features.py`, `online.py`, `training.py`, `inference.py`, `auto_retrain.py`, `optimizer.py`, `models/{direction,volatility,regime,ensemble}.py` | ✅ Implemented (volatility/regime/ensemble exist; disabled in YAML until validated). Walk-forward stats persistence (B065). |
+| Rust | `crates/*` | ✅ Workspace: 7 real crates (`core`/`features`/`risk`/`stats`/`orderbook`/`backtest`/`py`) with PyO3 0.29. fmt/clippy/test green. `.cargo/config.toml` deliberately has no `target-cpu=native` (proc-macro SIGILL across runner CPUs). |
 
 ## Event flow (verified)
 

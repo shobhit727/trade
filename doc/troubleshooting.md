@@ -208,7 +208,7 @@ export APP_LOG_LEVEL=DEBUG  # DEBUG, INFO, WARNING, ERROR, CRITICAL
 
 **Environment:**
 - OS: Ubuntu 22.04
-- Python: 3.13
+- Python: 3.14
 - Docker: 24.0
 - Commit: abc123
 
