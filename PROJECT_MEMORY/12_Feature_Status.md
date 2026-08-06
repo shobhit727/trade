@@ -1,6 +1,6 @@
 # 12. Feature Status
 
-> **Last Updated**: 2026-08-06 (Phase 3 paper harness + Phase 4 costs + CI/CD overhaul; repo public; 413 pytest + 31 Rust tests green)
+> **Last Updated**: 2026-08-06 (Phase 4 ✅ + paper harness + CI/CD overhaul; ML volatility/regime/ensemble confirmed; Phase 5 optimizer pending; 413 pytest + 31 Rust tests green)
 > **Confidence**: High.
 
 ## Verified module status

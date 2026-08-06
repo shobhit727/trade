@@ -117,3 +117,13 @@
 - `docker compose config` (default): passes (monitoring dirs scaffolded).
 - `cargo build` from root: **fails** — workspace lists 7 members; only `cryptobot-core` has a manifest.
 - 22 unit test files in `tests/unit/`.
+
+
+## 2026-08-06 — Phase 4 ✅ + ML models discovery + doc sync
+
+- **Phase 4 closed**: `ml_strategy.py` created (MLStrategy + DirectionClassifier hook); `execution/costs.py` added (TransactionCostModel: spread, fees, slippage, funding, rebates, maker/taker). 6/6 strategies + cost model shipped.
+- **ML models reality check**: `ml/models/volatility.py` (333 LOC: EWMA/GARCH/realized/quantile), `regime.py` (289 LOC: HMM/k-means/GMM/threshold), `ensemble.py` (139 LOC: weighted voting) **already implemented**. plan.md incorrectly listed them as 🔲 pending — now ✅.
+- **Phase 5 status**: Sizing + checks + per-strategy tracker + drawdown scaling + correlation gate + kill switch all done. Remaining: `risk/portfolio_optimizer.py` (HRP, mean-CVaR), real-time Prometheus risk-metric emission from `RiskManager`.
+- **Doc sync**: `plan.md` Phase 4/5/6 status corrected, dates bumped; `PROJECT_MEMORY/12_Feature_Status.md` Last-Updated bumped.
+- **Tests**: 413 Python + 31 Rust still green; lint clean; Docker test target passes.
+- **Git**: existing remote `git@github.com:shobhit727/trade.git` (main).

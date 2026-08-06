@@ -1,7 +1,7 @@
 # Cryptobot - Elite Quantitative Trading System
 ## Master Plan & Architecture Document
 
-> **Status**: Active development | **Last Updated**: 2026-08-02 (CI green; release v0.1.0 published; Docker multi-arch images on GHCR)
+> **Status**: Active development | **Last Updated**: 2026-08-06 (Phase 4 ✅; ML models volatility/regime/ensemble implemented; Phase 5 portfolio optimizer pending)
 > **Context**: Core, backtester, risk, execution, monitoring (no-op fallback + lazy aiohttp, B051 resolved), ML core, live exchange adapter, smart order router, adverse-selection guard, health server, K8s manifests, multi-arch CI, TimescaleDB migrations, YAML-driven strategy registry, **buildable Rust workspace**, **BinanceWSClient fallback warnings** all implemented. Remaining: ML volatility/regime/ensemble models (deferred); integration test fixtures.
 > **Current Python**: 3.14 (Docker base `python:3.14-slim`).
 > **Repository**: `git@github.com:shobhit727/trade.git` (public).
@@ -208,25 +208,29 @@ src/cryptobot/
 - [x] Funding Arbitrage: basis + carry + funding rate (`strategies/funding_arb.py`)
 - [x] Market Making: Avellaneda-Stoikov + AdverseSelectionGuard (`strategies/market_making.py`)
 - [x] ML-driven strategy (`strategies/ml_strategy.py`) — exists (B054)
+- [x] Transaction Cost Model: spread, fees, slippage, funding, rebates, maker/taker (`execution/costs.py`)
 
-### Phase 5: Risk Management (Week 6-7) ⭐ — ⚠️ partial
+### Phase 5: Risk Management (Week 6-7) ⭐ — ⚠️ partial (sizing + checks done; optimizer + dashboard wiring pending)
 - [x] Pre-trade risk checks (exposure, drawdown via kill switch, notional bounds)
 - [x] Notional check skipped when no price available (market order pre-trade) — implemented (B038)
 - [x] Dynamic position sizing helpers (Kelly, vol-target, fixed-fraction)
-- [ ] Portfolio optimization (HRP, mean-CVaR) — not implemented
+- [x] Per-strategy risk tracking (`risk/strategy_tracker.py`) — daily P&L, drawdown per strategy
+- [x] Drawdown-based position scaling (`RiskManager._drawdown_scale`)
+- [x] Correlation gate (pre-trade reject if |corr| > limit)
 - [x] Kill switch (`risk/kill_switch.py` driven by portfolio signal)
-- [ ] Real-time risk dashboard — Grafana panels exist but not wired live
+- [ ] Portfolio optimization (HRP, mean-CVaR) — `risk/portfolio_optimizer.py` pending
+- [ ] Real-time risk dashboard wiring — Grafana panels exist; emit Prometheus metrics from `RiskManager` pending
 
-### Phase 6: ML Pipeline (Week 7-9) ⭐ — ⚠️ partial (core only)
+### Phase 6: ML Pipeline (Week 7-9) ⭐ — ⚠️ partial (models now complete; pipeline integration pending)
 - [x] Feature engineering (`ml/features.py`) — returns, RSI, MACD, ATR ratio, BB pos+width, log volume
 - [x] Direction classifier (`ml/models/direction.py`) — sklearn logreg preferred, numpy fallback
+- [x] Volatility forecasting (`ml/models/volatility.py`) — EWMA, GARCH(1,1), realized, quantile regression
+- [x] Regime detection (`ml/models/regime.py`) — HMM, k-means, GMM, threshold with softmax probs
+- [x] Ensemble stacking / blending (`ml/models/ensemble.py`) — weighted voting across direction/volatility/regime
 - [x] Walk-forward training with purged CV (`ml/online.py` WalkForwardTrainer)
 - [x] Auto-retrain on drift detection (`ml/online.py` DriftDetector)
 - [ ] Feature store with versioning (stretch)
-- [ ] Volatility forecasting (`ml/models/volatility.py` missing)
-- [ ] Regime detection (`ml/models/regime.py` missing)
-- [ ] Ensemble stacking / blending (`ml/models/ensemble.py` missing)
-- [ ] Online inference pipeline — current DirectionClassifier <10ms; production pipeline deferred
+- [ ] Online inference pipeline — DirectionClassifier <10ms; production pipeline deferred
 
 ### Phase 7: Execution Engine (Week 9-10) — ✅ done
 - [x] Order management (`execution/engine.py`) with `build_venue(mode)` factory
@@ -477,7 +481,7 @@ mkdir -p docker seccomp compose scripts migrations
 - Requirements: `requirements/prod.txt`
 
 ### Current Phase
-**Phase 4/6/8 complete**: Core infrastructure ✅, Backtester ✅, Strategies 6/6 ✅ (ml_strategy.py created), ML core ✅ (features, direction/volatility/regime/ensemble, training/inference/auto_retrain, walk-forward optimizer), Execution ✅ (incl. realistic venue + transaction cost model), Risk ✅, Monitoring ✅, Live/Compose ✅ (incl. Phase 3 funding-carry paper harness), K8s ✅, **CI/CD green ✅ (public repo, 413 pytest + 31 Rust tests)**, **Release v0.1.0 published ✅**. Active: Phase 3 edge validation (funding-carry paper harness on live Binance data; fapi WS network-blocked here → REST-poll fallback).
+**Phase 4/6/8 complete**: Core infrastructure ✅, Backtester ✅, Strategies 6/6 ✅ (ml_strategy.py created), ML core ✅ (features, direction/volatility/regime/ensemble, training/inference/auto_retrain, walk-forward optimizer), Execution ✅ (incl. realistic venue + transaction cost model), Risk ✅, Monitoring ✅, Live/Compose ✅ (incl. Phase 3 funding-carry paper harness), K8s ✅, **CI/CD green ✅ (public repo, 413 pytest + 31 Rust tests)**, **Release v0.1.0 published ✅**. Active: Phase 3 edge validation (funding-carry paper harness on live Binance data; fapi WS network-blocked here → REST-poll fallback). Next: portfolio optimizer (HRP/CVaR), real-time risk dashboard wiring, Rust crate expansion, paper→live cutover.
 
 ### Blockers
 - ~~Rust workspace non-buildable — `Cargo.toml [workspace] members` declared 7, only `cryptobot-core` had a manifest~~ → **resolved 2026-08-04** (all 7 crates fleshed out with PyO3 0.29; fmt/clippy/test green)
