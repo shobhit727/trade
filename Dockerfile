@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1.7
 ARG PYTHON_TAG=3.13-slim
+ARG PYTHON_VER=${PYTHON_TAG%-*}
 
 FROM python:${PYTHON_TAG} AS builder
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -21,6 +22,9 @@ RUN pip install --upgrade pip setuptools wheel \
 
 FROM python:${PYTHON_TAG} AS base
 
+ARG PYTHON_TAG=3.13-slim
+ARG PYTHON_VER=${PYTHON_TAG%-*}
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app/src \
@@ -37,7 +41,7 @@ RUN apt-get update \
         tini \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
+COPY --from=builder /usr/local/lib/python${PYTHON_VER}/site-packages /usr/local/lib/python${PYTHON_VER}/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 ARG REQUIREMENTS=requirements/test.txt
