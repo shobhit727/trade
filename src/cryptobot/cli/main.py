@@ -92,6 +92,19 @@ def build_parser() -> argparse.ArgumentParser:
     paper_cmd.add_argument("--source", choices=["synthetic"], default="synthetic")
     paper_cmd.add_argument("--bars", type=int, default=200)
     paper_cmd.add_argument("--json", action="store_true")
+
+    funder_cmd = sub.add_parser(
+        "paper-funder",
+        help="Live paper monitor for the funding-carry edge (public WS, no API keys)",
+    )
+    funder_cmd.add_argument("--symbols", nargs="+", default=["BTCUSDT", "ETHUSDT"])
+    funder_cmd.add_argument("--hours", type=float, default=24, help="0 = run forever")
+    funder_cmd.add_argument("--log", default="paper_funding.csv")
+    funder_cmd.add_argument("--spot-ws", default=None)
+    funder_cmd.add_argument("--futures-ws", default=None)
+    funder_cmd.add_argument("--poll-fapi", action="store_true", help="Use fapi REST polling for perp leg (futures WS is blocked on some networks)")
+    funder_cmd.add_argument("--poll-interval", type=float, default=5.0)
+    funder_cmd.add_argument("--json", action="store_true")
     return parser
 
 
@@ -281,6 +294,30 @@ async def _run(args: argparse.Namespace) -> int:
             logger.info("monte_carlo=%s", report["monte_carlo"])
             logger.info("deflated_sharpe=%s", report["deflated_sharpe"])
         return 0 if report["passed"] else 1
+
+    if args.command == "paper-funder":
+        from cryptobot.live.paper_harness import FundingPaperHarness
+
+        harness = FundingPaperHarness(symbols=args.symbols, log_path=args.log)
+        logger.info(
+            "paper-funder monitoring %s for %.0fh (log=%s)",
+            ", ".join(args.symbols), args.hours, args.log,
+        )
+        await harness.run(
+            hours=args.hours,
+            spot_ws=args.spot_ws,
+            futures_ws=args.futures_ws,
+            poll_fapi=args.poll_fapi,
+            poll_interval_s=args.poll_interval,
+        )
+        if args.json:
+            json.dump(
+                {s: st.to_row() for s, st in harness.states.items()},
+                sys.stdout,
+                default=str,
+            )
+            sys.stdout.write("\n")
+        return 0
 
     if args.command == "paper":
         from cryptobot.backtest.data import load_bars
