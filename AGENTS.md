@@ -163,22 +163,32 @@ Runs in separate `docker-manifest` job AFTER `docker-build` completes (both plat
 ### Environment Variables
 ```yaml
 env:
-  PYTHON_TAG: "3.13-slim"    # Docker base image
-  CI_PYTHON: "3.13"          # Python version for CI (runners)
+  PYTHON_TAG: "3.14-slim"    # Docker base image (threaded into builds as --build-arg)
+  CI_PYTHON: "3.13"          # Python version for CI runners
   REGISTRY_IMAGE: ghcr.io/${{ github.repository }}
 ```
 
 ### Python Version
-- **CI**: 3.13 (runners)
-- **Docker**: 3.13-slim
-- **Local**: 3.13+ recommended
+- **CI runners**: 3.13
+- **Docker base image**: 3.14-slim (`PYTHON_TAG`, also the Dockerfile default `ARG`)
+- **Local**: 3.14+ recommended
 
 ### Rust Toolchain
-- Uses `dtolnay/rust-toolchain@stable` (auto-installs)
+- Uses `dtolnay/rust-toolchain@stable` (auto-installs) + `Swatinem/rust-cache@v2` (caches target dir)
 - Workspace: 7 crates in `crates/` (core, features, risk, stats, orderbook, backtest, py); fully buildable locally via `rustup`
-- Targets: `cargo fmt --check`, `clippy -D warnings`, `test`
+- Targets: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`
 - PyO3: `0.29` for Rust 1.97+ compatibility
-- All 31 Rust tests pass
+- All Rust tests pass
+- ⚠️ `.cargo/config.toml` must NOT set `-C target-cpu=native` — it breaks cached builds across heterogeneous runner CPUs (proc-macro `.so` SIGILL). For local builds opt in via `CARGO_RUSTFLAGS="-C target-cpu=native"`.
+
+### CI job details (ci.yml)
+- `concurrency: ci-..., cancel-in-progress: true` keyed per workflow+branch — rapid pushes cancel superseded runs
+- Every job has `timeout-minutes` (15–60) to bound cost
+- `permissions: contents: read` at workflow level; `docker-build`/`docker-manifest` donate `packages: write`
+- Linters unpinned (`pip install ruff pyflakes`); `checkout@v6`, `setup-python@v5`
+- `unit` uploads a coverage artifact (`actions/upload-artifact@v4`)
+- `docker-build` matrix: **PRs build amd64 only; pushes build amd64 + arm64** (dynamic `fromJSON` matrix)
+- Build args threaded through: `PYTHON_TAG`, `REQUIREMENTS`, `GIT_SHA`, `BUILD_DATE`
 
 ---
 
@@ -191,9 +201,9 @@ git push origin v0.1.0
 
 # Triggers release-multiarch workflow:
 # 1. Validates tag format (refs/tags/v*)
-# 2. Builds multi-arch production image
-# 2. Pushes to GHCR with tags: latest, vX.Y.Z, vX.Y.Z-multiarch
-# 3. Generates SBOM + provenance
+# 2. Builds multi-arch production image (amd64 + arm64 in one buildx push)
+# 3. Pushes to GHCR with tags: latest, vX.Y.Z, vX.Y.Z-multiarch
+# 4. Attaches SBOM + provenance to the same push step
 ```
 
 ### Version Sources

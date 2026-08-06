@@ -45,7 +45,7 @@
 ## ML config (post-B055/B058)
 
 - `configs/base.yaml` `ml.models.direction.type: sklearn_logreg`. `DirectionClassifier` uses sklearn `LogisticRegression` when available, else closed-form numpy fallback.
-- `volatility` and `regime` blocks have `enabled: false` because the corresponding `ml/models/{volatility,regime}.py` are not implemented.
+- `volatility` and `regime` blocks have `enabled: false` (not yet validated), though `ml/models/{volatility,regime}.py` are implemented.
 - `lightgbm` removed from `requirements/prod.txt` (B055).
 
 ## Strategies config (post-B057/B059)

@@ -1,7 +1,21 @@
 # 23. Repository History
 
-> **Last Updated**: 2026-07-31 (audit v2)
+> **Last Updated**: 2026-08-06 (Phase 3 harness, PR #1 venue fixes, CI/CD overhaul, repo public)
 > **Confidence**: Git history present; entries below are session-level snapshots.
+
+## Session 2026-08-06 (Phase 3 paper harness + CI/CD overhaul)
+
+- `f837152` edge research (maker/taker venue model, funding_sim) pushed earlier on main.
+- `5da9a0b` Phase 3 funding-carry paper harness: `src/cryptobot/live/paper_harness.py` + `cli paper-funder` + 8 tests (WS spot bookTicker + fapi premiumIndex REST-poll fallback).
+- `f6e6f21` CLI comma-split symbols fix.
+- `932e7e2` pyflakes unused-variable fixes (`realistic.py` book seeding populates `PriceLevel.total_quantity`, `optimizer.py` dead code removed).
+- Merged `35d0312` Phase 4 transaction cost model (`execution/costs.py` + 305-line test file) into main.
+- `f6ce262` CI/CD overhaul: concurrency group, timeout-minutes, rust-cache, PR-only-amd64 matrix, SBOM/provenance merged into release push, linters unpinned, coverage artifact, checkout@v6.
+- `9e65469` fix invalid `matrix` context in job-level `if` (actionlint).
+- `d265fd9` Dockerfile site-packages path derived from `PYTHON_TAG` (3.13→3.14).
+- `6503306` removed `-C target-cpu=native` from `.cargo/config.toml` (cached proc-macro SIGILL across runner CPUs).
+- Repo made **public** 2026-08-06 (private repo had exhausted Actions minutes → CI jobs failed instantly with no runner).
+- CI fully green on `6503306` (first green since before the session).
 
 ## Original state (pre-session)
 

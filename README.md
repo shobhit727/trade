@@ -28,7 +28,7 @@ docker compose logs -f cryptobot-paper
 
 | Layer | Tech |
 |-------|------|
-| Core  | Python 3.13 (async), Rust workspace (7 crates: core, features, risk, stats, orderbook, backtest, py) |
+| Core  | Python 3.14 (async), Rust workspace (7 crates: core, features, risk, stats, orderbook, backtest, py) |
 | Exchange | Binance (REST + WebSocket) |
 | Risk  | Real-time position/portfolio limits |
 | Strategies | Trend following, market making, stat arb |

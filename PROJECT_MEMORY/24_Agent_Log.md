@@ -1,3 +1,29 @@
+## Session 2026-08-06 (Phase 3 paper harness + CI/CD overhaul + repo public)
+
+### Goal
+
+Stand up a live paper harness for the funding-carry edge (the only Phase-2 survivor), fix the venue bugs upstream, and fix a chronically failing CI.
+
+### Sequence
+
+1. **PR #1 (venue bug fixes)** → merged: `execution/venue/realistic.py` 7 fixes (limit fills at limit price, partial fills `qty×fill_ratio`, fees on filled qty, adverse-selection wired, `update_mid_price` preserves resting orders, book seeded with real QueuePositions, added missing config field).
+2. **Phase 3 paper harness**: `src/cryptobot/live/paper_harness.py` (`FundingPaperHarness`) + `cli` `paper-funder` command + 8 tests. Live smoke surfaced two bugs fixed: (a) combined-stream WS messages are aiohttp `WSMessage` → read `.data` (state was stuck at `startup`); (b) `--symbols BTC,ETH` comma-split.
+3. **The repo/CI**: every CI run had been failing for many commits. Root cause: private repo + exhausted Actions minutes → jobs fail instantly with no runner. **Made repo public** → CI ran and reached the real failures:
+   - **pyflakes** failures in `realistic.py` + `ml/optimizer.py` (unused vars) — fixed; `realistic.py` now populates `PriceLevel.total_quantity` from the intended qty math.
+   - **Docker 3.14** — `Dockerfile` hardcoded `/usr/local/lib/python3.13/site-packages`; now derives from `PYTHON_TAG`. Verified `python:3.14-slim` builds + sklearn imports (scikit-learn ≥1.8 has cp314 wheels).
+   - **Rust SIGILL** — `cargo test` crashed with `rustc interrupted by SIGILL` twice. Root cause: `.cargo/config.toml` set `-C target-cpu=native`; with `Swatinem/rust-cache@v2`, proc-macro `.so`s built on an AVX512 runner got restored on a plain runner → SIGILL. **Removed the flag** (> opt in via `CARGO_RUSTFLAGS`). Rust green again.
+4. **CI/CD improvements** (committed f6ce262): `concurrency: cancel-in-progress` group; per-job `timeout-minutes` (bounds the free-minutes exposure); `Swatinem/rust-cache@2`; **PRs build amd64 only** (dynamic `fromJSON` matrix), pushes amd64+arm64; linters unpinned; coverage artifact; `permissions: contents: read`; `checkout@v6`; SBOM+provenance merged into the release push step; `PYTHON_TAG` threaded into builds. Fixed a follow-on invalid-`matrix`-in-job-`if` (actionlint-caught).
+5. **Final CI run**: full pipeline green — lint, cargo-lint, cargo-test, docker-test (3.14), unit (413 pytest), buildx amd64+arm64, manifest, compose-validate.
+
+### Verified
+- `jinx` CI green on `6503306` (first green run since before session).
+- `.cargo/config.toml` now comment-only warning; all builds pass without `target-cpu=native`.
+- Docs refreshed across `AGENTS.md`, `plan.md`, `doc/docker_ci.md`, `PROJECT_MEMORY/{00,01,04,08,09,12,13,14,23,24,26,27}`.
+
+### Remaining
+- Long-run paper harness still sampling live (no trades yet — basis below 5bps threshold).
+- ML volatility/regime remain `enabled: false` in YAML pending validation.
+
 ## Session 2026-08-04 (backtest CLI sweep + Rust workspace green)
 
 ### Goal

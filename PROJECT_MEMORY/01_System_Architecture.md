@@ -71,7 +71,7 @@
 
 - `crates/{cryptobot-backtest,features,risk,stats,orderbook,py}/` lack `Cargo.toml` even though listed in workspace `members`. `cargo build` from root errors until either each gets a manifest or the array is trimmed.
 - 6 dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/`.
-- ML volatility / regime / ensemble models not implemented (disabled in `configs/base.yaml`).
+- ML volatility / regime / ensemble models implemented; volatility/regime disabled in `configs/base.yaml` until validated.
 
 ## Detailed API references
 

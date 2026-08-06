@@ -1,6 +1,6 @@
 # 12. Feature Status
 
-> **Last Updated**: 2026-08-04 (backtest CLI sweep + Rust workspace green)
+> **Last Updated**: 2026-08-06 (Phase 3 paper harness + Phase 4 costs + CI/CD overhaul; repo public; 413 pytest + 31 Rust tests green)
 > **Confidence**: High.
 
 ## Verified module status
@@ -54,7 +54,7 @@
 | `monitoring/alerting.py` | ✅ | AlertManager + Telegram/Discord/Email/PagerDuty channels. `init_alerting()` only starts background task when channels configured; `stop()` idempotent. |
 | `monitoring/health.py` | ✅ | HealthMonitor + HealthChecker subclasses. `inspect.isawaitable` + false-as-unhealthy fix. Auto-register component. |
 | `monitoring/dashboard.py` | ✅ | Dashboard JSON builders. |
-| `cli/main.py` | ✅ | argparse CLI with `validate`, `paper`, `bot`, `serve` subcommands. Backtest subcommand supports `--show-trades` (print every closed trade; adds `trades[]` with `--json`), `--algorithms jobs.json` (parallel sweep), `--workers N`, `--seed`, `--vol`, `--capital`. With `--json`, logs route to stderr so stdout carries only JSON. |
+| `cli/main.py` | ✅ | argparse CLI with `validate`, `paper`, `bot`, `serve`, `backtest`. Backtest subcommand supports `--show-trades` (print every closed trade; adds `trades[]` with `--json`), `--algorithms jobs.json` (parallel sweep), `--workers N`, `--seed`, `--vol`, `--capital`. **`paper-funder`** runs the Phase 3 funding-carry paper harness (`--symbols`, `--hours`, `--log`, `--poll-fapi`, `--poll-interval`, `--json`). With `--json`, logs route to stderr so stdout carries only JSON. |
 | `backtest/parallel.py` | ✅ | `run_parallel(jobs, workers)` multi-core algorithm sweep via `ProcessPoolExecutor`. |
 | `backtest/runner.py` | ✅ | `run_bars` fast path runs the whole backtest loop without per-bar event bus overhead. |
 | `utils/logging.py` | ✅ | structlog wrapper with context vars. |
@@ -63,10 +63,14 @@
 | `market_data/manager.py` | ✅ | Binance WS client. Requires `aiohttp`, `redis`. `_symbols`/`_timeframes` fallback to `default_symbol` / `["1m"]` when settings empty. |
 | `ml/` | ✅ | Core pipeline: features, direction, online (WalkForwardTrainer + DriftDetector). **New: `ml/models/volatility.py` (EWMA, GARCH, realized, quantile), `ml/models/regime.py` (HMM, k-means, GMM, threshold), `ml/models/ensemble.py` (weighted voting ensemble).** |
 | `deploy/k8s/` | ✅ | Namespace, ConfigMap, Secret, PVC, Deployment, **Service (ClusterIP)**, **HPA (CPU+memory)**, kustomization (B053). |
-| `.github/workflows/ci.yml` | ✅ | Lint + unit + compose-validate + buildx matrix (amd64 + arm64). |
-| `.github/workflows/release.yml` | ✅ | Tag-driven multi-arch publish + SBOM + provenance. |
+| `.github/workflows/ci.yml` | ✅ | Concurrency (`cancel-in-progress`), per-job `timeout-minutes`, `permissions: contents: read`, lint (unpinned ruff+pyflakes), cargo-lint/cargo-test with `Swatinem/rust-cache@v2`, unit (coverage artifact), docker-test (PYTHON_TAG threaded), buildx matrix (**PRs amd64 only, pushes amd64+arm64** via `fromJSON`), manifest, compose-validate. |
+| `.github/workflows/release.yml` | ✅ | Tag-driven multi-arch publish with **SBOM + provenance merged into the build-push step** + concurrency group. |
 | `scripts/build_multiarch.sh` | ✅ | Local multi-arch build via buildx + QEMU. |
-| Rust workspace (`crates/cryptobot-{core,features,risk,stats,orderbook,backtest,py}/`) | ✅ | 7 crates + root workspace manifest. `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (31 tests) all green on stable Rust (1.97+). PyO3 0.29; `cryptobot_py` extension registers `features`, `risk`, `orderbook`, `backtest` submodules. |
+| Rust workspace (`crates/cryptobot-{core,features,risk,stats,orderbook,backtest,py}/`) | ✅ | 7 crates + root workspace manifest. `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (all green on stable Rust 1.97+). PyO3 0.29; `cryptobot_py` extension registers `features`, `risk`, `orderbook`, `backtest` submodules. `.cargo/config.toml` has no `target-cpu=native` (breaks cached CI builds). |
+| `execution/costs.py` | ✅ | Phase 4 transaction cost model: spread, fees, slippage, funding, rebates. |
+| `execution/venue/realistic.py` | ✅ | Realistic venue: seeded order book with QueuePositions, partial fills, adverse-selection guard, limit fills at price, fees on filled qty. |
+| `live/paper_harness.py` | ✅ | Phase 3 `FundingPaperHarness` — spot bookTicker WS + fapi `premiumIndex` REST-poll fallback, carry accumulation, CSV logs, reconnection backoff. |
+| `ml/optimizer.py` | ✅ | Phase 3 walk-forward optimizer with regime-aware parameter search (Optuna). |
 | `pyproject.toml` | ✅ | setuptools build + `cryptobot` CLI entry point. |
 | `migrations/*.sql` | ✅ | `001_extension.sql`, `002_hypertables.sql`. |
 | `docker-compose.yml` | ✅ | Test + default profiles valid (monitoring dirs scaffolded: `monitoring/{loki,promtail,nginx}`). |
@@ -80,13 +84,14 @@
 - `data/cleaning.py` — None/empty guards in `clean_klines`, `clean_tickers`, `clean_trades`, `validate_ohlcv`.
 - `monitoring/health.py` — `inspect.isawaitable`, false-as-unhealthy, auto-register component.
 
-## Test Status (2026-08-01)
+## Test Status (2026-08-06)
 
-- **CI**: Python 3.13, pytest + pytest-asyncio + pytest-cov + pytest-timeout=60s
-- **Lint**: ruff (py313 target) + pyflakes
-- **Rust**: cargo fmt + clippy + test (full workspace: 7 crates, 31 tests)
-- **Docker**: test target builds + runs pytest in container
+- **CI**: Python 3.13 runners, pytest + pytest-asyncio + pytest-cov + pytest-timeout=60s; **413 passed / 4 skipped**
+- **Lint**: ruff (unpinned) + pyflakes
+- **Rust**: cargo fmt + clippy (-D warnings) + test (full workspace: 7 crates, 31 tests)
+- **Docker**: test target builds on `PYTHON_TAG` (3.14-slim) + runs pytest in container
 - **Compose**: validate default + test profiles
+- **Repo**: public; CI fully green (first green run 2026-08-06)
 
 ### Recent Test Fixes (2026-08-01)
 - `validation.py`: `np.math.erf` → `math.erf` (numpy 2.x compatibility)
@@ -134,4 +139,4 @@
 - `python3 -m py_compile` on all edited files: passes.
 - `docker compose --profile test config`: passes.
 - Full Docker run blocked by host daemon instability.
-- 22 unit test files in `tests/unit/`.
+- 44 unit test files in `tests/unit/`.

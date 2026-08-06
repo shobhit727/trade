@@ -45,12 +45,12 @@
 - Many modules have unused imports.
 - ~~`docker-compose.yml` default profile references missing `monitoring/{loki,promtail,nginx}` dirs~~ — **RESOLVED**: scaffolded.
 - ~~`deploy/k8s/` missing `Service` and `HPA`~~ — **RESOLVED** (B053).
-- **NEW** Rust workspace: 7 members declared in `Cargo.toml`; only `cryptobot-core` has manifest. `cargo build` fails.
-- **NEW** 6 dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/`.
+- ~~**NEW** Rust workspace: 7 members declared in `Cargo.toml`; only `cryptobot-core` has manifest~~ — **RESOLVED 2026-08-04**: all 7 crates fleshed out (PyO3 0.29), fmt/clippy/test green.
+- **NEW** 6 dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/` — **RESOLVED 2026-07-31** (dirs removed).
 
 ### Test coverage
 
-- 22 unit test files in `tests/unit/`.
+- 44 unit test files in `tests/unit/`.
 - No integration tests (TimescaleDB / Redis / Prometheus).
 - No property-based tests (hypothesis) for risk/math.
 - No CI/CD test run verification (pytest not run in this audit env).
@@ -78,7 +78,7 @@
 | Drop `lightgbm` from `requirements/prod.txt` | 5 min | Medium | **Done** (B055) |
 | Fix `configs/base.yaml` `ml.models.direction.type` mismatch | 5 min | Medium | **Done** (B058) |
 | Add `data/features.py` as alias | 1 day | Medium | **Done** (B056) |
-| **Fix Rust workspace (trim members or add manifests)** | 5 min | **High** | **Done** — trimmed to `["crates/cryptobot-core"]`, deleted 6 empty sibling crate dirs, added `lib.rs` stub, moved `[target.*]` to `.cargo/config.toml`, fixed `[build-profile]` key, dropped dead `python` feature. `cargo build` + `cargo test` pass. |
+| **Fix Rust workspace (trim members or add manifests)** | 5 min | **High** | **Done** — workspace fleshed out to 7 real crates with PyO3 0.29 (2026-08-04); fmt/clippy/test green in CI. Note: `.cargo/config.toml` must NOT set `-C target-cpu=native` (cached proc-macro artifacts SIGILL across runner CPUs); opt in locally via `CARGO_RUSTFLAGS`. |
 | **Tighten `BinanceWSClient` fallback to log when fired** | 5 min | Low | **Open** |
 
 ## Removal candidates

@@ -179,7 +179,7 @@ docker compose run --rm cryptobot-test
 # .github/workflows/ci.yml
 name: ci
 
-on:
+"on":
   push:
     branches: [main]
   pull_request:
@@ -191,45 +191,58 @@ env:
   CI_PYTHON: "3.13"
   REGISTRY_IMAGE: ghcr.io/${{ github.repository }}
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v5
         with:
           python-version: "${{ env.CI_PYTHON }}"
           cache: "pip"
       - run: |
           python -m pip install --upgrade pip
-          pip install ruff==0.6.9 pyflakes==3.3.1
+          pip install ruff pyflakes
       - run: ruff check src tests
       - run: pyflakes src tests
 
   cargo-lint:
     name: Rust lint (fmt + clippy)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   cargo-test:
     name: Rust tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
 
   unit:
     name: Unit tests (Python 3.13)
     runs-on: ubuntu-latest
     needs: [lint, cargo-lint, cargo-test]
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v5
         with:
           python-version: "${{ env.CI_PYTHON }}"
@@ -237,18 +250,28 @@ jobs:
       - run: |
           python -m pip install --upgrade pip
           pip install -r requirements/test.txt
-          pip install numpy pandas
           pip install -e .
       - run: pytest -q --tb=short --cov=cryptobot --cov-report=term-missing --timeout=60
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: .coverage
+          retention-days: 14
 
   docker-test:
     name: Docker test image
     runs-on: ubuntu-latest
     needs: lint
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: |
-          docker build --target test --build-arg REQUIREMENTS=requirements/test.txt -t cryptobot:test .
+          docker build \
+            --target test \
+            --build-arg PYTHON_TAG=${{ env.PYTHON_TAG }} \
+            --build-arg REQUIREMENTS=requirements/test.txt \
+            -t cryptobot:test .
       - run: docker run --rm cryptobot:test
 
   docker-build:
@@ -256,25 +279,23 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, unit, docker-test]
     if: github.event_name == 'push' || github.event_name == 'pull_request'
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: write
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: linux/amd64
-            tag_platform: linux-amd64
-          - platform: linux/arm64
-            tag_platform: linux-arm64
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"platform":"linux/amd64","tag_platform":"linux-amd64"}]' || '[{"platform":"linux/amd64","tag_platform":"linux-amd64"},{"platform":"linux/arm64","tag_platform":"linux-arm64"}]') }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: docker/setup-qemu-action@v3
+        if: matrix.platform == 'linux/arm64'
         with:
           platforms: arm64
       - uses: docker/setup-buildx-action@v3
       - name: Login to GHCR
-        if: github.event_name == 'push' && matrix.platform == 'linux/amd64'
+        if: github.event_name == 'push'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -290,14 +311,32 @@ jobs:
             ${{ env.REGISTRY_IMAGE }}:${{ github.sha }}-${{ matrix.tag_platform }}
             ${{ env.REGISTRY_IMAGE }}:latest-${{ matrix.tag_platform }}
           build-args: |
+            PYTHON_TAG=${{ env.PYTHON_TAG }}
             REQUIREMENTS=requirements/prod.txt
             GIT_SHA=${{ github.sha }}
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          push: ${{ github.event_name == 'push' && matrix.platform == 'linux/amd64' }}
-      - name: Manifest list (merge)
-        if: github.event_name == 'push' && matrix.platform == 'linux/amd64'
+          push: ${{ github.event_name == 'push' }}
+
+  docker-manifest:
+    name: Docker manifest (create multi-arch manifest)
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.event_name == 'push'
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create multi-arch manifest
         run: |
           docker buildx imagetools create \
             -t ${{ env.REGISTRY_IMAGE }}:${{ github.sha }} \
@@ -309,8 +348,9 @@ jobs:
     name: Docker Compose config
     runs-on: ubuntu-latest
     needs: lint
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: docker compose config --quiet
       - run: docker compose --profile test config --quiet
 ```
@@ -322,7 +362,10 @@ jobs:
 | `replace()` not available in GH Actions | Use matrix `include` with `tag_platform` |
 | arm64 image not pushed | `push: true` for all platforms |
 | Manifest creation fails | Separate `docker-manifest` job with `needs: docker-build` |
+| Rust cache portability | `.cargo/config.toml` must not set `-C target-cpu=native` (proc-macro SIGILL across runner CPUs); opt in via `CARGO_RUSTFLAGS` locally |
+| PRs build amd64 only | Dynamic `fromJSON` matrix keyed on `github.event_name` |
 | Node.js 20 deprecation | GitHub handles automatically |
+
 
 ## Release Workflow
 
@@ -339,6 +382,10 @@ on:
 env:
   REGISTRY_IMAGE: ghcr.io/${{ github.repository }}
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   packages: write
@@ -347,8 +394,9 @@ jobs:
   build:
     name: Build and push multi-arch images
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
@@ -359,13 +407,17 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Extract version
+      - name: Validate tag and extract version
         id: meta
         run: |
+          if [[ ! "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "Error: This workflow only runs on version tags (refs/tags/v*)."
+            exit 1
+          fi
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
-      - name: Build and push manifest
+      - name: Build, push and attest
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -381,18 +433,11 @@ jobs:
             BUILD_DATE=${{ steps.meta.outputs.DATE }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          push: true
-      - name: SBOM + provenance
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          target: production
-          platforms: linux/amd64
-          tags: ${{ env.REGISTRY_IMAGE }}:sbom
           sbom: true
           provenance: true
-          push: false
+          push: true
 ```
+
 
 ### Tagging
 

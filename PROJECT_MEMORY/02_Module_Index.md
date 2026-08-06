@@ -44,10 +44,14 @@ src/cryptobot/
     algorithms.py                 # TWAP/VWAP/POV/IS/Iceberg/sweep/arrival/vwap_schedule/slicer_for
     router.py                     # SmartOrderRouter (price + latency rank, fallback, split)
     adverse_selection.py          # AdverseSelectionGuard + QueuePosition + TopOfBook + attach_to_engine
+    costs.py                      # Phase 4 transaction cost model (spread/fees/slippage/funding/rebates)
     venue/
       base.py                     # Abstract Venue
       simulated.py                # In-memory with slippage + commission
+      realistic.py                # Realistic: seeded book + QueuePositions, partial fills, adverse selection
       binance.py                  # ccxt.async_support; sandbox; retries; guards
+  live/
+    paper_harness.py              # Phase 3 FundingPaperHarness (spot WS + fapi REST-poll, carry accumulation)
       __init__.py
     __init__.py
   backtest/
@@ -65,7 +69,7 @@ src/cryptobot/
     dashboard.py                  # Grafana JSON builders
     __init__.py
   cli/
-    main.py                       # argparse (validate/paper/bot/serve) with real logic
+    main.py                       # argparse (validate/paper/bot/serve/backtest/paper-funder) with real logic
     __init__.py
   market_data/
     manager.py                    # BinanceWSClient (fallback to default_symbol + ["1m"])
@@ -132,10 +136,11 @@ src/cryptobot/                     # 6 dead empty dirs: allocator/ altdata/ api/
 
 ## Highest-impact remaining gaps (post-fix)
 
-- `crates/*` empty member crates — `cargo build` fails (only `cryptobot-core` has manifest).
-- 6 dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/`.
-- `ml/models/{volatility,regime,ensemble}.py` missing.
+- ~~`crates/*` empty member crates — `cargo build` fails~~ → **resolved 2026-08-04** (7 real crates, PyO3 0.29).
+- 6 dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/` → **resolved 2026-07-31** (dirs removed).
+- ~~`ml/models/{volatility,regime,ensemble}.py` missing~~ → **resolved** (all three implemented; disabled in YAML pending validation).
 - Live Binance runtime credentials; integration tests for TimescaleDB/Redis/Prometheus.
+- Live `live/paper_harness.py`, `execution/costs.py`, `ml/optimizer.py`, `execution/venue/realistic.py` are new additions — see `12_Feature_Status.md`.
 
 ## Confidence
 

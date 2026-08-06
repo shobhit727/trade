@@ -53,7 +53,7 @@ End-to-end wiring in `backtest.runner.run_backtest`: OHLCV → strategy → Exec
 
 ## Unverified / missing
 
-- `cryptobot.ml.models.{volatility,regime,ensemble}`: not implemented (disabled in YAML).
+- `cryptobot.ml.models.{volatility,regime,ensemble}`: implemented (EWMA/GARCH/realized, HMM/k-means/GMM, weighted voting). Volatility/regime disabled in YAML until validated.
 - `cryptobot.execution.adverse_selection`: unit-tested via `test_adverse_selection.py`; not exercised end-to-end against real market data.
 - Live Binance behavior under load: not exercised in CI; needs sandbox credentials.
 

@@ -94,8 +94,24 @@ and it is regime-bound (mostly dormant since 2022). Every other category
 (1m price, ML, stat arb, daily trend, market making) measured negative or
 noise after real fees on real data.
 
+## Phase 3 — Paper Harness (LIVE)
+
+`src/cryptobot/live/paper_harness.py` — `FundingPaperHarness` runs on live public data
+(no API keys): spot bookTicker WS (combined `/stream`) + perp `premiumIndex`
+(mark + lastFundingRate) via REST-poll fallback (`--poll-fapi`) because the
+futures WS (`wss://fstream.binance.com`) is network-blocked in this environment.
+- Gates on position state; accumulates carry at 8h cadence; appends to CSV log.
+- CLI: `python -m cryptobot.cli.main paper-funder --symbols BTCUSDT,ETHUSDT --hours 6 --poll-fapi`
+- Unit tests: `tests/unit/test_live_paper_harness.py` (8 tests). Two live bugs
+  fixed during smoke: combined-stream messages arrive as aiohttp `WSMessage`
+  (must read `.data`); `--symbols` comma-split.
+- Live smoke confirmed: spot + perp prices flow, state advances to `no_signal`
+  (current basis < 5bps entry threshold — quiet market).
+
 ## Next
 
-- Phase 3: paper-trading harness on live public WS data (spot/perp + funding,
-  no API keys) so the funding carry (the one surviving edge) can be observed live
-- Commit: ML bugfix, venue maker model, funding_sim.py, tests, research doc
+- Phase 3 live validation: run the paper harness for a multi-day window on BTC+ETH
+  to observe basis excursions; log basis explicitly in JSON output for signal confirmation.
+- If a real basis signal fires, inspect fill/pnl path end-to-end before any live capital.
+- Revisit Phase 2A fee sensitivity: the edge only survives at BNB-discount taker+maker
+  routing — validate BNB-hold status before live.
