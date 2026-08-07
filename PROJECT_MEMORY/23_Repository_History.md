@@ -147,3 +147,17 @@
 - **Tests**: `tests/unit/test_risk_portfolio_optimizer.py` (10 tests) — weight normalization, single-asset, correlated-pair balance, shape/alpha validation, metric emission, zero-equity no-op.
 - **Lint**: ruff clean; formatting normalized on `risk/{sizing,strategy_tracker,manager}.py`.
 - **Suite**: 423 passed, 4 skipped (Docker); Rust untouched.
+
+## 2026-08-07 — Phase 3 ✅ + Rust stats/risk submodules
+
+**Phase 3 (Strategy Framework) closed:**
+- `src/cryptobot/strategies/position.py` — `Position` + `PositionManager`: scale-in/out with quantity-weighted avg entry, stop-loss/take-profit `reduce_only` exits, trailing-stop ratchet. Pure state, no EventBus dep. (12 tests)
+- `src/cryptobot/backtest/optimize.py` — `optimize_strategy`: Optuna bayesian search over strategy config params (optional dep, deterministic grid fallback), Sharpe/Sortino/MaxDD/return objectives. (5 tests)
+
+**Rust workspace flesh-out:**
+- stats: `deflated_sharpe` (Bailey & LdP, MC expected-max), `monte_carlo` (block permute, loss probability, percentiles), `pbo` (CSCV), `sensitivity`, `walk_forward` (embargo splits) — all real impls replacing placeholders.
+- risk: `limits`, `kill_switch` (latching state machine), `portfolio_optimization` (mean-variance, inverse-vol, risk-parity) — real impls.
+- backtest engine: `run()` now records equity curve → computes Sharpe + max drawdown (was TODO 0.0).
+- Rust tests: 31 → 63. clippy -D warnings + fmt clean.
+
+**Gates:** 591 pytest passed, 4 skipped (1 flaky hypothesis test passed on re-run; pre-existing remote test). ruff clean.

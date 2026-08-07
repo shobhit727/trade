@@ -1,7 +1,7 @@
 # Cryptobot - Elite Quantitative Trading System
 ## Master Plan & Architecture Document
 
-> **Status**: Active development | **Last Updated**: 2026-08-06 (Phase 5 ✅ — HRP/CVaR optimizer + risk-metric wiring; 423 pytest + 31 Rust green)
+> **Status**: Active development | **Last Updated**: 2026-08-07 (Phase 3 ✅ — PositionManager + Optuna strategy optimizer; Rust stats/risk submodules implemented; 591 pytest + 63 Rust green)
 > **Context**: Core, backtester, risk, execution, monitoring (no-op fallback + lazy aiohttp, B051 resolved), ML core, live exchange adapter, smart order router, adverse-selection guard, health server, K8s manifests, multi-arch CI, TimescaleDB migrations, YAML-driven strategy registry, **buildable Rust workspace**, **BinanceWSClient fallback warnings** all implemented. Remaining: ML volatility/regime/ensemble models (deferred); integration test fixtures.
 > **Current Python**: 3.14 (Docker base `python:3.14-slim`).
 > **Repository**: `git@github.com:shobhit727/trade.git` (public).
@@ -208,12 +208,12 @@ src/cryptobot/
 - [x] Tearsheet generation (HTML) (`backtest/reporting.py`)
 - [x] End-to-end runner (`backtest/runner.py` — OHLCV → strategy → exec → venue)
 
-### Phase 3: Strategy Framework (Week 3-4) ⭐ — ⚠️ partial
+### Phase 3: Strategy Framework (Week 3-4) ⭐ — ✅ done
 - [x] Base strategy class with lifecycle hooks (`strategies/base.py`)
 - [x] Signal generation interface (returns `List[OrderEvent]`)
-- [ ] Position management primitives (scaling, stops) — BaseStrategy exposes lifecycle only
+- [x] Position management primitives (`strategies/position.py`) — `Position` + `PositionManager`: scale-in/out with weighted avg entry, stop/take-profit orders, trailing stops (ratchet), `reduce_only` exits
 - [x] Strategy registry (`StrategyRegistry` singleton)
-- [x] Parameter optimization — `ml/optimizer.py` (walk-forward, Optuna) ✅; `cli/optimize.py` still missing
+- [x] Parameter optimization — `ml/optimizer.py` (walk-forward, Optuna) ✅; `backtest/optimize.py` (Optuna strategy-param search with deterministic grid fallback) ✅
 
 ### Phase 4: Core Strategies (Week 4-6) ⭐ — ✅ complete
 - [x] Mean Reversion: Z-score + RSI + BB (`strategies/mean_reversion.py`)
@@ -321,18 +321,16 @@ src/cryptobot/
 ### Rust Crate Structure (`crates/`)
 ```
 crates/
-├── cryptobot-core/          # Shared types, events, math  ← implemented (lib.rs stub)
-├── cryptobot-backtest/      # Event-driven backtester, fill simulator  ← pending
-├── cryptobot-features/      # Feature computation (SIMD optimized)  ← pending
-├── cryptobot-risk/          # Risk math: Kelly, CVaR, HRP, correlation  ← pending
-├── cryptobot-stats/         # Statistical validation: PBO, Monte Carlo, deflated Sharpe  ← pending
-├── cryptobot-orderbook/     # Order book operations, VPIN, microstructure  ← pending
-└── cryptobot-py/            # PyO3 bindings for Python integration  ← pending
+├── cryptobot-core/          # Shared types, events, math  ✅ implemented
+├── cryptobot-backtest/      # Event-driven backtester, fill simulator  ✅ (engine metrics computed: sharpe, max drawdown)
+├── cryptobot-features/      # Feature computation (trend, volatility, volume, microstructure...)  ✅
+├── cryptobot-risk/          # Risk math: Kelly, CVaR, HRP, correlation  ✅ (+ limits, kill switch, portfolio optimization)
+├── cryptobot-stats/         # Statistical validation: PBO, Monte Carlo, deflated Sharpe  ✅ (+ sensitivity, walk-forward)
+├── cryptobot-orderbook/     # Order book operations, VPIN, microstructure  ✅
+└── cryptobot-py/            # PyO3 bindings for Python integration  ✅ (submodules wired)
 ```
 
-Only `cryptobot-core` exists on disk today (with `lib.rs` stub + 1 unit test). The other 6 dirs were deleted 2026-07-31 (no manifest, only empty skeleton). Re-add each to `Cargo.toml [workspace] members` when implementing.
-
-**Current state** (2026-08-06): workspace has 7 real crates (`core`, `features`, `risk`, `stats`, `orderbook`, `backtest`, `py`) with PyO3 0.29 bindings. `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` all green (rustup stable 1.97+). CI runs cargo-lint + cargo-test jobs with `Swatinem/rust-cache@v2`. `.cargo/config.toml` deliberately has NO `target-cpu=native` rustflags — cached artifacts built on one runner CPU would SIGILL on another; opt in locally via `CARGO_RUSTFLAGS="-C target-cpu=native"`.
+**Current state** (2026-08-06): workspace has 7 real crates with PyO3 0.29 bindings. Stats crate `deflated_sharpe` / `monte_carlo` / `pbo` / `sensitivity` / `walk_forward` and risk `limits` / `kill_switch` / `portfolio_optimization` submodules implemented (63 workspace tests, up from 31). Backtest engine now computes Sharpe + max drawdown from the equity curve. `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` all green (rustup stable 1.97+). CI runs cargo-lint + cargo-test jobs with `Swatinem/rust-cache@v2`. `.cargo/config.toml` deliberately has NO `target-cpu=native` rustflags — cached artifacts built on one runner CPU would SIGILL on another; opt in locally via `CARGO_RUSTFLAGS="-C target-cpu=native"`.
 
 ### Build & Deploy
 - **Local**: `maturin develop` (auto-compiles Rust, installs Python package)
@@ -495,7 +493,7 @@ mkdir -p docker seccomp compose scripts migrations
 - Requirements: `requirements/prod.txt`
 
 ### Current Phase
-**Phase 4/6/8 complete**: Core infrastructure ✅, Backtester ✅, Strategies 6/6 ✅ (ml_strategy.py created), ML core ✅ (features, direction/volatility/regime/ensemble, training/inference/auto_retrain, walk-forward optimizer), Execution ✅ (incl. realistic venue + transaction cost model), **Risk ✅ (incl. HRP/CVaR portfolio optimizer + live risk-metric wiring)**, Monitoring ✅, Live/Compose ✅ (incl. Phase 3 funding-carry paper harness), K8s ✅, **CI/CD green ✅ (public repo, 423 pytest + 31 Rust tests)**, **Release v0.1.0 published ✅**. Active: Phase 3 edge validation (funding-carry paper harness on live Binance data; fapi WS network-blocked here → REST-poll fallback). Next: Rust crate expansion, paper→live cutover.
+**Phase 3/4/6/8 complete**: Core infrastructure ✅, Backtester ✅, Strategies 6/6 ✅ (ml_strategy.py created), **Strategy Framework ✅ (PositionManager + Optuna strategy optimizer + grid fallback)**, ML core ✅ (features, direction/volatility/regime/ensemble, training/inference/auto_retrain, walk-forward optimizer), Execution ✅ (incl. realistic venue + transaction cost model), **Risk ✅ (incl. HRP/CVaR portfolio optimizer + live risk-metric wiring)**, Monitoring ✅, Live/Compose ✅ (incl. Phase 3 funding-carry paper harness), K8s ✅, **CI/CD green ✅ (public repo, 591 pytest + 63 Rust tests)**, **Rust workspace fleshed out (stats + risk submodules, backtest metrics)**, **Release v0.1.0 published ✅**. Active: Phase 3 edge validation (funding-carry paper harness on live Binance data; fapi WS network-blocked here → REST-poll fallback). Next: Phase 6 online inference pipeline, paper→live cutover.
 
 ### Blockers
 - ~~Rust workspace non-buildable — `Cargo.toml [workspace] members` declared 7, only `cryptobot-core` had a manifest~~ → **resolved 2026-08-04** (all 7 crates fleshed out with PyO3 0.29; fmt/clippy/test green)

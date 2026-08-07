@@ -55,20 +55,49 @@ impl BacktestEngine {
     }
     
     pub fn run(&mut self, events: Vec<Event>) -> Result<BacktestResult> {
+        let mut equity_curve: Vec<f64> = Vec::with_capacity(events.len() + 1);
+        let initial = self.config.initial_equity;
+        equity_curve.push(initial);
         for event in events {
             self.process_event(event)?;
+            equity_curve.push(self.portfolio.equity().to_string().parse().unwrap_or(0.0));
         }
-        
+
         let final_equity = self.portfolio.equity();
-        let total_return = (final_equity / rust_decimal_macros::dec!(self.config.initial_equity) - rust_decimal_macros::dec!(1.0)).to_string().parse().unwrap_or(0.0);
-        
+        let total_return =
+            (final_equity.to_string().parse::<f64>().unwrap_or(0.0) / initial) - 1.0;
+
+        // Per-interval returns from the equity curve.
+        let returns: Vec<f64> = equity_curve
+            .windows(2)
+            .map(|w| {
+                let (a, b) = (w[0], w[1]);
+                if a > 0.0 {
+                    (b - a) / a
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+        let metrics = PerformanceMetrics::calculate(&returns);
+
+        // Max drawdown from equity curve (peak-to-trough).
+        let max_drawdown = equity_curve
+            .iter()
+            .fold((0.0_f64, 0.0_f64, 0.0_f64), |(peak, max_dd, _prev), &eq| {
+                let new_peak = peak.max(eq);
+                let dd = if new_peak > 0.0 { (new_peak - eq) / new_peak } else { 0.0 };
+                (new_peak, max_dd.max(dd), eq)
+            })
+            .1;
+
         Ok(BacktestResult {
             final_equity: final_equity.to_string().parse().unwrap_or(0.0),
             total_return,
-            sharpe_ratio: 0.0, // TODO: compute from returns
-            max_drawdown: 0.0, // TODO: compute from equity curve
+            sharpe_ratio: metrics.sharpe_ratio,
+            max_drawdown,
             trades: self.trade_records.clone(),
-            metrics: PerformanceMetrics::default(),
+            metrics,
         })
     }
     
@@ -107,5 +136,19 @@ mod tests {
         };
         let engine = BacktestEngine::new(config);
         assert_eq!(engine.config.initial_equity, 10000.0);
+    }
+
+    #[test]
+    fn test_run_with_no_events_is_flat() {
+        let config = BacktestConfig {
+            initial_equity: 10000.0,
+            commission_bps: 1.0,
+            slippage_bps: 5.0,
+        };
+        let mut engine = BacktestEngine::new(config);
+        let result = engine.run(vec![]).unwrap();
+        assert!((result.final_equity - 10000.0).abs() < 1e-9);
+        assert!(result.max_drawdown >= 0.0);
+        assert_eq!(result.trades.len(), 0);
     }
 }

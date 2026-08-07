@@ -1,6 +1,6 @@
 # 12. Feature Status
 
-> **Last Updated**: 2026-08-06 (Phase 4 ✅ + paper harness + CI/CD overhaul; ML volatility/regime/ensemble confirmed; Phase 5 ✅ (HRP/CVaR optimizer + risk-metric wiring); 423 pytest + 31 Rust tests green)
+> **Last Updated**: 2026-08-07 (Phase 3 ✅ — PositionManager + Optuna strategy optimizer; Rust stats/risk submodules implemented; 591 pytest + 63 Rust tests green)
 > **Confidence**: High.
 
 ## Verified module status
@@ -24,6 +24,7 @@
 | `backtest/runner.py` | ✅ | OhlcvBar + generate_synthetic_ohlcv + run_backtest end-to-end (OHLCV → strategy → ExecutionEngine → SimulatedVenue → BacktestEngine). |
 | `backtest/data.py` | ✅ | Historical data replay: `load_csv` (stdlib), `load_parquet` (pyarrow optional), `load_timescale` (async via existing storage layer), `OhlcvDataset.filter_range` + `load_bars` dispatcher. CLI supports `--source csv|parquet|timescale|synthetic`. |
 | `strategies/base.py` | ✅ | BaseStrategy, StrategyRegistry, correct `OrderEvent` construction, `from __future__ import annotations`. No print on import (B049). |
+| `strategies/position.py` | ✅ | `Position` + `PositionManager`: scale-in/out (weighted avg entry), stop/take-profit `reduce_only` exits, trailing-stop ratchet. Pure state, no EventBus dep. |
 | `strategies/mean_reversion.py` | ✅ | Real strategy: Z-score + RSI + Bollinger Bands (pandas/numpy). |
 | `strategies/trend_following.py` | ✅ | Real strategy: EMA + ADX + ATR trailing stop. |
 | `strategies/market_making.py` | ✅ | Avellaneda-Stoikov market making (reservation price + spread), `run_on_history` synth fill path, pluggable to ExecutionEngine + AdverseSelectionGuard. |
@@ -57,6 +58,7 @@
 | `monitoring/dashboard.py` | ✅ | Dashboard JSON builders. |
 | `cli/main.py` | ✅ | argparse CLI with `validate`, `paper`, `bot`, `serve`, `backtest`. Backtest subcommand supports `--show-trades` (print every closed trade; adds `trades[]` with `--json`), `--algorithms jobs.json` (parallel sweep), `--workers N`, `--seed`, `--vol`, `--capital`. **`paper-funder`** runs the Phase 3 funding-carry paper harness (`--symbols`, `--hours`, `--log`, `--poll-fapi`, `--poll-interval`, `--json`). With `--json`, logs route to stderr so stdout carries only JSON. |
 | `backtest/parallel.py` | ✅ | `run_parallel(jobs, workers)` multi-core algorithm sweep via `ProcessPoolExecutor`. |
+| `backtest/optimize.py` | ✅ | `optimize_strategy` — Optuna bayesian search over strategy config params (Optuna optional; deterministic grid fallback). Sharpe/Sortino/MaxDD/returns objectives. |
 | `backtest/runner.py` | ✅ | `run_bars` fast path runs the whole backtest loop without per-bar event bus overhead. |
 | `utils/logging.py` | ✅ | structlog wrapper with context vars. |
 | `utils/decorators.py` | ✅ | retry (jitter clamped to ≥0), timeout_decorator, circuit_breaker (raises RuntimeError in running loop). |
@@ -89,7 +91,7 @@
 
 - **CI**: Python 3.13 runners, pytest + pytest-asyncio + pytest-cov + pytest-timeout=60s + hypothesis; **434 passed / 4 skipped** (unit); integration tests behind `integration` marker
 - **Lint**: ruff (unpinned) + pyflakes
-- **Rust**: cargo fmt + clippy (-D warnings) + test (full workspace: 7 crates, 31 tests)
+- **Rust**: cargo fmt + clippy (-D warnings) + test (full workspace: 7 crates, 63 tests)
 - **Docker**: test target builds on `PYTHON_TAG` (3.14-slim) + runs pytest in container
 - **Compose**: validate default + test profiles
 - **Repo**: public; CI fully green (first green run 2026-08-06)
