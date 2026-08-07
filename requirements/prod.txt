@@ -30,3 +30,9 @@ rich>=13.9
 orjson>=3.10
 
 requests>=2.32
+
+# Security: CVE-2025-47273 (Path Traversal) fixed in setuptools 78.1.1
+setuptools>=78.1.1
+
+# Security: GHSA-6v7p-g79w-8964 (msgpack OOB read/crash) fixed in 1.2.1
+msgpack>=1.2.1
