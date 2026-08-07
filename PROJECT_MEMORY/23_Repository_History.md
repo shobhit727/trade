@@ -139,3 +139,11 @@
 **Doc fixes:**
 - `13_Bug_Tracker.md`: removed stale Open rows (B051 lazy-import, dead dirs — both long resolved); added B073 documenting stale remote branch `fix/realistic-venue-bugs`.
 - `plan.md`: Last-Updated note bumped to reflect audit result.
+
+## 2026-08-06 — Phase 5 ✅ (portfolio optimizer + risk-metric wiring)
+
+- **New** `src/cryptobot/risk/portfolio_optimizer.py` — numpy-only Hierarchical Risk Parity (single-linkage clustering + recursive bisection) and mean-CVaR (per-asset tail-loss weights). `hrp_weights` / `mean_cvar_weights` return `PortfolioOptimizerResult` (weights dict, sum≈1). Exported from `cryptobot.risk`.
+- **Wiring**: `RiskManager.report_risk_metrics()` now emits Prometheus gauges via `monitoring.metrics.record_risk` (exposure, daily loss, drawdown, kill-switch) on every `check_order`; safe on a timer. `record_risk` was previously dead code.
+- **Tests**: `tests/unit/test_risk_portfolio_optimizer.py` (10 tests) — weight normalization, single-asset, correlated-pair balance, shape/alpha validation, metric emission, zero-equity no-op.
+- **Lint**: ruff clean; formatting normalized on `risk/{sizing,strategy_tracker,manager}.py`.
+- **Suite**: 423 passed, 4 skipped (Docker); Rust untouched.

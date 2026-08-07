@@ -1,6 +1,6 @@
 # 12. Feature Status
 
-> **Last Updated**: 2026-08-06 (Phase 4 ✅ + paper harness + CI/CD overhaul; ML volatility/regime/ensemble confirmed; Phase 5 optimizer pending; 413 pytest + 31 Rust tests green)
+> **Last Updated**: 2026-08-06 (Phase 4 ✅ + paper harness + CI/CD overhaul; ML volatility/regime/ensemble confirmed; Phase 5 ✅ (HRP/CVaR optimizer + risk-metric wiring); 423 pytest + 31 Rust tests green)
 > **Confidence**: High.
 
 ## Verified module status
@@ -38,11 +38,12 @@
 | `ml/models/regime.py` | ✅ | HMM, k-means, GMM, threshold with softmax probabilities |
 | `ml/models/ensemble.py` | ✅ | Weighted voting ensemble with direction, volatility, regime |
 | `utils/health_server.py` | ✅ | stdlib ThreadingHTTPServer exposing `/health` JSON + `/metrics` Prometheus text. Used by Dockerfile HEALTHCHECK. |
-| `risk/manager.py` | ✅ | RiskManager pre-trade checks (kill switch, notional, total exposure). Notional check skipped when no price available. |
+| `risk/manager.py` | ✅ | RiskManager pre-trade checks (kill switch, notional, total exposure). Notional check skipped when no price available. `report_risk_metrics()` emits Prometheus gauges per order check. |
 | `risk/limits.py` | ✅ | RiskLimits from config. |
 | `risk/sizing.py` | ✅ | fixed_fraction_size, kelly_size, volatility_target_size. |
 | `risk/kill_switch.py` | ✅ | KillSwitch reads portfolio signal. |
 | `risk/correlation.py` | ✅ | max_abs_correlation helper. |
+| `risk/portfolio_optimizer.py` | ✅ | HRP (single-linkage + recursive bisection) + mean-CVaR (per-asset tail-loss weights). numpy-only, no scipy. `hrp_weights` / `mean_cvar_weights` → `PortfolioOptimizerResult`. |
 | `execution/engine.py` | ✅ | ExecutionEngine, risk-gated order submission, `build_venue(mode)` factory selects by `settings.execution.mode`. |
 | `execution/algorithms.py` | ✅ | TWAP, VWAP, POV (incl. capped + randomized), Implementation Shortfall (Perée-Clark), Iceberg (display qty + randomization), liquidity-seek sweeps, arrival-price benchmark, `vwap_schedule()` with horizon-minute lookup, `build_pov_schedule`, `slicer_for(name)` dispatcher. |
 | `execution/router.py` | ✅ | SmartOrderRouter: best-price ranker, latency-aware ranker, fallback to next venue on failure, split-and-route across venues. |

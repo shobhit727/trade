@@ -22,9 +22,7 @@ class StrategyRiskTracker:
     """Aggregates per-strategy risk metrics from order/position events."""
 
     def __init__(self):
-        self._states: dict[str, StrategyRiskState] = defaultdict(
-            lambda: StrategyRiskState(strategy="")
-        )
+        self._states: dict[str, StrategyRiskState] = defaultdict(lambda: StrategyRiskState(strategy=""))
 
     def record_pnl(self, strategy: str, pnl: Decimal, day_key: int) -> None:
         st = self._states[strategy]

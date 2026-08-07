@@ -9,6 +9,7 @@ from cryptobot.config import settings
 from cryptobot.core.events import OrderEvent, RiskEvent
 from cryptobot.core.portfolio import PortfolioManager, get_portfolio_manager
 from cryptobot.core.state import state_manager
+from cryptobot.monitoring.metrics import record_risk
 from cryptobot.risk.kill_switch import KillSwitch
 from cryptobot.risk.limits import RiskLimits
 from cryptobot.risk.rate_limit import RateLimiter
@@ -88,6 +89,7 @@ class RiskManager:
         correlation_matrix: dict[tuple[str, str], Decimal] | None = None,
     ) -> RiskCheckResult:
         self._order_count += 1
+        self.report_risk_metrics()
 
         active, reason = self.kill_switch.evaluate(self.portfolio)
         if active:
@@ -106,11 +108,17 @@ class RiskManager:
 
             if notional < self.limits.min_order_size_usd:
                 return RiskCheckResult(
-                    False, "Order below minimum size", notional, self.limits.min_order_size_usd,
+                    False,
+                    "Order below minimum size",
+                    notional,
+                    self.limits.min_order_size_usd,
                 )
             if notional > self.limits.max_order_size_usd:
                 return RiskCheckResult(
-                    False, "Order above maximum size", notional, self.limits.max_order_size_usd,
+                    False,
+                    "Order above maximum size",
+                    notional,
+                    self.limits.max_order_size_usd,
                 )
 
             if order.leverage > 0 and order.leverage > self.limits.max_leverage:
@@ -137,9 +145,7 @@ class RiskManager:
 
         state = self.portfolio.get_state()
         if state.total_equity > 0:
-            open_positions = sum(
-                1 for p in state_manager.get_positions() if p.quantity > 0
-            )
+            open_positions = sum(1 for p in state_manager.get_positions() if p.quantity > 0)
             if open_positions >= self.limits.max_open_positions:
                 return RiskCheckResult(
                     False,
@@ -198,6 +204,23 @@ class RiskManager:
             )
 
         return RiskCheckResult(True, "OK")
+
+    def report_risk_metrics(self) -> None:
+        """Emit current portfolio risk gauges (Prometheus). Safe to call on a timer."""
+        state = self.portfolio.get_state()
+        equity = state.total_equity
+        if equity <= 0:
+            return
+        exposure = (state.used_margin + Decimal("0")) / equity
+        daily_loss = abs(state.daily_pnl) / equity if state.daily_pnl < 0 else Decimal("0")
+        active, _reason = self.kill_switch.evaluate(self.portfolio)
+        record_risk(
+            exposure_pct=float(exposure),
+            daily_loss_pct=float(daily_loss),
+            drawdown_pct=float(state.max_drawdown_pct),
+            kill_switch=bool(active),
+            concentration_pct=0.0,
+        )
 
     def _drawdown_scale(self) -> Decimal:
         dd = self.portfolio.get_state().max_drawdown
