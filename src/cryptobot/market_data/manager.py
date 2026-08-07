@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import time
@@ -223,7 +224,7 @@ class BinanceWSClient:
     async def _emit(self, event_type: EventType, event: Event):
         for callback in self.callbacks.get(event_type.value, []):
             try:
-                if asyncio.iscoroutinefunction(callback):
+                if inspect.iscoroutinefunction(callback):
                     await callback(event)
                 else:
                     callback(event)
@@ -361,7 +362,7 @@ class MarketDataManager:
     async def _emit(self, event_type: EventType, event: Event):
         for callback in self._callbacks.get(event_type, []):
             try:
-                if asyncio.iscoroutinefunction(callback):
+                if inspect.iscoroutinefunction(callback):
                     await callback(event)
                 else:
                     callback(event)
@@ -371,14 +372,35 @@ class MarketDataManager:
     def get_ticker(self, symbol: str) -> TickerEvent | None:
         data = self.cache.local_cache.get(f"ticker:{symbol}")
         if data:
-            return TickerEvent(**data)
+            payload = data.get("payload", data)
+            payload = self._coerce_decimal_fields(
+                payload,
+                {"price", "bid", "ask", "bid_qty", "ask_qty", "high_24h", "low_24h", "volume_24h"},
+            )
+            return TickerEvent(**payload)
         return None
 
     def get_orderbook(self, symbol: str) -> OrderBookEvent | None:
         data = self.cache.local_cache.get(f"orderbook:{symbol}")
         if data:
-            return OrderBookEvent(**data)
+            payload = data.get("payload", data)
+            bids = [(Decimal(p), Decimal(q)) for p, q in payload.get("bids", [])]
+            asks = [(Decimal(p), Decimal(q)) for p, q in payload.get("asks", [])]
+            return OrderBookEvent(
+                symbol=payload.get("symbol", ""),
+                bids=bids,
+                asks=asks,
+                sequence=payload.get("sequence", 0),
+            )
         return None
+
+    @staticmethod
+    def _coerce_decimal_fields(payload: dict, fields: set[str]) -> dict:
+        out = dict(payload)
+        for field in fields:
+            if field in out and not isinstance(out[field], Decimal):
+                out[field] = Decimal(str(out[field]))
+        return out
 
     def get_mid_price(self, symbol: str) -> Decimal:
         ob = self.get_orderbook(symbol)

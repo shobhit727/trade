@@ -284,8 +284,9 @@ class WalkForwardOptimizer:
             all_trials.extend(result.all_trials)
 
             # Track best overall
-            if result.best_metrics.get(self.objective_metric.value, float("-inf")) > best_score:
-                best_score = result.best_metrics.get(self.objective_metric.value, float("-inf"))
+            score = result.best_metrics.get(self.objective_metric.value, float("-inf"))
+            if best_overall is None or score > best_score:
+                best_score = score
                 best_overall = model_type
                 best_params = result.best_params
                 best_metrics = result.best_metrics
@@ -447,13 +448,19 @@ class WalkForwardOptimizer:
 
         # Evaluate on full data
         metrics = {}
-        if model:
+        if model and hasattr(model, "predict"):
             preds = model.predict(features)
             from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
             metrics["accuracy"] = float(accuracy_score(labels, preds))
             metrics["f1"] = float(f1_score(labels, preds, average="weighted", zero_division=0))
             metrics["precision"] = float(precision_score(labels, preds, average="weighted", zero_division=0))
             metrics["recall"] = float(recall_score(labels, preds, average="weighted", zero_division=0))
+        elif model_type == "volatility" and returns is not None and model is not None:
+            # VolatilityModel has no predict(); report its forecast as a metric proxy.
+            try:
+                metrics["forecast"] = float(model.forecast_series(horizon=1)[0])
+            except Exception:
+                pass
 
         return SymbolOptimizationResult(
             symbol=symbol,

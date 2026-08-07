@@ -382,6 +382,13 @@ class ParquetStorage(StorageBackend):
             return
 
         df = pd.DataFrame(buffer)
+        # Normalize columns before deriving the partition date so records are
+        # bucketed under their actual timestamp, not the write time.
+        if data_type == "klines" and "interval" in df.columns and "timeframe" not in df.columns:
+            df = df.rename(columns={"interval": "timeframe"})
+        if data_type in ("tickers", "trades") and "timestamp" in df.columns and "time" not in df.columns:
+            df = df.rename(columns={"timestamp": "time"})
+
         df["date"] = pd.to_datetime(df.get("open_time", df.get("time", _utcnow())))
         df["year"] = df["date"].dt.year
         df["month"] = df["date"].dt.month

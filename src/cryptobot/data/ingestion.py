@@ -228,8 +228,10 @@ class OrderBookReconstructor:
     async def apply_snapshot(self, bids: list[OrderBookLevel], asks: list[OrderBookLevel], update_id: int) -> None:
         """Apply a full order book snapshot."""
         async with self._lock:
-            self.bids = {level.price: level for level in bids[:self.max_depth]}
-            self.asks = {level.price: level for level in asks[:self.max_depth]}
+            sorted_bids = sorted(bids, key=lambda x: x.price, reverse=True)[:self.max_depth]
+            sorted_asks = sorted(asks, key=lambda x: x.price)[:self.max_depth]
+            self.bids = {level.price: level for level in sorted_bids}
+            self.asks = {level.price: level for level in sorted_asks}
             self.last_update_id = update_id
             self.last_update_time = time.time()
 
@@ -327,10 +329,10 @@ class FundingRateTracker:
             if not rates:
                 return None
             # Simple exponential moving average
-            alpha = 0.3
+            alpha = Decimal("0.3")
             ema = rates[0].funding_rate
             for r in rates[1:]:
-                ema = alpha * r.funding_rate + (1 - alpha) * ema
+                ema = alpha * r.funding_rate + (Decimal("1") - alpha) * ema
             return ema
 
 
@@ -620,10 +622,10 @@ class BinanceDataIngestion(DataIngestion):
                 timeframe=k.get("i", timeframe),
                 open_time=datetime.fromtimestamp(k.get("t", 0) / 1000, tz=UTC),
                 close_time=datetime.fromtimestamp(k.get("T", 0) / 1000, tz=UTC),
-                open_price=Decimal(str(k.get("o", "0"))),
-                high_price=Decimal(str(k.get("h", "0"))),
-                low_price=Decimal(str(k.get("l", "0"))),
-                close_price=Decimal(str(k.get("c", "0"))),
+                open=Decimal(str(k.get("o", "0"))),
+                high=Decimal(str(k.get("h", "0"))),
+                low=Decimal(str(k.get("l", "0"))),
+                close=Decimal(str(k.get("c", "0"))),
                 volume=Decimal(str(k.get("v", "0"))),
                 trades=int(k.get("n", 0)),
                 is_closed=bool(k.get("x", False)),
@@ -740,9 +742,9 @@ class BinanceDataIngestion(DataIngestion):
             return self.order_books[symbol].get_snapshot(depth)
         return None
 
-    def get_funding_estimate(self, symbol: str) -> Decimal | None:
+    async def get_funding_estimate(self, symbol: str) -> Decimal | None:
         """Get estimated next funding rate."""
-        return self.funding_tracker.get_funding_estimate(symbol)
+        return await self.funding_tracker.get_funding_estimate(symbol)
 
 
 class DataIngestionManager:

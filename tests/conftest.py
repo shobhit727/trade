@@ -82,6 +82,29 @@ def sample_signal_event():
     )
 
 
+@pytest.fixture
+def metrics_registry(monkeypatch):
+    """Fresh Prometheus registry + module metrics for each test.
+
+    Replaces the module-level ``registry`` and the ``_real_generate_latest``
+    binding so every test sees an isolated, empty metric set. Metrics are
+    recorded through the module's record_* functions which reference the
+    original metric objects, so those are re-created too by reloading the
+    module against the fresh registry.
+    """
+    import importlib
+
+    import cryptobot.monitoring.metrics as metrics_mod
+
+    if metrics_mod.PROMETHEUS_AVAILABLE:
+        metrics_mod.registry = metrics_mod.CollectorRegistry()
+        importlib.reload(metrics_mod)
+        yield
+        importlib.reload(metrics_mod)
+    else:
+        yield
+
+
 @pytest_asyncio.fixture
 async def event_bus():
     """Fresh event bus for each test."""
