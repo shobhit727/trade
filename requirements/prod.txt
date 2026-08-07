@@ -27,7 +27,7 @@ structlog>=24.4
 # CLI/Utils
 click>=8.1
 rich>=13.9
-orjson>=3.10
+orjson>=3.11.9
 
 requests>=2.32
 
