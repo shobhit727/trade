@@ -48,13 +48,28 @@ docker buildx build --platform linux/amd64,linux/arm64 --target production --pus
 ### CI Pipeline Order (must run in order)
 ```bash
 # Required order per CI
-1. lint          # ruff + pyflakes
+1. lint          # ruff (pinned) + pyflakes
 2. cargo-lint    # cargo fmt --check + cargo clippy -D warnings
 3. cargo-test    # cargo test --workspace
-4. unit          # pytest (depends on 1-3)
-5. docker-test   # builds test image + runs pytest inside container
-6. docker-build  # multi-arch buildx (push only on push)
+4. unit          # pytest with coverage gate (--cov-fail-under=70), matrix on 3.13+3.14 (depends on 1-3)
+5. docker-test   # cached image build + pytest inside container + trivy scan
+6. docker-build  # multi-arch buildx (push only on push); gated by paths-filter
 ```
+
+### Parallel / Independent CI Jobs
+- `changes` (path filter: core/docker) — a *skip* gate, not a true dependency stage
+- `security-review` (gitleaks secrets scan) — independent
+- `security-audit` (pip-audit on prod+test requirements) — independent
+- `pyo3` (maturin build + import smoke test of `cryptobot_rs`) — runs when `core` paths change
+- `compose-validate` (docker compose config) — after lint
+- `docker-manifest` (multi-arch manifest) — after `docker-build`, push only
+
+### Docker Image Scans
+- `docker-test` + `docker-build` + `release.yml` all run Trivy (CRITICAL/HIGH, ignore-unfixed, fail on findings)
+- `release.yml` also emits SBOM + provenance on the multi-arch push
+
+### Coverage Gate
+- `unit` enforces `--cov-fail-under=70` and uploads `coverage.xml` (artifact + Codecov when `CODECOV_TOKEN` set)
 
 ---
 
@@ -169,7 +184,7 @@ env:
 ```
 
 ### Python Version
-- **CI runners**: 3.13
+- **CI runners**: 3.13 + 3.14 (unit tests run a matrix on both)
 - **Docker base image**: 3.14-slim (`PYTHON_TAG`, also the Dockerfile default `ARG`)
 - **Local**: 3.14+ recommended
 
@@ -185,9 +200,13 @@ env:
 - `concurrency: ci-..., cancel-in-progress: true` keyed per workflow+branch — rapid pushes cancel superseded runs
 - Every job has `timeout-minutes` (15–60) to bound cost
 - `permissions: contents: read` at workflow level; `docker-build`/`docker-manifest` donate `packages: write`
-- Linters unpinned (`pip install ruff pyflakes`); `checkout@v6`, `setup-python@v5`
-- `unit` uploads a coverage artifact (`actions/upload-artifact@v4`)
-- `docker-build` matrix: **PRs build amd64 only; pushes build amd64 + arm64** (dynamic `fromJSON` matrix)
+- `lint` dep: pin ruff==0.16.1 + pyflakes==3.4.0; `checkout@v6`, `setup-python@v5`
+- `unit`: coverage gate `--cov-fail-under=70` + `coverage.xml` artifact (+ Codecov when `CODECOV_TOKEN` set)
+- `pyo3`: `maturin==1.9.6` build + import smoke test of `cryptobot_rs` (gated by `core` path filter)
+- `security-review` (gitleaks) + `security-audit` (pip-audit) run in parallel, no deps
+- `docker-test` + `docker-build` run Trivy (CRITICAL/HIGH, ignore-unfixed, fail on findings)
+- Docker build uses `docker/build-push-action@v6` with GHA cache (`cache-from/to: type=gha`)
+- `docker-build` matrix: **PRs build amd64 only; pushes build amd64 + arm64** (dynamic `fromJSON` matrix); both docker jobs gated by `changes` path filter
 - Build args threaded through: `PYTHON_TAG`, `REQUIREMENTS`, `GIT_SHA`, `BUILD_DATE`
 
 ---

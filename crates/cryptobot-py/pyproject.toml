@@ -23,9 +23,6 @@ module-name = "cryptobot_rs"
 # Build all workspace crates with the python feature
 features = ["pyo3/extension-module"]
 
-# Include Python source files in the wheel
-python-source = "python"
-
 # Strip symbols for smaller wheels
 strip = true
 
