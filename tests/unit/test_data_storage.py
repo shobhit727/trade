@@ -286,6 +286,7 @@ async def test_parquet_storage_write_all_types(tmp_path):
 
 @pytest.mark.asyncio
 async def test_parquet_storage_read_no_data(tmp_path):
+    _requires_pyarrow()
     cfg = StorageConfig(parquet_base_path=str(tmp_path))
     ps = ParquetStorage(cfg)
     await ps.initialize()
