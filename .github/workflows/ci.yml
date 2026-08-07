@@ -220,7 +220,7 @@ jobs:
       - name: Run pytest inside test container
         run: docker run --rm cryptobot:test
       - name: Scan test image with Trivy
-        uses: aquasecurity/trivy-action@v0.30.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: cryptobot:test
           severity: CRITICAL,HIGH
@@ -285,7 +285,7 @@ jobs:
           push: ${{ github.event_name == 'push' }}
       - name: Scan image with Trivy (CRITICAL/HIGH)
         if: always() && github.event_name == 'push'
-        uses: aquasecurity/trivy-action@v0.30.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY_IMAGE }}:${{ github.sha }}-${{ matrix.tag_platform }}
           severity: CRITICAL,HIGH
