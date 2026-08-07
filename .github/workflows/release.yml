@@ -66,7 +66,7 @@ jobs:
           provenance: true
           push: true
       - name: Scan image with Trivy (CRITICAL/HIGH)
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@v0.30.0
         with:
           image-ref: ${{ env.REGISTRY_IMAGE }}:${{ steps.meta.outputs.VERSION }}-multiarch
           severity: CRITICAL,HIGH
