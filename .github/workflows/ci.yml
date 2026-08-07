@@ -226,6 +226,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
+          trivyignores: .trivyignore
 
   compose-validate:
     name: Docker Compose config
@@ -291,6 +292,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
+          trivyignores: .trivyignore
 
   docker-manifest:
     name: Docker manifest (create multi-arch manifest)

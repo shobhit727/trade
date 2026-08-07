@@ -1,0 +1,7 @@
+# False positive: pip vendors msgpack==1.1.2 and setuptools==70.3.0 inside
+# its own pip/_vendor/ tree (see pip/_vendor/vendor.txt + bom.cdx.json SBOM).
+# The image's actual site-packages ship patched versions (msgpack 1.2.1,
+# setuptools 83.0.0) pinned in requirements/prod.txt. Trivy v0.70+ reads the
+# embedded SBOM and reports the vendored copies.
+GHSA-6v7p-g79w-8964
+CVE-2025-47273
