@@ -391,9 +391,7 @@ def test_market_data_cache_funding_roundtrip():
 
 def test_market_data_cache_redis_roundtrip(monkeypatch):
     import asyncio
-    import json
 
-    from cryptobot.core.events import KlineEvent
 
     class _FakeRedis:
         def __init__(self):

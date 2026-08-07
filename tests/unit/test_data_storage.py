@@ -5,7 +5,6 @@ from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 import pytest
-import pytest_asyncio
 
 from cryptobot.data.storage import (
     HybridStorage,
@@ -501,7 +500,7 @@ async def test_hybrid_read_tickers_recent(monkeypatch):
         return pd.DataFrame({"time": [start]})
 
     monkeypatch.setattr(hs.tsdb, "read_tickers", fake_ts)
-    out = await hs.read_tickers("BTCUSDT", now, now)
+    await hs.read_tickers("BTCUSDT", now, now)
     assert called.get("tsdb")
 
 
