@@ -369,7 +369,7 @@ class StateManager:
             return
         with self._get_conn() as conn:
             conn.execute("""
-                INSERT OR REPLACE INTO orders VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                INSERT OR REPLACE INTO orders VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (
                 order.order_id, order.client_order_id, order.symbol, order.side.value,
                 order.type.value, str(order.quantity), str(order.price) if order.price else None,
@@ -377,7 +377,7 @@ class StateManager:
                 str(order.filled_quantity), str(order.avg_fill_price) if order.avg_fill_price else None,
                 str(order.commission), order.commission_asset, order.time_in_force.value,
                 int(order.reduce_only), order.position_side.value, order.strategy,
-                order.created_at.isoformat(), order.updated_at.isoformat()
+                order.timestamp.isoformat(), order.updated_at.isoformat()
             ))
 
     def save_position(self, position: Position):

@@ -86,7 +86,7 @@
 
 ## Test Status (2026-08-06)
 
-- **CI**: Python 3.13 runners, pytest + pytest-asyncio + pytest-cov + pytest-timeout=60s; **413 passed / 4 skipped**
+- **CI**: Python 3.13 runners, pytest + pytest-asyncio + pytest-cov + pytest-timeout=60s + hypothesis; **434 passed / 4 skipped** (unit); integration tests behind `integration` marker
 - **Lint**: ruff (unpinned) + pyflakes
 - **Rust**: cargo fmt + clippy (-D warnings) + test (full workspace: 7 crates, 31 tests)
 - **Docker**: test target builds on `PYTHON_TAG` (3.14-slim) + runs pytest in container
@@ -139,4 +139,4 @@
 - `python3 -m py_compile` on all edited files: passes.
 - `docker compose --profile test config`: passes.
 - Full Docker run blocked by host daemon instability.
-- 44 unit test files in `tests/unit/`.
+- 47 unit test files in `tests/unit/` + `tests/integration/test_external_services.py`; property-based (hypothesis) + backtest-regression suites added 2026-08-06.

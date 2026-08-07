@@ -78,7 +78,7 @@ def test_csv_log_rows_written_on_signals(tmp_path):
     h.process_spot_message("BTCUSDT", _spot_msg())
     h.process_perp_message("BTCUSDT", _perp_msg())
     lines = (tmp_path / "paper.csv").read_text().strip().splitlines()
-    assert len(lines) == 2
+    assert len(lines) == 3  # header + ENTER + SAMPLE
     assert "ENTER" in lines[1]
 
 
@@ -95,3 +95,55 @@ def test_basis_gate_uses_strategy_config(tmp_path):
     h.process_spot_message("BTCUSDT", _spot_msg(bid="100", ask="100.001"))
     h.process_perp_message("BTCUSDT", _perp_msg(mark="100.056", rate="0.0005"))
     assert h.states["BTCUSDT"].in_position is True
+
+
+def test_sample_rows_written_without_signals(tmp_path):
+    h = _harness(tmp_path=tmp_path)
+    h.process_spot_message("BTCUSDT", _spot_msg())
+    h.process_perp_message("BTCUSDT", _perp_msg(rate="0.00001"))  # low funding -> no enter
+    lines = (tmp_path / "paper.csv").read_text().strip().splitlines()
+    assert len(lines) == 2  # header + one SAMPLE row
+    assert "SAMPLE" in lines[1]
+    assert h._sample_count == 1
+
+
+def test_sample_throttled_by_interval(tmp_path):
+    h = _harness(tmp_path=tmp_path)
+    h.sample_interval_s = 3600.0
+    h.process_spot_message("BTCUSDT", _spot_msg())
+    h.process_perp_message("BTCUSDT", _perp_msg(rate="0.00001"))  # first eval -> sample
+    h.process_spot_message("BTCUSDT", _spot_msg(bid="100.02", ask="100.03"))
+    h.process_perp_message("BTCUSDT", _perp_msg(mark="100.07", rate="0.00001"))  # throttled
+    lines = (tmp_path / "paper.csv").read_text().strip().splitlines()
+    assert len(lines) == 2  # header + one SAMPLE row (second eval suppressed)
+    assert h._sample_count == 1
+
+
+def test_sample_and_signal_rows_coexist(tmp_path):
+    h = _harness(tmp_path=tmp_path)
+    h.process_spot_message("BTCUSDT", _spot_msg())
+    h.process_perp_message("BTCUSDT", _perp_msg())  # enter -> ENTER row
+    lines = (tmp_path / "paper.csv").read_text().strip().splitlines()
+    assert len(lines) == 3  # header + ENTER + SAMPLE
+    assert "ENTER" in lines[1]
+    assert "SAMPLE" in lines[2]
+
+
+def test_to_live_row_includes_basis_and_funding():
+    from decimal import Decimal
+
+    from cryptobot.live.paper_harness import PaperState
+
+    st = PaperState(symbol="BTCUSDT")
+    row = st.to_live_row(spot=Decimal("100"), perp=Decimal("100.06"), rate=0.0008)
+    assert row["basis_bps"] == 6.0
+    assert row["funding_pct"] == 0.08
+
+
+def test_no_signal_basis_when_leg_missing():
+    from cryptobot.live.paper_harness import PaperState
+
+    st = PaperState(symbol="BTCUSDT")
+    row = st.to_live_row(spot=None, perp=None, rate=None)
+    assert "basis_bps" not in row
+    assert "funding_pct" not in row

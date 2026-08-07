@@ -73,6 +73,37 @@ def test_save_order_in_memory_path(monkeypatch, tmp_path: Path):
     assert sm.get_order("o2").symbol == "BTCUSDT"
 
 
+def test_save_order_persists_to_sqlite(tmp_path: Path):
+    """Regression for a latent bug: the sqlite INSERT referenced
+    ``order.created_at`` (which does not exist) — now uses ``order.timestamp``
+    and carries the correct number of columns (19)."""
+    import sqlite3
+
+    from cryptobot.core.events import OrderEvent, OrderSide, OrderStatus, OrderType
+
+    db_file = tmp_path / "state.db"
+
+    StateManager._instance = None
+    sm = StateManager()
+    sm._db_path = str(db_file)
+    sm._init_db()
+
+    order = OrderEvent(
+        order_id="o-sql-1", symbol="BTCUSDT", side=OrderSide.BUY, type=OrderType.LIMIT,
+        quantity=Decimal("1"), price=Decimal("100"), status=OrderStatus.NEW,
+    )
+    sm.save_order(order)
+
+    conn = sqlite3.connect(str(db_file))
+    row = conn.execute(
+        "SELECT order_id, created_at, updated_at FROM orders WHERE order_id=?",
+        ("o-sql-1",),
+    ).fetchone()
+    conn.close()
+    assert row is not None
+    assert row[1] is not None and row[2] is not None
+
+
 def test_position_serialization():
     from cryptobot.core.events import PositionSide
 

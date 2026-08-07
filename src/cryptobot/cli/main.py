@@ -105,6 +105,7 @@ def build_parser() -> argparse.ArgumentParser:
     funder_cmd.add_argument("--futures-ws", default=None)
     funder_cmd.add_argument("--poll-fapi", action="store_true", help="Use fapi REST polling for perp leg (futures WS is blocked on some networks)")
     funder_cmd.add_argument("--poll-interval", type=float, default=5.0)
+    funder_cmd.add_argument("--sample-interval", type=float, default=60.0, help="Seconds between basis/funding CSV sample rows (default 60)")
     funder_cmd.add_argument("--json", action="store_true")
     return parser
 
@@ -300,10 +301,12 @@ async def _run(args: argparse.Namespace) -> int:
         from cryptobot.live.paper_harness import FundingPaperHarness
 
         symbols = [s for item in args.symbols for s in item.split(",") if s]
-        harness = FundingPaperHarness(symbols=symbols, log_path=args.log)
+        harness = FundingPaperHarness(
+            symbols=symbols, log_path=args.log, sample_interval_s=args.sample_interval,
+        )
         logger.info(
-            "paper-funder monitoring %s for %.0fh (log=%s)",
-            ", ".join(symbols), args.hours, args.log,
+            "paper-funder monitoring %s for %.0fh (log=%s, sample_every=%.0fs)",
+            ", ".join(symbols), args.hours, args.log, args.sample_interval,
         )
         await harness.run(
             hours=args.hours,
@@ -314,7 +317,14 @@ async def _run(args: argparse.Namespace) -> int:
         )
         if args.json:
             json.dump(
-                {s: st.to_row() for s, st in harness.states.items()},
+                {
+                    s: st.to_live_row(
+                        harness._spot_price.get(s),
+                        harness._perp_price.get(s),
+                        harness._funding_rate.get(s),
+                    )
+                    for s, st in harness.states.items()
+                },
                 sys.stdout,
                 default=str,
             )

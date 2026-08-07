@@ -63,6 +63,14 @@ class PaperState:
             "last_action": self.last_action,
         }
 
+    def to_live_row(self, spot: Decimal | None, perp: Decimal | None, rate: float | None) -> dict:
+        row = self.to_row()
+        if spot is not None and perp is not None and spot > 0:
+            row["basis_bps"] = round(float((perp - spot) / spot) * 10_000.0, 2)
+        if rate is not None:
+            row["funding_pct"] = round(rate * 100, 4)
+        return row
+
 
 class FundingPaperHarness:
     """Merges spot + perp WS updates and drives the funding strategy.
@@ -76,16 +84,20 @@ class FundingPaperHarness:
         symbols: list[str] = ("BTCUSDT", "ETHUSDT"),
         strategy: FundingArbStrategy | None = None,
         log_path: str | Path = "paper_funding.csv",
+        sample_interval_s: float = 60.0,
     ):
         self.symbols = list(symbols)
         self.strategy = strategy or FundingArbStrategy(FundingArbConfig())
         self.log_path = Path(log_path)
+        self.sample_interval_s = sample_interval_s
         self.states: dict[str, PaperState] = {s: PaperState(symbol=s) for s in self.symbols}
         self._spot_price: dict[str, Decimal] = {}
         self._perp_price: dict[str, Decimal] = {}
         self._funding_rate: dict[str, float] = {}
         self._logger = logger.getChild("paper")
         self._signal_count = 0
+        self._last_sample_ts: dict[str, float] = {}
+        self._sample_count = 0
 
     # -- message ingestion -------------------------------------------------
 
@@ -186,6 +198,14 @@ class FundingPaperHarness:
             st.last_action = "no_signal"
 
         st.last_ts = now
+
+        # Periodic basis/funding sampling (not just on signals) so the live
+        # basis distribution is observable even when no trade triggers.
+        last = self._last_sample_ts.get(sym, 0.0)
+        if now.timestamp() - last >= self.sample_interval_s:
+            self._last_sample_ts[sym] = now.timestamp()
+            self._sample_count += 1
+            self._append_log_row(sym, st, basis, state.funding_rate, "SAMPLE")
 
     def _append_log_row(self, sym: str, st: PaperState, basis: float, rate: float, kind: str) -> None:
         new_file = not self.log_path.exists()

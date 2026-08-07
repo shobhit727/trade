@@ -1,11 +1,11 @@
 # 11. Testing
 
 > **Last Updated**: 2026-08-06 (audit)
-> **Confidence**: High — `413 passed, 4 skipped` locally (Python 3.14, 6.6s), 31 Rust tests green, CI green.
+> **Confidence**: High — `434 passed, 4 skipped` locally (Python 3.14, ~11s), 31 Rust tests green, CI green.
 
 ## What exists
 
-`tests/unit/` — **44 Python test files**. No `tests/integration/` or `tests/fixtures/` beyond an empty marker.
+`tests/unit/` — **47 Python test files** (incl. property-based `test_property_based_risk_math.py` and `test_backtest_regression.py`). `tests/integration/` — `test_external_services.py` (TimescaleDB/Redis/Prometheus; skips when services absent, marker `integration`).
 
 Test files (44):
 
@@ -77,13 +77,13 @@ test_utils_types.py
 
 - `docker compose --profile test run --rm cryptobot-test` runs the unit suite inside a `python:3.14-slim` image.
 - Dockerfile test target: `pytest -q tests/unit/`.
-- CI `unit` job: `pytest -q --tb=short --cov=cryptobot --cov-report=term-missing --timeout=60` (413 passed, 4 skipped).
+- CI `unit` job: `pytest -q --tb=short --cov=cryptobot --cov-report=term-missing --timeout=60` (434 passed, 4 skipped). CI runs `-m not integration` (integration tests need the compose stack).
 
 ## Coverage gaps
 
-- No integration tests (TimescaleDB, Redis, Prometheus, real Binance).
-- No property-based tests (hypothesis).
-- No regression tests on backtest metrics vs prior runs.
+- Integration tests exist in `tests/integration/` (TimescaleDB write/read, Redis cache, Prometheus export) — skipped locally without services, run in the compose/CI Docker target.
+- Property-based tests (hypothesis) added 2026-08-06: sizing invariants, correlation bounds, drawdown/sharpe domains (`test_property_based_risk_math.py`, 10 tests).
+- Regression tests on backtest metrics added 2026-08-06 (`test_backtest_regression.py`: determinism, sensitivity, headline metrics).
 
 ## Strategy for new tests
 

@@ -64,7 +64,7 @@
 | Utils Decorators | `src/cryptobot/utils/decorators.py` | ✅ retry (clamped jitter), timeout_decorator, circuit_breaker (raises in running loop). |
 | Utils Types | `src/cryptobot/utils/types.py` | ✅ Candle, OrderBook, Trade, etc. |
 | Utils Health Server | `src/cryptobot/utils/health_server.py` | ✅ stdlib ThreadingHTTPServer `/health` + `/metrics`. |
-| Tests | `tests/unit/` | ✅ 44 unit test files. CI: pytest 3.13 + ruff + pyflakes + cargo lint/test + docker-test + compose-validate. pytest-timeout=60s prevents hangs. |
+| Tests | `tests/unit/` (47 files) + `tests/integration/` | ✅ 434 passed / 4 skipped; hypothesis property tests (risk/sizing/metrics domains); backtest regression suite; integration tests behind `integration` marker. CI: pytest 3.13 + ruff + pyflakes + cargo lint/test + docker-test + compose-validate. pytest-timeout=60s. |
 | Dockerfile | `Dockerfile` | ✅ Multi-stage (`base`/`production`/`test`), `python:3.14-slim`. |
 | Compose | `docker-compose.yml` | ✅ Test + default profiles valid (monitoring dirs scaffolded). |
 | `.dockerignore` | `.dockerignore` | ✅ Minimal context. |
@@ -1006,11 +1006,11 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [x] GitHub Actions CI (`.github/workflows/ci.yml`) — lint + unit + compose-validate + multi-arch buildx
 
 ### Tests
-- [x] 44 unit test files in `tests/unit/` covering event bus, retry, simulated execution, backtest fill flow, reporting, strategies, validation, smart order router, latency metrics, Binance venue, backtest runner/data, config loading, live paper harness, execution costs, realistic venue
-- [ ] Property-based tests (hypothesis) for risk/math
-- [ ] Integration tests (TimescaleDB / Redis / Prometheus)
+- [x] 47 unit test files in `tests/unit/` covering event bus, retry, simulated execution, backtest fill flow, reporting, strategies, validation, smart order router, latency metrics, Binance venue, backtest runner/data, config loading, live paper harness, execution costs, realistic venue, hypothesis property tests, backtest regression; `tests/integration/test_external_services.py` (TimescaleDB/Redis/Prometheus)
+- [x] Property-based tests (hypothesis) for risk/math — `tests/unit/test_property_based_risk_math.py` (10 tests)
+- [x] Integration tests (TimescaleDB / Redis / Prometheus) — `tests/integration/test_external_services.py`, `integration` marker, skip without services
 - [x] CI/CD pipeline (GitHub Actions; cross-compile via QEMU + buildx matrix)
-- [ ] Regression tests on backtest metrics
+- [x] Regression tests on backtest metrics — `tests/unit/test_backtest_regression.py`
 - [x] Multi-arch Docker images (x86_64, ARM64)
 
 ### Testing & Quality
