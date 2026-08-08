@@ -150,7 +150,7 @@ class RiskManager:
         state = self.portfolio.get_state()
         if state.total_equity > 0 and not self.backtest_mode:
             open_positions = sum(1 for p in state_manager.get_positions() if p.quantity > 0)
-            if open_positions >= self.limits.max_open_positions:
+            if not order.reduce_only and open_positions >= self.limits.max_open_positions:
                 return RiskCheckResult(
                     False,
                     f"Max open positions reached ({self.limits.max_open_positions})",
@@ -160,7 +160,7 @@ class RiskManager:
 
             additional = notional if notional > 0 else Decimal("0")
             total_exposure = (state.used_margin + additional) / state.total_equity
-            if total_exposure > self.limits.max_total_exposure_pct:
+            if not order.reduce_only and total_exposure > self.limits.max_total_exposure_pct:
                 return RiskCheckResult(
                     False,
                     "Total exposure limit exceeded",
@@ -168,7 +168,7 @@ class RiskManager:
                     self.limits.max_total_exposure_pct,
                 )
 
-            if notional > 0:
+            if not order.reduce_only and notional > 0:
                 position_pct = notional / state.total_equity
                 scaled_cap = self.limits.max_single_position_pct * self._drawdown_scale()
                 if position_pct > scaled_cap:
@@ -192,6 +192,7 @@ class RiskManager:
 
         if (
             not self.backtest_mode
+            and not order.reduce_only
             and notional >= self.limits.require_stop_loss_above_usd
             and order.stop_price is None
         ):

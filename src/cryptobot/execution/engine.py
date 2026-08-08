@@ -46,7 +46,7 @@ class ExecutionEngine:
 
         # For market orders, try to get current market price for risk check
         risk_price = order.price
-        if risk_price is None and order.type == OrderType.MARKET:
+        if (risk_price is None or risk_price <= 0) and order.type == OrderType.MARKET:
             try:
                 risk_price = await self.venue.get_price(order.symbol)
             except Exception:

@@ -199,6 +199,10 @@ class BacktestEngine:
         for o in order:
             if o is None:
                 continue
+            if o.reduce_only and o.symbol not in self._positions:
+                # Exit signal for a position the engine never opened (e.g. the
+                # entry was rejected by risk): do not open a new position.
+                continue
             # Keep the venue's mark price current so market orders fill at bar close
             execution_engine.venue.prices[o.symbol] = Decimal(close_str)
             filled = await execution_engine.submit_order(o)

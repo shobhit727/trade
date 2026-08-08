@@ -126,3 +126,90 @@ def test_regression_report_shape():
     for key in ("initial_capital", "final_equity", "total_return", "n_trades"):
         assert key in d
     assert d["n_equity_points"] > 0
+
+
+def test_regression_market_order_with_zero_price_uses_venue_mark():
+    """A market order carrying price=0 must still be risk-checked at the
+    current venue price, otherwise its notional is 0 and max-size limits
+    (e.g. max_order_size_usd=10000) are silently bypassed.
+
+    Regression: ExecutionEngine only fetched a live risk price when
+    order.price was None; Decimal("0") (the bar-close placeholder used by
+    strategies for market orders) slipped through unchecked, letting a
+    rejected entry's exit open a naked position.
+    """
+    from decimal import Decimal
+
+    from cryptobot.core.events import OrderEvent, OrderSide, OrderType
+    from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
+    from cryptobot.execution.engine import ExecutionEngine
+    from cryptobot.execution.venue.simulated import SimulatedVenue
+    from cryptobot.risk.manager import RiskManager
+
+    portfolio = PortfolioManager(PortfolioMode.BACKTEST)
+    venue = SimulatedVenue(slippage_bps=Decimal("3"), commission_bps=Decimal("5"))
+    venue.prices["BTCUSDT"] = Decimal("65000")
+    risk = RiskManager(portfolio=portfolio, backtest_mode=True)
+    ee = ExecutionEngine(venue=venue, risk_manager=risk)
+
+    order = OrderEvent(
+        symbol="BTCUSDT",
+        side=OrderSide.BUY,
+        type=OrderType.MARKET,
+        quantity=Decimal("1"),
+        price=Decimal("0"),
+    )
+    filled = asyncio.run(ee.submit_order(order))
+    # qty 1 @ mark 65000 = 65000 notional >> max_order_size_usd 10000
+    assert filled.status.value == "REJECTED"
+
+
+def test_regression_reduce_only_exit_after_rejected_entry_opens_nothing():
+    """An exit order must never open a position the entry never created.
+
+    Scenario (seen on real BTC data): the strategy computes a position,
+    emits an entry which risk rejects (notional too big), then emits a
+    market exit. Before the fix the exit filled against nothing -> naked
+    short/long on the backtest book. reduce_only exits with no open
+    position must be skipped.
+    """
+    from decimal import Decimal
+
+    from cryptobot.core.events import OrderEvent, OrderSide, OrderType
+    from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
+    from cryptobot.execution.engine import ExecutionEngine
+    from cryptobot.execution.venue.simulated import SimulatedVenue
+    from cryptobot.risk.manager import RiskManager
+
+    class Strategy:
+        def __init__(self):
+            self.emitted_entry = False
+
+        def feed(self, symbol, close):
+            if not self.emitted_entry:
+                self.emitted_entry = True
+                return OrderEvent(
+                    symbol="BTCUSDT",
+                    side=OrderSide.BUY,
+                    type=OrderType.LIMIT,
+                    quantity=Decimal("1"),
+                    price=Decimal("60000"),
+                )
+            return OrderEvent(
+                symbol="BTCUSDT",
+                side=OrderSide.SELL,
+                type=OrderType.MARKET,
+                quantity=Decimal("1"),
+                price=Decimal("0"),
+                reduce_only=True,
+            )
+
+    portfolio = PortfolioManager(PortfolioMode.BACKTEST)
+    venue = SimulatedVenue(slippage_bps=Decimal("3"), commission_bps=Decimal("5"))
+    risk = RiskManager(portfolio=portfolio, backtest_mode=True)
+    ee = ExecutionEngine(venue=venue, risk_manager=risk)
+
+    bars = generate_synthetic_ohlcv(datetime(2024, 1, 1, tzinfo=UTC), n_bars=20, seed=9)
+    result = asyncio.run(run_backtest(bars, strategy=Strategy(), execution_engine=ee))
+    assert result.n_trades == 0
+    assert result.final_equity == Decimal("10000")

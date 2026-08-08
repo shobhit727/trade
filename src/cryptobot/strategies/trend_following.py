@@ -150,16 +150,32 @@ class TrendFollowingStrategy:
         if st.ema_fast > st.ema_slow and st.adx > self._adx_thr and symbol not in entry_stop:
             entry_stop[symbol] = close - self._atr_mult * st.atr
             return OrderEvent(
-                symbol=symbol, side=OrderSide.BUY, quantity=self._qty, price=Decimal(str(round(close, 8)))
+                symbol=symbol,
+                side=OrderSide.BUY,
+                quantity=self._qty,
+                price=Decimal(str(round(close, 8))),
+                stop_price=Decimal(str(round(close - self._atr_mult * st.atr, 8))),
             )
+        # Exits (EMA flip and stop-out) are unconditional: opening a new
+        # position requires the ADX filter, closing one must never.
         if st.ema_fast < st.ema_slow and symbol in entry_stop:
             entry_stop.pop(symbol, None)
             return OrderEvent(
-                symbol=symbol, side=OrderSide.SELL, quantity=self._qty, price=Decimal(str(round(close, 8)))
+                symbol=symbol,
+                side=OrderSide.SELL,
+                quantity=self._qty,
+                price=Decimal(str(round(close, 8))),
+                reduce_only=True,
+                stop_price=Decimal(str(round(close + self._atr_mult * st.atr, 8))),
             )
         if symbol in entry_stop and close <= entry_stop[symbol]:
             entry_stop.pop(symbol, None)
             return OrderEvent(
-                symbol=symbol, side=OrderSide.SELL, quantity=self._qty, price=Decimal(str(round(close, 8)))
+                symbol=symbol,
+                side=OrderSide.SELL,
+                quantity=self._qty,
+                price=Decimal(str(round(close, 8))),
+                reduce_only=True,
+                stop_price=Decimal(str(round(close + self._atr_mult * st.atr, 8))),
             )
         return None
