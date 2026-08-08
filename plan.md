@@ -1,7 +1,7 @@
 # Cryptobot - Elite Quantitative Trading System
 ## Master Plan & Architecture Document
 
-> **Status**: Active development | **Last Updated**: 2026-08-07 (Phase 3 ✅ — PositionManager + Optuna strategy optimizer; Rust stats/risk submodules implemented; 591 pytest + 63 Rust green)
+> **Status**: Active development | **Last Updated**: 2026-08-08 (catalog 84 strategies delivered + wired into registry; 749 pytest + 63 Rust tests green)
 > **Context**: Core, backtester, risk, execution, monitoring (no-op fallback + lazy aiohttp, B051 resolved), ML core, live exchange adapter, smart order router, adverse-selection guard, health server, K8s manifests, multi-arch CI, TimescaleDB migrations, YAML-driven strategy registry, **buildable Rust workspace**, **BinanceWSClient fallback warnings** all implemented. Remaining: ML volatility/regime/ensemble models (deferred); integration test fixtures.
 > **Current Python**: 3.14 (Docker base `python:3.14-slim`).
 > **Repository**: `git@github.com:shobhit727/trade.git` (public).
@@ -64,7 +64,7 @@
 | Utils Decorators | `src/cryptobot/utils/decorators.py` | ✅ retry (clamped jitter), timeout_decorator, circuit_breaker (raises in running loop). |
 | Utils Types | `src/cryptobot/utils/types.py` | ✅ Candle, OrderBook, Trade, etc. |
 | Utils Health Server | `src/cryptobot/utils/health_server.py` | ✅ stdlib ThreadingHTTPServer `/health` + `/metrics`. |
-| Tests | `tests/unit/` (47 files) + `tests/integration/` | ✅ 434 passed / 4 skipped; hypothesis property tests (risk/sizing/metrics domains); backtest regression suite; integration tests behind `integration` marker. CI: pytest 3.13 + ruff + pyflakes + cargo lint/test + docker-test + compose-validate. pytest-timeout=60s. |
+| Tests | `tests/unit/` (51 files) + `tests/strategies/` (84 catalog per-strategy) + `tests/integration/` | ✅ **749 passed / 18 skipped**; hypothesis property tests (risk/sizing/metrics domains); backtest regression suite; 84 catalog strategy tests (one per strategy); integration tests behind `integration` marker. CI: pytest 3.13 + ruff + pyflakes + cargo lint/test + docker-test + compose-validate. pytest-timeout=60s. |
 | Dockerfile | `Dockerfile` | ✅ Multi-stage (`base`/`production`/`test`), `python:3.14-slim`. |
 | Compose | `docker-compose.yml` | ✅ Test + default profiles valid (monitoring dirs scaffolded). |
 | `.dockerignore` | `.dockerignore` | ✅ Minimal context. |
@@ -214,6 +214,8 @@ src/cryptobot/
 - [x] Position management primitives (`strategies/position.py`) — `Position` + `PositionManager`: scale-in/out with weighted avg entry, stop/take-profit orders, trailing stops (ratchet), `reduce_only` exits
 - [x] Strategy registry (`StrategyRegistry` singleton)
 - [x] Parameter optimization — `ml/optimizer.py` (walk-forward, Optuna) ✅; `backtest/optimize.py` (Optuna strategy-param search with deterministic grid fallback) ✅
+- [x] Signal-streaming base (`strategies/signal_base.py`) — `SignalStrategy` with per-symbol OHLCV buffers, flip-on-signal MARKET orders; `strategies/indicators.py` (22 numpy primitives)
+- [x] **Catalog of 84 signal strategies** (`strategies/catalog/`) — one file per strategy + one test per strategy, registered in `_STRATEGY_REGISTRY_MAP`, runnable via `make_strategy(name)`; covers Trend (16), Mean Reversion (12), Momentum (11), Breakout (11), Volatility (8), Volume (7), Stat-Arb (5), Crypto (5), Hybrid (10); emitted via `tools/gen_catalog.py` (spec table → one module + one test)
 
 ### Phase 4: Core Strategies (Week 4-6) ⭐ — ✅ complete
 - [x] Mean Reversion: Z-score + RSI + BB (`strategies/mean_reversion.py`)
@@ -493,7 +495,7 @@ mkdir -p docker seccomp compose scripts migrations
 - Requirements: `requirements/prod.txt`
 
 ### Current Phase
-**Phase 3/4/6/8 complete**: Core infrastructure ✅, Backtester ✅, Strategies 6/6 ✅ (ml_strategy.py created), **Strategy Framework ✅ (PositionManager + Optuna strategy optimizer + grid fallback)**, ML core ✅ (features, direction/volatility/regime/ensemble, training/inference/auto_retrain, walk-forward optimizer), Execution ✅ (incl. realistic venue + transaction cost model), **Risk ✅ (incl. HRP/CVaR portfolio optimizer + live risk-metric wiring)**, Monitoring ✅, Live/Compose ✅ (incl. Phase 3 funding-carry paper harness), K8s ✅, **CI/CD green ✅ (public repo, 591 pytest + 63 Rust tests)**, **Rust workspace fleshed out (stats + risk submodules, backtest metrics)**, **Release v0.1.0 published ✅**. Active: Phase 3 edge validation (funding-carry paper harness on live Binance data; fapi WS network-blocked here → REST-poll fallback). Next: Phase 6 online inference pipeline, paper→live cutover.
+**Phase 3/4/5/6/8 complete + catalog delivered**: Core infrastructure ✅, Backtester ✅, **Strategy Framework ✅ (PositionManager + Optuna strategy optimizer + grid fallback + 84 catalog signal strategies in src/cryptobot/strategies/catalog/)**, Strategies 6/6 ✅ (ml_strategy.py created), ML core ✅ (features, direction/volatility/regime/ensemble, training/inference/auto_retrain, walk-forward optimizer), Execution ✅ (incl. realistic venue + transaction cost model), **Risk ✅ (incl. HRP/CVaR portfolio optimizer + live risk-metric wiring)**, Monitoring ✅, Live/Compose ✅ (incl. Phase 3 funding-carry paper harness), K8s ✅, **CI/CD green ✅ (public repo, 749 pytest + 63 Rust tests, ruff + clippy -D warnings + fmt clean)**, **Rust workspace fleshed out (stats + risk submodules, backtest metrics)**, **Release v0.1.0 published ✅**. Active: Phase 3 edge validation (funding-carry paper harness on live Binance data; fapi WS network-blocked here → REST-poll fallback). Next: feature store w/ versioning (Phase 6 stretch), paper→live cutover.
 
 ### Blockers
 - ~~Rust workspace non-buildable — `Cargo.toml [workspace] members` declared 7, only `cryptobot-core` had a manifest~~ → **resolved 2026-08-04** (all 7 crates fleshed out with PyO3 0.29; fmt/clippy/test green)
@@ -1004,7 +1006,7 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [x] GitHub Actions CI (`.github/workflows/ci.yml`) — lint + unit + compose-validate + multi-arch buildx
 
 ### Tests
-- [x] 47 unit test files in `tests/unit/` covering event bus, retry, simulated execution, backtest fill flow, reporting, strategies, validation, smart order router, latency metrics, Binance venue, backtest runner/data, config loading, live paper harness, execution costs, realistic venue, hypothesis property tests, backtest regression; `tests/integration/test_external_services.py` (TimescaleDB/Redis/Prometheus)
+- [x] 51 unit test files in `tests/unit/` covering event bus, retry, simulated execution, backtest fill flow, reporting, strategies, validation, smart order router, latency metrics, Binance venue, backtest runner/data, config loading, live paper harness, execution costs, realistic venue, hypothesis property tests, backtest regression; **84 per-strategy catalog tests in `tests/strategies/`** (one per strategy: trend/MR/momentum/breakout/volatility/volume/stat-arb/crypto/hybrid); `tests/integration/test_external_services.py` (TimescaleDB/Redis/Prometheus). Total: **749 passed / 18 skipped**.
 - [x] Property-based tests (hypothesis) for risk/math — `tests/unit/test_property_based_risk_math.py` (10 tests)
 - [x] Integration tests (TimescaleDB / Redis / Prometheus) — `tests/integration/test_external_services.py`, `integration` marker, skip without services
 - [x] CI/CD pipeline (GitHub Actions; cross-compile via QEMU + buildx matrix)

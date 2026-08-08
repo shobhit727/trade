@@ -1,6 +1,6 @@
 # 12. Feature Status
 
-> **Last Updated**: 2026-08-07 (Phase 3 ✅ — PositionManager + Optuna strategy optimizer; Rust stats/risk submodules implemented; 591 pytest + 63 Rust tests green)
+> **Last Updated**: 2026-08-08 (catalog 84 strategies shipped — Trend 16, MR 12, Momentum 11, Breakout 11, Volatility 8, Volume 7, Stat-Arb 5, Crypto 5, Hybrid 10; 749 pytest + 63 Rust tests green; ruff + clippy -D warnings clean)
 > **Confidence**: High.
 
 ## Verified module status
@@ -30,7 +30,10 @@
 | `strategies/market_making.py` | ✅ | Avellaneda-Stoikov market making (reservation price + spread), `run_on_history` synth fill path, pluggable to ExecutionEngine + AdverseSelectionGuard. |
 | `strategies/stat_arb.py` | ✅ | Pairs trading: rolling hedge ratio, correlation gate, z-score entry/exit/stop. |
 | `strategies/funding_arb.py` | ✅ | Funding / basis arb: spot-vs-perp + funding rate + basis entry/exit. |
-| `strategies/registry.py` | ✅ | `load_strategies_from_config` + `_STRATEGY_REGISTRY_MAP` (6 strategies) — YAML `strategies.enabled` now honored (B057/B059). |
+| `strategies/registry.py` | ✅ | `load_strategies_from_config` + `_STRATEGY_REGISTRY_MAP` (6 legacy + 84 catalog = 90 strategies) — YAML `strategies.enabled` honored (B057/B059); catalog auto-registers via `strategies/catalog/__init__.py`. |
+| `strategies/signal_base.py` | ✅ | `SignalStrategy` streaming base — per-symbol OHLCV buffers, flip-on-signal MARKET orders; `feed(symbol, close, high, low, volume)` (legacy 2-arg fallback in runner). |
+| `strategies/indicators.py` | ✅ | 22 numpy OHLCV primitives — sma/ema/rsi/macd/atr/bb/donchian/cci/roc/obv/vwap/fisher/stoch/williams/keltner_mid/chaikin_mf/cumulative_delta/range_n/inside_bar/zscore/bollinger_position/true_range/make_order. |
+| `strategies/catalog/` | ✅ | **84 catalog signal strategies** — one file per strategy + one test per strategy (84 in `tests/strategies/`); auto-registered. Generated from spec table via `tools/gen_catalog.py`. Test modes: trend (monotonic), osc (sine+drift), vol (spike), flow (asymmetric candles). |
 | `strategies/ml_strategy.py` | ✅ | `MLStrategy` + `MLStrategyConfig` using `DirectionClassifier`; periodic retrain on price buffer (B054). |
 | `ml/features.py` | ✅ | 8 features: returns, RSI, MACD line + signal, ATR ratio, BB position + width, log volume. |
 | `ml/models/direction.py` | ✅ | `DirectionClassifier` (sklearn logreg preferred, numpy fallback), walk-forward score. |
@@ -89,7 +92,7 @@
 
 ## Test Status (2026-08-06)
 
-- **CI**: Python 3.13 runners, pytest + pytest-asyncio + pytest-cov + pytest-timeout=60s + hypothesis; **434 passed / 4 skipped** (unit); integration tests behind `integration` marker
+- **CI**: Python 3.13 runners, pytest + pytest-asyncio + pytest-cov + pytest-timeout=60s + hypothesis; **749 passed / 18 skipped** (51 unit + 84 catalog + 14 integration/dedicated); integration tests behind `integration` marker
 - **Lint**: ruff (unpinned) + pyflakes
 - **Rust**: cargo fmt + clippy (-D warnings) + test (full workspace: 7 crates, 63 tests)
 - **Docker**: test target builds on `PYTHON_TAG` (3.14-slim) + runs pytest in container

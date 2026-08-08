@@ -1,6 +1,6 @@
 # 02. Module Index
 
-> **Last Updated**: 2026-07-31 (audit v2; re-verified full src/ tree)
+> **Last Updated**: 2026-08-08 (catalog 84 strategies + registry + runner wired; 749 pytest + 63 Rust green)
 > **Confidence**: High (verified by directory walk + LOC).
 
 ## Actual project tree (Python)
@@ -141,6 +141,7 @@ src/cryptobot/                     # 6 dead empty dirs: allocator/ altdata/ api/
 - ~~`ml/models/{volatility,regime,ensemble}.py` missing~~ → **resolved** (all three implemented; disabled in YAML pending validation).
 - Live Binance runtime credentials; integration tests for TimescaleDB/Redis/Prometheus.
 - Live `live/paper_harness.py`, `execution/costs.py`, `ml/optimizer.py`, `execution/venue/realistic.py` are new additions — see `12_Feature_Status.md`.
+- **Phase 3/5 (2026-08-07/08):** `strategies/position.py` (PositionManager — scale in/out, trailing stops), `strategies/indicators.py` (22 numpy OHLCV primitives), `strategies/signal_base.py` (`SignalStrategy` streaming base), `strategies/catalog/` (84 catalog strategies, one file each, auto-registered), `backtest/optimize.py` (Optuna strategy-param search with grid fallback), `risk/portfolio_optimizer.py` (HRP + mean-CVaR), `tools/gen_catalog.py` (catalog emitter).
 
 ## Confidence
 

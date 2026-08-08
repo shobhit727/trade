@@ -1,6 +1,6 @@
 # 01. System Architecture
 
-> **Last Updated**: 2026-07-31 (audit v2)
+> **Last Updated**: 2026-08-08 (catalog 84 strategies + Phase 3/5 work; 749 pytest + 63 Rust green)
 > **Confidence**: High for what exists; Low for what is intended (Rust).
 
 ## Verified layers

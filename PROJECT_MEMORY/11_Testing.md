@@ -1,7 +1,7 @@
 # 11. Testing
 
-> **Last Updated**: 2026-08-06 (audit)
-> **Confidence**: High — `434 passed, 4 skipped` locally (Python 3.14, ~11s), 31 Rust tests green, CI green.
+> **Last Updated**: 2026-08-08 (catalog 84 strategies added; 749 pytest + 18 skipped in Docker; 63 Rust tests green)
+> **Confidence**: High — `749 passed, 18 skipped` in Docker (Python 3.14, ~62s), 63 Rust tests green, CI green.
 
 ## What exists
 
@@ -77,7 +77,7 @@ test_utils_types.py
 
 - `docker compose --profile test run --rm cryptobot-test` runs the unit suite inside a `python:3.14-slim` image.
 - Dockerfile test target: `pytest -q tests/unit/`.
-- CI `unit` job: `pytest -q --tb=short --cov=cryptobot --cov-report=term-missing --timeout=60` (434 passed, 4 skipped). CI runs `-m not integration` (integration tests need the compose stack).
+- CI `unit` job: `pytest -q --tb=short --cov=cryptobot --cov-report=term-missing --timeout=60` (749 passed, 18 skipped across `tests/unit/` + `tests/strategies/` + integration). CI runs `-m not integration` (integration tests need the compose stack).
 
 ## Coverage gaps
 

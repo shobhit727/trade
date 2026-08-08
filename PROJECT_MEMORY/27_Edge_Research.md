@@ -1,6 +1,6 @@
 # 27 — Edge Research: Findings & Gates (Phase 0–2)
 
-*Status: LIVE — updated continuously. Last update: 2026-08-06*
+Status: LIVE — updated continuously. Last update: 2026-08-08
 
 ## Objective
 

@@ -1,6 +1,6 @@
 # 23. Repository History
 
-> **Last Updated**: 2026-08-06 (Phase 3 harness, PR #1 venue fixes, CI/CD overhaul, repo public)
+> **Last Updated**: 2026-08-08 (catalog 84 strategies shipped + wired into registry + runner; 749 pytest + 63 Rust green)
 > **Confidence**: Git history present; entries below are session-level snapshots.
 
 ## Session 2026-08-06 (Phase 3 paper harness + CI/CD overhaul)
@@ -161,3 +161,17 @@
 - Rust tests: 31 → 63. clippy -D warnings + fmt clean.
 
 **Gates:** 591 pytest passed, 4 skipped (1 flaky hypothesis test passed on re-run; pre-existing remote test). ruff clean.
+
+## 2026-08-08 — Strategy catalog (84 strategies) shipped
+
+**Strategies delivered:** 84 catalog signal strategies, one file per strategy under `src/cryptobot/strategies/catalog/`, each with a per-strategy test under `tests/strategies/`. Coverage: Trend (16), Mean Reversion (12), Momentum (11), Breakout (11), Volatility (8), Volume (7), Stat-Arb (5), Crypto (5), Hybrid (10).
+
+**Infrastructure added:**
+- `strategies/indicators.py` — 22 numpy OHLCV primitives (sma/ema/rsi/macd/atr/bb/donchian/cci/roc/obv/vwap/fisher/stoch/williams/keltner_mid/chaikin_mf/cumulative_delta/range_n/inside_bar/zscore/bollinger_position/true_range/make_order).
+- `strategies/signal_base.py` — `SignalStrategy` streaming base with per-symbol OHLCV buffers, flip-on-signal MARKET orders. `feed(symbol, close, high, low, volume)`.
+- `strategies/catalog/__init__.py` — auto-registers all 84 (class, config) pairs in `_REGISTRY`.
+- `strategies/registry.py` — `_STRATEGY_REGISTRY_MAP` merges catalog (90 names total).
+- `backtest/runner.py` — `make_strategy(name)` looks up registry; `feed()` passes OHLCV to new strategies with legacy 2-arg fallback.
+- `tools/gen_catalog.py` — generator script holding the spec table (84 entries), emits one module + one test per strategy. Test modes: trend (monotonic), osc (sine+drift), vol (spike), flow (asymmetric candles); dirs="both"/"long"/"short" filters the per-direction test assertions.
+
+**Gates:** 749 pytest passed (was 591), 18 skipped, 0 failed. Ruff clean. Rust unaffected: fmt + clippy -D warnings + 63 tests still green.
