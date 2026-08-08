@@ -1,4 +1,4 @@
-"""Triple moving average"""
+'''Triple moving average'''
 
 from __future__ import annotations
 

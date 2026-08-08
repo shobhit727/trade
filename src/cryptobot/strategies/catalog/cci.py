@@ -1,4 +1,4 @@
-"""Cci reversion"""
+'''Cci reversion'''
 
 from __future__ import annotations
 

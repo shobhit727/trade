@@ -1,4 +1,4 @@
-"""Rsi reversion"""
+'''Rsi reversion'''
 
 from __future__ import annotations
 

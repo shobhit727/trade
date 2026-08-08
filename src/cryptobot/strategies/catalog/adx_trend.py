@@ -1,4 +1,4 @@
-"""Adx trend strength"""
+'''Adx trend strength'''
 
 from __future__ import annotations
 

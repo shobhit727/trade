@@ -1,4 +1,4 @@
-"""Kaufman adaptive ma"""
+'''Kaufman adaptive ma'''
 
 from __future__ import annotations
 

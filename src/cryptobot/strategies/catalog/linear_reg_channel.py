@@ -1,4 +1,4 @@
-"""Linear regression channel"""
+'''Linear regression channel'''
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Fisher transform"""
+'''Fisher transform'''
 
 from __future__ import annotations
 

@@ -1,0 +1,32 @@
+'''Time-series momentum'''
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from decimal import Decimal
+
+from cryptobot.strategies.indicators import roc
+from cryptobot.strategies.signal_base import SignalStrategy
+
+
+@dataclass
+class TimeSeriesConfig:
+    period: int = 40
+    threshold: float = 0.0
+    quantity: Decimal = Decimal("1")
+
+
+class TimeSeriesStrategy(SignalStrategy):
+    name = "time_series"
+
+    def __init__(self, config: TimeSeriesConfig | None = None):
+        super().__init__(config or TimeSeriesConfig())
+
+    def warmup(self, closes) -> int:
+        return self.config.period
+
+    def signal(self, closes, highs, lows, volumes):
+        m = roc(closes, self.config.period)
+        if m != m:
+            return 0
+        return 1 if m > self.config.threshold else -1

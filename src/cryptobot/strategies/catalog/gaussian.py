@@ -1,4 +1,4 @@
-"""Gaussian reversion"""
+'''Gaussian reversion'''
 
 from __future__ import annotations
 

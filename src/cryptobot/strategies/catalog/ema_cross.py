@@ -1,4 +1,4 @@
-"""Ema crossover"""
+'''Ema crossover'''
 
 from __future__ import annotations
 

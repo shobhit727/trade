@@ -1,4 +1,4 @@
-"""Anchored vwap"""
+'''Anchored vwap'''
 
 from __future__ import annotations
 

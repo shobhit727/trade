@@ -1,4 +1,4 @@
-"""Hull moving average"""
+'''Hull moving average'''
 
 from __future__ import annotations
 

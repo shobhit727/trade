@@ -1,4 +1,4 @@
-"""Donchian channel"""
+'''Donchian channel'''
 
 from __future__ import annotations
 

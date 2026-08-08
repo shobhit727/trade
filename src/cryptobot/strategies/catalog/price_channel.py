@@ -1,4 +1,4 @@
-"""Price channel"""
+'''Price channel'''
 
 from __future__ import annotations
 

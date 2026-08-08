@@ -1,11 +1,11 @@
-"""Keltner reversion"""
+'''Keltner reversion'''
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
 
-from cryptobot.strategies.indicators import atr, keltner_mid
+from cryptobot.strategies.indicators import keltner_mid, atr
 from cryptobot.strategies.signal_base import SignalStrategy
 
 

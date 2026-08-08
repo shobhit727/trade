@@ -1,4 +1,4 @@
-"""Linear regression"""
+'''Linear regression'''
 
 from __future__ import annotations
 

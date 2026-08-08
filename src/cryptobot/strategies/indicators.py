@@ -193,11 +193,13 @@ __all__ = [
     "ema",
     "fisher_transform",
     "keltner_mid",
+    "inside_bar",
     "macd",
     "macd_signal",
     "make_order",
     "mfi",
     "obv",
+    "range_n",
     "roc",
     "rsi",
     "sma",
@@ -235,3 +237,18 @@ def fisher_transform(closes, period: int = 10) -> float:
     norm = 2.0 * ((a[-1] - lo) / (hi - lo) - 0.5)
     norm = max(-0.999, min(0.999, norm))
     return float(0.5 * _np.log((1 + norm) / (1 - norm)))
+
+
+def range_n(highs, lows, n: int) -> float:
+    """True-range size of the nth most recent bar (n=1 = current)."""
+    i = -n
+    if len(highs) < n or len(lows) < n:
+        return float("nan")
+    return float(highs[i] - lows[i])
+
+
+def inside_bar(highs, lows) -> bool:
+    """True if current bar is contained within the previous bar's range."""
+    if len(highs) < 2:
+        return False
+    return highs[-1] <= highs[-2] and lows[-1] >= lows[-2]

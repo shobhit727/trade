@@ -1,4 +1,4 @@
-"""Triple exponential ma"""
+'''Triple exponential ma'''
 
 from __future__ import annotations
 

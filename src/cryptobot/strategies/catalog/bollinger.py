@@ -1,4 +1,4 @@
-"""Bb reversion"""
+'''Bb reversion'''
 
 from __future__ import annotations
 
