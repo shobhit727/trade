@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 @dataclass
 class MLStrategyConfig:
     """Configuration for ML-driven trading strategy."""
+
     symbols: list[str] = field(default_factory=lambda: ["BTCUSDT"])
     lookback: int = 100
     horizon: int = 5
@@ -66,10 +67,7 @@ class MLStrategy:
             return None
 
         # Periodically retrain the classifier
-        if (
-            self._classifier is None
-            or self._bars_seen % self.config.retrain_every == 0
-        ):
+        if self._classifier is None or self._bars_seen % self.config.retrain_every == 0:
             self._retrain(buf)
 
         if self._classifier is None or not self._classifier._fitted:

@@ -10,12 +10,14 @@ from cryptobot.utils.decorators import timeout_decorator
 
 logger = logging.getLogger(__name__)
 
+
 class BaseStrategy(ABC):
     """
     Abstract Base Class defining the contract for all quantitative trading strategies.
     All custom strategies MUST inherit from this class to ensure compatibility with
     the EventBus and BacktestEngine.
     """
+
     def __init__(self, strategy_name: str, config: dict[str, Any]):
         self.strategy_name = strategy_name
         self._config = config
@@ -48,20 +50,24 @@ class BaseStrategy(ABC):
         This method allows strategies to react dynamically to execution confirmations.
         Returns: A list of *new* proposed actions (e.g., adjusting stop losses).
         """
-        return [] # Default implementation returns no action
+        return []  # Default implementation returns no action
 
     def get_name(self) -> str:
         """Returns the unique, displayable name of the strategy."""
         return self.strategy_name
 
+
 # --- Strategy Registry Singleton ---
+
 
 class StrategyRegistry:
     """
     Manages all available and loaded strategies, facilitating discovery by the backtester.
     Implements a factory pattern to create instances with correct configurations.
     """
+
     _instance = None
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
@@ -72,9 +78,9 @@ class StrategyRegistry:
     def register(self, strategy_class: type[BaseStrategy], config: dict[str, Any]):
         """Registers a new strategy instance."""
         if not issubclass(strategy_class, BaseStrategy):
-             raise TypeError("Provided class must inherit from BaseStrategy.")
+            raise TypeError("Provided class must inherit from BaseStrategy.")
 
-        instance = strategy_class(strategy_name=config.get('name', strategy_class.__name__), config=config)
+        instance = strategy_class(strategy_name=config.get("name", strategy_class.__name__), config=config)
         self.strategies[instance.get_name()] = instance
 
     def get_all_active_strategies(self) -> list[BaseStrategy]:
@@ -84,15 +90,20 @@ class StrategyRegistry:
 
 # --- Example Implementation: Mean Reversion (A simple placeholder strategy) ---
 
+
 class MeanReversionStrategyPlaceholder(BaseStrategy):
     def __init__(self, strategy_name: str, config: dict[str, Any]):
         super().__init__(strategy_name, config)
 
-    @timeout_decorator(timeout=0.5) # Use timeout decorator for safety
+    @timeout_decorator(timeout=0.5)  # Use timeout decorator for safety
     async def initialize(self, initial_data: Any):
         # In reality, this would load historical data slices into internal buffers.
-        logger.info("[%s] Initializing with %s data points.", self.get_name(), len(initial_data) if initial_data is not None else 0)
-        self.internal_state['z_score'] = [] # Placeholder for indicator history
+        logger.info(
+            "[%s] Initializing with %s data points.",
+            self.get_name(),
+            len(initial_data) if initial_data is not None else 0,
+        )
+        self.internal_state["z_score"] = []  # Placeholder for indicator history
 
     async def on_market_data(self, event: Event) -> list[OrderEvent]:
         """Simple logic: if price deviates more than 2 STD from mean, attempt a reversal trade."""
@@ -101,17 +112,33 @@ class MeanReversionStrategyPlaceholder(BaseStrategy):
             return []
 
         # Placeholder Logic (needs full Indicator Calculation):
-        is_overbought = float(price) > self._config.get("high_trigger", 1.2) * 65000 # Example trigger
+        is_overbought = float(price) > self._config.get("high_trigger", 1.2) * 65000  # Example trigger
         is_oversold = float(price) < self._config.get("low_trigger", 0.8) * 65000
 
         if is_overbought:
             logger.info("[MR] Overbought detected (%.2f). SIGNAL: SHORT.", float(price))
-            return [OrderEvent(type=OrderType.MARKET, symbol=event.payload["symbol"], quantity=Decimal("1"), side=OrderSide.SELL, position_side=PositionSide.SHORT)]
+            return [
+                OrderEvent(
+                    type=OrderType.MARKET,
+                    symbol=event.payload["symbol"],
+                    quantity=Decimal("1"),
+                    side=OrderSide.SELL,
+                    position_side=PositionSide.SHORT,
+                )
+            ]
         elif is_oversold:
             logger.info("[MR] Oversold detected (%.2f). SIGNAL: LONG.", float(price))
-            return [OrderEvent(type=OrderType.MARKET, symbol=event.payload["symbol"], quantity=Decimal("1"), side=OrderSide.BUY, position_side=PositionSide.LONG)]
+            return [
+                OrderEvent(
+                    type=OrderType.MARKET,
+                    symbol=event.payload["symbol"],
+                    quantity=Decimal("1"),
+                    side=OrderSide.BUY,
+                    position_side=PositionSide.LONG,
+                )
+            ]
 
-        return [] # No action taken
+        return []  # No action taken
 
 
 # --- Global Registry Singleton Instance ---

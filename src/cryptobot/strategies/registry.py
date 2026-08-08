@@ -52,7 +52,8 @@ def load_strategies_from_config(
     if enabled_names is None:
         # Load all strategies that have enabled=True in config
         enabled_names = [
-            name for name, cfg in strategies_config.items()
+            name
+            for name, cfg in strategies_config.items()
             if isinstance(cfg, dict) and cfg.get("enabled", True) and name != "enabled"
         ]
 
