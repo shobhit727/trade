@@ -244,7 +244,7 @@ async def run_backtest(
         )
         execution_engine = ExecutionEngine(
             venue=venue,
-            risk_manager=RiskManager(portfolio=portfolio),
+            risk_manager=RiskManager(portfolio=portfolio, backtest_mode=True),
         )
     else:
         portfolio = execution_engine.risk_manager.portfolio

@@ -49,6 +49,10 @@ class RiskManager:
     strategy_tracker: StrategyRiskTracker = field(default_factory=StrategyRiskTracker)
     _price_history: dict[str, deque[tuple[float, Decimal]]] = field(default_factory=dict)
     _order_count: int = 0
+    # When True (backtest path), wall-clock based checks (order rate limiting,
+    # reference-price history) are skipped — they would otherwise make results
+    # depend on real elapsed time instead of simulated time.
+    backtest_mode: bool = False
 
     def __post_init__(self):
         self.rate_limiter = RateLimiter(
@@ -95,7 +99,7 @@ class RiskManager:
         if active:
             return RiskCheckResult(False, f"Kill switch active: {reason}")
 
-        if not self.rate_limiter.try_acquire():
+        if not self.rate_limiter.try_acquire() and not self.backtest_mode:
             return RiskCheckResult(
                 False,
                 f"Order rate exceeded ({self.limits.max_orders_per_minute}/min)",
@@ -129,17 +133,18 @@ class RiskManager:
                     self.limits.max_leverage,
                 )
 
-            ref_price = self._get_reference_price(order.symbol)
-            if ref_price is not None and ref_price > 0:
-                deviation = abs(notional_price - ref_price) / ref_price
-                if deviation > self.limits.price_deviation_pct:
-                    return RiskCheckResult(
-                        False,
-                        f"Price deviates {deviation:.2%} from reference (> {self.limits.price_deviation_pct:.2%})",
-                        deviation,
-                        self.limits.price_deviation_pct,
-                    )
-            self._record_price(order.symbol, notional_price)
+            if not self.backtest_mode:
+                ref_price = self._get_reference_price(order.symbol)
+                if ref_price is not None and ref_price > 0:
+                    deviation = abs(notional_price - ref_price) / ref_price
+                    if deviation > self.limits.price_deviation_pct:
+                        return RiskCheckResult(
+                            False,
+                            f"Price deviates {deviation:.2%} from reference (> {self.limits.price_deviation_pct:.2%})",
+                            deviation,
+                            self.limits.price_deviation_pct,
+                        )
+                self._record_price(order.symbol, notional_price)
         else:
             notional = Decimal("0")
 
