@@ -1,4 +1,4 @@
-'''Moving average crossover'''
+"""Moving average crossover"""
 
 from __future__ import annotations
 

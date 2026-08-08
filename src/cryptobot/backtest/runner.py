@@ -130,6 +130,12 @@ def make_strategy(name: str, **kwargs):
 
         cfg = MLStrategyConfig(**kwargs) if kwargs else MLStrategyConfig()
         return MLStrategy(cfg)
+    from cryptobot.strategies.registry import _STRATEGY_REGISTRY_MAP
+
+    if name in _STRATEGY_REGISTRY_MAP:
+        cls, cfg_cls = _STRATEGY_REGISTRY_MAP[name]
+        cfg = cfg_cls(**kwargs) if kwargs else cfg_cls()
+        return cls(cfg)
     raise ValueError(f"Unknown strategy: {name}")
 
 
@@ -197,7 +203,14 @@ async def _stream_filled_events(
             if strategy.name == "trend_following":
                 order = strategy.feed(symbol, bar.high, bar.low, bar.close)
             else:
-                order = strategy.feed(symbol, bar.close)
+                # New signal strategies (catalog) accept (symbol, close, high, low, volume);
+                # legacy 2-arg feed takes (symbol, close) — try both.
+                try:
+                    order = strategy.feed(
+                        symbol, bar.close, bar.high, bar.low, bar.volume,
+                    )
+                except TypeError:
+                    order = strategy.feed(symbol, bar.close)
         if order is None:
             continue
         if not isinstance(order, list):

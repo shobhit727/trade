@@ -1,11 +1,10 @@
-'''Inside bar break'''
+"""Inside bar break"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
 
-from cryptobot.strategies.indicators import inside_bar
 from cryptobot.strategies.signal_base import SignalStrategy
 
 

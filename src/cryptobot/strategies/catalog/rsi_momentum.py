@@ -1,4 +1,4 @@
-'''Rsi momentum'''
+"""Rsi momentum"""
 
 from __future__ import annotations
 

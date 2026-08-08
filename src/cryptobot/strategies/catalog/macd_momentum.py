@@ -1,4 +1,4 @@
-'''Macd momentum'''
+"""Macd momentum"""
 
 from __future__ import annotations
 

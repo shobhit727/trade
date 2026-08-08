@@ -1,4 +1,4 @@
-'''Dual momentum'''
+"""Dual momentum"""
 
 from __future__ import annotations
 

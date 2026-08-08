@@ -1,4 +1,4 @@
-'''Rectangle breakout'''
+"""Rectangle breakout"""
 
 from __future__ import annotations
 

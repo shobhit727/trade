@@ -1,4 +1,4 @@
-'''Support breakdown'''
+"""Support breakdown"""
 
 from __future__ import annotations
 

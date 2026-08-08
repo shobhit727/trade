@@ -4,6 +4,7 @@ from dataclasses import fields
 from typing import Any
 
 from cryptobot.strategies.base import StrategyRegistry, registry
+from cryptobot.strategies.catalog import _REGISTRY as _CATALOG_REGISTRY
 from cryptobot.strategies.funding_arb import FundingArbConfig, FundingArbStrategy
 from cryptobot.strategies.market_making import MarketMakingConfig, MarketMakingStrategy
 from cryptobot.strategies.mean_reversion import MeanReversionConfig, MeanReversionStrategy
@@ -11,7 +12,8 @@ from cryptobot.strategies.ml_strategy import MLStrategy, MLStrategyConfig
 from cryptobot.strategies.stat_arb import StatArbConfig, StatArbStrategy
 from cryptobot.strategies.trend_following import TrendFollowingConfig, TrendFollowingStrategy
 
-# Map strategy names to (class, config_class) tuples
+# Map strategy names to (class, config_class) tuples.
+# Catalog strategies are auto-discovered from src/cryptobot/strategies/catalog/.
 _STRATEGY_REGISTRY_MAP = {
     "mean_reversion": (MeanReversionStrategy, MeanReversionConfig),
     "trend_following": (TrendFollowingStrategy, TrendFollowingConfig),
@@ -19,6 +21,7 @@ _STRATEGY_REGISTRY_MAP = {
     "funding_arbitrage": (FundingArbStrategy, FundingArbConfig),
     "market_making": (MarketMakingStrategy, MarketMakingConfig),
     "ml_strategy": (MLStrategy, MLStrategyConfig),
+    **_CATALOG_REGISTRY,
 }
 
 

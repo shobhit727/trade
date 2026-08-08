@@ -1,4 +1,4 @@
-'''Distance from ma'''
+"""Distance from ma"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-'''Volatility expansion'''
+"""Volatility expansion"""
 
 from __future__ import annotations
 

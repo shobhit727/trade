@@ -1,4 +1,4 @@
-'''Opening range breakout'''
+"""Opening range breakout"""
 
 from __future__ import annotations
 

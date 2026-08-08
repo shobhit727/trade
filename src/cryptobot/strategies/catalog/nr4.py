@@ -1,4 +1,4 @@
-'''Nr4 range'''
+"""Nr4 range"""
 
 from __future__ import annotations
 

@@ -1,11 +1,11 @@
-'''Bollinger squeeze'''
+"""Bollinger squeeze"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
 
-from cryptobot.strategies.indicators import sma, roc
+from cryptobot.strategies.indicators import roc, sma
 from cryptobot.strategies.signal_base import SignalStrategy
 
 
@@ -27,10 +27,11 @@ class SqueezeStrategy(SignalStrategy):
 
     def signal(self, closes, highs, lows, volumes):
         import numpy as _np
+
         m = sma(closes, self.config.period)
         if m != m or m == 0:
             return 0
-        band_w = float(_np.std(closes[-self.config.period:])) / m
+        band_w = float(_np.std(closes[-self.config.period :])) / m
         r = roc(closes, 3)
         if r != r:
             return 0

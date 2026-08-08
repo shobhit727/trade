@@ -1,4 +1,4 @@
-'''Z-score reversion'''
+"""Z-score reversion"""
 
 from __future__ import annotations
 

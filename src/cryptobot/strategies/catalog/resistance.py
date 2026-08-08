@@ -1,4 +1,4 @@
-'''Resistance breakout'''
+"""Resistance breakout"""
 
 from __future__ import annotations
 

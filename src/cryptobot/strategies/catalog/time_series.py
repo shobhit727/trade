@@ -1,4 +1,4 @@
-'''Time-series momentum'''
+"""Time-series momentum"""
 
 from __future__ import annotations
 

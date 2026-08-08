@@ -1,11 +1,11 @@
-'''Volume momentum'''
+"""Volume momentum"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
 
-from cryptobot.strategies.indicators import roc, obv
+from cryptobot.strategies.indicators import obv, roc
 from cryptobot.strategies.signal_base import SignalStrategy
 
 

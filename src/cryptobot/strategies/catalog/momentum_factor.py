@@ -1,4 +1,4 @@
-'''Momentum factor'''
+"""Momentum factor"""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from cryptobot.strategies.signal_base import SignalStrategy
 @dataclass
 class MomentumFactorConfig:
     period: int = 20
-    threshold: float = 0.02
+    threshold: float = 0.005
     quantity: Decimal = Decimal("1")
 
 

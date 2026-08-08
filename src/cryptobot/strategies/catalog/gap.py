@@ -1,4 +1,4 @@
-'''Gap breakout'''
+"""Gap breakout"""
 
 from __future__ import annotations
 

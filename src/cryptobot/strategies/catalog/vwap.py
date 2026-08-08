@@ -1,4 +1,4 @@
-'''Vwap reversion'''
+"""Vwap reversion"""
 
 from __future__ import annotations
 

@@ -1,11 +1,11 @@
-'''Triangle breakout'''
+"""Triangle breakout"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
 
-from cryptobot.strategies.indicators import sma, donchian_high, donchian_low
+from cryptobot.strategies.indicators import sma
 from cryptobot.strategies.signal_base import SignalStrategy
 
 

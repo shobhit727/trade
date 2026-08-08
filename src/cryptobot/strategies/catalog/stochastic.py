@@ -1,4 +1,4 @@
-'''Stochastic reversal'''
+"""Stochastic reversal"""
 
 from __future__ import annotations
 

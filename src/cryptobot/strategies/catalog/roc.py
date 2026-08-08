@@ -1,4 +1,4 @@
-'''Rate of change'''
+"""Rate of change"""
 
 from __future__ import annotations
 

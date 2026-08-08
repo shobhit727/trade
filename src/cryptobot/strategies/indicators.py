@@ -188,6 +188,8 @@ __all__ = [
     "atr",
     "bollinger_position",
     "cci",
+    "chaikin_mf",
+    "cumulative_delta",
     "donchian_high",
     "donchian_low",
     "ema",
@@ -252,3 +254,34 @@ def inside_bar(highs, lows) -> bool:
     if len(highs) < 2:
         return False
     return highs[-1] <= highs[-2] and lows[-1] >= lows[-2]
+
+
+def chaikin_mf(closes, highs, lows, volumes, period: int = 20) -> float:
+    """Chaikin Money Flow: sum(MFV) / sum(volume) over window."""
+    if len(closes) < period:
+        return float("nan")
+    mfv_total = 0.0
+    vol_total = 0.0
+    for i in range(-period, 0):
+        hi, lo, c = highs[i], lows[i], closes[i]
+        if hi == lo:
+            continue
+        mfm = ((c - lo) - (hi - c)) / (hi - lo)
+        mfv_total += mfm * volumes[i]
+        vol_total += volumes[i]
+    if vol_total <= 0:
+        return float("nan")
+    return float(mfv_total / vol_total)
+
+
+def cumulative_delta(closes, volumes, window: int = 30) -> float:
+    """Buy/sell pressure proxy: sum of |close-open-signed| * volume."""
+    if len(closes) < window + 1:
+        return float("nan")
+    delta = 0.0
+    for i in range(-window, 0):
+        if closes[i] > closes[i - 1]:
+            delta += volumes[i]
+        elif closes[i] < closes[i - 1]:
+            delta -= volumes[i]
+    return float(delta)

@@ -1,4 +1,4 @@
-'''Supertrend'''
+"""Supertrend"""
 
 from __future__ import annotations
 

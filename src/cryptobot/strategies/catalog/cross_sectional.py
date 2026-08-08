@@ -1,4 +1,4 @@
-'''Cross-sectional momentum'''
+"""Cross-sectional momentum"""
 
 from __future__ import annotations
 

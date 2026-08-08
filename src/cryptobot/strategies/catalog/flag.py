@@ -1,4 +1,4 @@
-'''Flag breakout'''
+"""Flag breakout"""
 
 from __future__ import annotations
 
