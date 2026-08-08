@@ -2,98 +2,95 @@
 
 from __future__ import annotations
 
-from importlib import import_module
-from pathlib import Path
-from typing import Any
+from cryptobot.strategies.catalog.absolute_momentum import AbsoluteMomentumConfig, AbsoluteMomentumStrategy
+from cryptobot.strategies.catalog.adaptive_allocation import (
+    AdaptiveAllocationConfig,
+    AdaptiveAllocationStrategy,
+)
+from cryptobot.strategies.catalog.adx_trend import AdxTrendConfig, AdxTrendStrategy
+from cryptobot.strategies.catalog.anchored_vwap import AnchoredVwapConfig, AnchoredVwapStrategy
+from cryptobot.strategies.catalog.atr_breakout import AtrBreakoutConfig, AtrBreakoutStrategy
+from cryptobot.strategies.catalog.atr_trailing import AtrTrailingConfig, AtrTrailingStrategy
+from cryptobot.strategies.catalog.basket import BasketConfig, BasketStrategy
+from cryptobot.strategies.catalog.bb_squeeze2 import BbSqueeze2Config, BbSqueeze2Strategy
+from cryptobot.strategies.catalog.bollinger import BollingerConfig, BollingerStrategy
+from cryptobot.strategies.catalog.break_momentum import BreakMomentumConfig, BreakMomentumStrategy
+from cryptobot.strategies.catalog.breakout_momentum import BreakoutMomentumConfig, BreakoutMomentumStrategy
+from cryptobot.strategies.catalog.cci import CciConfig, CciStrategy
+from cryptobot.strategies.catalog.cmf import CmfConfig, CmfStrategy
+from cryptobot.strategies.catalog.cointegration import CointegrationConfig, CointegrationStrategy
+from cryptobot.strategies.catalog.corr_gate import CorrGateConfig, CorrGateStrategy
+from cryptobot.strategies.catalog.cross_sectional import CrossSectionalConfig, CrossSectionalStrategy
+from cryptobot.strategies.catalog.cumulative_delta import CumulativeDeltaConfig, CumulativeDeltaStrategy
+from cryptobot.strategies.catalog.dema import DemaConfig, DemaStrategy
+from cryptobot.strategies.catalog.dispersion import DispersionConfig, DispersionStrategy
+from cryptobot.strategies.catalog.distance_ma import DistanceMaConfig, DistanceMaStrategy
+from cryptobot.strategies.catalog.donchian import DonchianConfig, DonchianStrategy
+from cryptobot.strategies.catalog.dual_ma import DualMaConfig, DualMaStrategy
+from cryptobot.strategies.catalog.dual_momentum import DualMomentumConfig, DualMomentumStrategy
+from cryptobot.strategies.catalog.ema_cross import EmaCrossConfig, EmaCrossStrategy
+from cryptobot.strategies.catalog.ensemble_signals import EnsembleSignalsConfig, EnsembleSignalsStrategy
+from cryptobot.strategies.catalog.fisher import FisherConfig, FisherStrategy
+from cryptobot.strategies.catalog.flag import FlagConfig, FlagStrategy
+from cryptobot.strategies.catalog.funding_basis import FundingBasisConfig, FundingBasisStrategy
+from cryptobot.strategies.catalog.funding_trend import FundingTrendConfig, FundingTrendStrategy
+from cryptobot.strategies.catalog.gap import GapConfig, GapStrategy
+from cryptobot.strategies.catalog.garch_classic import GarchClassicConfig, GarchClassicStrategy
+from cryptobot.strategies.catalog.gaussian import GaussianConfig, GaussianStrategy
+from cryptobot.strategies.catalog.hull import HullConfig, HullStrategy
+from cryptobot.strategies.catalog.impl_real_vol import ImplRealVolConfig, ImplRealVolStrategy
+from cryptobot.strategies.catalog.inside_bar import InsideBarConfig, InsideBarStrategy
+from cryptobot.strategies.catalog.kama import KamaConfig, KamaStrategy
+from cryptobot.strategies.catalog.keltner import KeltnerConfig, KeltnerStrategy
+from cryptobot.strategies.catalog.keltner_momentum import KeltnerMomentumConfig, KeltnerMomentumStrategy
+from cryptobot.strategies.catalog.linear_reg_channel import LinearRegChannelConfig, LinearRegChannelStrategy
+from cryptobot.strategies.catalog.liquidation_hunt import LiquidationHuntConfig, LiquidationHuntStrategy
+from cryptobot.strategies.catalog.ma_cross import MaCrossConfig, MaCrossStrategy
+from cryptobot.strategies.catalog.macd import MacdConfig, MacdStrategy
+from cryptobot.strategies.catalog.macd_momentum import MacdMomentumConfig, MacdMomentumStrategy
+from cryptobot.strategies.catalog.meta import MetaStrategy, MetaStrategyConfig
+from cryptobot.strategies.catalog.mfi import MfiConfig, MfiStrategy
+from cryptobot.strategies.catalog.momentum_factor import MomentumFactorConfig, MomentumFactorStrategy
+from cryptobot.strategies.catalog.momentum_vol import MomentumVolConfig, MomentumVolStrategy
+from cryptobot.strategies.catalog.multi_factor import MultiFactorConfig, MultiFactorStrategy
+from cryptobot.strategies.catalog.nr4 import Nr4Config, Nr4Strategy
+from cryptobot.strategies.catalog.obv import ObvConfig, ObvStrategy
+from cryptobot.strategies.catalog.open_range import OpenRangeConfig, OpenRangeStrategy
+from cryptobot.strategies.catalog.price_channel import PriceChannelConfig, PriceChannelStrategy
+from cryptobot.strategies.catalog.rectangle import RectangleConfig, RectangleStrategy
+from cryptobot.strategies.catalog.regime_switch import RegimeSwitchConfig, RegimeSwitchStrategy
+from cryptobot.strategies.catalog.regression import RegressionConfig, RegressionStrategy
+from cryptobot.strategies.catalog.relative_strength import RelativeStrengthConfig, RelativeStrengthStrategy
+from cryptobot.strategies.catalog.resistance import ResistanceConfig, ResistanceStrategy
+from cryptobot.strategies.catalog.roc import RocConfig, RocStrategy
+from cryptobot.strategies.catalog.roll_cross import RollCrossConfig, RollCrossStrategy
+from cryptobot.strategies.catalog.rsi import RsiConfig, RsiStrategy
+from cryptobot.strategies.catalog.rsi_momentum import RsiMomentumConfig, RsiMomentumStrategy
+from cryptobot.strategies.catalog.spot_futures import SpotFuturesConfig, SpotFuturesStrategy
+from cryptobot.strategies.catalog.squeeze import SqueezeConfig, SqueezeStrategy
+from cryptobot.strategies.catalog.stablecoin_peg import StablecoinPegConfig, StablecoinPegStrategy
+from cryptobot.strategies.catalog.stochastic import StochasticConfig, StochasticStrategy
+from cryptobot.strategies.catalog.supertrend import SupertrendConfig, SupertrendStrategy
+from cryptobot.strategies.catalog.support import SupportConfig, SupportStrategy
+from cryptobot.strategies.catalog.tema import TemaConfig, TemaStrategy
+from cryptobot.strategies.catalog.time_series import TimeSeriesConfig, TimeSeriesStrategy
+from cryptobot.strategies.catalog.trend_momentum import TrendMomentumConfig, TrendMomentumStrategy
+from cryptobot.strategies.catalog.trend_mr import TrendMrConfig, TrendMrStrategy
+from cryptobot.strategies.catalog.trend_volume import TrendVolumeConfig, TrendVolumeStrategy
+from cryptobot.strategies.catalog.triangle import TriangleConfig, TriangleStrategy
+from cryptobot.strategies.catalog.triple_ma import TripleMaConfig, TripleMaStrategy
+from cryptobot.strategies.catalog.vol_expansion import VolExpansionConfig, VolExpansionStrategy
+from cryptobot.strategies.catalog.vol_scaling import VolScalingConfig, VolScalingStrategy
+from cryptobot.strategies.catalog.vol_target import VolTargetConfig, VolTargetStrategy
+from cryptobot.strategies.catalog.volume_momentum import VolumeMomentumConfig, VolumeMomentumStrategy
+from cryptobot.strategies.catalog.volume_profile import VolumeProfileConfig, VolumeProfileStrategy
+from cryptobot.strategies.catalog.volume_spike import VolumeSpikeConfig, VolumeSpikeStrategy
+from cryptobot.strategies.catalog.vw_momentum import VwMomentumConfig, VwMomentumStrategy
+from cryptobot.strategies.catalog.vwap import VwapConfig, VwapStrategy
+from cryptobot.strategies.catalog.williams_r import WilliamsRConfig, WilliamsRStrategy
+from cryptobot.strategies.catalog.zscore import ZscoreConfig, ZscoreStrategy
 
-_SPECS: list[tuple[str, type, type]] = []
-
-from cryptobot.strategies.catalog.absolute_momentum import AbsoluteMomentumConfig as AbsoluteMomentumConfig, AbsoluteMomentumStrategy as AbsoluteMomentumStrategy
-from cryptobot.strategies.catalog.adaptive_allocation import AdaptiveAllocationConfig as AdaptiveAllocationConfig, AdaptiveAllocationStrategy as AdaptiveAllocationStrategy
-from cryptobot.strategies.catalog.adx_trend import AdxTrendConfig as AdxTrendConfig, AdxTrendStrategy as AdxTrendStrategy
-from cryptobot.strategies.catalog.anchored_vwap import AnchoredVwapConfig as AnchoredVwapConfig, AnchoredVwapStrategy as AnchoredVwapStrategy
-from cryptobot.strategies.catalog.atr_breakout import AtrBreakoutConfig as AtrBreakoutConfig, AtrBreakoutStrategy as AtrBreakoutStrategy
-from cryptobot.strategies.catalog.atr_trailing import AtrTrailingConfig as AtrTrailingConfig, AtrTrailingStrategy as AtrTrailingStrategy
-from cryptobot.strategies.catalog.basket import BasketConfig as BasketConfig, BasketStrategy as BasketStrategy
-from cryptobot.strategies.catalog.bb_squeeze2 import BbSqueeze2Config as BbSqueeze2Config, BbSqueeze2Strategy as BbSqueeze2Strategy
-from cryptobot.strategies.catalog.bollinger import BollingerConfig as BollingerConfig, BollingerStrategy as BollingerStrategy
-from cryptobot.strategies.catalog.break_momentum import BreakMomentumConfig as BreakMomentumConfig, BreakMomentumStrategy as BreakMomentumStrategy
-from cryptobot.strategies.catalog.breakout_momentum import BreakoutMomentumConfig as BreakoutMomentumConfig, BreakoutMomentumStrategy as BreakoutMomentumStrategy
-from cryptobot.strategies.catalog.cci import CciConfig as CciConfig, CciStrategy as CciStrategy
-from cryptobot.strategies.catalog.cmf import CmfConfig as CmfConfig, CmfStrategy as CmfStrategy
-from cryptobot.strategies.catalog.cointegration import CointegrationConfig as CointegrationConfig, CointegrationStrategy as CointegrationStrategy
-from cryptobot.strategies.catalog.corr_gate import CorrGateConfig as CorrGateConfig, CorrGateStrategy as CorrGateStrategy
-from cryptobot.strategies.catalog.cross_sectional import CrossSectionalConfig as CrossSectionalConfig, CrossSectionalStrategy as CrossSectionalStrategy
-from cryptobot.strategies.catalog.cumulative_delta import CumulativeDeltaConfig as CumulativeDeltaConfig, CumulativeDeltaStrategy as CumulativeDeltaStrategy
-from cryptobot.strategies.catalog.dema import DemaConfig as DemaConfig, DemaStrategy as DemaStrategy
-from cryptobot.strategies.catalog.dispersion import DispersionConfig as DispersionConfig, DispersionStrategy as DispersionStrategy
-from cryptobot.strategies.catalog.distance_ma import DistanceMaConfig as DistanceMaConfig, DistanceMaStrategy as DistanceMaStrategy
-from cryptobot.strategies.catalog.donchian import DonchianConfig as DonchianConfig, DonchianStrategy as DonchianStrategy
-from cryptobot.strategies.catalog.dual_ma import DualMaConfig as DualMaConfig, DualMaStrategy as DualMaStrategy
-from cryptobot.strategies.catalog.dual_momentum import DualMomentumConfig as DualMomentumConfig, DualMomentumStrategy as DualMomentumStrategy
-from cryptobot.strategies.catalog.ema_cross import EmaCrossConfig as EmaCrossConfig, EmaCrossStrategy as EmaCrossStrategy
-from cryptobot.strategies.catalog.ensemble_signals import EnsembleSignalsConfig as EnsembleSignalsConfig, EnsembleSignalsStrategy as EnsembleSignalsStrategy
-from cryptobot.strategies.catalog.fisher import FisherConfig as FisherConfig, FisherStrategy as FisherStrategy
-from cryptobot.strategies.catalog.flag import FlagConfig as FlagConfig, FlagStrategy as FlagStrategy
-from cryptobot.strategies.catalog.funding_basis import FundingBasisConfig as FundingBasisConfig, FundingBasisStrategy as FundingBasisStrategy
-from cryptobot.strategies.catalog.funding_trend import FundingTrendConfig as FundingTrendConfig, FundingTrendStrategy as FundingTrendStrategy
-from cryptobot.strategies.catalog.gap import GapConfig as GapConfig, GapStrategy as GapStrategy
-from cryptobot.strategies.catalog.garch_classic import GarchClassicConfig as GarchClassicConfig, GarchClassicStrategy as GarchClassicStrategy
-from cryptobot.strategies.catalog.gaussian import GaussianConfig as GaussianConfig, GaussianStrategy as GaussianStrategy
-from cryptobot.strategies.catalog.hull import HullConfig as HullConfig, HullStrategy as HullStrategy
-from cryptobot.strategies.catalog.impl_real_vol import ImplRealVolConfig as ImplRealVolConfig, ImplRealVolStrategy as ImplRealVolStrategy
-from cryptobot.strategies.catalog.inside_bar import InsideBarConfig as InsideBarConfig, InsideBarStrategy as InsideBarStrategy
-from cryptobot.strategies.catalog.kama import KamaConfig as KamaConfig, KamaStrategy as KamaStrategy
-from cryptobot.strategies.catalog.keltner import KeltnerConfig as KeltnerConfig, KeltnerStrategy as KeltnerStrategy
-from cryptobot.strategies.catalog.keltner_momentum import KeltnerMomentumConfig as KeltnerMomentumConfig, KeltnerMomentumStrategy as KeltnerMomentumStrategy
-from cryptobot.strategies.catalog.linear_reg_channel import LinearRegChannelConfig as LinearRegChannelConfig, LinearRegChannelStrategy as LinearRegChannelStrategy
-from cryptobot.strategies.catalog.liquidation_hunt import LiquidationHuntConfig as LiquidationHuntConfig, LiquidationHuntStrategy as LiquidationHuntStrategy
-from cryptobot.strategies.catalog.ma_cross import MaCrossConfig as MaCrossConfig, MaCrossStrategy as MaCrossStrategy
-from cryptobot.strategies.catalog.macd import MacdConfig as MacdConfig, MacdStrategy as MacdStrategy
-from cryptobot.strategies.catalog.macd_momentum import MacdMomentumConfig as MacdMomentumConfig, MacdMomentumStrategy as MacdMomentumStrategy
-from cryptobot.strategies.catalog.meta import MetaStrategyConfig as MetaStrategyConfig, MetaStrategy as MetaStrategy
-from cryptobot.strategies.catalog.mfi import MfiConfig as MfiConfig, MfiStrategy as MfiStrategy
-from cryptobot.strategies.catalog.momentum_factor import MomentumFactorConfig as MomentumFactorConfig, MomentumFactorStrategy as MomentumFactorStrategy
-from cryptobot.strategies.catalog.momentum_vol import MomentumVolConfig as MomentumVolConfig, MomentumVolStrategy as MomentumVolStrategy
-from cryptobot.strategies.catalog.multi_factor import MultiFactorConfig as MultiFactorConfig, MultiFactorStrategy as MultiFactorStrategy
-from cryptobot.strategies.catalog.nr4 import Nr4Config as Nr4Config, Nr4Strategy as Nr4Strategy
-from cryptobot.strategies.catalog.obv import ObvConfig as ObvConfig, ObvStrategy as ObvStrategy
-from cryptobot.strategies.catalog.open_range import OpenRangeConfig as OpenRangeConfig, OpenRangeStrategy as OpenRangeStrategy
-from cryptobot.strategies.catalog.price_channel import PriceChannelConfig as PriceChannelConfig, PriceChannelStrategy as PriceChannelStrategy
-from cryptobot.strategies.catalog.rectangle import RectangleConfig as RectangleConfig, RectangleStrategy as RectangleStrategy
-from cryptobot.strategies.catalog.regime_switch import RegimeSwitchConfig as RegimeSwitchConfig, RegimeSwitchStrategy as RegimeSwitchStrategy
-from cryptobot.strategies.catalog.regression import RegressionConfig as RegressionConfig, RegressionStrategy as RegressionStrategy
-from cryptobot.strategies.catalog.relative_strength import RelativeStrengthConfig as RelativeStrengthConfig, RelativeStrengthStrategy as RelativeStrengthStrategy
-from cryptobot.strategies.catalog.resistance import ResistanceConfig as ResistanceConfig, ResistanceStrategy as ResistanceStrategy
-from cryptobot.strategies.catalog.roc import RocConfig as RocConfig, RocStrategy as RocStrategy
-from cryptobot.strategies.catalog.roll_cross import RollCrossConfig as RollCrossConfig, RollCrossStrategy as RollCrossStrategy
-from cryptobot.strategies.catalog.rsi import RsiConfig as RsiConfig, RsiStrategy as RsiStrategy
-from cryptobot.strategies.catalog.rsi_momentum import RsiMomentumConfig as RsiMomentumConfig, RsiMomentumStrategy as RsiMomentumStrategy
-from cryptobot.strategies.catalog.spot_futures import SpotFuturesConfig as SpotFuturesConfig, SpotFuturesStrategy as SpotFuturesStrategy
-from cryptobot.strategies.catalog.squeeze import SqueezeConfig as SqueezeConfig, SqueezeStrategy as SqueezeStrategy
-from cryptobot.strategies.catalog.stablecoin_peg import StablecoinPegConfig as StablecoinPegConfig, StablecoinPegStrategy as StablecoinPegStrategy
-from cryptobot.strategies.catalog.stochastic import StochasticConfig as StochasticConfig, StochasticStrategy as StochasticStrategy
-from cryptobot.strategies.catalog.supertrend import SupertrendConfig as SupertrendConfig, SupertrendStrategy as SupertrendStrategy
-from cryptobot.strategies.catalog.support import SupportConfig as SupportConfig, SupportStrategy as SupportStrategy
-from cryptobot.strategies.catalog.tema import TemaConfig as TemaConfig, TemaStrategy as TemaStrategy
-from cryptobot.strategies.catalog.time_series import TimeSeriesConfig as TimeSeriesConfig, TimeSeriesStrategy as TimeSeriesStrategy
-from cryptobot.strategies.catalog.trend_momentum import TrendMomentumConfig as TrendMomentumConfig, TrendMomentumStrategy as TrendMomentumStrategy
-from cryptobot.strategies.catalog.trend_mr import TrendMrConfig as TrendMrConfig, TrendMrStrategy as TrendMrStrategy
-from cryptobot.strategies.catalog.trend_volume import TrendVolumeConfig as TrendVolumeConfig, TrendVolumeStrategy as TrendVolumeStrategy
-from cryptobot.strategies.catalog.triangle import TriangleConfig as TriangleConfig, TriangleStrategy as TriangleStrategy
-from cryptobot.strategies.catalog.triple_ma import TripleMaConfig as TripleMaConfig, TripleMaStrategy as TripleMaStrategy
-from cryptobot.strategies.catalog.vol_expansion import VolExpansionConfig as VolExpansionConfig, VolExpansionStrategy as VolExpansionStrategy
-from cryptobot.strategies.catalog.vol_scaling import VolScalingConfig as VolScalingConfig, VolScalingStrategy as VolScalingStrategy
-from cryptobot.strategies.catalog.vol_target import VolTargetConfig as VolTargetConfig, VolTargetStrategy as VolTargetStrategy
-from cryptobot.strategies.catalog.volume_momentum import VolumeMomentumConfig as VolumeMomentumConfig, VolumeMomentumStrategy as VolumeMomentumStrategy
-from cryptobot.strategies.catalog.volume_profile import VolumeProfileConfig as VolumeProfileConfig, VolumeProfileStrategy as VolumeProfileStrategy
-from cryptobot.strategies.catalog.volume_spike import VolumeSpikeConfig as VolumeSpikeConfig, VolumeSpikeStrategy as VolumeSpikeStrategy
-from cryptobot.strategies.catalog.vw_momentum import VwMomentumConfig as VwMomentumConfig, VwMomentumStrategy as VwMomentumStrategy
-from cryptobot.strategies.catalog.vwap import VwapConfig as VwapConfig, VwapStrategy as VwapStrategy
-from cryptobot.strategies.catalog.williams_r import WilliamsRConfig as WilliamsRConfig, WilliamsRStrategy as WilliamsRStrategy
-from cryptobot.strategies.catalog.zscore import ZscoreConfig as ZscoreConfig, ZscoreStrategy as ZscoreStrategy
-
-_SPECS = [
+_SPECS: list[tuple[str, type, type]] = [
     ("absolute_momentum", AbsoluteMomentumStrategy, AbsoluteMomentumConfig),
     ("adaptive_allocation", AdaptiveAllocationStrategy, AdaptiveAllocationConfig),
     ("adx_trend", AdxTrendStrategy, AdxTrendConfig),
@@ -180,180 +177,90 @@ _SPECS = [
     ("zscore", ZscoreStrategy, ZscoreConfig),
 ]
 
-def _make_registry() -> dict[str, tuple]:
-    return {name: (cls, cfg) for name, cls, cfg in _SPECS}
+_REGISTRY: dict[str, tuple[type, type]] = {n: (s, c) for n, s, c in _SPECS}
 
-_REGISTRY = _make_registry()
-
-__all__ = [
-    "AbsoluteMomentumConfig",
-    "AdaptiveAllocationConfig",
-    "AdxTrendConfig",
-    "AnchoredVwapConfig",
-    "AtrBreakoutConfig",
-    "AtrTrailingConfig",
-    "BasketConfig",
-    "BbSqueeze2Config",
-    "BollingerConfig",
-    "BreakMomentumConfig",
-    "BreakoutMomentumConfig",
-    "CciConfig",
-    "CmfConfig",
-    "CointegrationConfig",
-    "CorrGateConfig",
-    "CrossSectionalConfig",
-    "CumulativeDeltaConfig",
-    "DemaConfig",
-    "DispersionConfig",
-    "DistanceMaConfig",
-    "DonchianConfig",
-    "DualMaConfig",
-    "DualMomentumConfig",
-    "EmaCrossConfig",
-    "EnsembleSignalsConfig",
-    "FisherConfig",
-    "FlagConfig",
-    "FundingBasisConfig",
-    "FundingTrendConfig",
-    "GapConfig",
-    "GarchClassicConfig",
-    "GaussianConfig",
-    "HullConfig",
-    "ImplRealVolConfig",
-    "InsideBarConfig",
-    "KamaConfig",
-    "KeltnerConfig",
-    "KeltnerMomentumConfig",
-    "LinearRegChannelConfig",
-    "LiquidationHuntConfig",
-    "MaCrossConfig",
-    "MacdConfig",
-    "MacdMomentumConfig",
-    "MetaStrategyConfig",
-    "MfiConfig",
-    "MomentumFactorConfig",
-    "MomentumVolConfig",
-    "MultiFactorConfig",
-    "Nr4Config",
-    "ObvConfig",
-    "OpenRangeConfig",
-    "PriceChannelConfig",
-    "RectangleConfig",
-    "RegimeSwitchConfig",
-    "RegressionConfig",
-    "RelativeStrengthConfig",
-    "ResistanceConfig",
-    "RocConfig",
-    "RollCrossConfig",
-    "RsiConfig",
-    "RsiMomentumConfig",
-    "SpotFuturesConfig",
-    "SqueezeConfig",
-    "StablecoinPegConfig",
-    "StochasticConfig",
-    "SupertrendConfig",
-    "SupportConfig",
-    "TemaConfig",
-    "TimeSeriesConfig",
-    "TrendMomentumConfig",
-    "TrendMrConfig",
-    "TrendVolumeConfig",
-    "TriangleConfig",
-    "TripleMaConfig",
-    "VolExpansionConfig",
-    "VolScalingConfig",
-    "VolTargetConfig",
-    "VolumeMomentumConfig",
-    "VolumeProfileConfig",
-    "VolumeSpikeConfig",
-    "VwMomentumConfig",
-    "VwapConfig",
-    "WilliamsRConfig",
-    "ZscoreConfig",
-    "AbsoluteMomentumStrategy",
-    "AdaptiveAllocationStrategy",
-    "AdxTrendStrategy",
-    "AnchoredVwapStrategy",
-    "AtrBreakoutStrategy",
-    "AtrTrailingStrategy",
-    "BasketStrategy",
-    "BbSqueeze2Strategy",
-    "BollingerStrategy",
-    "BreakMomentumStrategy",
-    "BreakoutMomentumStrategy",
-    "CciStrategy",
-    "CmfStrategy",
-    "CointegrationStrategy",
-    "CorrGateStrategy",
-    "CrossSectionalStrategy",
-    "CumulativeDeltaStrategy",
-    "DemaStrategy",
-    "DispersionStrategy",
-    "DistanceMaStrategy",
-    "DonchianStrategy",
-    "DualMaStrategy",
-    "DualMomentumStrategy",
-    "EmaCrossStrategy",
-    "EnsembleSignalsStrategy",
-    "FisherStrategy",
-    "FlagStrategy",
-    "FundingBasisStrategy",
-    "FundingTrendStrategy",
-    "GapStrategy",
-    "GarchClassicStrategy",
-    "GaussianStrategy",
-    "HullStrategy",
-    "ImplRealVolStrategy",
-    "InsideBarStrategy",
-    "KamaStrategy",
-    "KeltnerStrategy",
-    "KeltnerMomentumStrategy",
-    "LinearRegChannelStrategy",
-    "LiquidationHuntStrategy",
-    "MaCrossStrategy",
-    "MacdStrategy",
-    "MacdMomentumStrategy",
-    "MetaStrategy",
-    "MfiStrategy",
-    "MomentumFactorStrategy",
-    "MomentumVolStrategy",
-    "MultiFactorStrategy",
-    "Nr4Strategy",
-    "ObvStrategy",
-    "OpenRangeStrategy",
-    "PriceChannelStrategy",
-    "RectangleStrategy",
-    "RegimeSwitchStrategy",
-    "RegressionStrategy",
-    "RelativeStrengthStrategy",
-    "ResistanceStrategy",
-    "RocStrategy",
-    "RollCrossStrategy",
-    "RsiStrategy",
-    "RsiMomentumStrategy",
-    "SpotFuturesStrategy",
-    "SqueezeStrategy",
-    "StablecoinPegStrategy",
-    "StochasticStrategy",
-    "SupertrendStrategy",
-    "SupportStrategy",
-    "TemaStrategy",
-    "TimeSeriesStrategy",
-    "TrendMomentumStrategy",
-    "TrendMrStrategy",
-    "TrendVolumeStrategy",
-    "TriangleStrategy",
-    "TripleMaStrategy",
-    "VolExpansionStrategy",
-    "VolScalingStrategy",
-    "VolTargetStrategy",
-    "VolumeMomentumStrategy",
-    "VolumeProfileStrategy",
-    "VolumeSpikeStrategy",
-    "VwMomentumStrategy",
-    "VwapStrategy",
-    "WilliamsRStrategy",
-    "ZscoreStrategy",
-    "_REGISTRY",
-    "_SPECS",
-]
+__all__ = ["_REGISTRY", "_SPECS"]
+__all__.extend(["AbsoluteMomentumConfig", "AbsoluteMomentumStrategy"])
+__all__.extend(["AdaptiveAllocationConfig", "AdaptiveAllocationStrategy"])
+__all__.extend(["AdxTrendConfig", "AdxTrendStrategy"])
+__all__.extend(["AnchoredVwapConfig", "AnchoredVwapStrategy"])
+__all__.extend(["AtrBreakoutConfig", "AtrBreakoutStrategy"])
+__all__.extend(["AtrTrailingConfig", "AtrTrailingStrategy"])
+__all__.extend(["BasketConfig", "BasketStrategy"])
+__all__.extend(["BbSqueeze2Config", "BbSqueeze2Strategy"])
+__all__.extend(["BollingerConfig", "BollingerStrategy"])
+__all__.extend(["BreakMomentumConfig", "BreakMomentumStrategy"])
+__all__.extend(["BreakoutMomentumConfig", "BreakoutMomentumStrategy"])
+__all__.extend(["CciConfig", "CciStrategy"])
+__all__.extend(["CmfConfig", "CmfStrategy"])
+__all__.extend(["CointegrationConfig", "CointegrationStrategy"])
+__all__.extend(["CorrGateConfig", "CorrGateStrategy"])
+__all__.extend(["CrossSectionalConfig", "CrossSectionalStrategy"])
+__all__.extend(["CumulativeDeltaConfig", "CumulativeDeltaStrategy"])
+__all__.extend(["DemaConfig", "DemaStrategy"])
+__all__.extend(["DispersionConfig", "DispersionStrategy"])
+__all__.extend(["DistanceMaConfig", "DistanceMaStrategy"])
+__all__.extend(["DonchianConfig", "DonchianStrategy"])
+__all__.extend(["DualMaConfig", "DualMaStrategy"])
+__all__.extend(["DualMomentumConfig", "DualMomentumStrategy"])
+__all__.extend(["EmaCrossConfig", "EmaCrossStrategy"])
+__all__.extend(["EnsembleSignalsConfig", "EnsembleSignalsStrategy"])
+__all__.extend(["FisherConfig", "FisherStrategy"])
+__all__.extend(["FlagConfig", "FlagStrategy"])
+__all__.extend(["FundingBasisConfig", "FundingBasisStrategy"])
+__all__.extend(["FundingTrendConfig", "FundingTrendStrategy"])
+__all__.extend(["GapConfig", "GapStrategy"])
+__all__.extend(["GarchClassicConfig", "GarchClassicStrategy"])
+__all__.extend(["GaussianConfig", "GaussianStrategy"])
+__all__.extend(["HullConfig", "HullStrategy"])
+__all__.extend(["ImplRealVolConfig", "ImplRealVolStrategy"])
+__all__.extend(["InsideBarConfig", "InsideBarStrategy"])
+__all__.extend(["KamaConfig", "KamaStrategy"])
+__all__.extend(["KeltnerConfig", "KeltnerStrategy"])
+__all__.extend(["KeltnerMomentumConfig", "KeltnerMomentumStrategy"])
+__all__.extend(["LinearRegChannelConfig", "LinearRegChannelStrategy"])
+__all__.extend(["LiquidationHuntConfig", "LiquidationHuntStrategy"])
+__all__.extend(["MaCrossConfig", "MaCrossStrategy"])
+__all__.extend(["MacdConfig", "MacdStrategy"])
+__all__.extend(["MacdMomentumConfig", "MacdMomentumStrategy"])
+__all__.extend(["MetaStrategyConfig", "MetaStrategy"])
+__all__.extend(["MfiConfig", "MfiStrategy"])
+__all__.extend(["MomentumFactorConfig", "MomentumFactorStrategy"])
+__all__.extend(["MomentumVolConfig", "MomentumVolStrategy"])
+__all__.extend(["MultiFactorConfig", "MultiFactorStrategy"])
+__all__.extend(["Nr4Config", "Nr4Strategy"])
+__all__.extend(["ObvConfig", "ObvStrategy"])
+__all__.extend(["OpenRangeConfig", "OpenRangeStrategy"])
+__all__.extend(["PriceChannelConfig", "PriceChannelStrategy"])
+__all__.extend(["RectangleConfig", "RectangleStrategy"])
+__all__.extend(["RegimeSwitchConfig", "RegimeSwitchStrategy"])
+__all__.extend(["RegressionConfig", "RegressionStrategy"])
+__all__.extend(["RelativeStrengthConfig", "RelativeStrengthStrategy"])
+__all__.extend(["ResistanceConfig", "ResistanceStrategy"])
+__all__.extend(["RocConfig", "RocStrategy"])
+__all__.extend(["RollCrossConfig", "RollCrossStrategy"])
+__all__.extend(["RsiConfig", "RsiStrategy"])
+__all__.extend(["RsiMomentumConfig", "RsiMomentumStrategy"])
+__all__.extend(["SpotFuturesConfig", "SpotFuturesStrategy"])
+__all__.extend(["SqueezeConfig", "SqueezeStrategy"])
+__all__.extend(["StablecoinPegConfig", "StablecoinPegStrategy"])
+__all__.extend(["StochasticConfig", "StochasticStrategy"])
+__all__.extend(["SupertrendConfig", "SupertrendStrategy"])
+__all__.extend(["SupportConfig", "SupportStrategy"])
+__all__.extend(["TemaConfig", "TemaStrategy"])
+__all__.extend(["TimeSeriesConfig", "TimeSeriesStrategy"])
+__all__.extend(["TrendMomentumConfig", "TrendMomentumStrategy"])
+__all__.extend(["TrendMrConfig", "TrendMrStrategy"])
+__all__.extend(["TrendVolumeConfig", "TrendVolumeStrategy"])
+__all__.extend(["TriangleConfig", "TriangleStrategy"])
+__all__.extend(["TripleMaConfig", "TripleMaStrategy"])
+__all__.extend(["VolExpansionConfig", "VolExpansionStrategy"])
+__all__.extend(["VolScalingConfig", "VolScalingStrategy"])
+__all__.extend(["VolTargetConfig", "VolTargetStrategy"])
+__all__.extend(["VolumeMomentumConfig", "VolumeMomentumStrategy"])
+__all__.extend(["VolumeProfileConfig", "VolumeProfileStrategy"])
+__all__.extend(["VolumeSpikeConfig", "VolumeSpikeStrategy"])
+__all__.extend(["VwMomentumConfig", "VwMomentumStrategy"])
+__all__.extend(["VwapConfig", "VwapStrategy"])
+__all__.extend(["WilliamsRConfig", "WilliamsRStrategy"])
+__all__.extend(["ZscoreConfig", "ZscoreStrategy"])
