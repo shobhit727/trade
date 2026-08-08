@@ -175,3 +175,10 @@
 - `tools/gen_catalog.py` — generator script holding the spec table (84 entries), emits one module + one test per strategy. Test modes: trend (monotonic), osc (sine+drift), vol (spike), flow (asymmetric candles); dirs="both"/"long"/"short" filters the per-direction test assertions.
 
 **Gates:** 749 pytest passed (was 591), 18 skipped, 0 failed. Ruff clean. Rust unaffected: fmt + clippy -D warnings + 63 tests still green.
+
+## 2026-08-08 — Real BTCUSDT 1h validation (first run on real data)
+
+**Findings:** 0/84 catalog strategies passed the walk-forward + Monte Carlo gauntlet on 1000 real BTCUSDT 1h bars (2026-06-27 → 2026-08-08, price range $60204 → $65000).
+
+**Top performers (still failed MC significance):**
+- `keltner` +14.9

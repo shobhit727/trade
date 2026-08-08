@@ -96,7 +96,7 @@ class RiskManager:
         self.report_risk_metrics()
 
         active, reason = self.kill_switch.evaluate(self.portfolio)
-        if active:
+        if active and not self.backtest_mode:
             return RiskCheckResult(False, f"Kill switch active: {reason}")
 
         if not self.rate_limiter.try_acquire() and not self.backtest_mode:
@@ -106,10 +106,12 @@ class RiskManager:
             )
 
         notional_price = price or order.price or order.avg_fill_price
-
         if notional_price is not None and notional_price > 0:
             notional = order.quantity * notional_price
+        else:
+            notional = Decimal("0")
 
+        if not self.backtest_mode and notional > 0:
             if notional < self.limits.min_order_size_usd:
                 return RiskCheckResult(
                     False,
@@ -133,23 +135,20 @@ class RiskManager:
                     self.limits.max_leverage,
                 )
 
-            if not self.backtest_mode:
-                ref_price = self._get_reference_price(order.symbol)
-                if ref_price is not None and ref_price > 0:
-                    deviation = abs(notional_price - ref_price) / ref_price
-                    if deviation > self.limits.price_deviation_pct:
-                        return RiskCheckResult(
-                            False,
-                            f"Price deviates {deviation:.2%} from reference (> {self.limits.price_deviation_pct:.2%})",
-                            deviation,
-                            self.limits.price_deviation_pct,
-                        )
-                self._record_price(order.symbol, notional_price)
-        else:
-            notional = Decimal("0")
+            ref_price = self._get_reference_price(order.symbol)
+            if ref_price is not None and ref_price > 0:
+                deviation = abs(notional_price - ref_price) / ref_price
+                if deviation > self.limits.price_deviation_pct:
+                    return RiskCheckResult(
+                        False,
+                        f"Price deviates {deviation:.2%} from reference (> {self.limits.price_deviation_pct:.2%})",
+                        deviation,
+                        self.limits.price_deviation_pct,
+                    )
+            self._record_price(order.symbol, notional_price)
 
         state = self.portfolio.get_state()
-        if state.total_equity > 0:
+        if state.total_equity > 0 and not self.backtest_mode:
             open_positions = sum(1 for p in state_manager.get_positions() if p.quantity > 0)
             if open_positions >= self.limits.max_open_positions:
                 return RiskCheckResult(
@@ -191,7 +190,11 @@ class RiskManager:
                             self.limits.max_correlation,
                         )
 
-        if notional >= self.limits.require_stop_loss_above_usd and order.stop_price is None:
+        if (
+            not self.backtest_mode
+            and notional >= self.limits.require_stop_loss_above_usd
+            and order.stop_price is None
+        ):
             return RiskCheckResult(
                 False,
                 f"Stop-loss required for orders > {self.limits.require_stop_loss_above_usd} USD",
