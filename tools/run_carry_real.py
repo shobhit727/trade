@@ -76,6 +76,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--perp-symbol", default="BTCUSDT_PERP")
     ap.add_argument("--capital", type=float, default=10_000)
     ap.add_argument("--entry", type=float, default=0.0001, help="Enter carry when 8h funding rate >= this")
+    ap.add_argument(
+        "--risk",
+        type=float,
+        default=0.0,
+        help="Equity fraction per pair at entry (0 = fixed qty from --capital)",
+    )
+    ap.add_argument("--max-notional", type=Decimal, default=Decimal("0"), help="Cap pair notional in USD")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
 
@@ -111,8 +118,12 @@ def main(argv: list[str] | None = None) -> int:
             min_funding_rate=args.entry,
             max_funding_rate=0.0,
             quantity=qty,
+            risk_fraction=Decimal(str(args.risk)),
+            max_notional=args.max_notional,
         )
     )
+    sizing = "equity-scaled" if args.risk > 0 else "fixed"
+    logger.info("sizing: %s (risk=%.4f, max_notional=%s)", sizing, args.risk, args.max_notional)
     bt = asyncio.run(
         run_carry(
             aligned,
@@ -136,13 +147,14 @@ def main(argv: list[str] | None = None) -> int:
         "window": (perp[0].timestamp.isoformat(), perp[-1].timestamp.isoformat()),
         "bars": len(perp),
         "entry_threshold": args.entry,
+        "sizing": sizing,
         "capital": str(args.capital),
         "final_equity": str(state.total_equity),
         "pnl": str(pnl),
         "pnl_pct": float(pnl / Decimal(str(args.capital)) * 100),
         "trades": len(trades),
         "pnl_by_year": per_year,
-        "note": "fixed qty per leg (not risk-scaled); 2019-2022 basis blowouts predate tight perp pricing",
+        "note": "equity-scaled legs at entry" if args.risk > 0 else "fixed qty per leg (not risk-scaled)",
     }
     if args.json:
         json.dump(result, sys.stdout, default=str, indent=2)

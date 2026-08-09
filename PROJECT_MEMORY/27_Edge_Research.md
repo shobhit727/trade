@@ -157,6 +157,23 @@ Per-year contract PnL: 2019 +92, 2020 +42,212, 2021 +227,284, 2022 +55,809,
 2023 +52,788, 2024 +202,400, 2025 +89,276, 2026 +4,253. All legs execute at
 MARKET (taker fee + slippage) inside SimulatedVenue.
 
+**Risk-scaled version (2026-08-09):** sizing moved to an equity fraction per
+entry (`risk_fraction * current equity`, capped by `max_notional`) — the
+fixed-qty runs compounded BTC price drift into the PnL. Re-run with
+`--risk 0.01 --max-notional 20000`:
+
+| Metric | Value |
+|---|---|
+| Sizing | 1% of equity per pair, notional capped at 20,000 USDT |
+| Final equity | 11,356 USDT (+13.6% over 7y) |
+| Per-year (USDT on ~10k base) | 2020 +341, 2021 +544, 2022 +66, 2023 +89, 2024 +262, 2025 +108, 2026 +12 |
+
+The risk-scaled result lands right on the Phase 2A/2E steady-state estimate
+(~4-5%/yr relative): the earlier +5,456%/555k figures were an artifact of
+fixed 1 BTC legs riding BTC's own 10x. Realistic deployable estimate: low
+single-digit %/yr with near-zero drawdown, contingent on maker routing
+(Phase 2A: taker legs kill the edge).
+
 Interpretation: the wired engine reproduces the Phase 2E trade series direction
 (carry is real, regime-bound), but the absolute number is inflated vs the
 standalone by (a) fixed-size ~1 BTC legs on a 10x price drift (position grows

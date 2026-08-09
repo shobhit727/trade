@@ -17,6 +17,8 @@ class FundingArbConfig:
     hedge_leverage: Decimal = Decimal("1")
     quantity: Decimal = Decimal("1")
     fee_bps: float = 5.0
+    risk_fraction: Decimal = Decimal("0")
+    max_notional: Decimal = Decimal("0")
 
 
 @dataclass
@@ -48,6 +50,23 @@ class FundingArbStrategy:
     @property
     def in_position(self) -> bool:
         return self._in_position
+
+    def size_position(self, spot: Decimal, equity: Decimal) -> Decimal:
+        """Equity-scaled leg size (perp and spot legs get the same qty).
+
+        With ``risk_fraction`` > 0 the notional per pair is ``fraction * equity``
+        (capped at ``max_notional`` if set); otherwise the config's fixed
+        ``quantity`` is returned. Returns the smaller of the two legs.
+        """
+        cfg = self.config
+        if cfg.risk_fraction > 0 and equity > 0 and spot > 0:
+            notional = equity * cfg.risk_fraction
+            if cfg.max_notional > 0:
+                notional = min(notional, cfg.max_notional)
+            qty = (notional / spot).quantize(Decimal("0.00000001"))
+            if qty > 0:
+                return qty
+        return cfg.quantity
 
     def attach_execution(self, engine) -> None:
         self._exec = engine

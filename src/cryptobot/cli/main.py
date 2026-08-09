@@ -122,6 +122,13 @@ def build_parser() -> argparse.ArgumentParser:
     carry.add_argument("--exit", type=float, default=0.00005, help="Exit when funding rate <= this")
     carry.add_argument("--qty", type=Decimal, default=Decimal("0"), help="Quantity per leg (default: USD 10k / spot price)")
     carry.add_argument("--capital", type=Decimal, default=Decimal("10000"))
+    carry.add_argument(
+        "--risk",
+        type=float,
+        default=0.0,
+        help="Equity fraction per pair (0 = fixed qty); sizes legs at entry from current equity",
+    )
+    carry.add_argument("--max-notional", type=Decimal, default=Decimal("0"), help="Cap pair notional in USD (0 = uncapped)")
     carry.add_argument("--commission-bps", type=int, default=5)
     carry.add_argument("--json", action="store_true")
     return parser
@@ -390,6 +397,8 @@ async def _run(args: argparse.Namespace) -> int:
                 min_funding_rate=args.entry,
                 max_funding_rate=0.0,  # no cap in backtest
                 quantity=qty,
+                risk_fraction=Decimal(str(args.risk)),
+                max_notional=args.max_notional,
             )
         )
         engine = await run_carry(

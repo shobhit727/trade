@@ -23,7 +23,14 @@ from cryptobot.backtest.funding import (
     FundingProvider,
 )
 from cryptobot.backtest.runner import OhlcvBar
-from cryptobot.core.events import Event, EventType, OrderEvent, OrderStatus, OrderType
+from cryptobot.core.events import (
+    Event,
+    EventType,
+    OrderEvent,
+    OrderSide,
+    OrderStatus,
+    OrderType,
+)
 from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
 from cryptobot.execution.engine import ExecutionEngine
 from cryptobot.execution.venue.simulated import SimulatedVenue
@@ -115,6 +122,11 @@ async def run_carry(
             continue
         perp_side, spot_side = signal
         legs = ((perp_side, perp_symbol, p), (spot_side, symbol, s))
+        # Size the pair at entry from current equity (risk scaling); the exit
+        # reuses the entry size so both legs always match. Entry = SELL perp.
+        if strategy.config.risk_fraction > 0 and perp_side == OrderSide.SELL:
+            equity = bt._portfolio.get_state().total_equity
+            strategy.qty = strategy.size_position(s, equity)
         for side, sym, px in legs:
             fill = await ee.submit_order(
                 OrderEvent(

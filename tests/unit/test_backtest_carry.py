@@ -73,6 +73,56 @@ def test_carry_strategy_pair_direction():
     assert sides == (OrderSide.SELL, OrderSide.BUY)
 
 
+def test_carry_equity_scaled_sizing():
+    strat = FundingArbStrategy(
+        FundingArbConfig(min_funding_rate=0.0, basis_entry_bps=0.0, risk_fraction=Decimal("0.01"))
+    )
+    # 1% of 10_000 equity at spot 100 -> 1.0 per leg.
+    assert strat.size_position(Decimal("100"), Decimal("10000")) == Decimal("1.00000000")
+    # Capped notional kicks in.
+    capped = FundingArbStrategy(
+        FundingArbConfig(
+            min_funding_rate=0.0,
+            basis_entry_bps=0.0,
+            risk_fraction=Decimal("0.5"),
+            max_notional=Decimal("500"),
+        )
+    )
+    assert capped.size_position(Decimal("100"), Decimal("10000")) == Decimal("5.00000000")
+    # No risk_fraction -> fixed quantity from config.
+    fixed = FundingArbStrategy(FundingArbConfig(quantity=Decimal("2")))
+    assert fixed.size_position(Decimal("100"), Decimal("10000")) == Decimal("2")
+
+
+def test_carry_risk_scaled_run_sizes_trades():
+    spot, perp = _bars()
+    strat = FundingArbStrategy(
+        FundingArbConfig(
+            min_funding_rate=0.0,
+            basis_entry_bps=0.0,
+            basis_exit_bps=5.0,
+            quantity=Decimal("1"),
+            risk_fraction=Decimal("0.01"),
+        )
+    )
+    engine = asyncio.run(
+        run_carry(
+            spot,
+            perp,
+            strat,
+            make_funding_provider(fixed_rate="0.001"),
+            initial_capital=10_000.0,
+        )
+    )
+    trades = engine.get_trades()
+    assert len(trades) >= 4
+    # 1% of 10k equity on a ~100-price pair -> ~1 unit per leg, not the 10k/100
+    # fixed fallback (100 units).
+    perp_entries = [t for t in trades if t.symbol.endswith("PERP")]
+    assert perp_entries, "expected perp legs in trades"
+    assert all(t.quantity <= Decimal("1.5") for t in perp_entries), [t.quantity for t in perp_entries]
+
+
 def test_align_spot_to_perp_matches_close_instants():
     t0 = datetime(2024, 1, 1, tzinfo=UTC)
     # Perp bars open on the 8h grid (U); a bar at U closes at U+8h.
