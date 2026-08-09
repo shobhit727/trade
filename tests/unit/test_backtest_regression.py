@@ -149,7 +149,9 @@ def test_regression_market_order_with_zero_price_uses_venue_mark():
     portfolio = PortfolioManager(PortfolioMode.BACKTEST)
     venue = SimulatedVenue(slippage_bps=Decimal("3"), commission_bps=Decimal("5"))
     venue.prices["BTCUSDT"] = Decimal("65000")
-    risk = RiskManager(portfolio=portfolio, backtest_mode=True)
+    # backtest_mode=False: an order must still pass the *live* sizing gates
+    # (real risk path), which is exactly what this regression guards.
+    risk = RiskManager(portfolio=portfolio, backtest_mode=False)
     ee = ExecutionEngine(venue=venue, risk_manager=risk)
 
     order = OrderEvent(
@@ -206,7 +208,9 @@ def test_regression_reduce_only_exit_after_rejected_entry_opens_nothing():
 
     portfolio = PortfolioManager(PortfolioMode.BACKTEST)
     venue = SimulatedVenue(slippage_bps=Decimal("3"), commission_bps=Decimal("5"))
-    risk = RiskManager(portfolio=portfolio, backtest_mode=True)
+    # backtest_mode=False so the entry can actually be rejected by risk (live
+    # gates); under backtest_mode=True every sizing gate is bypassed.
+    risk = RiskManager(portfolio=portfolio, backtest_mode=False)
     ee = ExecutionEngine(venue=venue, risk_manager=risk)
 
     bars = generate_synthetic_ohlcv(datetime(2024, 1, 1, tzinfo=UTC), n_bars=20, seed=9)
