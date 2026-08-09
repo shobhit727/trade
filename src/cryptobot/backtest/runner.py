@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 
 from cryptobot.backtest.engine import BacktestEngine, TradeRecord
+from cryptobot.backtest.funding import FundingProvider
 from cryptobot.core.events import Event, EventType, OrderStatus
 from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
 from cryptobot.execution.engine import ExecutionEngine
@@ -246,6 +247,7 @@ async def run_backtest(
     commission_bps: int = 5,
     execution_engine: ExecutionEngine | None = None,
     collect_trades: bool = False,
+    funding: FundingProvider | None = None,
 ) -> BacktestRunResult:
     if not bars:
         raise ValueError("no bars supplied")
@@ -269,6 +271,7 @@ async def run_backtest(
         commission_bps=commission_bps,
         slippage_bps=slippage_bps,
         portfolio=portfolio,
+        funding=funding,
     )
     bt_result = await bt_engine.run_bars(bars, strategy, symbol, execution_engine)
 

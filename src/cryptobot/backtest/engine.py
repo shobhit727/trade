@@ -3,10 +3,11 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
+from cryptobot.backtest.funding import FundingProvider, funding_cashflow
 from cryptobot.core.clock import ClockFactory, SimulatedClock
 from cryptobot.core.events import Event, EventType, OrderEvent, OrderStatus, PositionSide
 from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
@@ -103,6 +104,7 @@ class BacktestEngine:
         slippage_bps: int = 3,
         funding_included: bool = True,
         portfolio: PortfolioManager | None = None,
+        funding: FundingProvider | None = None,
     ):
         self.start_time = start_time
         self.end_time = end_time
@@ -110,6 +112,7 @@ class BacktestEngine:
         self.commission_bps = Decimal(str(commission_bps))
         self.slippage_bps = Decimal(str(slippage_bps))
         self.funding_included = funding_included
+        self.funding = funding
 
         self._clock: SimulatedClock | None = None
         self._owns_portfolio = portfolio is None
@@ -120,6 +123,7 @@ class BacktestEngine:
         self._events: list[Event] = []
         self._cash: Decimal = Decimal("0")
         self._initialized = False
+        self._last_settlement_block: tuple[object, int] | None = None
 
     async def initialize(self):
         """Initialize the backtest engine."""
@@ -172,12 +176,14 @@ class BacktestEngine:
         feed = strategy.feed
         if getattr(strategy, "name", "") == "trend_following":
             for bar in bars:
+                await self._maybe_settle_funding(bar.timestamp)
                 order = feed(symbol, bar.high, bar.low, bar.close)
                 if order is None:
                     continue
                 await self._run_orders(order, execution_engine, bar, str(bar.close), strategy)
         else:
             for bar in bars:
+                await self._maybe_settle_funding(bar.timestamp)
                 order = feed(symbol, bar.close)
                 if order is None:
                     continue
@@ -236,6 +242,26 @@ class BacktestEngine:
                         },
                     )
                 )
+
+    async def _maybe_settle_funding(self, ts: datetime) -> None:
+        """Apply 8h perp funding to open positions (at most once per 8h block).
+
+        Called before every bar; the 8h block is keyed by (day, hour/8) so
+        duplicate bar timestamps within the same block settle once.
+        """
+        if not self.funding_included or self.funding is None or not self._positions:
+            return
+        if not FundingProvider.is_settlement(ts):
+            return
+        utc_ts = ts.astimezone(UTC) if ts.tzinfo else ts.replace(tzinfo=UTC)
+        block = (utc_ts.date(), utc_ts.hour // 8)
+        if self._last_settlement_block == block:
+            return
+        for pos in self._positions.values():
+            rate = self.funding.rate(pos.symbol, ts)
+            self._cash += funding_cashflow(pos.side.value, pos.quantity, pos.mark_price, rate)
+        self._last_settlement_block = block
+        await self._update_equity()
 
     def _compute_result(self) -> BacktestResult:
         """Finalize and report statistics from the recorded trades/equity."""
@@ -331,6 +357,7 @@ class BacktestEngine:
 
         # Route event based on type
         if event.type == EventType.TICKER or event.type == EventType.KLINE:
+            await self._maybe_settle_funding(event.timestamp)
             await self._handle_market_data(event)
         elif event.type == EventType.ORDER_FILLED:
             await self._handle_order_fill(event)
