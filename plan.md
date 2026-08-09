@@ -1,7 +1,7 @@
 # Cryptobot - Elite Quantitative Trading System
 ## Master Plan & Architecture Document
 
-> **Status**: Active development | **Last Updated**: 2026-08-09 (funding-carry wired into engine: backtest/funding.py 8h settlement + backtest/carry.py two-leg driver + stateful funding_arb; 778 pytest + 63 Rust tests green)
+> **Status**: Active development | **Last Updated**: 2026-08-09 (real-data validation: 0/84 catalog strategies + funding-carry -15% on 1y BTCUSDT; risk_fraction sizing; 769 pytest + 63 Rust tests green)
 > **Context**: Core, backtester, risk, execution, monitoring (no-op fallback + lazy aiohttp, B051 resolved), ML core, live exchange adapter, smart order router, adverse-selection guard, health server, K8s manifests, multi-arch CI, TimescaleDB migrations, YAML-driven strategy registry, **buildable Rust workspace**, **BinanceWSClient fallback warnings** all implemented. Remaining: ML volatility/regime/ensemble models (deferred); integration test fixtures.
 > **Current Python**: 3.14 (Docker base `python:3.14-slim`).
 > **Repository**: `git@github.com:shobhit727/trade.git` (public).
@@ -64,7 +64,7 @@
 | Utils Decorators | `src/cryptobot/utils/decorators.py` | ✅ retry (clamped jitter), timeout_decorator, circuit_breaker (raises in running loop). |
 | Utils Types | `src/cryptobot/utils/types.py` | ✅ Candle, OrderBook, Trade, etc. |
 | Utils Health Server | `src/cryptobot/utils/health_server.py` | ✅ stdlib ThreadingHTTPServer `/health` + `/metrics`. |
-| Tests | `tests/unit/` (51 files) + `tests/strategies/` (84 catalog per-strategy) + `tests/integration/` | ✅ **778 passed / 6 skipped** (local, Py3.14); hypothesis property tests (risk/sizing/metrics domains); backtest regression suite; funding plumbing + carry driver tests; 84 catalog strategy tests; integration tests behind `integration` marker. CI: pytest 3.13 + ruff + pyflakes + cargo lint/test + docker-test + compose-validate. pytest-timeout=60s. |
+| Tests | `tests/unit/` (51 files) + `tests/strategies/` (84 catalog per-strategy) + `tests/integration/` | ✅ **769 passed / 18 skipped** (Docker, Py3.14); hypothesis property tests (risk/sizing/metrics domains); backtest regression suite; funding plumbing + carry driver tests; 84 catalog strategy tests; integration tests behind `integration` marker. CI: pytest 3.13 + ruff + pyflakes + cargo lint/test + docker-test + compose-validate. pytest-timeout=60s. |
 | Dockerfile | `Dockerfile` | ✅ Multi-stage (`base`/`production`/`test`), `python:3.14-slim`. |
 | Compose | `docker-compose.yml` | ✅ Test + default profiles valid (monitoring dirs scaffolded). |
 | `.dockerignore` | `.dockerignore` | ✅ Minimal context. |

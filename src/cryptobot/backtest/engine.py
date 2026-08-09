@@ -159,7 +159,7 @@ class BacktestEngine:
 
         return self._compute_result()
 
-    async def run_bars(self, bars, strategy, symbol: str, execution_engine) -> BacktestResult:
+    async def run_bars(self, bars, strategy, symbol: str, execution_engine, risk_fraction: float = 0.0) -> BacktestResult:
         """Run the backtest simulation directly over bars.
 
         Fast path: the strategy is fed synchronously bar-by-bar and only dips
@@ -167,6 +167,11 @@ class BacktestEngine:
         accounting) when the strategy actually fires an order. This avoids
         allocating a ticker Event and two coroutine hops per bar -- the common
         case for long synthetic backtests.
+
+        ``risk_fraction`` (default 0): when > 0, each order's quantity is
+        rescaled to ``risk_fraction * equity / price`` so the catalog
+        strategies that emit quantity=1 BTC get sensible fractional sizing
+        against any equity base.
         """
         await self.initialize()
 
@@ -180,14 +185,14 @@ class BacktestEngine:
                 order = feed(symbol, bar.high, bar.low, bar.close)
                 if order is None:
                     continue
-                await self._run_orders(order, execution_engine, bar, str(bar.close), strategy)
+                await self._run_orders(order, execution_engine, bar, str(bar.close), strategy, risk_fraction)
         else:
             for bar in bars:
                 await self._maybe_settle_funding(bar.timestamp)
                 order = feed(symbol, bar.close)
                 if order is None:
                     continue
-                await self._run_orders(order, execution_engine, bar, str(bar.close), strategy)
+                await self._run_orders(order, execution_engine, bar, str(bar.close), strategy, risk_fraction)
 
         return self._compute_result()
 
@@ -198,6 +203,7 @@ class BacktestEngine:
         bar,
         close_str: str,
         strategy,
+        risk_fraction: float = 0.0,
     ) -> None:
         """Submit a strategy order at bar close and process the resulting fills."""
         if not isinstance(order, list):
@@ -209,6 +215,15 @@ class BacktestEngine:
                 # Exit signal for a position the engine never opened (e.g. the
                 # entry was rejected by risk): do not open a new position.
                 continue
+            # Optional equity-fractional rescaling: strategy emitted a unit
+            # quantity (e.g. 1 BTC); rewrite to risk_fraction * equity / price.
+            if risk_fraction > 0 and o.quantity > 0:
+                equity = self._portfolio.get_state().total_equity
+                price = Decimal(close_str)
+                if equity > 0 and price > 0:
+                    o.quantity = Decimal(
+                        str(round(risk_fraction * float(equity / price), 8))
+                    )
             # Keep the venue's mark price current so market orders fill at bar close
             execution_engine.venue.prices[o.symbol] = Decimal(close_str)
             filled = await execution_engine.submit_order(o)

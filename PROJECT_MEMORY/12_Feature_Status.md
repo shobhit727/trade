@@ -1,6 +1,6 @@
 # 12. Feature Status
 
-> **Last Updated**: 2026-08-09 (funding plumbing + carry driver; 778 pytest + 6 skipped; ruff clean)
+> **Last Updated**: 2026-08-09 (real-data validation: 0/84 catalog + carry -15% on 1y BTCUSDT; risk_fraction sizing; 769 pytest + 18 skipped + 63 Rust; ruff clean)
 > **Confidence**: High.
 
 ## Verified module status

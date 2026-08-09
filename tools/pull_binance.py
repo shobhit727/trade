@@ -1,4 +1,5 @@
 """Pull real Binance klines (public, no auth)."""
+
 import json
 import urllib.request
 from datetime import UTC, datetime
@@ -16,14 +17,16 @@ print("last:", data[-1][0], datetime.fromtimestamp(data[-1][0] / 1000, tz=UTC).i
 # Save
 out = []
 for k in data:
-    out.append({
-        "ts": k[0],
-        "open": float(k[1]),
-        "high": float(k[2]),
-        "low": float(k[3]),
-        "close": float(k[4]),
-        "volume": float(k[5]),
-    })
+    out.append(
+        {
+            "ts": k[0],
+            "open": float(k[1]),
+            "high": float(k[2]),
+            "low": float(k[3]),
+            "close": float(k[4]),
+            "volume": float(k[5]),
+        }
+    )
 with open("/tmp/t/btcusdt_1h.json", "w") as f:
     json.dump(out, f)
 print("saved", len(out), "bars")

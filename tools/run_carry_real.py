@@ -11,6 +11,7 @@ Data files by default:
     perp    : /tmp/opencode/perp_BTCUSDT_8h.csv
     funding : /tmp/opencode/funding_BTCUSDT.csv
 """
+
 from __future__ import annotations
 
 import argparse
@@ -140,7 +141,9 @@ def main(argv: list[str] | None = None) -> int:
     pnl = state.total_equity - Decimal(str(args.capital))
     per_year: dict[str, float] = {}
     for t in trades:
-        per_year[str(t.exit_time.year)] = per_year.get(str(t.exit_time.year), 0.0) + (float(t.pnl) if t.pnl else 0.0)
+        per_year[str(t.exit_time.year)] = per_year.get(str(t.exit_time.year), 0.0) + (
+            float(t.pnl) if t.pnl else 0.0
+        )
     result = {
         "symbol": args.symbol,
         "perp_symbol": args.perp_symbol,

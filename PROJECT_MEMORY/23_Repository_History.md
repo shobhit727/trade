@@ -215,3 +215,19 @@
 - "Always-on" variant fails in 2025 (ETH −31%) — threshold-filtered entry is required; cost sensitivity is flat because trips/year are few.
 
 **Gates:** 778 pytest passed, 6 skipped, 0 failed. Ruff clean. Rust unaffected (63 still green).
+
+## 2026-08-09 — Real-data validation: 3-part test (sizing + 1y data + carry)
+
+**1. Position sizing fixed:** `run_backtest(risk_fraction=0.01)` — engine scales each emitted order to `risk_fraction * equity / price`. Catalog strategies emit `quantity=1 BTC` (6x leverage vs $10k); the backtest risk manager now bypasses order-size/exposure/kill-switch guards under `backtest_mode=True`. Result: no more leverage wipeouts.
+
+**2. One year of real BTCUSDT 1h bars pulled** (9000 bars via `tools/pull_binance_history.py`, public API no auth). Full 84-strategy gauntlet with 1% sizing on last 2500 bars:
+- **0/84 passed** (MC p<0.05 AND deflated Sharpe>1 AND walk-forward stability).
+- Even with sane sizing, all MC p-values 0.2–0.8, most returns negative. No strategy has a statistically significant edge over one year.
+
+**3. Real funding-carry run** (`tools/run_carry_real.py` on spot 1h + perp 8h + 1095 funding settlements, 365 days):
+- **-14.95%** over the window (was +$52 in 2025, -$1539 in 2026).
+- The "documented edge" (funding-arb per 27_Edge_Research.md) lost money on real data — perp-vs-spot price moves swamped the carry in 2026.
+
+**Data pulled:** `tools/pull_binance_history.py` (klines paginated, any interval), `tools/pull_carry_data.py` (spot 1h + perp 8h + funding history CSVs).
+
+**Honest verdict:** With real data, correct sizing, and one year of history: **no surviving edge among the 84 catalog strategies, and the funding-carry path also lost.** Balances the repo's claims — no strategy is ready for paper→live without further work (regime-specific enter, tighter entry thresholds, altcoin screens).

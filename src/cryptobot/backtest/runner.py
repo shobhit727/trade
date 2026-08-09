@@ -248,7 +248,15 @@ async def run_backtest(
     execution_engine: ExecutionEngine | None = None,
     collect_trades: bool = False,
     funding: FundingProvider | None = None,
+    risk_fraction: float = 0.0,
 ) -> BacktestRunResult:
+    """Run a backtest with optional equity-fractional order sizing.
+
+    ``risk_fraction``: when > 0, every emitted order is rescaled to
+    ``risk_fraction * equity / price`` before submission. Catalog strategies
+    emit quantity=1 BTC; this default rescales to a sensible fractional
+    position against the configured equity base. 0 disables rescaling.
+    """
     if not bars:
         raise ValueError("no bars supplied")
     if execution_engine is None:
@@ -273,7 +281,7 @@ async def run_backtest(
         portfolio=portfolio,
         funding=funding,
     )
-    bt_result = await bt_engine.run_bars(bars, strategy, symbol, execution_engine)
+    bt_result = await bt_engine.run_bars(bars, strategy, symbol, execution_engine, risk_fraction)
 
     initial = Decimal(str(initial_capital))
     total_return = float((bt_result.final_equity - initial) / initial) if initial else 0.0
