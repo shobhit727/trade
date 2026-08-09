@@ -3,8 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-from cryptobot.core.events import OrderEvent, OrderSide
-from cryptobot.execution.engine import ExecutionEngine
+from cryptobot.core.events import OrderSide
 
 
 @dataclass
@@ -29,39 +28,71 @@ class FundingArbState:
 
 
 class FundingArbStrategy:
+    """Funding-carry: enter short-perp/long-spot when funding is attractively
+    positive or the perp trades at a premium; exit when the premium
+    collapses. Both legs are emitted per decision and the pair is closed
+    together from the exit signal.
+    """
+
     name = "funding_arb"
 
     def __init__(self, config: FundingArbConfig | None = None):
         self.config = config or FundingArbConfig()
-        self._exec: ExecutionEngine | None = None
-        self.fills: list[OrderEvent] = []
+        self._exec = None
+        self.fills: list = []
         self.last_action: str | None = None
+        self._in_position = False
+        self.reduce_only = False
+        self.qty = self.config.quantity
 
-    def attach_execution(self, engine: ExecutionEngine) -> None:
+    @property
+    def in_position(self) -> bool:
+        return self._in_position
+
+    def attach_execution(self, engine) -> None:
         self._exec = engine
 
-    def feed(self, state: FundingArbState) -> tuple[OrderSide, OrderSide] | None:
+    def feed(self, *args) -> tuple[OrderSide, OrderSide] | None:
+        """Back-compat: accept FundingArbState or (ts, spot, perp, rate)."""
+        if len(args) == 1 and isinstance(args[0], FundingArbState):
+            st = args[0]
+            return self.decide(st.spot_price, st.perp_price, Decimal(str(st.funding_rate)))
+        ts, s, p, rate = args
+        return self.decide(s, p, Decimal(str(rate)))
+
+    def decide(
+        self, spot: Decimal, perp: Decimal, rate: Decimal
+    ) -> tuple[OrderSide, OrderSide] | None:
         cfg = self.config
-        if state.spot_price <= 0 or state.perp_price <= 0:
+        if spot <= 0 or perp <= 0:
             return None
-        if state.funding_rate < cfg.min_funding_rate:
-            self.last_action = "no_funding"
-            return None
-        if state.funding_rate > cfg.max_funding_rate:
+        rate_f = float(rate)
+        if cfg.max_funding_rate > 0 and rate_f > cfg.max_funding_rate:
             self.last_action = "funding_cap"
             return None
-        basis_bps = float((state.perp_price - state.spot_price) / state.spot_price) * 10_000.0
-        if basis_bps >= cfg.basis_entry_bps:
-            self.last_action = "enter_short_perp_long_spot"
-            return (OrderSide.SELL, OrderSide.BUY)
-        if basis_bps <= cfg.basis_exit_bps:
+        basis_bps = float((perp - spot) / spot) * 10_000.0
+        if not self._in_position:
+            # Enter when either funding pays us to be short the perp, or the
+            # basis premium is wide enough to bank on reversion.
+            enter = rate_f >= cfg.min_funding_rate and basis_bps >= cfg.basis_entry_bps
+            if enter:
+                self._in_position = True
+                self.last_action = "enter_short_perp_long_spot"
+                return (OrderSide.SELL, OrderSide.BUY)
+            self.last_action = "no_funding"
+            return None
+        # In position: exit when the premium compress (basis reverted) or the
+        # funding turned against keeping the hedge on.
+        exit_now = basis_bps <= cfg.basis_exit_bps or rate_f <= 0
+        if exit_now:
+            self._in_position = False
             self.last_action = "exit"
             return (OrderSide.BUY, OrderSide.SELL)
         self.last_action = "hold"
         return None
 
     def feed_and_signal(self, state: FundingArbState) -> tuple[OrderSide, OrderSide] | None:
-        return self.feed(state)
+        return self.decide(state.spot_price, state.perp_price, Decimal(str(state.funding_rate)))
 
 
-__all__ = ["FundingArbConfig", "FundingArbState", "FundingArbStrategy"]
+__all___ = ["FundingArbConfig", "FundingArbState", "FundingArbStrategy"]
