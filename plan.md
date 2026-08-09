@@ -1,7 +1,7 @@
 # Cryptobot - Elite Quantitative Trading System
 ## Master Plan & Architecture Document
 
-> **Status**: Active development | **Last Updated**: 2026-08-08 (catalog 84 strategies delivered + wired into registry; 749 pytest + 63 Rust tests green)
+> **Status**: Active development | **Last Updated**: 2026-08-09 (funding-carry wired into engine: backtest/funding.py 8h settlement + backtest/carry.py two-leg driver + stateful funding_arb; 778 pytest + 63 Rust tests green)
 > **Context**: Core, backtester, risk, execution, monitoring (no-op fallback + lazy aiohttp, B051 resolved), ML core, live exchange adapter, smart order router, adverse-selection guard, health server, K8s manifests, multi-arch CI, TimescaleDB migrations, YAML-driven strategy registry, **buildable Rust workspace**, **BinanceWSClient fallback warnings** all implemented. Remaining: ML volatility/regime/ensemble models (deferred); integration test fixtures.
 > **Current Python**: 3.14 (Docker base `python:3.14-slim`).
 > **Repository**: `git@github.com:shobhit727/trade.git` (public).
@@ -64,7 +64,7 @@
 | Utils Decorators | `src/cryptobot/utils/decorators.py` | ✅ retry (clamped jitter), timeout_decorator, circuit_breaker (raises in running loop). |
 | Utils Types | `src/cryptobot/utils/types.py` | ✅ Candle, OrderBook, Trade, etc. |
 | Utils Health Server | `src/cryptobot/utils/health_server.py` | ✅ stdlib ThreadingHTTPServer `/health` + `/metrics`. |
-| Tests | `tests/unit/` (51 files) + `tests/strategies/` (84 catalog per-strategy) + `tests/integration/` | ✅ **749 passed / 18 skipped**; hypothesis property tests (risk/sizing/metrics domains); backtest regression suite; 84 catalog strategy tests (one per strategy); integration tests behind `integration` marker. CI: pytest 3.13 + ruff + pyflakes + cargo lint/test + docker-test + compose-validate. pytest-timeout=60s. |
+| Tests | `tests/unit/` (51 files) + `tests/strategies/` (84 catalog per-strategy) + `tests/integration/` | ✅ **778 passed / 6 skipped** (local, Py3.14); hypothesis property tests (risk/sizing/metrics domains); backtest regression suite; funding plumbing + carry driver tests; 84 catalog strategy tests; integration tests behind `integration` marker. CI: pytest 3.13 + ruff + pyflakes + cargo lint/test + docker-test + compose-validate. pytest-timeout=60s. |
 | Dockerfile | `Dockerfile` | ✅ Multi-stage (`base`/`production`/`test`), `python:3.14-slim`. |
 | Compose | `docker-compose.yml` | ✅ Test + default profiles valid (monitoring dirs scaffolded). |
 | `.dockerignore` | `.dockerignore` | ✅ Minimal context. |
@@ -85,6 +85,8 @@
 | Realistic Venue | `src/cryptobot/execution/venue/realistic.py` | ✅ Seeded book + QueuePositions, partial fills, adverse selection. |
 | Live Paper Harness | `src/cryptobot/live/paper_harness.py` | ✅ `FundingPaperHarness` — spot bookTicker WS + fapi premiumIndex REST-poll, carry accumulation (Phase 3). |
 | Backtest Funding Sim | `src/cryptobot/backtest/funding_sim.py` | ✅ Funding rate simulator (Phase 2 edge research). |
+| Backtest Funding | `src/cryptobot/backtest/funding.py` | ✅ `FundingProvider` (fixed / CSV no-lookahead) + 8h settlement `funding_cashflow`; wired into `BacktestEngine` (settles open positions per 8h block). |
+| Backtest Carry | `src/cryptobot/backtest/carry.py` | ✅ Two-leg funding-carry driver `run_carry()` — long spot/short perp legs through ExecEngine/RiskManager; real funding history via CSV provider (Phase 2E). |
 | Backtest Parallel | `src/cryptobot/backtest/parallel.py` | ✅ Parallel algorithm sweeps (multi-core). |
 | Risk Rate Limit | `src/cryptobot/risk/rate_limit.py` | ✅ Rate-limit tracking. |
 | Risk Strategy Tracker | `src/cryptobot/risk/strategy_tracker.py` | ✅ Strategy state tracking. |

@@ -1,6 +1,6 @@
 # 02. Module Index
 
-> **Last Updated**: 2026-08-08 (catalog 84 strategies + registry + runner wired; 749 pytest + 63 Rust green)
+> **Last Updated**: 2026-08-09 (backtest/funding.py + backtest/carry.py added; funding_arb stateful)
 > **Confidence**: High (verified by directory walk + LOC).
 
 ## Actual project tree (Python)
@@ -61,6 +61,8 @@ src/cryptobot/
     validation.py                 # Real walk-forward (rolling + embargo) + MC block perm + deflated Sharpe
     reporting.py                  # HTML tearsheet (stdlib)
     runner.py                     # OHLCV → strategy → ExecutionEngine → SimulatedVenue end-to-end
+    funding.py                    # FundingProvider (fixed/CSV no-lookahead) + funding_cashflow (8h settlement)
+    carry.py                      # Two-leg funding-carry driver run_carry (long spot / short perp)
     data.py                       # load_csv + load_parquet + load_timescale + synthetic
   monitoring/
     metrics.py                    # Prometheus (Gauge for PnL) + record_* helpers

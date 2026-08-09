@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from cryptobot.backtest.carry import make_funding_provider, run_carry
-from cryptobot.backtest.runner import generate_synthetic_ohlcv
+from cryptobot.backtest.carry import (
+    align_spot_to_perp,
+    make_funding_provider,
+    run_carry,
+)
+from cryptobot.backtest.runner import OhlcvBar, generate_synthetic_ohlcv
 from cryptobot.core.events import OrderSide
 from cryptobot.strategies.funding_arb import FundingArbConfig, FundingArbStrategy
 
@@ -67,3 +71,21 @@ def test_carry_strategy_pair_direction():
     strat = FundingArbStrategy(FundingArbConfig(min_funding_rate=0.0, basis_entry_bps=0.0))
     sides = strat.feed(datetime(2024, 1, 1, tzinfo=UTC), Decimal("100"), Decimal("100.1"), Decimal("0.001"))
     assert sides == (OrderSide.SELL, OrderSide.BUY)
+
+
+def test_align_spot_to_perp_matches_close_instants():
+    t0 = datetime(2024, 1, 1, tzinfo=UTC)
+    # Perp bars open on the 8h grid (U); a bar at U closes at U+8h.
+    perp = [OhlcvBar(timestamp=t0 + timedelta(hours=8 * i), open=100.0, high=100.0, low=100.0, close=101.0, volume=10.0) for i in range(3)]
+    # Spot 1h bars; the bar opening at U+7h closes at U+8h == perp close instant.
+    spot = [OhlcvBar(timestamp=t0 + timedelta(hours=7 + 8 * i), open=1.0, high=1.0, low=1.0, close=float(100 + i), volume=1.0) for i in range(3)]
+    aligned = align_spot_to_perp(spot, perp)
+    assert len(aligned) == 3
+    # Each aligned bar carries the perp timestamp (settlement grid preserved) and
+    # the spot close sampled at the perp close instant.
+    for b, i in zip(aligned, range(3)):
+        assert b.timestamp == perp[i].timestamp
+        assert b.close == float(100 + i)
+    # Off-grid spot bars (any hour other than U+7h) pair with nothing.
+    shifted = [OhlcvBar(timestamp=t0 + timedelta(hours=8 + 8 * i), open=1.0, high=1.0, low=1.0, close=float(100 + i), volume=1.0) for i in range(3)]
+    assert align_spot_to_perp(shifted, perp) == []

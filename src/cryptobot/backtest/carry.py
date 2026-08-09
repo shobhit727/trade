@@ -13,6 +13,7 @@ the same bar timestamp; spot and perp klines must be time-aligned.
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from decimal import Decimal
 
 from cryptobot.backtest.engine import BacktestEngine
@@ -21,6 +22,7 @@ from cryptobot.backtest.funding import (
     FixedFundingProvider,
     FundingProvider,
 )
+from cryptobot.backtest.runner import OhlcvBar
 from cryptobot.core.events import Event, EventType, OrderEvent, OrderStatus, OrderType
 from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
 from cryptobot.execution.engine import ExecutionEngine
@@ -35,6 +37,33 @@ def make_funding_provider(csv_path: str | None = None, fixed_rate: str | None = 
     if csv_path:
         return CsvFundingProvider(csv_path)
     return FixedFundingProvider(Decimal(fixed_rate) if fixed_rate else Decimal("0.0001"))
+
+
+def align_spot_to_perp(spot_bars: list[OhlcvBar], perp_bars: list[OhlcvBar]) -> list[OhlcvBar]:
+    """Resample spot (1h) bars to each perp (8h) bar's close instant.
+
+    Perp 8h bar opening at U closes at price-at-U+8h. The contemporaneous
+    1h spot close is the bar opening at U+7h (it closes at U+8h). A spot bar
+    at H therefore pairs with the perp bar at H-7h. This avoids the
+    7-14h-stale spot pricing bug that otherwise mints fake carry PnL.
+    """
+    perp_by_open = {p.timestamp: p for p in perp_bars}
+    out: list[OhlcvBar] = []
+    for sb in spot_bars:
+        pb = perp_by_open.get(sb.timestamp - timedelta(hours=7))
+        if pb is None:
+            continue
+        out.append(
+            OhlcvBar(
+                timestamp=pb.timestamp,
+                open=float(sb.close),
+                high=float(sb.close),
+                low=float(sb.close),
+                close=float(sb.close),
+                volume=0.0,
+            )
+        )
+    return out
 
 
 async def run_carry(

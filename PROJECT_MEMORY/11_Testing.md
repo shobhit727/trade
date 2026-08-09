@@ -1,7 +1,7 @@
 # 11. Testing
 
-> **Last Updated**: 2026-08-08 (catalog 84 strategies added; 749 pytest + 18 skipped in Docker; 63 Rust tests green)
-> **Confidence**: High — `749 passed, 18 skipped` in Docker (Python 3.14, ~62s), 63 Rust tests green, CI green.
+> **Last Updated**: 2026-08-09 (funding plumbing + carry driver; 778 pytest + 6 skipped local, 63 Rust tests green)
+> **Confidence**: High — `778 passed, 6 skipped` locally (Python 3.14, ~70s), 63 Rust tests green, CI green.
 
 ## What exists
 
@@ -84,6 +84,7 @@ test_utils_types.py
 - Integration tests exist in `tests/integration/` (TimescaleDB write/read, Redis cache, Prometheus export) — skipped locally without services, run in the compose/CI Docker target.
 - Property-based tests (hypothesis) added 2026-08-06: sizing invariants, correlation bounds, drawdown/sharpe domains (`test_property_based_risk_math.py`, 10 tests).
 - Regression tests on backtest metrics added 2026-08-06 (`test_backtest_regression.py`: determinism, sensitivity, headline metrics).
+- Funding plumbing added 2026-08-09: `test_backtest_funding.py` (provider semantics, no-lookahead CSV), `test_backtest_funding_engine.py` (8h settlement accrual: long pays / short receives / rate-0 noop), `test_backtest_carry.py` (two-leg driver: legs fill+exit, funding raises equity, pair direction).
 
 ## Strategy for new tests
 

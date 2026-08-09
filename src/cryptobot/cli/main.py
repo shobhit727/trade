@@ -107,6 +107,23 @@ def build_parser() -> argparse.ArgumentParser:
     funder_cmd.add_argument("--poll-interval", type=float, default=5.0)
     funder_cmd.add_argument("--sample-interval", type=float, default=60.0, help="Seconds between basis/funding CSV sample rows (default 60)")
     funder_cmd.add_argument("--json", action="store_true")
+
+    carry = sub.add_parser(
+        "carry",
+        help="Two-leg funding-carry backtest (long spot, short perp) with real funding history",
+    )
+    carry.add_argument("--spot", required=True, help="Spot CSV (Binance klines: open_time,open,high,low,close,volume)")
+    carry.add_argument("--perp", required=True, help="Perp CSV (same format; must be time-aligned to spot)")
+    carry.add_argument("--funding", default=None, help="Binance fundingRate CSV (funding_time,funding_rate); omit for fixed rate")
+    carry.add_argument("--fixed-rate", default=None, help="Fixed funding rate per 8h (e.g. 0.001) when no CSV")
+    carry.add_argument("--symbol", default="BTCUSDT")
+    carry.add_argument("--perp-symbol", default="BTCUSDTPERP")
+    carry.add_argument("--entry", type=float, default=0.0003, help="Enter when funding rate >= this")
+    carry.add_argument("--exit", type=float, default=0.00005, help="Exit when funding rate <= this")
+    carry.add_argument("--qty", type=Decimal, default=Decimal("0"), help="Quantity per leg (default: USD 10k / spot price)")
+    carry.add_argument("--capital", type=Decimal, default=Decimal("10000"))
+    carry.add_argument("--commission-bps", type=int, default=5)
+    carry.add_argument("--json", action="store_true")
     return parser
 
 
@@ -329,6 +346,76 @@ async def _run(args: argparse.Namespace) -> int:
                 default=str,
             )
             sys.stdout.write("\n")
+        return 0
+
+    if args.command == "carry":
+        from cryptobot.backtest.carry import align_spot_to_perp, run_carry
+        from cryptobot.backtest.data import load_csv
+        from cryptobot.backtest.funding import (
+            CsvFundingProvider,
+            FixedFundingProvider,
+        )
+        from cryptobot.strategies.funding_arb import FundingArbConfig, FundingArbStrategy
+
+        spot = load_csv(args.spot, symbol=args.symbol)
+        perp = load_csv(args.perp, symbol=args.perp_symbol)
+        if len(spot.bars) != len(perp.bars):
+            aligned = align_spot_to_perp(spot.bars, perp.bars)
+            if not aligned:
+                logger.error(
+                    "spot (%d) and perp (%d) bars not time-aligned; no overlap on the 8h grid",
+                    len(spot.bars),
+                    len(perp.bars),
+                )
+                return 1
+            aligned_ts = {b.timestamp for b in aligned}
+            spot.bars = aligned
+            perp.bars = [b for b in perp.bars if b.timestamp in aligned_ts]
+            logger.info(
+                "auto-aligned spot to perp 8h grid: %d bars (U+7h spot close == perp close instant)",
+                len(aligned),
+            )
+        elif not perp.bars or not spot.bars:
+            logger.error("empty bars")
+            return 1
+        provider = CsvFundingProvider(args.funding) if args.funding else FixedFundingProvider(
+            Decimal(args.fixed_rate) if args.fixed_rate else Decimal("0.0001")
+        )
+        first_spot = Decimal(str(spot.bars[0].close))
+        qty = args.qty if args.qty > 0 else (args.capital / first_spot).quantize(Decimal("0.000001"))
+        strategy = FundingArbStrategy(
+            FundingArbConfig(
+                symbol=args.symbol,
+                perp_symbol=args.perp_symbol,
+                min_funding_rate=args.entry,
+                max_funding_rate=0.0,  # no cap in backtest
+                quantity=qty,
+            )
+        )
+        engine = await run_carry(
+            spot.bars,
+            perp.bars,
+            strategy,
+            provider,
+            symbol=args.symbol,
+            perp_symbol=args.perp_symbol,
+            initial_capital=float(args.capital),
+            commission_bps=args.commission_bps,
+        )
+        result = {
+            "symbol": args.symbol,
+            "perp_symbol": args.perp_symbol,
+            "initial_capital": str(args.capital),
+            "final_equity": str(engine._portfolio.get_state().total_equity),
+            "n_trades": len(engine.get_trades()),
+            "n_bars": len(spot.bars),
+            "funding_provider": "csv" if args.funding else "fixed",
+        }
+        if args.json:
+            json.dump(result, sys.stdout, default=str)
+            sys.stdout.write("\n")
+        else:
+            logger.info("carry %s: %s", args.symbol, result)
         return 0
 
     if args.command == "paper":

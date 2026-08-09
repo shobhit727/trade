@@ -1,6 +1,6 @@
 # 27 — Edge Research: Findings & Gates (Phase 0–2)
 
-Status: LIVE — updated continuously. Last update: 2026-08-08
+Status: LIVE — updated continuously. Last update: 2026-08-09
 
 ## Objective
 
@@ -108,10 +108,70 @@ futures WS (`wss://fstream.binance.com`) is network-blocked in this environment.
 - Live smoke confirmed: spot + perp prices flow, state advances to `no_signal`
   (current basis < 5bps entry threshold — quiet market).
 
+## Phase 2E — Carry Re-derived with Correct Accounting (2026-08-09)
+
+Re-derived the carry edge with explicit cash accounting (no basis double-count on
+close; perp klines anchored to close-time not open-time). Spike-threshold
+strategy: enter long-spot/short-perp when funding ≥ threshold, exit ≤ 0.005%:
+
+| Asset | Full history (2019-26) | Walk-forward train (19-23) | Walk-forward test (24-26) |
+|---|---|---|---|
+| BTC (≤0.03%) | +97% | +87% (11 trips) | **+10.5% (3 trips)** |
+| ETH (≤0.03%) | +223% | +209% (8 trips) | **+10.4% (3 trips)** |
+
+- maxDD ~0.8-1.7% (delta-neutral by construction; only fee + basis residual).
+- Fee sensitivity flat: 2 → 5bps maker barely moves returns (few trips/year).
+- "Always-on" variant (hold whenever funding ≥ 0) is **not** robust: ETH 2025
+  −31.6% (basis blowups while invested in a crash regime). Threshold filter is
+  mandatory.
+- Verdict: consistent with Phase 2A — real, regime-bound edge, ~4-5%/yr in the
+  modern era, deployable only via the threshold-gated carry (now engine-wired).
+
 ## Next
 
+- First engine run of the wired carry on real CSV data (2019-2026) and reconcile
+  vs the Phase 2E standalone numbers (expect ~4-5%/yr modern regime). ✅ 2026-08-09 —
+  see Phase 2F; absolute PnL is not directly comparable (fixed-qty legs vs scaled).
+- Decide taker-on-exit vs maker-on-both-legs: exits should use taker fees for
+  realism; re-run fee sensitivity at 10bps all-taker (Phase 2A says edge dies). ✅
+  Engine run uses taker on all fills (SimulatedVenue MARKET = taker fee + slippage).
 - Phase 3 live validation: run the paper harness for a multi-day window on BTC+ETH
   to observe basis excursions; log basis explicitly in JSON output for signal confirmation.
 - If a real basis signal fires, inspect fill/pnl path end-to-end before any live capital.
 - Revisit Phase 2A fee sensitivity: the edge only survives at BNB-discount taker+maker
   routing — validate BNB-hold status before live.
+
+## Phase 2E2 — Engine-Wired Carry on Real Data (2026-08-09) ✅
+
+First `run_carry` run from `BacktestEngine` with the CSV funding provider (real
+Binance funding history, 2019-2026) and real spot 1h + perp 8h klines:
+
+| Metric | Value |
+|---|---|
+| Window | 2019-09-08 .. 2026-08-06 (7573 × 8h bars) |
+| Capital / leg | 10,000 USDT fixed qty (not risk-scaled) |
+| Entry | funding ≥ 0.01%, basis ≥ 5bps; exit basis ≤ basis_exit or rate ≤ 0 |
+| Final equity | 555,672 USDT (+5,456%) |
+
+Per-year contract PnL: 2019 +92, 2020 +42,212, 2021 +227,284, 2022 +55,809,
+2023 +52,788, 2024 +202,400, 2025 +89,276, 2026 +4,253. All legs execute at
+MARKET (taker fee + slippage) inside SimulatedVenue.
+
+Interpretation: the wired engine reproduces the Phase 2E trade series direction
+(carry is real, regime-bound), but the absolute number is inflated vs the
+standalone by (a) fixed-size ~1 BTC legs on a 10x price drift (position grows
+with BTC price, compounding drift in a margin of the PnL), and (b) 2019–2021
+basis blowouts that predate tight perp pricing. The reliable signal from both
+the standalone and engine paths: **edge concentrates in the bull-regime basis
+and is ~quiet since 2024** (2025 +2.3%/yr on a 10k base, 2026 quiet).
+
+Tooling now available:
+- CLI: `python -m cryptobot.cli.main carry --spot spot_1h.csv --perp perp_8h.csv
+  --funding funding.csv --json` (auto-aligns spot 1h → perp 8h close instants).
+- Script: `tools/run_carry_real.py` (same pipeline + per-year breakdown;
+  defaults to `/tmp/opencode/spot_BTCUSDT_1h.csv`, `perp_BTCUSDT_8h.csv`,
+  `funding_BTCUSDT.csv`).
+- Alignment helper: `backtest.carry.align_spot_to_perp` — perp kline at U closes
+  at U+8h; the contemporaneous spot 1h close is the bar opening at U+7h. Without
+  this, spot legs price 7-8h stale and mint fake mismatch PnL. Tested across the
+  sample: same-instant spot/perp within ~5 bps.

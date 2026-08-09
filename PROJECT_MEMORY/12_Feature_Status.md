@@ -1,6 +1,6 @@
 # 12. Feature Status
 
-> **Last Updated**: 2026-08-08 (catalog 84 strategies shipped — Trend 16, MR 12, Momentum 11, Breakout 11, Volatility 8, Volume 7, Stat-Arb 5, Crypto 5, Hybrid 10; 749 pytest + 63 Rust tests green; ruff + clippy -D warnings clean)
+> **Last Updated**: 2026-08-09 (funding plumbing + carry driver; 778 pytest + 6 skipped; ruff clean)
 > **Confidence**: High.
 
 ## Verified module status
@@ -76,6 +76,9 @@
 | `execution/costs.py` | ✅ | Phase 4 transaction cost model: spread, fees, slippage, funding, rebates. |
 | `execution/venue/realistic.py` | ✅ | Realistic venue: seeded order book with QueuePositions, partial fills, adverse-selection guard, limit fills at price, fees on filled qty. |
 | `live/paper_harness.py` | ✅ | Phase 3 `FundingPaperHarness` — spot bookTicker WS + fapi `premiumIndex` REST-poll fallback, carry accumulation, CSV logs, reconnection backoff. |
+| `backtest/funding.py` | ✅ | `FundingProvider` (fixed rate or Binance fundingRate CSV replay, no lookahead) + `funding_cashflow` for 8h perp settlement. |
+| `backtest/carry.py` | ✅ | Two-leg funding-carry driver `run_carry()`: long spot/short perp pairs through ExecEngine/RiskManager in the real engine, funding settled at 8h boundaries. |
+| `strategies/funding_arb.py` | ✅ | Stateful (`in_position`) funding-carry strategy; emits (perp, spot) leg pairs; accepts `FundingArbState` or `(ts, spot, perp, rate)` feeds; backtest & live harness compatible. |
 | `ml/optimizer.py` | ✅ | Phase 3 walk-forward optimizer with regime-aware parameter search (Optuna). |
 | `pyproject.toml` | ✅ | setuptools build + `cryptobot` CLI entry point. |
 | `migrations/*.sql` | ✅ | `001_extension.sql`, `002_hypertables.sql`. |
