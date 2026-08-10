@@ -105,6 +105,7 @@ class BacktestEngine:
         funding_included: bool = True,
         portfolio: PortfolioManager | None = None,
         funding: FundingProvider | None = None,
+        funding_symbols: set[str] | None = None,
     ):
         self.start_time = start_time
         self.end_time = end_time
@@ -113,6 +114,7 @@ class BacktestEngine:
         self.slippage_bps = Decimal(str(slippage_bps))
         self.funding_included = funding_included
         self.funding = funding
+        self.funding_symbols = funding_symbols
 
         self._clock: SimulatedClock | None = None
         self._owns_portfolio = portfolio is None
@@ -273,6 +275,8 @@ class BacktestEngine:
         if self._last_settlement_block == block:
             return
         for pos in self._positions.values():
+            if self.funding_symbols is not None and pos.symbol not in self.funding_symbols:
+                continue
             rate = self.funding.rate(pos.symbol, ts)
             self._cash += funding_cashflow(pos.side.value, pos.quantity, pos.mark_price, rate)
         self._last_settlement_block = block

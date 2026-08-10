@@ -107,8 +107,13 @@ def main(argv: list[str] | None = None) -> int:
     if not aligned:
         logger.error("no spot bars within perp window")
         return 2
-    stop_n = len(aligned)
-    perp = perp[:stop_n]
+    aligned_ts = {b.timestamp for b in aligned}
+    spot = aligned
+    perp = [b for b in perp if b.timestamp in aligned_ts]
+    logger.info(
+        "filtered perp to aligned timestamps: %d bars (drop %d unpaired)",
+        len(perp), 0,
+    )
 
     funding = CsvFundingProvider(args.funding)
     qty = (Decimal(str(args.capital)) / Decimal(str(aligned[0].close))).quantize(Decimal("0.000001"))
