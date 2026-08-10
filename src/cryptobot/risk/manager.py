@@ -204,7 +204,10 @@ class RiskManager:
             )
 
         strat_state = self.strategy_tracker.get(order.strategy)
-        if strat_state.daily_pnl < -self.limits.max_daily_loss_pct * state.total_equity:
+        if (
+            not self.backtest_mode
+            and strat_state.daily_pnl < -self.limits.max_daily_loss_pct * state.total_equity
+        ):
             return RiskCheckResult(
                 False,
                 f"Strategy {order.strategy} daily loss limit exceeded",

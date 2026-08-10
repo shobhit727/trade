@@ -86,20 +86,24 @@ def _row_to_bar(row: dict[str, Any], default_symbol: str) -> OhlcvBar:
             epoch = float(stripped)
             if abs(epoch) > 10**11:
                 epoch /= 1000.0
-            ts = datetime.utcfromtimestamp(epoch)
+            ts = datetime.fromtimestamp(epoch, tz=UTC)
         else:
             ts = datetime.fromisoformat(stripped.replace("Z", "+00:00"))
     elif isinstance(ts_raw, int | float):
         # Binance-style exports are milliseconds since epoch; auto-detect and
-        # scale down to seconds so `utcfromtimestamp` stays in range.
+        # scale down to seconds so `fromtimestamp` stays in range.
         epoch = float(ts_raw)
         if abs(epoch) > 10**11:
             epoch /= 1000.0
-        ts = datetime.utcfromtimestamp(epoch)
+        ts = datetime.fromtimestamp(epoch, tz=UTC)
     elif isinstance(ts_raw, datetime):
         ts = ts_raw
     else:
         raise ValueError(f"unsupported timestamp value: {ts_raw!r}")
+    if ts.tzinfo is None:
+        # Bare ISO timestamps parse naive; treat them as UTC so settlement
+        # hour checks and .timestamp() lookups are tz-independent.
+        ts = ts.replace(tzinfo=UTC)
     o = row.get("open", row.get("open_price"))
     h = row.get("high", row.get("high_price"))
     low_val = row.get("low", row.get("low_price"))

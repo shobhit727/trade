@@ -60,7 +60,7 @@ class FundingArbStrategy:
         """
         cfg = self.config
         if cfg.risk_fraction > 0 and equity > 0 and spot > 0:
-            notional = equity * cfg.risk_fraction
+            notional = equity * Decimal(str(cfg.risk_fraction))
             if cfg.max_notional > 0:
                 notional = min(notional, cfg.max_notional)
             qty = (notional / spot).quantize(Decimal("0.00000001"))

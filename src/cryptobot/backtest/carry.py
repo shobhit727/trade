@@ -107,6 +107,7 @@ async def run_carry(
         slippage_bps=slippage_bps,
         portfolio=portfolio,
         funding=funding,
+        funding_symbols={perp_symbol},
     )
     await bt.initialize()
 
