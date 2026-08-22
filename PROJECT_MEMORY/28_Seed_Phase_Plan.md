@@ -42,7 +42,7 @@ family capital for the multi-exchange / multi-algorithm phase.
 
 ## Build order
 
-1. Global-fund ledger + 8h harvest cycle
+1. ✅ Global-fund ledger + 8h harvest cycle (`core/fund.py`, wired into `live/trader.py`; 11 unit tests)
 2. ccxt multi-exchange adapter layer
 3. Allocator / tier configuration (empirically tuned)
 4. Tax engine

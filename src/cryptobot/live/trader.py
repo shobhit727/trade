@@ -27,6 +27,7 @@ import aiohttp
 from cryptobot.backtest.runner import make_strategy
 from cryptobot.core.bus import get_event_bus
 from cryptobot.core.events import KlineEvent
+from cryptobot.core.fund import FundConfig, GlobalFundLedger
 from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
 from cryptobot.execution.engine import ExecutionEngine, build_venue
 from cryptobot.risk.manager import RiskManager
@@ -52,6 +53,11 @@ class LiveTraderConfig:
     # orders go; the testnet combined-stream endpoint rejects large URLs.
     data_ws_url: str = "wss://stream.binance.com:9443"
     max_bars: int | None = None  # stop after N closed bars (tests / dry-runs)
+    # Global-fund harvest (Seed Phase step 1): every harvest_hours, skim
+    # skim_fraction of realized PnL into the cross-algorithm reserve pool.
+    harvest_hours: int = 8
+    skim_fraction: str = "0.10"
+    fund_state_path: str = "state/global_fund.json"
 
 
 class LiveTrader:
@@ -75,6 +81,12 @@ class LiveTrader:
         self._health = HealthServer(host=config.host, port=config.port)
         self._stop = asyncio.Event()
         self._seen_bars: deque[int] = deque(maxlen=64)
+        self._fund = GlobalFundLedger(FundConfig(
+            skim_fraction=Decimal(config.skim_fraction),
+            state_path=config.fund_state_path,
+        ))
+        self._last_harvested_realized = Decimal("0")
+        self._harvest_task: asyncio.Task | None = None
         self.stats: dict[str, object] = {
             "status": "starting",
             "strategy": config.strategy,
@@ -97,6 +109,7 @@ class LiveTrader:
         state = self._portfolio.get_state()
         snap["equity"] = str(state.total_equity)
         snap["open_positions"] = state.open_positions
+        snap["global_fund"] = self._fund.summary()
         return snap
 
     def request_stop(self) -> None:
@@ -112,6 +125,7 @@ class LiveTrader:
         self._install_health_snapshot()
 
         try:
+            self._harvest_task = asyncio.create_task(self._harvest_loop())
             if self.config.warmup_bars > 0:
                 await self._warm_up()
 
@@ -128,8 +142,38 @@ class LiveTrader:
                     break
             self.stats["status"] = "stopped"
         finally:
+            if self._harvest_task is not None:
+                self._harvest_task.cancel()
+                try:
+                    await self._harvest_task
+                except asyncio.CancelledError:
+                    pass
             await ws.stop()
             self._health.stop()
+
+    # ------------------------------------------------------- global-fund harvest
+
+    async def _harvest_loop(self) -> None:
+        """Every ``harvest_hours``, skim realized-PnL growth into the fund."""
+        window = max(int(self.config.harvest_hours), 1) * 3600
+        deadline = time.monotonic() + window
+        while not self._stop.is_set():
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=30)
+                break  # stop requested
+            except TimeoutError:
+                pass
+            if time.monotonic() < deadline:
+                continue
+            state = self._portfolio.get_state()
+            delta = state.total_realized_pnl - self._last_harvested_realized
+            if delta > 0 and not self._fund.frozen:
+                entry = self._fund.skim(delta)
+                if entry is not None:
+                    logger.info("harvest: skimmed %s of %s realized PnL into global fund",
+                                entry["amount"], delta)
+            self._last_harvested_realized += max(delta, Decimal("0"))
+            deadline = time.monotonic() + window
 
     def _install_health_snapshot(self) -> None:
         """Expose trader stats through /health (keeps uptime fields)."""
