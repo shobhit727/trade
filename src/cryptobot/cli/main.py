@@ -85,6 +85,7 @@ def build_parser() -> argparse.ArgumentParser:
     bot.add_argument("--mode", choices=["paper", "live"], default="paper")
     bot.add_argument("--warmup", type=int, default=300, help="REST bars used to prime indicators")
     bot.add_argument("--max-bars", type=int, default=None, help="stop after N closed bars (dry-run)")
+    bot.add_argument("--profile", choices=["realistic", "aggressive"], default="realistic", help="Risk profile preset")
 
     validate_cmd = sub.add_parser("validate", help="Validate backtest statistical significance")
     validate_cmd.add_argument("--source", choices=["synthetic"], default="synthetic")
@@ -92,6 +93,12 @@ def build_parser() -> argparse.ArgumentParser:
     validate_cmd.add_argument("--splits", type=int, default=5)
     validate_cmd.add_argument("--permutations", type=int, default=200)
     validate_cmd.add_argument("--json", action="store_true")
+
+    breaker_cmd = sub.add_parser(
+        "breaker-reset",
+        help="Manually reset the equity circuit breaker after a trip",
+    )
+    breaker_cmd.add_argument("--state", default="state/breaker.json")
 
     tax_cmd = sub.add_parser(
         "tax",
@@ -291,6 +298,17 @@ async def _run(args: argparse.Namespace) -> int:
                 logger.info("%s: %s", k, v)
         return 0
 
+    if args.command == "breaker-reset":
+        from cryptobot.core.breaker import BreakerConfig, CircuitBreaker
+
+        br = CircuitBreaker(BreakerConfig(state_path=args.state))
+        if not br.tripped:
+            print("breaker is not tripped; nothing to do")
+            return 0
+        br.reset()
+        print("circuit breaker reset; trading may resume")
+        return 0
+
     if args.command == "tax":
         import json as _json
         from pathlib import Path as _Path
@@ -336,6 +354,7 @@ async def _run(args: argparse.Namespace) -> int:
             await asyncio.sleep(5)
 
         trader = LiveTrader(LiveTraderConfig(
+            risk_profile=args.profile,
             strategy=args.strategy,
             symbol=args.symbol,
             timeframe=args.timeframe,

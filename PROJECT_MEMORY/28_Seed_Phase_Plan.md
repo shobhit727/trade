@@ -47,7 +47,7 @@ family capital for the multi-exchange / multi-algorithm phase.
 3. ✅ Allocator / tier configuration (`core/allocator.py`: equity-tiered strategy activation, YAML-configurable, fund balance excluded from allocatable equity; 11 tests)
 4. ✅ Tax engine (`core/tax.py`: FIFO lots, §115BBH strict no-loss-offset, 30%+cess estimate, TDS credits, Schedule-VDA CSV export, restart-safe persistence; wired into trader fill stream + `cryptobot tax` CLI; 11 tests)
 5. ✅ 60-day gate tracker (`core/gate.py`: daily equity snapshots, net-positive/Sharpe≥1/reject-rate/breaker criteria, auto-extend 30d ×2 then fail-final; live mode refused until pass; wired into trader + CLI; 10 tests)
-6. Dual risk profiles + circuit breaker
+6. ✅ Dual risk profiles + circuit breaker (`core/profiles.py`: realistic=spot-only vs aggressive=vol-targeted 0–3x with ≥25% liq-distance clamp; `core/breaker.py`: −25% peak-drawdown trip, profit-first graceful close, fund freeze, gate trip counter, manual `cryptobot breaker-reset`; wired into trader + CLI; 15 tests). NOTE: racing the aggressive profile in *backtest* needs leveraged backtest support — deferred until futures venue lands in the backtester; paper race unaffected.
 → then 60 days paper trading on PC.
 
 Each step ships independently, tested alone.

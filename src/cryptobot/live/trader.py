@@ -27,11 +27,13 @@ from pathlib import Path
 import aiohttp
 
 from cryptobot.backtest.runner import make_strategy
+from cryptobot.core.breaker import BreakerConfig, CircuitBreaker
 from cryptobot.core.bus import get_event_bus
-from cryptobot.core.events import KlineEvent, OrderSide, OrderStatus
+from cryptobot.core.events import KlineEvent, OrderEvent, OrderSide, OrderStatus
 from cryptobot.core.fund import FundConfig, GlobalFundLedger
 from cryptobot.core.gate import GateConfig, PaperGateTracker
 from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
+from cryptobot.core.profiles import get_profile
 from cryptobot.core.tax import TaxEngine
 from cryptobot.execution.engine import ExecutionEngine, build_venue
 from cryptobot.risk.manager import RiskManager
@@ -65,6 +67,8 @@ class LiveTraderConfig:
     tax_state_path: str = "state/tax_engine.json"
     gate_state_path: str = "state/paper_gate.json"
     gate_enabled: bool = True
+    risk_profile: str = "realistic"
+    breaker_state_path: str = "state/breaker.json"
 
 
 class LiveTrader:
@@ -96,6 +100,9 @@ class LiveTrader:
         self._harvest_task: asyncio.Task | None = None
         self._gate = PaperGateTracker(GateConfig(state_path=config.gate_state_path)) \
             if config.gate_enabled else None
+        self._profile = get_profile(config.risk_profile)
+        self._breaker = CircuitBreaker(BreakerConfig(state_path=config.breaker_state_path))
+        self._peak_equity = Decimal("0")
         self._last_gate_day: date | None = None
         self._tax = TaxEngine()
         try:
@@ -131,6 +138,8 @@ class LiveTrader:
         snap["tax_summary"] = self._tax.summary()
         if self._gate is not None:
             snap["paper_gate"] = self._gate.summary()
+        snap["risk_profile"] = self._profile.name
+        snap["breaker"] = self._breaker.summary()
         return snap
 
     def request_stop(self) -> None:
@@ -230,7 +239,7 @@ class LiveTrader:
 
         for row in rows[:-1] if rows else []:
             close = float(row[4])
-            self._feed_strategy(close=float(row[2]), low=close, high=close, volume=float(row[5]))
+            self._feed_strategy(close=close, low=close, high=close, volume=float(row[5]))
         logger.info(
             "Warm-up fed %d %s %s bars to %s",
             len(rows) - 1 if rows else 0, self.config.symbol, self.config.timeframe,
@@ -261,6 +270,9 @@ class LiveTrader:
         if close <= 0:
             return
         self.stats["last_close"] = close
+
+        if self._check_breaker():
+            return  # breaker tripped: no new entries
 
         orders = self._feed_strategy(
             close=close, high=float(bar.high_price),
@@ -318,7 +330,61 @@ class LiveTrader:
         except Exception as exc:  # noqa: BLE001 - tax bookkeeping must not kill trading
             logger.warning("tax fill recording failed: %s", exc)
 
+    def _check_breaker(self) -> bool:
+        """Update peak/drawdown; trip -> graceful profit-first close. True if tripped."""
+        state = self._portfolio.get_state()
+        equity = state.total_equity
+        if equity > self._peak_equity:
+            self._peak_equity = equity
+        if not self._breaker.check(self._peak_equity, equity):
+            return self._breaker.tripped
+
+        dd = (equity - self._peak_equity) / self._peak_equity * 100
+        self._breaker.trip(f"drawdown {dd:.1f}% from peak {self._peak_equity}",
+                           now_iso=datetime.now(UTC).isoformat())
+        self.stats["breaker"] = self._breaker.summary()
+        if self._gate is not None:
+            self._gate.breaker_trips += 1
+            self._gate.save()
+        if not self._fund.frozen:
+            self._fund.freeze()
+        asyncio.get_event_loop().create_task(self._graceful_close())
+        return True
+
+    async def _graceful_close(self) -> None:
+        """Close open positions profit-first (agreed -25% protocol)."""
+        from cryptobot.core.events import OrderSide, OrderType
+        from cryptobot.core.state import StateManager
+
+        try:
+            positions = StateManager().get_positions()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("graceful close scan failed: %s", exc)
+            return
+        ordered = CircuitBreaker.close_order([
+            {"symbol": pos.symbol, "side": str(pos.side),
+             "quantity": pos.quantity, "unrealized_pnl": pos.unrealized_pnl}
+            for pos in positions if pos.quantity > 0
+        ])
+        logger.error("graceful close: flattening %d positions profit-first", len(ordered))
+        for pos in ordered:
+            try:
+                close_order = OrderEvent(
+                    symbol=pos["symbol"],
+                    side=OrderSide.SELL,
+                    type=OrderType.MARKET,
+                    quantity=Decimal(str(pos["quantity"])),
+                    reduce_only=True,
+                    strategy="breaker",
+                )
+                await self._engine.submit_order(close_order)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("close order failed for %s: %s", pos["symbol"], exc)
+
     def _feed_strategy(self, close: float, high: float, low: float, volume: float):
+        if self._breaker.tripped:
+            self.stats["bars_fed"] += 1  # keep counting bars; entries halted
+            return
         """Dispatch to the strategy's feed signature (mirrors backtest runner)."""
         symbol = self.config.symbol
         self.stats["bars_fed"] += 1
