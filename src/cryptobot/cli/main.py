@@ -306,7 +306,10 @@ async def _run(args: argparse.Namespace) -> int:
             print("breaker is not tripped; nothing to do")
             return 0
         br.reset()
-        print("circuit breaker reset; trading may resume")
+        from cryptobot.utils.audit import ActionAudit
+
+        ActionAudit().log("owner", "breaker-reset", {"state": args.state})
+        print("circuit breaker reset; trading may resume (action logged)")
         return 0
 
     if args.command == "tax":
