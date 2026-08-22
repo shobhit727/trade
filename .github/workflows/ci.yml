@@ -255,7 +255,7 @@ jobs:
         include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"platform":"linux/amd64","tag_platform":"linux-amd64"}]' || '[{"platform":"linux/amd64","tag_platform":"linux-amd64"},{"platform":"linux/arm64","tag_platform":"linux-arm64"}]') }}
     steps:
       - uses: actions/checkout@v6
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
         if: matrix.platform == 'linux/arm64'
         with:
           platforms: arm64
