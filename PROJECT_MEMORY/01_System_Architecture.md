@@ -1,6 +1,6 @@
 # 01. System Architecture
 
-> **Last Updated**: 2026-08-08 (catalog 84 strategies + Phase 3/5 work; 749 pytest + 63 Rust green)
+> **Last Updated**: 2026-08-22 (full audit: 34 bugs filed as #20–#53; 769 pytest + 63 Rust green — but see tracker before trusting module-level claims)
 > **Confidence**: High for what exists; Low for what is intended (Rust).
 
 ## Verified layers
@@ -71,7 +71,7 @@
 ## Known gaps
 
 - `crates/{cryptobot-backtest,features,risk,stats,orderbook,py}/` lack `Cargo.toml` even though listed in workspace `members`. `cargo build` from root errors until either each gets a manifest or the array is trimmed.
-- 6 dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/`.
+- ~~6 dead empty dirs~~ → resolved 2026-07-31 (dirs removed).
 - ML volatility / regime / ensemble models implemented; volatility/regime disabled in `configs/base.yaml` until validated.
 
 ## Detailed API references

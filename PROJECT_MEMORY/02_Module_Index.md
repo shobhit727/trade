@@ -90,7 +90,6 @@ src/cryptobot/
 
 tests/unit/                        # 22 test files
 crates/                            # Workspace lists 7; only cryptobot-core has Cargo.toml
-src/cryptobot/                     # 6 dead empty dirs: allocator/ altdata/ api/ exchanges/ funding/ xmr/
 ```
 
 ## Verified approximate LOC (recent audit)

@@ -1,14 +1,14 @@
 # 12. Feature Status
 
-> **Last Updated**: 2026-08-09 (real-data validation: 0/84 catalog + carry -15% on 1y BTCUSDT; risk_fraction sizing; 769 pytest + 18 skipped + 63 Rust; ruff clean)
-> **Confidence**: High.
+> **Last Updated**: 2026-08-22 (full audit: 34 bugs filed as GitHub #20–#53 — see `13_Bug_Tracker.md`. ✅ below means *implemented with passing tests*, not *correct*: several core modules carry verified math/semantics bugs.)
+> **Confidence**: High for existence; medium for behavior (post-audit).
 
 ## Verified module status
 
 | Module | Status | Notes |
 |--------|--------|-------|
 | `core/events.py` | ✅ | 40+ event types across market data, signals, orders, positions, P&L, risk, system. |
-| `core/bus.py` | ✅ | EventBus with subscribe/unsubscribe/publish/publish_raw/publish_batch/get_history/replay/close. |
+| `core/bus.py` | ✅⚠️ | EventBus complete; `publish_batch` deadlocks on re-entrant publish (#51). |
 | `core/clock.py` | ✅ | Realtime / Simulated / Accelerated clocks + factory. All required `import time` (fixed). |
 | `core/state.py` | ✅ | SQLite persistent state. Graceful fallback if `_sqlite3` missing. Logs warning on import fail. |
 | `core/portfolio.py` | ✅ | Multi-strategy portfolio, kill-switch, P&L math. `update_equity` auto-resets `_daily_pnl_start` on UTC day boundary. |
@@ -16,8 +16,8 @@
 | `data/storage.py` | ✅ | TimescaleDBStorage, ParquetStorage, HybridStorage. `timedelta` import fixed. |
 | `data/cleaning.py` | ✅ | DataCleaner, validate_ohlcv, detect_outliers_zscore, fill_missing_bars. None/empty guards fixed. |
 | `data/features.py` | ✅ | Re-export of `cryptobot.ml.features` (B056). |
-| `backtest/engine.py` | ✅ | BacktestEngine, BacktestResult, TradeRecord. Equity double-count removed (B063); entry-price zero-guard (B064). |
-| `backtest/metrics.py` | ✅ | Sharpe, Sortino, drawdown, profit factor. Sortino method added. Zero-guard on drawdown. |
+| `backtest/engine.py` | ✅⚠️ | BacktestEngine complete, but equity curve uses wall-clock stamps (#20), no per-bar mark-to-market on run_bars (#32), funding settlement grid gaps (#30). |
+| `backtest/metrics.py` | ✅⚠️ | Metrics implemented; Sortino uses losses-only std — inflated (#39). |
 | `backtest/simulator.py` | ✅ | FillSimulator + factory. |
 | `backtest/validation.py` | ✅ | Real walk-forward (rolling-window with embargo), Monte Carlo block-permutation, deflated Sharpe. |
 | `backtest/reporting.py` | ✅ | HTML tearsheet generator (stdlib only). |
@@ -35,14 +35,14 @@
 | `strategies/indicators.py` | ✅ | 22 numpy OHLCV primitives — sma/ema/rsi/macd/atr/bb/donchian/cci/roc/obv/vwap/fisher/stoch/williams/keltner_mid/chaikin_mf/cumulative_delta/range_n/inside_bar/zscore/bollinger_position/true_range/make_order. |
 | `strategies/catalog/` | ✅ | **84 catalog signal strategies** — one file per strategy + one test per strategy (84 in `tests/strategies/`); auto-registered. Generated from spec table via `tools/gen_catalog.py`. Test modes: trend (monotonic), osc (sine+drift), vol (spike), flow (asymmetric candles). |
 | `strategies/ml_strategy.py` | ✅ | `MLStrategy` + `MLStrategyConfig` using `DirectionClassifier`; periodic retrain on price buffer (B054). |
-| `ml/features.py` | ✅ | 8 features: returns, RSI, MACD line + signal, ATR ratio, BB position + width, log volume. |
+| `ml/features.py` | ✅⚠️ | 8 features; `future_returns` labels are backward-looking → identity leakage when used for labeling (#21). |
 | `ml/models/direction.py` | ✅ | `DirectionClassifier` (sklearn logreg preferred, numpy fallback), walk-forward score. |
 | `ml/online.py` | ✅ | `DriftDetector` (mean/std shift) + `WalkForwardTrainer` purged splits. |
 | `ml/models/volatility.py` | ✅ | EWMA, GARCH, realized, quantile regression with softmax probabilities |
 | `ml/models/regime.py` | ✅ | HMM, k-means, GMM, threshold with softmax probabilities |
 | `ml/models/ensemble.py` | ✅ | Weighted voting ensemble with direction, volatility, regime |
 | `utils/health_server.py` | ✅ | stdlib ThreadingHTTPServer exposing `/health` JSON + `/metrics` Prometheus text. Used by Dockerfile HEALTHCHECK. |
-| `risk/manager.py` | ✅ | RiskManager pre-trade checks (kill switch, notional, total exposure). Notional check skipped when no price available. `report_risk_metrics()` emits Prometheus gauges per order check. |
+| `risk/manager.py` | ✅⚠️ | Pre-trade checks exist; `backtest_mode=True` disables nearly all of them (#33); correlation limit dead code; drawdown gauge reads a never-updated field (#49/#50). |
 | `risk/limits.py` | ✅ | RiskLimits from config. |
 | `risk/sizing.py` | ✅ | fixed_fraction_size, kelly_size, volatility_target_size. |
 | `risk/kill_switch.py` | ✅ | KillSwitch reads portfolio signal. |
@@ -57,7 +57,7 @@
 | `execution/venue/binance.py` | ✅ | Live / testnet Binance via ccxt.async_support. Sandbox mode, retries, error mapping, guardrails for missing credentials. |
 | `monitoring/metrics.py` | ✅ | Prometheus metrics + helpers. Requires `prometheus_client`. `total_pnl` is `Gauge` (not Counter). Includes `record_venue_quote_latency` and `record_routing_decision` for SOR observability. |
 | `monitoring/alerting.py` | ✅ | AlertManager + Telegram/Discord/Email/PagerDuty channels. `init_alerting()` only starts background task when channels configured; `stop()` idempotent. |
-| `monitoring/health.py` | ✅ | HealthMonitor + HealthChecker subclasses. `inspect.isawaitable` + false-as-unhealthy fix. Auto-register component. |
+| `monitoring/health.py` | ✅⚠️ | Monitor works; component aggregation ignores checker results (#35) and data-freshness passes vacuously with no data (#34). |
 | `monitoring/dashboard.py` | ✅ | Dashboard JSON builders. |
 | `cli/main.py` | ✅ | argparse CLI with `validate`, `paper`, `bot`, `serve`, `backtest`. Backtest subcommand supports `--show-trades` (print every closed trade; adds `trades[]` with `--json`), `--algorithms jobs.json` (parallel sweep), `--workers N`, `--seed`, `--vol`, `--capital`. **`paper-funder`** runs the Phase 3 funding-carry paper harness (`--symbols`, `--hours`, `--log`, `--poll-fapi`, `--poll-interval`, `--json`). With `--json`, logs route to stderr so stdout carries only JSON. |
 | `backtest/parallel.py` | ✅ | `run_parallel(jobs, workers)` multi-core algorithm sweep via `ProcessPoolExecutor`. |

@@ -14,7 +14,7 @@ Settings.from_yaml_safe("configs/base.yaml")   # preferred (uses _flatten_yaml)
 Settings.from_yaml("configs/base.yaml")        # legacy direct spread
 ```
 
-`Settings(extra="ignore")` silently drops unmapped YAML keys; `Settings.from_yaml_safe` translates the nested YAML (e.g. `exchanges.binance.*`, `monitoring.alerts.*`, `xmr.*`) to flat Settings field names, so `configs/base.yaml` is honored as-is.
+`Settings(extra="ignore")` silently drops unmapped YAML keys; `Settings.from_yaml_safe` translates the nested YAML (e.g. `exchanges.binance.*`, `monitoring.alerts.*`) to flat Settings field names, so `configs/base.yaml` is honored as-is.
 
 | Setting group | Env prefix | Highlight fields |
 |---|---|---|
@@ -24,7 +24,6 @@ Settings.from_yaml("configs/base.yaml")        # legacy direct spread
 | `risk` | `RISK_` | max_*_pct, kill_switch_*, position_sizing, kelly_fraction, volatility_target, min/max_order_size_usd |
 | `execution` | `EXECUTION_` | mode (paper/binance/testnet), smart_routing, order_type, limit_offset_bps, ioc_timeout_ms, max_slippage_bps |
 | `ml` | `ML_` | enabled, inference_mode, model_path, features, min_samples_train, feature_lookback |
-| `xmr` | `XMR_` | enabled, daemon_*/wallet_*, funding_* |
 | `monitoring` | `MONITORING_` | prometheus_enabled/port, grafana_enabled/port, telegram_*, discord_webhook, email_enabled, health_check_interval |
 | `database` | `DB_` | type, host, port, name, user, password, pool_size, max_overflow |
 | `backtest` | `BACKTEST_` | enabled, start_date, end_date, initial_capital, commission_bps, slippage_bps, funding_rate_included |

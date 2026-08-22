@@ -9,24 +9,33 @@ Cryptobot is an elite quantitative trading system built with Python 3.14+ (async
 ## Directory Structure
 
 ```
-├── src/cryptobot/           # Python package
-│   ├── backtest/            # Backtesting engine
-│   ├── cli/                 # Command-line interface
-│   ├── core/                # Core primitives (events, bus, clock, state)
-│   ├── data/                # Data ingestion, cleaning, storage
-│   ├── execution/           # Order routing, venues, algorithms
-│   ├── market_data/         # WebSocket managers, Binance client
-│   ├── monitoring/          # Metrics, alerting, health checks
-│   ├── risk/                # Risk limits, correlation, kill switch
-│   ├── strategies/          # Trading strategies
-│   └── utils/               # Logging, decorators, types
-├── crates/cryptobot-core/   # Rust library (placeholder)
+├── src/cryptobot/           # Python package (src-layout)
+│   ├── backtest/            # Engine, runner, metrics, validation, funding/carry, parallel sweeps
+│   ├── cli/                 # Command-line interface (main.py)
+│   ├── core/                # Events, bus, clock, portfolio, state
+│   ├── data/                # Ingestion, cleaning, storage (Timescale/Parquet), features re-export
+│   ├── execution/           # Engine, router, algorithms, costs, adverse selection, venues/
+│   ├── live/                # FundingPaperHarness (live paper funding-carry monitor)
+│   ├── market_data/         # WebSocket manager, Binance client, Redis cache
+│   ├── ml/                  # Features, models (direction/volatility/regime/ensemble), training, optimizer, inference, online
+│   ├── monitoring/          # Metrics, alerting, health checks, dashboard builders
+│   ├── risk/                # Limits, sizing, kill switch, correlation, portfolio optimizer, rate limit
+│   ├── strategies/          # Base + implementations + catalog/ (84 signal strategies)
+│   └── utils/               # Logging, decorators, types, health server
+├── crates/                  # Rust workspace (root Cargo.toml): 7 crates
+│   ├── cryptobot-core       # Primitives (OhlcvBar, decimal helpers)
+│   ├── cryptobot-features   # Indicators: trend, mean-reversion, volatility
+│   ├── cryptobot-risk       # Sizing (Kelly/vol-target), limits, portfolio optimization
+│   ├── cryptobot-stats      # Walk-forward accuracy, math helpers
+│   ├── cryptobot-orderbook  # Book model, VPIN
+│   ├── cryptobot-backtest   # Metrics (+PyO3 bindings); engine modules currently dead code (#42)
+│   └── cryptobot-py         # PyO3 0.29 bindings crate (cryptobot_rs)
 ├── deploy/k8s/              # Kubernetes manifests
-├── docker/                  # Docker configs (Prometheus, etc.)
-├── monitoring/              # Grafana dashboards, Prometheus rules
+├── docker/                  # Docker configs (Prometheus, Grafana dashboards)
+├── monitoring/              # Prometheus/Grafana/Loki/Alertmanager configs
 ├── configs/                 # Base YAML configuration
-├── requirements/            # Python dependencies
-├── tests/                   # Unit tests
+├── requirements/            # Pinned Python dependencies
+├── tests/                   # unit/ + strategies/ + integration/
 └── PROJECT_MEMORY/          # Architecture & design docs
 ```
 
@@ -193,16 +202,22 @@ except ImportError:
 
 | File | Purpose |
 |------|---------|
-| `main.py` | `cryptobot` command group. Subcommands: `bot`, `backtest`, `ingest`, `health`, `config`. |
+| `main.py` | argparse entrypoint (`python -m cryptobot.cli.main`, or `cryptobot` console script) |
 
-**Commands:**
+**Subcommands:** `backtest`, `mm`, `ml`, `serve`, `bot`, `validate`, `paper`, `paper-funder`, `carry`.
+
 ```bash
-cryptobot bot --host 0.0.0.0 --port 8080          # Run paper/live bot
-cryptobot backtest --strategy trend_following --bars 500 --json
-cryptobot ingest --symbol BTCUSDT --timeframe 1h --days 30
-cryptobot health                                     # Check dependencies
-cryptobot config show                                # Print resolved settings
+cryptobot backtest --strategy trend_following --bars 500 --json   # synthetic/CSV/parquet backtest
+cryptobot backtest --algorithms jobs.json --workers 8 --json      # parallel parameter sweep
+cryptobot bot --host 0.0.0.0 --port 8080                          # health server + keepalive loop
+cryptobot serve --port 8080                                       # standalone /health + /metrics
+cryptobot validate --bars 200                                     # walk-forward significance
+cryptobot paper-funder --symbols BTCUSDT --hours 6                # live funding-carry paper monitor
+cryptobot carry --spot spot.csv --perp perp.csv [--funding f.csv] # two-leg carry backtest
 ```
+
+> Note: there is no `ingest`, `health`, or `config show` subcommand despite older docs mentioning
+> them; and `bot` is currently a stub that serves health endpoints only (#22 context).
 
 ---
 
@@ -216,19 +231,16 @@ cryptobot config show                                # Print resolved settings
 
 ---
 
-### 12. `crates/cryptobot-core/` — Rust Workspace
+### 12. `crates/` — Rust Workspace
 
-**Status:** Single-member workspace with `lib.rs` stub. Intended for high-performance components (order book, matching engine, risk calculations).
+**Status:** Seven real crates (core, features, risk, stats, orderbook, backtest, py), PyO3 `0.29`
+bindings exposed as the `cryptobot_rs` package. `cargo fmt --check`, `cargo clippy
+--workspace --all-targets -- -D warnings`, and `cargo test --workspace` (63 tests) are green.
 
-```
-crates/
-└── cryptobot-core/
-    ├── Cargo.toml
-    └── src/
-        └── lib.rs   # pub fn hello() -> String { "cryptobot-core".into() }
-```
-
-**Cargo Config:** `.cargo/config.toml` sets `target-dir = "target"` for unified build output.
+> ⚠️ **2026-08-22 audit**: several Rust modules carry math bugs that tests don't catch — ERC
+> solver converges to a corner (#24), Sortino/max-drawdown formulas (#40), NaN passes risk limits
+> (#41). The backtest engine/runner/validation modules are dead code referencing nonexistent core
+> APIs (#42). See #53 for the full sweep. The Python app does not currently consume `cryptobot_rs`.
 
 ---
 
@@ -341,20 +353,23 @@ crates/
 | `RISK_MAX_DAILY_LOSS_PCT` | 0.03 | 3% daily loss limit |
 | `RISK_KILL_SWITCH_DAILY_LOSS_PCT` | 0.05 | 5% hard stop |
 | `RISK_MAX_LEVERAGE` | 3.0 | |
-| `RISK_MAX_CORRELATION` | 0.7 | Pair correlation limit |
+| `RISK_MAX_CORRELATION` | 0.7 | Pair correlation limit (currently dead code, #49) |
 | `MARKET_DATA_SYMBOLS` | ["BTCUSDT"] | Subscribed symbols |
 | `MARKET_DATA_TIMEFRAMES` | ["1m"] | Kline intervals |
 | `MARKET_DATA_ORDERBOOK_DEPTH` | 20 | Depth levels |
-| `MONITORING_PROMETHEUS_PORT` | 9090 | |
-| `MONITORING_ALERT_TELEGRAM_TOKEN` | — | |
-| `MONITORING_ALERT_DISCORD_WEBHOOK` | — | |
+| `MONITORING_PROMETHEUS_PORT` | 9090 | Metrics port |
+| `MONITORING_TELEGRAM_BOT_TOKEN` | — | → settings.monitoring.telegram_bot_token |
+| `MONITORING_TELEGRAM_CHAT_ID` | — | → telegram_chat_id |
+| `MONITORING_DISCORD_WEBHOOK` | — | → discord_webhook |
 | `DB_HOST` | timescaledb | |
 | `DB_PORT` | 5432 | |
 | `DB_NAME` | cryptobot | |
 | `DB_USER` | cryptobot | |
 | `DB_PASSWORD` | cryptobot | |
-| `REDIS_HOST` | redis | |
-| `REDIS_PORT` | 6379 | |
+| `MARKET_DATA_REDIS_HOST` | redis | Redis cache host (code reads the MARKET_DATA_ prefix) |
+
+> ⚠️ `REDIS_HOST`/`REDIS_PORT`/`PROMETHEUS_PORT` as set in compose/k8s are read by nothing (#52).
+> Email alerting env vars are not yet wired to Settings (#29).
 
 Full reference: `PROJECT_MEMORY/08_Config_Reference.md`
 
@@ -377,15 +392,19 @@ Full reference: `PROJECT_MEMORY/08_Config_Reference.md`
 
 ## Known Issues & TODOs
 
-See `PROJECT_MEMORY/13_Bug_Tracker.md` and `PROJECT_MEMORY/12_Feature_Status.md`
+See `PROJECT_MEMORY/13_Bug_Tracker.md` and the GitHub issue index (#20–#53, 2026-08-22 audit).
 
 | ID | Issue | Status |
 |----|-------|--------|
 | B024 | `_sqlite3` missing → in-memory fallback | Workaround |
 | B051 | Prometheus optional deps | Fixed (lazy imports) |
-| — | `/health` endpoint | Done (`utils/health_server.py` ThreadingHTTPServer) |
-| — | BinanceVenue order placement | Done (ccxt async, retries, sandbox) |
-| — | ML strategy framework | Done (`strategies/ml_strategy.py`) |
+| #22 | Production Docker image cannot start (CMD/ENTRYPOINT `-m` duplication) | Open — critical |
+| #20/#32/#39 | Backtest Sharpe/drawdown unreliable (wall-clock stamps, no per-bar MTM, Sortino formula) | Open — critical/high |
+| #25 | Catalog strategies effectively long-only (flips close, never reverse) | Open — critical |
+| #21/#27 | ML label leakage + non-functional optimizer layer | Open — critical |
+| — | `/health` endpoint | Done (`utils/health_server.py`) |
+| — | BinanceVenue order placement | Done (ccxt async) — see #43 for retry/idempotency caveats |
+| — | ML strategy framework | Exists (`strategies/ml_strategy.py`) — trained labels leak until #21 lands |
 
 ---
 

@@ -4,6 +4,18 @@
 
 The Cryptobot backtesting engine provides a comprehensive event-driven backtesting framework for testing trading strategies against historical or synthetic market data.
 
+> ⚠️ **Known-metric caveats (2026-08-22 audit — read before trusting results)**
+>
+> Until GitHub issues #20/#32/#39 are fixed:
+> - **Sharpe/Sortino annualization is unreliable** on the fast `run_bars` path (equity curve stamped with wall-clock time; #20).
+> - **Max drawdown understates risk** — positions aren't marked to market between fills (#32).
+> - **Sortino is inflated** (losses-only std instead of downside deviation; #39).
+> - **Catalog strategies behave long-only** — a `-1` flip closes the long but never opens a short (#25); the strategy's internal position state diverges from the engine after flips.
+> - **Funding settlement** fires only when a bar's open hour is exactly 00/08/16 UTC (#30).
+> - `backtest` mode skips most live risk limits, so results won't reflect live rejections (#33).
+>
+> Treat absolute metric values as directional; compare strategies relative to each other only.
+
 ## Quick Start
 
 ### CLI Usage

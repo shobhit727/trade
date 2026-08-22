@@ -101,7 +101,8 @@ python -m cryptobot.cli.main backtest --strategy mean_reversion \
   --source parquet --path data/btcusdt.parquet --json
 ```
 
-> `timescale` source is documented but not implemented in `load_bars`.
+> `timescale` source is implemented but degrades gracefully: without a reachable TimescaleDB it
+> logs a debug line and returns an empty dataset.
 
 ## Backtest — Docker
 

@@ -15,7 +15,7 @@ pip install cryptobot
 ## Commands
 
 ```bash
-cryptobot --help
+python -m cryptobot.cli.main --help     # or `cryptobot` if pip-installed
 ```
 
 ### Global Options
@@ -23,9 +23,10 @@ cryptobot --help
 | Option | Description |
 |--------|-------------|
 | `--help` | Show help message |
-| `--version` | Show version |
-| `--config` | Path to config file (default: configs/base.yaml) |
-| `--log-level` | Log level: DEBUG, INFO, WARNING, ERROR |
+
+> The CLI is argparse-based; there is no `--version`, `--config`, or `--log-level` global flag,
+> and no shell completion (older versions of this page described click-style features that were
+> never implemented). Logging follows `APP_LOG_LEVEL` from settings/env.
 
 ## Commands
 
@@ -54,6 +55,11 @@ cryptobot backtest [OPTIONS]
 | `--show-trades` | false | Include every closed trade in output (`trades[]` in JSON) |
 | `--algorithms` | - | JSON file with a list of jobs to sweep in parallel |
 | `--workers` | 0 | Worker processes for `--algorithms` (default: one per CPU core) |
+| `--timeframe` | 1h | Bar spacing for synthetic data (e.g. 1m, 5s, 100ms) |
+
+> Note: `--strategy` accepts the three core strategies (`mean_reversion`, `trend_following`,
+> `stat_arb`) — not yet the full 84-strategy catalog (registry names work programmatically via
+> `make_strategy`).
 
 #### Examples
 
@@ -81,7 +87,7 @@ cryptobot backtest \
 
 ### paper
 
-Run paper trading (simulated live trading).
+Run paper trading dry-run (synthetic bars → market orders through SimulatedVenue).
 
 ```bash
 cryptobot paper [OPTIONS]
@@ -91,22 +97,24 @@ cryptobot paper [OPTIONS]
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--host` | 0.0.0.0 | Host to bind |
-| `--port` | 8080 | Port to bind |
-| `--strategy` | trend_following | Strategy name |
 | `--symbol` | BTCUSDT | Trading symbol |
-| `--timeframe` | 1m | Timeframe |
-| `--config` | configs/base.yaml | Config file |
+| `--source` | synthetic | Data source |
+| `--bars` | 200 | Number of synthetic bars |
+| `--json` | false | JSON output |
 
 #### Example
 
 ```bash
-cryptobot paper --strategy trend_following --symbol ETHUSDT --timeframe 5m
+python -m cryptobot.cli.main paper --symbol ETHUSDT --bars 500
 ```
+
+> `paper` is a synthetic dry-run that exits when the bars run out — it does not bind a port and
+> has no `--host/--port/--strategy/--timeframe` options (older docs listed those; they never
+> existed). The long-running process command is `bot`.
 
 ### bot
 
-Run live trading bot.
+Start the health/metrics server and keep the process alive.
 
 ```bash
 cryptobot bot [OPTIONS]
@@ -116,18 +124,11 @@ cryptobot bot [OPTIONS]
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--host` | 0.0.0.0 | Host to bind |
-| `--port` | 8080 | Port to bind |
-| `--strategy` | trend_following | Strategy name |
-| `--symbol` | BTCUSDT | Trading symbol |
-| `--timeframe` | 1m | Timeframe |
-| `--mode` | paper | paper, live, binance |
+| `--host` | 127.0.0.1 | Bind host |
+| `--port` | 8080 | Bind port |
 
-**⚠️ Warning**: Live mode uses real funds. Test thoroughly in paper mode first.
-
-```bash
-cryptobot bot --mode paper --strategy trend_following --symbol BTCUSDT
-```
+> ⚠️ `bot` currently serves `/health` + `/metrics` only — no strategy/trading loop is attached
+> yet (see plan.md Phase 8). There is no `--mode` flag; live mode requires code wiring.
 
 ### serve
 
@@ -195,140 +196,81 @@ cryptobot paper-funder [OPTIONS]
 cryptobot paper-funder --symbols BTC,ETH --hours 6 --poll-fapi --json
 ```
 
-## Strategy-Specific Options
+### carry
 
-### Trend Following
+Two-leg funding-carry backtest (long spot / short perp) with real funding history.
 
 ```bash
-cryptobot backtest --strategy trend_following \
-  --ema-fast 12 \
-  --ema-slow 26 \
-  --adx-threshold 25 \
-  --atr-period 14 \
-  --atr-mult 2.0
+cryptobot carry --spot data/spot.csv --perp data/perp.csv [OPTIONS]
 ```
+
+#### Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--ema-fast` | 12 | Fast EMA period |
-| `--ema-slow` | 26 | Slow EMA period |
-| `--adx-threshold` | 25 | ADX trend threshold |
-| `--atr-period` | 14 | ATR period |
-| `--atr-mult` | 2.0 | ATR multiplier |
-| `--risk-per-trade` | 0.02 | Risk per trade |
-
-### Mean Reversion
-
-```bash
-cryptobot backtest --strategy mean_reversion \
-  --bb-period 20 \
-  --bb-std 2.0 \
-  --rsi-period 14 \
-  --rsi-overbought 70 \
-  --rsi-oversold 30
-```
-
-### Market Making
+| `--spot` | required | Spot CSV (Binance klines format) |
+| `--perp` | required | Perp CSV (same format; time-aligned to spot) |
+| `--funding` | - | Binance fundingRate CSV (`funding_time,funding_rate`); omit for fixed rate |
+| `--fixed-rate` | 0.0001 | Fixed per-8h rate when no CSV |
+| `--symbol` / `--perp-symbol` | BTCUSDT / BTCUSDTPERP | Leg symbols |
+| `--entry` / `--exit` | 0.0003 / 0.00005 | Funding-rate entry/exit thresholds |
+| `--qty` | USD 10k / price | Quantity per leg |
+| `--capital` | 10000 | Starting capital |
+| `--risk` | 0.0 | Equity fraction per pair (0 = fixed qty) |
+| `--max-notional` | 0 (uncapped) | Cap pair notional in USD |
+| `--commission-bps` | 5 | Per-leg commission |
+| `--json` | false | JSON output |
 
 ```bash
-cryptobot backtest --strategy market_making \
-  --gamma 0.5 \
-  --sigma 0.01 \
-  --kappa 1.5 \
-  --A 0.025 \
-  --max-inventory 5
+python -m cryptobot.cli.main carry --spot spot.csv --perp perp.csv \
+  --funding funding.csv --risk 0.02 --json
 ```
 
-### Stat Arb
+## Strategy-Specific Options
+
+> ⚠️ The backtest CLI does **not** expose per-strategy flags (no `--ema-fast`, `--bb-period`,
+> `--gamma`, `--lookback`, `--retrain-interval`, …). Strategy parameters come from dataclass
+> defaults; to vary them use the parallel sweep with a params file:
 
 ```bash
-cryptobot backtest --strategy stat_arb \
-  --lookback 60 \
-  --z-entry 2.0 \
-  --z-exit 0.4 \
-  --z-stop 3.5
+cat > jobs.json <<'EOF'
+[{"strategy": "trend_following", "params": {"fast": 8, "slow": 21}},
+ {"strategy": "mean_reversion",  "params": {"rsi_period": 7}}]
+EOF
+python -m cryptobot.cli.main backtest --algorithms jobs.json --workers 4 --json
 ```
 
-### Funding Arb
-
-```bash
-cryptobot backtest --strategy funding_arb \
-  --min-funding-rate 0.0001 \
-  --basis-entry-bps 5.0 \
-  --basis-exit-bps 1.5
-```
-
-### ML Strategy
-
-```bash
-cryptobot backtest --strategy ml \
-  --retrain-interval 100 \
-  --min-train-samples 500
-```
+`make_strategy(name, **params)` (backtest/runner.py) is the programmatic equivalent.
 
 ## Environment Variables
 
-All CLI options can be set via environment variables:
-
-```bash
-export STRATEGY=trend_following
-export BARS=500
-export SYMBOL=BTCUSDT
-export TIMEFRAME=1m
-export INITIAL_CAPITAL=10000
-export COMMISSION_BPS=5
-export SLIPPAGE_BPS=3
-
-cryptobot backtest
-```
-
-### Priority
-
-1. CLI arguments (highest)
-2. Environment variables
-3. Config file (configs/base.yaml)
-4. Defaults
+The CLI does not read `STRATEGY`/`BARS`-style env vars (older docs claimed an env override layer
+that was never implemented). Configuration comes from settings/env prefixes (`APP_`, `RISK_`,
+`EXECUTION_`, `BINANCE_`, `MARKET_DATA_`, `MONITORING_`, `DB_`, `ML_`, `BACKTEST_`) via
+`configs/base.yaml` + pydantic-settings.
 
 ## Exit Codes
 
 | Code | Meaning |
 |------|---------|
 | 0 | Success |
-| 1 | General error |
-| 2 | Invalid arguments |
-| 3 | Config error |
-| 4 | Connection error |
-| 5 | Validation failed |
-
-## Shell Completion
-
-```bash
-# Bash
-eval "$(_CRYPTOBOT_COMPLETE=bash_source cryptobot)"
-
-# Zsh
-eval "$(_CRYPTOBOT_COMPLETE=zsh_source cryptobot)"
-
-# Fish
-eval (env _CRYPTOBOT_COMPLETE=fish_source cryptobot)
-```
+| 1 | General error (including `validate` reporting a failed significance check) |
+| 2 | Invalid arguments / unknown command |
 
 ## Examples
 
-### Run a complete workflow
+### Run a backtest workflow
 
 ```bash
-# 1. Ingest data
-cryptobot ingest --symbol BTCUSDT --timeframe 1h --days 90
+# 1. Backtest on synthetic data
+python -m cryptobot.cli.main backtest --strategy trend_following --bars 1000
 
-# 2. Run backtest
-cryptobot backtest --strategy trend_following --bars 1000 --validate
+# 2. Validate statistical significance of a return series
+python -m cryptobot.cli.main validate --bars 1000 --json
 
-# 3. Run validation on results
-cryptobot backtest --strategy trend_following --bars 1000 --validate --json
-
-# 4. Paper trading
-cryptobot paper --strategy trend_following --symbol BTCUSDT
+# 3. Two-leg carry backtest with real funding history
+python -m cryptobot.cli.main carry --spot data/spot.csv --perp data/perp.csv \
+  --funding data/funding.csv --json
 ```
 
 ### CI/CD Integration
@@ -340,15 +282,5 @@ cryptobot paper --strategy trend_following --symbol BTCUSDT
     python -m cryptobot.cli.main backtest \
       --strategy trend_following \
       --bars 1000 \
-      --validate \
       --json > backtest_result.json
-
-- name: Check results
-  run: |
-    python -c "
-import json
-with open('backtest_result.json') as f:
-    r = json.load(f)
-    assert r['passed'], 'Validation failed'
-    print(f'Sharpe: {r[\"sharpe\"]}')"
 ```

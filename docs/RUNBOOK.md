@@ -52,7 +52,7 @@ git clone https://github.com/shobhit727/trade.git cryptobot
 | `requirements/prod.txt` | Runtime deps. |
 | `requirements/test.txt` | Test deps (pytest, pytest-asyncio, etc.). |
 | `.env.example` (optional) | If you want to set env vars; see §4. |
-| `compose/docker-compose.yml` | A second compose file at `compose/`. The root file is the source of truth. |
+| `compose/docker-compose.yml` | ⚠️ Legacy second compose file — currently broken (nonexistent Dockerfile path, invalid CLI flag, wrong migrations path; #23). The root file is the source of truth. |
 
 ## 4. Environment variables
 
@@ -67,6 +67,9 @@ export BINANCE_API_SECRET="your-testnet-secret"
 export MONITORING_TELEGRAM_BOT_TOKEN=""
 export MONITORING_TELEGRAM_CHAT_ID=""
 export MONITORING_DISCORD_WEBHOOK=""
+# NOTE (2026-08-22): email alerting is NOT configurable yet — MonitoringSettings lacks the
+# email_* fields (#29). The vars below are placeholders until that lands; use the
+# MONITORING_EMAIL_* prefix if you experiment.
 export EMAIL_SMTP_HOST=""
 export EMAIL_SMTP_PORT=""
 export EMAIL_USERNAME=""
@@ -117,7 +120,7 @@ Equivalent one-shot:
 docker compose --profile test run --rm --build cryptobot-test
 ```
 
-You should see pytest produce 4-dot/4-pass lines and exit 0.
+You should see pytest pass (700+ tests as of 2026-08-22) and exit 0.
 
 ### Start the full stack (paper trading + observability)
 
@@ -225,7 +228,10 @@ docker compose logs --since="2024-01-01T00:00:00" cryptobot-paper
 
 ## 9. Configuration knobs
 
-The bot reads `configs/base.yaml`. Override anything via env (prefixes: `APP_`, `RISK_`, `EXECUTION_`, `BINANCE_`, `MARKET_DATA_`, `MONITORING_`, `DB_`, `ML_`, `XMR_`, `BACKTEST_`).
+The bot reads `configs/base.yaml`. Override anything via env (prefixes: `APP_`, `RISK_`, `EXECUTION_`, `BINANCE_`, `MARKET_DATA_`, `MONITORING_`, `DB_`, `ML_`, `BACKTEST_`).
+
+> Note (2026-08-22): large blocks of base.yaml (`strategies.*`, `ml.models.*`) are parsed but never
+> read by `Settings` — strategy/model params come from code defaults. See issue #52.
 
 Examples:
 
@@ -240,7 +246,7 @@ EXECUTION_MODE=binance BINANCE_TESTNET=false \
   docker compose up -d cryptobot
 ```
 
-The YAML structure (`exchanges.binance`, `monitoring.alerts.*`, `xmr.daemon`, `xmr.wallet_rpc`) is flattened into the Settings namespace by `Settings.from_yaml_safe` in `src/cryptobot/config.py`.
+The YAML structure (`exchanges.binance`, `monitoring.alerts.*`) is flattened into the Settings namespace by `Settings.from_yaml_safe` in `src/cryptobot/config.py`.
 
 ## 10. Health checks and `/health` endpoint
 
@@ -251,23 +257,24 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3).read()"
 ```
 
-> ⚠️ As of this writing, no HTTP server is wired in `src/cryptobot/`. The HEALTHCHECK will fail until a tiny HTTP handler on port 8080 is added.
+The endpoint is served by `src/cryptobot/utils/health_server.py` (stdlib ThreadingHTTPServer,
+`/health` + `/metrics`). `cryptobot bot` starts it; `cryptobot serve` runs it standalone.
 
-Workarounds while it's unwired:
+> ⚠️ **2026-08-22**: the production image cannot start at all until #22 is fixed (CMD duplicates
+> `-m` under ENTRYPOINT). The test target is unaffected.
 
-```bash
-# Override the HEALTHCHECK by editing the compose service or by using --no-healthcheck
-docker run --rm --no-healthcheck ghcr.io/<you>/trade:latest
-
-# Or check the process manually
-docker compose exec cryptobot-paper ps -ef | grep cryptobot
-```
-
-When the endpoint exists:
+When the container runs:
 
 ```bash
 curl -fsS http://localhost:8080/health
 curl -fsS http://localhost:8080/metrics | head
+```
+
+If you override the entrypoint, keep the healthcheck in mind:
+
+```bash
+# Check the process manually if needed
+docker compose exec cryptobot-paper ps -ef | grep cryptobot
 ```
 
 ## 11. Troubleshooting
@@ -342,6 +349,10 @@ Removes named volumes (timescaledb_data, redis_data, prometheus_data, etc.).
 
 `deploy/k8s/` has manifests: namespace, configmap, secret, pvc, deployment, service, hpa, kustomization overlay.
 
+> ⚠️ **2026-08-22**: the manifests do not deploy cleanly as shipped — the Deployment runs a one-shot
+> `paper` command so probes never pass, Service/HPA are duplicated (kustomize fails), and a mount
+> uses Compose-style `:ro`. See issue #28 before using.
+
 Apply:
 
 ```bash
@@ -390,7 +401,7 @@ git push origin v0.1.0
 ## 14. Where to look next
 
 - `PROJECT_MEMORY/12_Feature_Status.md` — module-by-module status.
-- `PROJECT_MEMORY/13_Bug_Tracker.md` — known issues, including the in-memory SQLite fallback and the unimplemented `/health` endpoint.
+- `PROJECT_MEMORY/13_Bug_Tracker.md` — known issues, indexed against GitHub #20–#53 (2026-08-22 audit).
 - `PROJECT_MEMORY/08_Config_Reference.md` — Settings field reference.
 - `plan.md` — phases and remaining work.
 - `src/cryptobot/backtest/runner.py` + `runner.run_backtest` — backtest API.

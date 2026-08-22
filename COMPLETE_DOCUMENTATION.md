@@ -2,6 +2,14 @@
 
 > **Elite Quantitative Trading System** — Production-grade algorithmic trading platform with backtesting, live trading, ML pipeline, risk management, and multi-arch deployment.
 
+> ⚠️ **2026-08-22 audit notice**: 34 verified bugs were filed as GitHub #20–#53 (9 critical,
+> 16 high) across backtesting metrics, ML training, risk gating, and deployment. The reference
+> below describes *intended* behavior; where reality diverges, the tracker and
+> `PROJECT_MEMORY/13_Bug_Tracker.md` are authoritative. Headline caveats: production Docker
+> image can't start (#22), backtest Sharpe/drawdown unreliable (#20/#32/#39/#40), catalog
+> strategies effectively long-only (#25), ML labels leak features (#21), optimizer layer
+> non-functional (#27).
+
 ---
 
 ## 📋 Table of Contents
@@ -436,45 +444,37 @@ export RISK_MAX_POSITION_USD=50000
 ```bash
 cryptobot --help
 
-# Backtest
-cryptobot backtest --strategy trend_following --bars 500 --validate --json
+# Backtest (synthetic/CSV/parquet; logs to stderr with --json)
+python -m cryptobot.cli.main backtest --strategy trend_following --bars 500 --json
 
-# Paper trading
-cryptobot paper --strategy trend_following --symbol ETHUSDT --timeframe 5m
+# Parallel parameter sweep
+python -m cryptobot.cli.main backtest --algorithms jobs.json --workers 8 --json
 
-# Live trading (⚠️ real funds)
-cryptobot bot --mode live --strategy trend_following --symbol BTCUSDT
+# Paper dry-run over synthetic bars
+python -m cryptobot.cli.main paper --symbol ETHUSDT --bars 500
 
-# Data ingestion
-cryptobot ingest --symbol BTCUSDT --timeframe 1h --days 90
+# Health/metrics server (bot = serve + keepalive loop)
+python -m cryptobot.cli.main bot --host 0.0.0.0 --port 8080
+python -m cryptobot.cli.main serve --host 0.0.0.0 --port 8080
 
-# Health check
-cryptobot health
-
-# Config
-cryptobot config show
-cryptobot config validate
+# Validation / funding monitor / carry backtest
+python -m cryptobot.cli.main validate --bars 200 --json
+python -m cryptobot.cli.main paper-funder --symbols BTCUSDT --hours 6
+python -m cryptobot.cli.main carry --spot spot.csv --perp perp.csv --funding funding.csv
 ```
+
+> Note: there are no `ingest`, `health`, or `config show/validate` subcommands, no `--validate`
+> flag on backtest, and no per-strategy CLI flags — strategy params are varied via the
+> `--algorithms` sweep file or programmatically (`make_strategy(name, **params)`).
 
 ### Strategy-Specific Options
 ```bash
-# Trend Following
---ema-fast 12 --ema-slow 26 --adx-threshold 25 --atr-period 14 --atr-mult 2.0
+# Not exposed as CLI flags. Vary params via the sweep:
+[{"strategy": "trend_following", "params": {"fast": 8, "slow": 21}}]  # jobs.json
 
-# Mean Reversion
---bb-period 20 --bb-std 2.0 --rsi-period 14 --rsi-overbought 70 --rsi-oversold 30
-
-# Market Making
---gamma 0.5 --sigma 0.01 --kappa 1.5 --A 0.025 --max-inventory 5
-
-# Stat Arb
---lookback 60 --z-entry 2.0 --z-exit 0.4 --z-stop 3.5
-
-# Funding Arb
---min-funding-rate 0.0001 --basis-entry-bps 5.0 --basis-exit-bps 1.5
-
-# ML Strategy
---retrain-interval 100 --min-train-samples 500
+# Programmatic equivalent:
+#   from cryptobot.backtest.runner import make_strategy
+#   strat = make_strategy("market_making", gamma=0.5, kappa=1.5)
 ```
 
 ### Environment Variables

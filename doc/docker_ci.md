@@ -4,6 +4,10 @@
 
 ### Dockerfile
 
+> ⚠️ **2026-08-22**: the snippet below shows the CI-passed state. The Dockerfile's *default* ARG is
+> `python:3.13-slim`; only `ci.yml` passes `PYTHON_TAG=3.14-slim`, so release/compose builds use
+> 3.13 unless overridden (issue #38). Also note the production CMD is currently broken (#22).
+
 ```dockerfile
 # Multi-stage build
 # Base

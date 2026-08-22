@@ -48,13 +48,17 @@ docker buildx build --platform linux/amd64,linux/arm64 --target production --pus
 ### CI Pipeline Order (must run in order)
 ```bash
 # Required order per CI
-1. lint          # ruff (pinned) + pyflakes
+1. lint          # ruff (pinned) — Makefile target runs ruff only; CI adds pyflakes as a separate step
 2. cargo-lint    # cargo fmt --check + cargo clippy -D warnings
 3. cargo-test    # cargo test --workspace
-4. unit          # pytest with coverage gate (--cov-fail-under=70), matrix on 3.13+3.14 (depends on 1-3)
-5. docker-test   # cached image build + pytest inside container + trivy scan
-6. docker-build  # multi-arch buildx (push only on push); gated by paths-filter
+4. unit          # pytest with coverage gate (--cov-fail-under=70), matrix on 3.13+3.14 (depends on lint)
+5. docker-test   # cached image build + pytest inside container + trivy scan (needs: lint + changes path-filter)
+6. docker-build  # multi-arch buildx (push only on push); gated by changes path-filter
 ```
+
+> **Reality check (2026-08-22 audit)**: `docker-test` depends only on `[lint, changes]` and runs in
+> parallel with cargo/unit — it does NOT wait for them. That's how the broken production CMD (#22)
+> shipped green: the production target is built+scanned but never *run* by CI.
 
 ### Parallel / Independent CI Jobs
 - `changes` (path filter: core/docker) — a *skip* gate, not a true dependency stage
@@ -183,10 +187,15 @@ env:
   REGISTRY_IMAGE: ghcr.io/${{ github.repository }}
 ```
 
+> **Reality check (2026-08-22 audit)**: only `ci.yml` actually passes `PYTHON_TAG=3.14-slim`;
+> `release.yml`, `scripts/build_multiarch.sh`, and compose omit it, so tagged release images build
+> on the Dockerfile default (`3.13-slim`). See issue #38.
+
 ### Python Version
 - **CI runners**: 3.13 + 3.14 (unit tests run a matrix on both)
-- **Docker base image**: 3.14-slim (`PYTHON_TAG`, also the Dockerfile default `ARG`)
-- **Local**: 3.14+ recommended
+- **Docker base image**: 3.14-slim in CI; Dockerfile *default* ARG is still `3.13-slim` (#38)
+- **Local**: 3.14 works (`pyproject requires-python >=3.13`); override Makefile if no `python3.13`:
+  `make test PY=python3`
 
 ### Rust Toolchain
 - Uses `dtolnay/rust-toolchain@stable` (auto-installs) + `Swatinem/rust-cache@v2` (caches target dir)
@@ -250,8 +259,14 @@ git push origin v0.1.0
 - **Plan/Architecture**: `plan.md`, `CODEBASE.md`, `PROJECT_MEMORY/`
 - **Runbook**: `docs/RUNBOOK.md` (ops guide)
 - **Config Reference**: `PROJECT_MEMORY/08_Config_Reference.md`
-- **Bug Tracker**: `PROJECT_MEMORY/13_Bug_Tracker.md`
+- **Bug Tracker**: `PROJECT_MEMORY/13_Bug_Tracker.md` (indexed against GitHub issues #20–#53, filed 2026-08-22 audit)
 - **Feature Status**: `PROJECT_MEMORY/12_Feature_Status.md`
+
+> **2026-08-22 audit**: 34 verified bugs filed as #20–#53 (9 critical, 16 high). Headline caveats
+> until fixed: production Docker image cannot start (#22), backtest Sharpe/drawdown unreliable
+> (#20/#32/#39/#40), catalog strategies effectively long-only (#25), ML training labels leak
+> features (#21), optimizer layer non-functional (#27). Check the tracker before trusting any
+> module marked ✅ elsewhere.
 
 ---
 

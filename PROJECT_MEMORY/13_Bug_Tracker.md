@@ -1,7 +1,7 @@
 # 13. Bug Tracker
 
-> **Last Updated**: 2026-08-04 (backtest CLI + Rust workspace fixes closed)
-> **Confidence**: High for resolved; medium for open.
+> **Last Updated**: 2026-08-22 (full-repo audit: 34 issues filed as GitHub #20–#53; see Open → GitHub Issues below)
+> **Confidence**: High for resolved; high for newly-filed (each verified by code reading, several reproduced empirically).
 
 ## Resolved (verified)
 
@@ -82,24 +82,82 @@
 
 ## Open (verified)
 
-> **Updated 2026-08-06**: B051 (lazy import) and dead-dir rows removed — both resolved:
-> `monitoring/__init__.py` defers submodule imports via `__getattr__` (no-Prometheus safe);
-> `src/cryptobot/{allocator,altdata,api,exchanges,funding,xmr}/` dirs were deleted 2026-07-31.
+> **2026-08-22 full-repo audit**: all newly-found bugs are tracked as GitHub issues (#20–#53) with
+> severity labels (`critical`/`high`/`medium`/`low`) and area labels (`backtest`/`ml`/`risk`/
+> `monitoring`/`infra`/`rust`). The table below indexes them; consult the issue bodies for
+> evidence, repros, and suggested fixes.
+
+### Critical
+
+| Issue | Area | Summary |
+|-------|------|---------|
+| [#20](https://github.com/shobhit727/trade/issues/20) | backtest | Equity curve stamped wall-clock → `_periods_per_year` ≈ 31.5M; Sharpe/Sortino meaningless on `run_bars`. |
+| [#21](https://github.com/shobhit727/trade/issues/21) | ml | `future_returns` labels are backward returns, identical to `ret_h` feature → identity leakage in ML training. |
+| [#22](https://github.com/shobhit727/trade/issues/22) | infra | Dockerfile production CMD duplicates `-m` under ENTRYPOINT → container crashes instantly. |
+| [#23](https://github.com/shobhit727/trade/issues/23) | infra | compose/docker-compose.yml broken end-to-end (bad Dockerfile path, nonexistent `--mode` flag, wrong migrations path). |
+| [#24](https://github.com/shobhit727/trade/issues/24) | rust | ERC `risk_parity_weights` update reduces to w∝w² → converges to 100%-single-asset corner. |
+| [#25](https://github.com/shobhit727/trade/issues/25) | backtest | Flip signals never establish shorts (single close order) — all 84 catalog strategies run long-only-flip semantics. |
+| [#26](https://github.com/shobhit727/trade/issues/26) | execution/costs | TransactionCostModel sums raw `*_bps` values as currency; slippage returned as fraction; bounds rescale mangles everything. |
+| [#27](https://github.com/shobhit727/trade/issues/27) | ml | WalkForwardOptimizer non-functional: every Optuna trial TypeErrors; SHARPE objective never computed; fallback in-sample. |
+| [#28](https://github.com/shobhit727/trade/issues/28) | infra/k8s | Deployment runs one-shot `paper` (probes fail); duplicate Service+HPA break kustomize; invalid `:ro` mountPath. |
+
+### High
+
+| Issue | Area | Summary |
+|-------|------|---------|
+| [#29](https://github.com/shobhit727/trade/issues/29) | monitoring/config | `MonitoringSettings` missing all email_* fields → AttributeError when email alerts enabled. |
+| [#30](https://github.com/shobhit727/trade/issues/30) | backtest | Funding settlement skipped on 6h/12h bar grids (exact-hour gate); minutes unchecked. |
+| [#31](https://github.com/shobhit727/trade/issues/31) | backtest | funding_sim prices decisions off the unclosed bar's future close (lookahead). |
+| [#32](https://github.com/shobhit727/trade/issues/32) | backtest | `run_bars` never marks positions to market between fills; drawdown/Sharpe ignore unrealized PnL. |
+| [#33](https://github.com/shobhit727/trade/issues/33) | risk | `backtest_mode=True` disables kill switch + size/exposure/position limits, not just time-based checks. |
+| [#34](https://github.com/shobhit727/trade/issues/34) | monitoring | Data-freshness check vacuously HEALTHY when no tickers exist at all. |
+| [#35](https://github.com/shobhit727/trade/issues/35) | monitoring | Component health ignores HealthChecker results (kill-switch state invisible in /health). |
+| [#36](https://github.com/shobhit727/trade/issues/36) | ml | `RegimeDetector.predict` ignores input features; returns stale in-sample labels. |
+| [#37](https://github.com/shobhit727/trade/issues/37) | deps | `asyncpg`/`pyarrow` imported by data/storage.py but absent from every dependency manifest. |
+| [#38](https://github.com/shobhit727/trade/issues/38) | infra/CI | release.yml omits PYTHON_TAG → v-tag images built on Python 3.13 vs 3.14 elsewhere. |
+| [#39](https://github.com/shobhit727/trade/issues/39) | backtest | Python Sortino uses losses-only std instead of downside deviation (also optimize objective). |
+| [#40](https://github.com/shobhit727/trade/issues/40) | rust | Rust Sortino wrong formula (~2–4×); max_drawdown understated by `max(peak,1.0)` divisor. |
+| [#41](https://github.com/shobhit727/trade/issues/41) | risk/rust | NaN passes all Rust limit checks; Kelly −inf; vol_target unbounded leverage. |
+| [#42](https://github.com/shobhit727/trade/issues/42) | rust | Backtest engine/runner/validation/reporting modules dead code referencing nonexistent core APIs. |
+| [#43](https://github.com/shobhit727/trade/issues/43) | execution | BinanceVenue retries non-retryable errors / can double-send market orders; stop types likely invalid via ccxt unified API. |
+| [#44](https://github.com/shobhit727/trade/issues/44) | cli | `cryptobot ml` crashes: `build_features(bars)` + `DirectionClassifier(horizon=)` misuse. |
+
+### Medium/Low (grouped sweep issues)
+
+| Issue | Scope |
+|-------|-------|
+| [#45](https://github.com/shobhit727/trade/issues/45) | MarketMaking never submits orders; mm CLI fabricates fills; attach_to_engine is a no-op wrapper. |
+| [#46](https://github.com/shobhit727/trade/issues/46) | `VWAPSchedule.at()` index double-scaled → wrong slice (repro'd). |
+| [#47](https://github.com/shobhit727/trade/issues/47) | absolute_momentum neutral zone returns −1 instead of 0. |
+| [#48](https://github.com/shobhit727/trade/issues/48) | ML sweep ×10: ensemble class-0 prob, variance×252 "annualized vol", features_and_labels crash, QUANTILE fitted flag, inference cache keys, FeatureSet.to_array, DriftDetector zero-mean, optimizer forecast call, random-label scoring, k-means NaN centroids. |
+| [#49](https://github.com/shobhit727/trade/issues/49) | Risk sweep ×4: correlation limit dead code, strategy daily-loss inert + tracker drawdown math, vol_target cap bypass, KillSwitch.reset no-op. |
+| [#50](https://github.com/shobhit727/trade/issues/50) | Monitoring sweep ×6: phantom position gauges, drawdown gauge always 0, alert dedup defeats auto-resolve, unbounded alert history, interval_seconds dead config, dashboard PromQL vector mismatch. |
+| [#51](https://github.com/shobhit727/trade/issues/51) | Backtest/data sweep ×15: carry alignment timestamps, stale-mark funding, SimulatedVenue unconditional limit fills, √252 hardcodes, deflated Sharpe math, optimize in-sample, Parquet dupes, save_order crash, publish_batch deadlock, HybridStorage cutoff dup, resample aliases, depthUpdate/markPrice handlers, z-score validator, CsvFundingProvider symbol ignore, mock equity report, naive datetimes. |
+| [#52](https://github.com/shobhit727/trade/issues/52) | Infra sweep ×13: Codecov condition never true, prod stage installs test reqs by default, `${VAR}` placeholders literal + dead YAML blocks, dead env vars, Grafana provider path unmounted, Prometheus scrapes nonexistent exporters, `${ENVIRONMENT}` label, release workflow_dispatch always fails, port-8080 collision, @latest action pin, cancel-in-progress on release, tag-scheme mismatch, floating prod deps/pyproject drift. |
+| [#53](https://github.com/shobhit727/trade/issues/53) | Rust sweep ×8: bollinger period=0 panic, VPIN not VPIN, walk_forward slice panic, RSI 99.01, EWMA λ unvalidated, Markowitz silent truncation, Decimal→f64 silent zeros, hardcoded √252 annualization. |
+
+### Legacy open
 
 | ID | File | Bug | Risk |
 |----|------|------|------|
 | B073 | `git` (remote branch) | `origin/fix/realistic-venue-bugs` is **stale** — based on `f837152`; diverges from `main` by −2276 lines (deletes `execution/costs.py`, `ml/optimizer.py`, `live/paper_harness.py` etc.). Its realistic-venue changes were superseded by `932e7e2`. | Low. Delete branch or rebase onto `main`; do not merge as-is. |
 
+### Environment note
+
+`Makefile` defaults `PY ?= python3.13`; hosts with only python3.14 must override (`make test PY=python3`). Consider defaulting to `python3`.
+
 ## Will-surprise areas
 
 - `core/portfolio.py` `StrategyAllocation` initial `max_weight=0.2` is hardcoded; reads `settings.risk.max_single_position_pct` only if `register_strategy` is called with an explicit `max_weight` arg.
 - `risk/manager.py` uses `state.used_margin + notional` for total exposure. `used_margin` may not reflect actual margin usage for cross-margin venues.
-- `BinanceWSClient._symbols` / `_timeframes` fallback is silent (B044) — if YAML is misconfigured the bot quietly streams only `BTCUSDT 1m`. Add a `get_logger().warning` when fallback fires.
+- Catalog strategies are **long-only in effect** under the current engine (issue #25): `-1` flips close but never open shorts, and each strategy's internal `_pos` diverges from engine state after a flip. Any research conclusion drawn from catalog backtests before a fix carries this bias.
+- Backtest headline metrics (Sharpe/Sortino/maxDD) are unreliable until #20/#32/#39 are fixed; treat all pre-audit backtest numbers as directional only.
 
 ## Verification plan
 
 - `python3 -m py_compile` on all edited files: passes.
+- `pytest -q`: 781 passed / 6 skipped (2026-08-22).
+- `cargo clippy --workspace --all-targets -- -D warnings` + `cargo test --workspace`: green; 63 tests (2026-08-22) — note tests are trivially-satisfiable in several cases (#24/#40), so green ≠ correct.
 - `docker compose --profile test config`: passes.
-- `docker compose config` (default profile): passes (scaffolded `monitoring/{loki,promtail,nginx}`).
-- `cargo build` from repo root: ✅ workspace builds (verified 2026-08-04).
 - Full Docker runtime blocked by host daemon instability on some hosts.
+- Production image runtime: **known broken** until #22 is fixed (CI never runs the production target).
