@@ -269,6 +269,45 @@ class CcxtVenue(Venue):
             logger.warning("%s cancel_order failed for %s: %s", self.exchange_id, order_id, exc)
             return False
 
+    async def place_protective_stop(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        stop_price: float,
+    ) -> str | None:
+        """Exchange-native stop-market reduce-only order (host-death protection).
+
+        ``side`` is the closing side ("sell" for a long). Returns the exchange
+        order id, or None when unsupported/unavailable. The exchange honours
+        this even if our host is dead - that is the entire point.
+        """
+        if ccxt_async is None or not self._has_credentials(self.api_key, self.api_secret):
+            return None
+        try:
+            exchange = self._ensure_exchange()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("%s protective stop unavailable: %s", self.exchange_id, exc)
+            return None
+        mapped = self._map_symbol(symbol)
+        type_ = "market"
+        if self.exchange_id == "binance":
+            type_ = "stop_market"
+        params: dict[str, Any] = {
+            "type": self.market_type,
+            "reduceOnly": True,
+            "stopPrice": stop_price,
+        }
+        try:
+            raw = await exchange.create_order(mapped, type_, side, quantity, None, params)
+            order_id = raw.get("id")
+            logger.info("protective stop placed on %s (%s %s @ %s): %s",
+                        symbol, side, quantity, stop_price, order_id)
+            return str(order_id) if order_id else None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("protective stop failed on %s: %s", symbol, exc)
+            return None
+
     async def get_price(self, symbol: str) -> Decimal:
         if ccxt_async is None or not self._has_credentials(self.api_key, self.api_secret):
             return Decimal("0")

@@ -70,6 +70,7 @@ class LiveTraderConfig:
     gate_enabled: bool = True
     risk_profile: str = "realistic"
     breaker_state_path: str = "state/breaker.json"
+    protective_stop_pct: float = 10.0  # exchange-native stop this far below/above entry
 
 
 class LiveTrader:
@@ -302,11 +303,34 @@ class LiveTrader:
             self.stats["orders_submitted"] += 1
             if filled.status == OrderStatus.FILLED and filled.filled_quantity > 0:
                 self._record_tax_fill(filled)
+                self._place_protective_stop(filled, Decimal(str(close)))
             if filled.status in (OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED):
                 self.stats["fills"] += 1
             elif filled.status == OrderStatus.REJECTED:
                 self.stats["rejects"] += 1
             self.stats["last_order_at"] = time.time()
+
+    def _place_protective_stop(self, order, ref_price: Decimal) -> None:
+        """Exchange-side stop so a dead host cannot leave naked positions."""
+        pct = self.config.protective_stop_pct
+        if pct <= 0 or order.reduce_only:
+            return
+        if order.side == OrderSide.BUY:
+            stop = ref_price * (1 - Decimal(str(pct)) / 100)
+            close_side = "sell"
+        else:
+            stop = ref_price * (1 + Decimal(str(pct)) / 100)
+            close_side = "buy"
+        qty = float(order.filled_quantity)
+
+        async def _submit():
+            try:
+                await self._engine.venue.place_protective_stop(
+                    order.symbol, close_side, qty, float(stop))
+            except Exception as exc:  # noqa: BLE001 - venue may not support it
+                logger.warning("protective stop skipped for %s: %s", order.symbol, exc)
+
+        asyncio.get_event_loop().create_task(_submit())
 
     def _record_gate_day(self) -> None:
         """Once per UTC day, feed equity/order stats to the paper-gate tracker."""

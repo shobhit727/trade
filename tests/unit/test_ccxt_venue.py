@@ -265,3 +265,60 @@ def test_factory_paper_mode_ignores_exchange_id():
     from cryptobot.execution.venue.simulated import SimulatedVenue
 
     assert isinstance(build_venue("paper", exchange_id="bybit"), SimulatedVenue)
+
+
+# ------------------------------------------------------- protective stops
+
+
+@pytest.mark.asyncio
+async def test_place_protective_stop_success():
+    v = CcxtVenue(exchange_id="bybit", api_key="k", api_secret="s")
+    fake = FakeExchange()
+    v._exchange = fake
+
+    class StopResp(dict):
+        pass
+
+    async def create_order(symbol, type_, side, amount, price, params):
+        fake.calls.append((symbol, type_, side, amount, price, dict(params)))
+        return {"id": "stop-1"}
+
+    fake.create_order = create_order
+    oid = await v.place_protective_stop("BTCUSDT", "sell", 0.01, 45000.0)
+    assert oid == "stop-1"
+    symbol, type_, side, qty, price, params = fake.calls[0]
+    assert (symbol, side) == ("BTC/USDT", "sell")
+    assert params["reduceOnly"] is True and params["stopPrice"] == 45000.0
+
+
+@pytest.mark.asyncio
+async def test_place_protective_stop_binance_type():
+    v = CcxtVenue(exchange_id="binance", api_key="k", api_secret="s")
+    fake = FakeExchange()
+
+    async def create_order(symbol, type_, side, amount, price, params):
+        fake.calls.append((symbol, type_, side))
+        return {"id": "s2"}
+
+    fake.create_order = create_order
+    v._exchange = fake
+    await v.place_protective_stop("ETHUSDT", "buy", 1.0, 3000.0)
+    assert fake.calls[0][1] == "stop_market"  # binance-specific type name
+
+
+@pytest.mark.asyncio
+async def test_place_protective_stop_failure_returns_none():
+    v = CcxtVenue(exchange_id="bybit", api_key="k", api_secret="s")
+
+    class Boom(FakeExchange):
+        async def create_order(self, *a):
+            raise RuntimeError("rejected")
+
+    v._exchange = Boom()
+    assert await v.place_protective_stop("BTCUSDT", "sell", 1.0, 1.0) is None
+
+
+@pytest.mark.asyncio
+async def test_place_protective_stop_no_creds_returns_none():
+    v = CcxtVenue(exchange_id="bybit", api_key="", api_secret="")
+    assert await v.place_protective_stop("BTCUSDT", "sell", 1.0, 1.0) is None
