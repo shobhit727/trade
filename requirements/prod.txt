@@ -16,6 +16,9 @@ ccxt>=4.4
 pandas>=2.2
 numpy>=2.2
 
+# Reporting (monthly PDF)
+fpdf2>=2.8
+
 # ML (lightweight for laptop)
 scikit-learn>=1.6
 joblib>=1.4
