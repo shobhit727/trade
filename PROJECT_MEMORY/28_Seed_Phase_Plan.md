@@ -43,7 +43,7 @@ family capital for the multi-exchange / multi-algorithm phase.
 ## Build order
 
 1. ✅ Global-fund ledger + 8h harvest cycle (`core/fund.py`, wired into `live/trader.py`; 11 unit tests)
-2. ccxt multi-exchange adapter layer
+2. ✅ ccxt multi-exchange adapter layer (`CcxtVenue` generic adapter; `build_venue(mode, exchange_id)`; BinanceVenue now a thin subclass; 18 tests)
 3. Allocator / tier configuration (empirically tuned)
 4. Tax engine
 5. 60-day gate tracker

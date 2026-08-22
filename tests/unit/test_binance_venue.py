@@ -80,16 +80,13 @@ def test_binance_venue_close_without_exchange():
     assert v._exchange is None
 
 
-def test_binance_venue_ensure_exchange_no_ccxt():
-    import cryptobot.execution.venue.binance as binance_mod
-    original = binance_mod.ccxt_async
-    binance_mod.ccxt_async = None
-    try:
-        v = BinanceVenue()
-        with pytest.raises(RuntimeError, match="ccxt is not installed"):
-            v._ensure_exchange()
-    finally:
-        binance_mod.ccxt_async = original
+def test_binance_venue_ensure_exchange_no_ccxt(monkeypatch):
+    from cryptobot.execution.venue import ccxt_venue as ccxt_mod
+
+    monkeypatch.setattr(ccxt_mod, "ccxt_async", None)
+    v = BinanceVenue()
+    with pytest.raises(RuntimeError, match="ccxt is not installed"):
+        v._ensure_exchange()
 
 
 __all__ = []
