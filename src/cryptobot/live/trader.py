@@ -27,6 +27,7 @@ from pathlib import Path
 import aiohttp
 
 from cryptobot.backtest.runner import make_strategy
+from cryptobot.core.allocator import CapitalAllocator, default_tiers
 from cryptobot.core.breaker import BreakerConfig, CircuitBreaker
 from cryptobot.core.bus import get_event_bus
 from cryptobot.core.events import KlineEvent, OrderEvent, OrderSide, OrderStatus
@@ -103,6 +104,7 @@ class LiveTrader:
         self._profile = get_profile(config.risk_profile)
         self._breaker = CircuitBreaker(BreakerConfig(state_path=config.breaker_state_path))
         self._peak_equity = Decimal("0")
+        self._allocator = CapitalAllocator(default_tiers())
         self._last_gate_day: date | None = None
         self._tax = TaxEngine()
         try:
@@ -139,6 +141,16 @@ class LiveTrader:
         if self._gate is not None:
             snap["paper_gate"] = self._gate.summary()
         snap["risk_profile"] = self._profile.name
+        try:
+            _tier = self._allocator.tier_for(self._portfolio.get_state().total_equity)
+            snap["allocator_tier"] = _tier.label if _tier else None
+            config_strategy = getattr(self.config, "strategy", None)
+            if _tier and config_strategy and config_strategy not in {s.name for s in _tier.strategies}:
+                    snap["allocator_warning"] = (
+                        f"strategy '{config_strategy}' is not active at this equity tier"
+                    )
+        except Exception:  # noqa: BLE001 - reporting only
+            pass
         snap["breaker"] = self._breaker.summary()
         return snap
 
