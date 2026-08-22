@@ -8,6 +8,34 @@
 
 ---
 
+## 0. ACTIVE: Seed Phase Plan (agreed 2026-08-22)
+
+> Full detail: [`PROJECT_MEMORY/28_Seed_Phase_Plan.md`](PROJECT_MEMORY/28_Seed_Phase_Plan.md).
+> This section supersedes conflicting roadmap items until the seed phase completes.
+
+**Mission**: turn a ₹5–10k Binance-only seed into a verified live track record
+that unlocks family capital for the multi-exchange/multi-algo phase.
+
+- **Two profiles raced in paper**: Realistic (beat buy&hold risk-adjusted, MDD <15%)
+  vs Aggressive (dynamic vol-targeted leverage, hard bounds 0–3x, ≥25% from liquidation).
+- **8h harvest**: snapshot P&L → skim 10% of realized profit into the global fund
+  (virtual sub-ledger; draws only to keep valid signals alive, ≤30%/algo/day,
+  frozen while kill-switch is tripped).
+- **Circuit breaker −25% equity**: graceful profit-first close → freeze → manual reset.
+- **India VDA tax engine**: FIFO basis, ~31.2% estimate, TDS tracking,
+  Schedule-VDA CSV export for CA.
+- **60-day paper gate**: net-positive · Sharpe ≥1 · fills match sim · zero breaker trips
+  → live unlocked. Fail → auto-extend 30d (max 2), then data review.
+- **Reporting**: English; monthly PDF + read-only dashboard + daily WhatsApp summary
+  (official Cloud API) + email detail.
+- **Universe**: BTC+ETH until equity grows. Owner keeps full control but commits to
+  no intervention during testing; all owner actions logged.
+
+**Build order**: (1) global-fund ledger + harvest → (2) ccxt adapters → (3) allocator
+tiers → (4) tax engine → (5) gate tracker → (6) dual profiles + breaker → 60 days paper.
+
+---
+
 ## 1. Project Context & Goals
 
 > Operational guide: see [`docs/RUNBOOK.md`](docs/RUNBOOK.md) for prerequisites, common Compose commands, profiles, troubleshooting.
