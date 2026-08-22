@@ -20,15 +20,18 @@ import logging
 import time
 from collections import deque
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import aiohttp
 
 from cryptobot.backtest.runner import make_strategy
 from cryptobot.core.bus import get_event_bus
-from cryptobot.core.events import KlineEvent
+from cryptobot.core.events import KlineEvent, OrderSide, OrderStatus
 from cryptobot.core.fund import FundConfig, GlobalFundLedger
 from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
+from cryptobot.core.tax import TaxEngine
 from cryptobot.execution.engine import ExecutionEngine, build_venue
 from cryptobot.risk.manager import RiskManager
 from cryptobot.utils.health_server import HealthServer
@@ -58,6 +61,7 @@ class LiveTraderConfig:
     harvest_hours: int = 8
     skim_fraction: str = "0.10"
     fund_state_path: str = "state/global_fund.json"
+    tax_state_path: str = "state/tax_engine.json"
 
 
 class LiveTrader:
@@ -87,6 +91,14 @@ class LiveTrader:
         ))
         self._last_harvested_realized = Decimal("0")
         self._harvest_task: asyncio.Task | None = None
+        self._tax = TaxEngine()
+        try:
+            tax_file = Path(self.config.tax_state_path)
+            if tax_file.exists():
+                import json as _json
+                self._tax.restore(_json.loads(tax_file.read_text(encoding="utf-8")))
+        except Exception as exc:  # noqa: BLE001 - corrupt state must not kill startup
+            logger.warning("tax state unreadable (%s); starting fresh", exc)
         self.stats: dict[str, object] = {
             "status": "starting",
             "strategy": config.strategy,
@@ -110,6 +122,7 @@ class LiveTrader:
         snap["equity"] = str(state.total_equity)
         snap["open_positions"] = state.open_positions
         snap["global_fund"] = self._fund.summary()
+        snap["tax_summary"] = self._tax.summary()
         return snap
 
     def request_stop(self) -> None:
@@ -251,15 +264,32 @@ class LiveTrader:
             if order is None:
                 continue
             self._engine.venue.prices[bar.symbol] = Decimal(str(close))
-            from cryptobot.core.events import OrderStatus
 
             filled = await self._engine.submit_order(order)
             self.stats["orders_submitted"] += 1
+            if filled.status == OrderStatus.FILLED and filled.filled_quantity > 0:
+                self._record_tax_fill(filled)
             if filled.status in (OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED):
                 self.stats["fills"] += 1
             elif filled.status == OrderStatus.REJECTED:
                 self.stats["rejects"] += 1
             self.stats["last_order_at"] = time.time()
+
+    def _record_tax_fill(self, order) -> None:
+        """Feed executed fills into the VDA tax ledger (FIFO, §115BBH)."""
+        try:
+            qty = order.filled_quantity
+            price = order.avg_fill_price or order.price or Decimal("0")
+            now = datetime.now(UTC)
+            if order.side == OrderSide.BUY:
+                self._tax.buy(order.symbol, qty, price, now)
+            else:
+                self._tax.sell(order.symbol, qty, price * qty, now)
+            Path(self.config.tax_state_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(self.config.tax_state_path).write_text(
+                json.dumps(self._tax.to_dict()), encoding="utf-8")
+        except Exception as exc:  # noqa: BLE001 - tax bookkeeping must not kill trading
+            logger.warning("tax fill recording failed: %s", exc)
 
     def _feed_strategy(self, close: float, high: float, low: float, volume: float):
         """Dispatch to the strategy's feed signature (mirrors backtest runner)."""

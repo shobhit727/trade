@@ -93,6 +93,13 @@ def build_parser() -> argparse.ArgumentParser:
     validate_cmd.add_argument("--permutations", type=int, default=200)
     validate_cmd.add_argument("--json", action="store_true")
 
+    tax_cmd = sub.add_parser(
+        "tax",
+        help="India VDA tax summary + Schedule VDA CSV export (from bot state)",
+    )
+    tax_cmd.add_argument("--state", default="state/tax_engine.json")
+    tax_cmd.add_argument("--export-csv", default=None, help="Write Schedule-VDA CSV to this path")
+
     paper_cmd = sub.add_parser("paper", help="Run paper trading dry-run")
     paper_cmd.add_argument("--symbol", default="BTCUSDT")
     paper_cmd.add_argument("--source", choices=["synthetic"], default="synthetic")
@@ -282,6 +289,27 @@ async def _run(args: argparse.Namespace) -> int:
         else:
             for k, v in out.items():
                 logger.info("%s: %s", k, v)
+        return 0
+
+    if args.command == "tax":
+        import json as _json
+        from pathlib import Path as _Path
+
+        from cryptobot.core.tax import TaxEngine
+
+        state_file = _Path(args.state)
+        if not state_file.exists():
+            print(f"no tax state at {args.state}; run the bot first")
+            return 1
+        engine = TaxEngine()
+        engine.restore(_json.loads(state_file.read_text(encoding="utf-8")))
+        if args.export_csv:
+            out = engine.export_schedule_vda(args.export_csv)
+            print(f"Schedule VDA CSV written: {out}")
+        summary = engine.summary()
+        print("India VDA tax estimate (Section 115BBH, strict no-loss-offset):")
+        for key, value in summary.items():
+            print(f"  {key:>20}: {value}")
         return 0
 
     if args.command == "serve":

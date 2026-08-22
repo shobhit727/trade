@@ -45,7 +45,7 @@ family capital for the multi-exchange / multi-algorithm phase.
 1. ✅ Global-fund ledger + 8h harvest cycle (`core/fund.py`, wired into `live/trader.py`; 11 unit tests)
 2. ✅ ccxt multi-exchange adapter layer (`CcxtVenue` generic adapter; `build_venue(mode, exchange_id)`; BinanceVenue now a thin subclass; 18 tests)
 3. ✅ Allocator / tier configuration (`core/allocator.py`: equity-tiered strategy activation, YAML-configurable, fund balance excluded from allocatable equity; 11 tests)
-4. Tax engine
+4. ✅ Tax engine (`core/tax.py`: FIFO lots, §115BBH strict no-loss-offset, 30%+cess estimate, TDS credits, Schedule-VDA CSV export, restart-safe persistence; wired into trader fill stream + `cryptobot tax` CLI; 11 tests)
 5. 60-day gate tracker
 6. Dual risk profiles + circuit breaker
 → then 60 days paper trading on PC.
