@@ -406,3 +406,93 @@ git push origin v0.1.0
 - `plan.md` — phases and remaining work.
 - `src/cryptobot/backtest/runner.py` + `runner.run_backtest` — backtest API.
 - `src/cryptobot/execution/router.py` — SOR.
+
+---
+
+## 12. Seed Phase operations (2026-08-22)
+
+Full plan: `PROJECT_MEMORY/28_Seed_Phase_Plan.md`.
+
+### 12.1 Paper trading (owner's PC)
+
+```bash
+# start the bot (paper is the default and the gate phase)
+python3 -m cryptobot.cli.main bot --strategy dual_ma --symbol BTCUSDT \
+    --timeframe 1d --mode paper --warmup 300 --profile realistic
+
+# what to watch
+curl -s localhost:8080/health     | jq .          # machine-readable state
+open http://localhost:8080/dashboard              # read-only family view
+```
+
+The process automatically: harvests 10% of realized PnL into the global fund
+every 8h, records fills into the VDA tax ledger, snapshots equity daily into
+the 60-day paper gate, and places exchange-native protective stops on live venues.
+
+### 12.2 State files (back these up)
+
+| file | contents |
+|---|---|
+| `state/global_fund.json` | fund balance, freeze flag, full history |
+| `state/paper_gate.json` | daily equity snapshots, gate status/extensions |
+| `state/tax_engine.json` | FIFO lots + disposals (restart-safe) |
+| `state/breaker.json` | breaker trip state (persists across restarts) |
+| `state/audit_log.jsonl` | every owner action |
+
+### 12.3 Breaker
+
+Trips at −25% from peak equity: entries halt, positions close profit-first,
+the fund freezes. It stays tripped across restarts until:
+
+```bash
+python3 -m cryptobot.cli.main breaker-reset   # logged to audit_log
+```
+
+### 12.4 Gate → live
+
+```bash
+python3 -m cryptobot.cli.main bot --help      # see --mode live
+```
+`--mode live` refuses with a reason until the gate passes (60 days net-positive,
+Sharpe ≥ 1, rejects ≤ 5%, zero breaker trips; failure auto-extends ×30d, max 2).
+
+### 12.5 Taxes & reporting
+
+```bash
+python3 -m cryptobot.cli.main tax --export-csv schedule_vda_fy26.csv
+```
+
+Monthly family PDF:
+```python
+from cryptobot.monitoring.monthly_report import build_monthly_report
+build_monthly_report("reports/2026-08.pdf", "August 2026", stats, history, tax)
+```
+(`stats` = `/health` snapshot; `history` = gate snapshots.)
+
+### 12.6 Alerts env vars
+
+```bash
+# email digest (Gmail app-password)
+EMAIL_SMTP_USER=you@gmail.com EMAIL_SMTP_PASS=xxxx EMAIL_TO=family@gmail.com
+
+# WhatsApp (Meta Business Cloud API, dedicated number)
+WHATSAPP_TOKEN=xxx WHATSAPP_PHONE_ID=123 WHATSAPP_TO=919999999999
+```
+
+### 12.7 Live phase on a VPS (~₹500/mo)
+
+```bash
+# on the box
+git clone git@github.com:shobhit727/trade.git && cd trade
+docker build --target production --build-arg PYTHON_TAG=3.14-slim \
+    -t cryptobot:seed .
+docker run -d --name cryptobot --restart unless-stopped \
+    -v $(pwd)/state:/app/state \
+    --env-file .env \
+    cryptobot:seed python3 -m cryptobot.cli.main bot \
+        --strategy dual_ma --symbol BTCUSDT --timeframe 1d --mode live
+```
+
+- `-v state:/app/state` keeps fund/gate/tax/breaker state outside the container.
+- `--restart unless-stopped` survives reboots; protective stops cover the gap.
+- Backup cron: `tar czf backup_$(date +%F).tgz state/` off-box weekly.
