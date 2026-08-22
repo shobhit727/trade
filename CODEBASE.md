@@ -216,8 +216,9 @@ cryptobot paper-funder --symbols BTCUSDT --hours 6                # live funding
 cryptobot carry --spot spot.csv --perp perp.csv [--funding f.csv] # two-leg carry backtest
 ```
 
-> Note: there is no `ingest`, `health`, or `config show` subcommand despite older docs mentioning
-> them; and `bot` is currently a stub that serves health endpoints only (#22 context).
+> Note: there is no `ingest`, `health`, or `config show` subcommand despite older docs mentioning them.
+> `bot` runs the full trading loop (WS klines -> strategy -> risk-checked execution; paper by default,
+> `--mode live` gated). See `src/cryptobot/live/trader.py`.
 
 ---
 

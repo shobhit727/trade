@@ -114,7 +114,8 @@ python -m cryptobot.cli.main paper --symbol ETHUSDT --bars 500
 
 ### bot
 
-Start the health/metrics server and keep the process alive.
+Run the live/paper trading loop: Binance WS klines -> strategy -> risk-checked
+execution, alongside the health/metrics server.
 
 ```bash
 cryptobot bot [OPTIONS]
@@ -126,9 +127,12 @@ cryptobot bot [OPTIONS]
 |--------|---------|-------------|
 | `--host` | 127.0.0.1 | Bind host |
 | `--port` | 8080 | Bind port |
-
-> ⚠️ `bot` currently serves `/health` + `/metrics` only — no strategy/trading loop is attached
-> yet (see plan.md Phase 8). There is no `--mode` flag; live mode requires code wiring.
+| `--strategy` | trend_following | Any registry/catalog strategy name |
+| `--symbol` | BTCUSDT | Trading symbol |
+| `--timeframe` | 1m | Kline interval |
+| `--mode` | paper | paper (SimulatedVenue) or live (BinanceVenue; confirmation prompt) |
+| `--warmup` | 300 | REST bars used to prime indicators before streaming |
+| `--max-bars` | - | Stop after N closed bars (dry-run/testing) |
 
 ### serve
 
