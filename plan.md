@@ -958,8 +958,8 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [x] Base strategy class with lifecycle hooks (`strategies/base.py`)
 - [x] Signal generation interface (`List[OrderEvent]`)
 - [x] Strategy registry (`StrategyRegistry`)
-- [ ] Position management primitives (scaling, stops)
-- [ ] Parameter optimization with Optuna — `ml/optimizer.py` done; `cli/optimize.py` CLI missing
+- [x] Position management primitives (scaling, stops) — `strategies/position.py`
+- [x] Parameter optimization with Optuna — `ml/optimizer.py`, `backtest/optimize.py`; ⚠️ WalkForwardOptimizer trials crash (#27); no `cli/optimize.py`
 
 ### Phase 4: Core Strategies
 - [x] Strategy base + registry + placeholder mean-reversion
@@ -976,8 +976,8 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [x] Risk limits (`risk/limits.py`)
 - [x] Correlation helper (`risk/correlation.py`)
 - [x] Kill switch (`risk/kill_switch.py`)
-- [ ] Portfolio optimization (HRP, mean-CVaR)
-- [ ] Replace `print`-based status with structlog
+- [x] Portfolio optimization (HRP, mean-CVaR) — `risk/portfolio_optimizer.py` (audit-verified math; Rust ERC twin fixed in #24)
+- [x] Replace `print`-based status with structlog (zero `print(` in src)
 
 ### Phase 6: ML Pipeline
 - [x] Feature engineering pipeline (`ml/features.py`) M-bM-^@M-^T 8 features
@@ -1023,10 +1023,10 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [x] Multi-arch Docker images (x86_64, ARM64)
 
 ### Testing & Quality
-- [ ] Unit tests for all core modules (>90% coverage)
-- [ ] Integration tests for backtester
-- [ ] Property-based tests for risk/math
-- [ ] CI/CD pipeline with cross-compilation
+- [~] Unit tests for core modules — 787 collected; coverage gate is 70% (not 90%)
+- [x] Integration tests for backtester (`tests/integration/`, behind marker)
+- [x] Property-based tests for risk/math (`test_property_based_risk_math.py`)
+- [x] CI/CD pipeline with multi-arch build (cross-compilation via buildx/QEMU)
 
 ---
 
