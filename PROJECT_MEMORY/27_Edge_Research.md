@@ -192,3 +192,46 @@ Tooling now available:
   at U+8h; the contemporaneous spot 1h close is the bar opening at U+7h. Without
   this, spot legs price 7-8h stale and mint fake mismatch PnL. Tested across the
   sample: same-instant spot/perp within ~5 bps.
+
+---
+
+## 2026-08-22: Post-audit catalog sweep — daily EMA-cross is the first robust edge
+
+**Setup**: after fixing the measurement bugs (#20/#25/#32/#39/#40/#26/#31), re-swept the full
+84-strategy catalog on 2y of real Binance data (2024-08-20 → 2026-08-22; BTC + ETH, 1h/4h/1d).
+Tools: `tools/sweep_real.py` (catalog × real bars), `tools/sweep_freq.py` (frequency study),
+`tools/grid_1d.py` (parameter plateau + cost stress), `tools/gauntlet.py` (instrument/time OOS).
+
+**Findings**
+
+1. **1h catalog = no edge (confirmed, now honestly measured)**: ~82/84 lose money at realistic
+   costs. Gross PnL clusters near zero — signals carry no information on hourly bars — and
+   16bps round-trip costs sink everything that churns. The pre-audit "0/84 profitable" result
+   was directionally right for the wrong reasons (long-only flip semantics #25 distorted it).
+2. **Frequency is the lever**: identical strategies move from −10…−50% (1h) to positive at
+   4h/1d as trade count collapses. Fee drag, not signal quality, was the primary killer.
+3. **Daily EMA cross (fast/slow) is a genuine plateau**:
+   - 18/25 parameter pairs positive on BOTH BTC and ETH at base costs;
+   - unchanged under punitive costs (17bps commission + 3bps slip per side ≈ 40bps RT);
+   - best cell `dual_ma fast=10 slow=50` on 1d bars, fully invested:
+
+   | dataset | strategy | MDD | buy&hold |
+   |---------|----------|-----|----------|
+   | BTC full | **+125.9%** | 34.9% | +30.8% (53% MDD) |
+   | BTC y1 (bull) | +99.8% | 14.8% | +96.2% |
+   | BTC y2 (bear −31.9%) | **+23.3%** | 22.4% | −31.9% |
+   | ETH full | **+190.7%** | 46.7% | −5.6% |
+   | ETH y2 (bear −30.4%) | **+18.8%** | 47.1% | −30.4% |
+
+   Positive in all 6 asset×year cells; sidesteps the year-2 bear by flipping short/flat.
+
+**Honest caveats**: Monte Carlo p-values are 0.42–0.60 (12–27 trades in 2y → low power);
+walk-forward OOS Sharpe positive in 10/12 cells (+0.25…+1.38). Two years / two instruments is
+thin evidence — treat as "promising regime-fit momentum", not proven alpha. The catalog's
+`ema_cross` is numerically identical to `dual_ma`.
+
+**Recommended starting configuration** (paper-trade before capital):
+```
+python -m cryptobot.cli.main backtest --strategy dual_ma --bars 1000000 --json  # synthetic sanity
+# programmatic: make_strategy("dual_ma", fast=10, slow=50) over 1d CSV via run_backtest(risk_fraction=1.0)
+```

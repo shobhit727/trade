@@ -586,3 +586,17 @@ A: At least 200 bars for statistical significance. 500+ recommended for walk-for
 - GitHub Issues: https://github.com/shobhit727/trade/issues
 - Documentation: See `docs/` folder
 - Architecture: See `PROJECT_MEMORY/` for design decisions
+## Real-Data Results (2026-08-22, post-audit engine)
+
+Sweeps on 2y of real Binance klines (see `tools/sweep_real.py`, `tools/sweep_freq.py`,
+`tools/grid_1d.py`, `tools/gauntlet.py`):
+
+| Finding | Detail |
+|---------|--------|
+| 1h catalog | ~82/84 strategies lose at realistic costs; gross edge ≈ 0 |
+| Frequency lever | same strategies turn positive at 4h–1d (fee drag collapses) |
+| **Daily EMA cross** | `dual_ma(fast=10, slow=50)` on 1d bars: BTC **+126%** / ETH **+191%** over 2y vs buy&hold +31%/−6%, with lower max drawdown; positive in all 6 asset×year splits incl. the −32% bear year |
+| Robustness | 18/25 neighboring parameter pairs positive on both assets; edge unchanged at 2.4× costs |
+
+Caveats: MC significance is weak (few trades/day-frequency); validate any change with
+`tools/gauntlet.py` before trusting it.
