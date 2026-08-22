@@ -30,3 +30,6 @@ data/*.db
 logs/
 *.log
 
+
+# local market data downloads
+data/
