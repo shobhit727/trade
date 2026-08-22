@@ -46,7 +46,7 @@ family capital for the multi-exchange / multi-algorithm phase.
 2. ✅ ccxt multi-exchange adapter layer (`CcxtVenue` generic adapter; `build_venue(mode, exchange_id)`; BinanceVenue now a thin subclass; 18 tests)
 3. ✅ Allocator / tier configuration (`core/allocator.py`: equity-tiered strategy activation, YAML-configurable, fund balance excluded from allocatable equity; 11 tests)
 4. ✅ Tax engine (`core/tax.py`: FIFO lots, §115BBH strict no-loss-offset, 30%+cess estimate, TDS credits, Schedule-VDA CSV export, restart-safe persistence; wired into trader fill stream + `cryptobot tax` CLI; 11 tests)
-5. 60-day gate tracker
+5. ✅ 60-day gate tracker (`core/gate.py`: daily equity snapshots, net-positive/Sharpe≥1/reject-rate/breaker criteria, auto-extend 30d ×2 then fail-final; live mode refused until pass; wired into trader + CLI; 10 tests)
 6. Dual risk profiles + circuit breaker
 → then 60 days paper trading on PC.
 

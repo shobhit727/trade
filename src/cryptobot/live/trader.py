@@ -20,7 +20,7 @@ import logging
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -30,6 +30,7 @@ from cryptobot.backtest.runner import make_strategy
 from cryptobot.core.bus import get_event_bus
 from cryptobot.core.events import KlineEvent, OrderSide, OrderStatus
 from cryptobot.core.fund import FundConfig, GlobalFundLedger
+from cryptobot.core.gate import GateConfig, PaperGateTracker
 from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
 from cryptobot.core.tax import TaxEngine
 from cryptobot.execution.engine import ExecutionEngine, build_venue
@@ -62,6 +63,8 @@ class LiveTraderConfig:
     skim_fraction: str = "0.10"
     fund_state_path: str = "state/global_fund.json"
     tax_state_path: str = "state/tax_engine.json"
+    gate_state_path: str = "state/paper_gate.json"
+    gate_enabled: bool = True
 
 
 class LiveTrader:
@@ -91,6 +94,9 @@ class LiveTrader:
         ))
         self._last_harvested_realized = Decimal("0")
         self._harvest_task: asyncio.Task | None = None
+        self._gate = PaperGateTracker(GateConfig(state_path=config.gate_state_path)) \
+            if config.gate_enabled else None
+        self._last_gate_day: date | None = None
         self._tax = TaxEngine()
         try:
             tax_file = Path(self.config.tax_state_path)
@@ -123,6 +129,8 @@ class LiveTrader:
         snap["open_positions"] = state.open_positions
         snap["global_fund"] = self._fund.summary()
         snap["tax_summary"] = self._tax.summary()
+        if self._gate is not None:
+            snap["paper_gate"] = self._gate.summary()
         return snap
 
     def request_stop(self) -> None:
@@ -153,6 +161,7 @@ class LiveTrader:
                 await asyncio.sleep(0.5)
                 if bars_remaining is not None and self.stats["bars_fed"] >= self.config.max_bars:
                     break
+                self._record_gate_day()
             self.stats["status"] = "stopped"
         finally:
             if self._harvest_task is not None:
@@ -274,6 +283,24 @@ class LiveTrader:
             elif filled.status == OrderStatus.REJECTED:
                 self.stats["rejects"] += 1
             self.stats["last_order_at"] = time.time()
+
+    def _record_gate_day(self) -> None:
+        """Once per UTC day, feed equity/order stats to the paper-gate tracker."""
+        if self._gate is None:
+            return
+        today = datetime.now(UTC).date()
+        if today == self._last_gate_day:
+            return
+        self._last_gate_day = today
+        try:
+            state = self._portfolio.get_state()
+            self._gate.record_day(
+                state.total_equity,
+                int(self.stats["orders_submitted"]),
+                int(self.stats["rejects"]),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("gate snapshot failed: %s", exc)
 
     def _record_tax_fill(self, order) -> None:
         """Feed executed fills into the VDA tax ledger (FIFO, §115BBH)."""

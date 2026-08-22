@@ -322,6 +322,13 @@ async def _run(args: argparse.Namespace) -> int:
         from cryptobot.live.trader import LiveTrader, LiveTraderConfig
 
         if args.mode == "live":
+            from cryptobot.core.gate import GateConfig, PaperGateTracker
+
+            _gate = PaperGateTracker(GateConfig())
+            _ok, _why = _gate.allows_live()
+            if not _ok:
+                logger.error("LIVE mode refused by paper gate: %s", _why)
+                return 1
             logger.warning(
                 "LIVE mode: orders will be sent to the exchange with real funds. "
                 "Ctrl+C to abort within 5s..."

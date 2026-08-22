@@ -157,9 +157,9 @@ class TaxEngine:
         return {
             "lots": {
                 asset: [
-                    {"quantity": str(l.quantity), "cost_per_unit": str(l.cost_per_unit),
-                     "acquired_at": l.acquired_at.isoformat()}
-                    for l in lots
+                    {"quantity": str(lot.quantity), "cost_per_unit": str(lot.cost_per_unit),
+                     "acquired_at": lot.acquired_at.isoformat()}
+                    for lot in lots
                 ]
                 for asset, lots in self._lots.items()
             },
@@ -175,10 +175,10 @@ class TaxEngine:
         """Replace state from :meth:`to_dict` output (restart recovery)."""
         self._lots = {
             asset: [
-                Lot(quantity=Decimal(l["quantity"]),
-                    cost_per_unit=Decimal(l["cost_per_unit"]),
-                    acquired_at=datetime.fromisoformat(l["acquired_at"]))
-                for l in lots
+                Lot(quantity=Decimal(lot["quantity"]),
+                    cost_per_unit=Decimal(lot["cost_per_unit"]),
+                    acquired_at=datetime.fromisoformat(lot["acquired_at"]))
+                for lot in lots
             ]
             for asset, lots in data.get("lots", {}).items()
         }
