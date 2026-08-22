@@ -20,7 +20,7 @@ numpy>=2.2
 fpdf2>=2.8
 
 # ML (lightweight for laptop)
-scikit-learn>=1.6
+scikit-learn>=1.9.0
 joblib>=1.4
 
 # Monitoring
