@@ -235,3 +235,25 @@ thin evidence — treat as "promising regime-fit momentum", not proven alpha. Th
 python -m cryptobot.cli.main backtest --strategy dual_ma --bars 1000000 --json  # synthetic sanity
 # programmatic: make_strategy("dual_ma", fast=10, slow=50) over 1d CSV via run_backtest(risk_fraction=1.0)
 ```
+
+## Regime filter experiment (2026-08-22, RESEARCH-a)
+
+Question: does gating entries on price > 200d SMA cut drawdown without killing returns?
+Tool: `tools/regime_filter_exp.py` (validated walk-forward winners, real daily data).
+
+| asset | variant | ret | sharpe | mdd | days |
+|---|---|---|---|---|---|
+| BTC | always-in | +118.1% | 0.96 | 29.0% | 733 |
+| BTC | sma200-only | +16.2% | 0.58 | 27.6% | 206 |
+| BTC | below-200 | +46.0% | 0.65 | 38.9% | 527 |
+| ETH | always-in | +296.3% | 1.24 | 33.5% | 733 |
+| ETH | sma200-only | +16.3% | 1.14 | 22.9% | 135 |
+| ETH | below-200 | +9.8% | 0.30 | 45.4% | 598 |
+
+Verdict: **rejected as a system-wide filter.**
+- BTC: dual_ma already sidesteps downtrends; the SMA gate removes profitable
+  above-SMA whipsaws (Sharpe nearly halves).
+- ETH: genuine MDD improvement (33.5% -> 22.9%) at modest Sharpe cost — worth
+  revisiting only if live ETH drawdown becomes a family-communication problem.
+- Caveat: filtered runs compound over fewer days; compare risk-adjusted numbers.
+Decision: keep walk-forward-validated configs unchanged for the 60-day paper race.
