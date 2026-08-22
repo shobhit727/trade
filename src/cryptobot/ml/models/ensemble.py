@@ -68,7 +68,7 @@ class EnsembleModel:
             self.fit(features, np.zeros(len(features)))
 
         n = len(features)
-        probs = np.zeros((n, 2))  # binary classification
+        probs = np.full((n, 2), 0.5)  # binary classification (issue #48)
 
         if "direction" in self.models:
             dir_probs = self.models["direction"].predict_proba(features)
@@ -78,6 +78,10 @@ class EnsembleModel:
             regime_probs = self.models["regime"].predict_proba(features)
             if regime_probs.shape[1] >= 2:
                 probs[:, 1] += self._weights[-1] * regime_probs[:, 1]
+
+        # Complete the binary distribution: column 0 was never populated, so
+        # probabilities[:,0] stayed 0 and confidence was wrong below 0.5 (#48).
+        probs[:, 0] = np.clip(1.0 - probs[:, 1], 0.0, 1.0)
 
         # Normalize
         row_sums = probs.sum(axis=1, keepdims=True)

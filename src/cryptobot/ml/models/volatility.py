@@ -82,6 +82,10 @@ class VolatilityModel:
             self._fit_garch(returns)
         elif self.config.method == VolatilityMethod.QUANTILE:
             self._fit_quantile(returns)
+            # _fit_quantile clears _fitted when the sample is too short; honour it
+            # instead of reporting a fitted model with no usable state (#48).
+            self._fitted = self._fitted and self._vol is not None
+            return self
         else:
             # Default to EWMA
             self._vol = self._ewma_variance(returns)
@@ -295,7 +299,7 @@ class VolatilityModel:
             "horizon": self.config.horizon,
             "window": self.config.window,
             "current_vol": float(self._vol) if self._vol else 0.0,
-            "current_vol_annualized": float(self._vol * 252) if self._vol else 0.0,
+            "current_vol_annualized": float(np.sqrt(self._vol * 252)) if self._vol else 0.0,
         }
 
 

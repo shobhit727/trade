@@ -58,6 +58,8 @@ class RegimeDetector:
         self._fitted = False
         self._regime_labels: np.ndarray | None = None
         self._regime_stats: dict[int, dict[str, float]] = {}
+        self._centroids: np.ndarray | None = None
+        self._threshold_edges: np.ndarray | None = None
         self._model: Any = None
         self._transition_matrix: np.ndarray | None = None
         self._regime_means: np.ndarray | None = None
@@ -100,16 +102,23 @@ class RegimeDetector:
 
         # Simple k-means
         rng = np.random.default_rng(self.config.random_state)
-        centroids = X[rng.choice(n, k, replace=False)]
+        centroids = X[rng.choice(n, k, replace=False)].copy()
 
         for _ in range(100):
             distances = np.sum((X[:, np.newaxis] - centroids) ** 2, axis=2)
             labels = np.argmin(distances, axis=1)
-            new_centroids = np.array([X[labels == j].mean(axis=0) for j in range(k)])
+            new_centroids = centroids.copy()
+            # An empty cluster used to produce a NaN centroid via mean-of-empty
+            # (#48); keep the previous centroid instead so distances stay finite.
+            for j in range(k):
+                members = X[labels == j]
+                if len(members):
+                    new_centroids[j] = members.mean(axis=0)
             if np.allclose(centroids, new_centroids):
                 break
             centroids = new_centroids
 
+        self._centroids = centroids
         return labels
 
     def _gmm_regimes(self, features: npt.NDArray[np.float64]) -> np.ndarray:
@@ -133,6 +142,7 @@ class RegimeDetector:
             random_state=self.config.random_state
         )
         labels = gmm.fit_predict(X)
+        self._model = gmm
         return labels
 
     def _hmm_regimes(self, features: npt.NDArray[np.float64]) -> np.ndarray:
@@ -176,7 +186,8 @@ class RegimeDetector:
 
         x = features[:, 0]
         percentiles = np.percentile(x, np.linspace(0, 100, self.config.n_regimes + 1))
-        labels = np.digitize(x, percentiles[1:-1])
+        self._threshold_edges = percentiles[1:-1]
+        labels = np.digitize(x, self._threshold_edges)
         return labels
 
     def _compute_regime_stats(self, features: npt.NDArray[np.float64]) -> None:
@@ -194,51 +205,90 @@ class RegimeDetector:
                     "std_features": regime_features.std(axis=0).tolist(),
                 }
 
+    def _model_input(self, features: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        """Feature slice the fitted model consumes (mirrors each fit() method)."""
+        method = RegimeMethod(self.config.method)
+        if method is RegimeMethod.HMM and features.shape[1] > 1:
+            return features[:, :1]
+        if method in (RegimeMethod.KMEANS, RegimeMethod.GMM) and features.shape[1] > 2:
+            return features[:, :2]
+        return features
+
     def predict(self, features: npt.NDArray[np.float64]) -> np.ndarray:
-        """Predict regime for each sample."""
+        """Predict regimes for NEW samples via the fitted model (issue #36).
+
+        The previous implementation returned ``self._regime_labels`` — the labels
+        of the training data — ignoring its argument entirely, so live bars were
+        always assigned the last in-sample regime.
+        """
         if not self._fitted:
             self.fit(features)
-        return self._regime_labels
+            if not self._fitted:
+                return np.zeros(features.shape[0], dtype=int)
+
+        X = self._model_input(features)
+        method = RegimeMethod(self.config.method)
+
+        if method is RegimeMethod.HMM and self._model is not None and HAS_HMM:
+            try:
+                return np.asarray(self._model.predict(X), dtype=int)
+            except Exception as e:  # noqa: BLE001 - degenerate sequences fall back
+                logger.warning(f"HMM predict failed ({e}); using centroid assignment")
+        if method is RegimeMethod.GMM and self._model is not None and HAS_SKLEARN:
+            return np.asarray(self._model.predict(X), dtype=int)
+        if method is RegimeMethod.THRESHOLD and self._threshold_edges is not None:
+            return np.digitize(X[:, 0], self._threshold_edges)
+
+        # k-means (and any fallback): nearest stored centroid
+        if self._centroids is None:
+            return np.zeros(features.shape[0], dtype=int)
+        distances = np.sum(
+            (X[:, np.newaxis, :] - self._centroids[np.newaxis, :, :]) ** 2, axis=2
+        )
+        return np.argmin(distances, axis=1)
 
     def predict_proba(self, features: npt.NDArray[np.float64]) -> np.ndarray:
-        """Soft regime probabilities (distance-based softmax)."""
+        """Soft regime probabilities for NEW samples.
+
+        HMM/GMM expose native posteriors; k-means/threshold use a softmax over
+        negative squared distance to the stored fit-time centroids.
+        """
         if not self._fitted:
             self.fit(features)
+            if not self._fitted:
+                n = features.shape[0]
+                uniform = np.full((n, max(self.config.n_regimes, 1)), 1.0)
+                return uniform / uniform.shape[1]
 
-        n = features.shape[0]
         k = self.config.n_regimes
+        n = features.shape[0]
+        X = self._model_input(features)
 
-        if features.shape[1] >= 2:
-            X = features[:, :2]
-        else:
-            X = features
+        if self.config.method == RegimeMethod.HMM and self._model is not None and HAS_HMM and n > 1:
+            try:
+                proba = np.asarray(self._model.predict_proba(X), dtype=float)
+                if proba.shape == (n, k):
+                    return proba
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"HMM predict_proba failed ({e}); using softmax")
 
-        # Get centroids from fitted model
-        centroids = []
-        for j in range(k):
-            mask = self._regime_labels == j
-            if mask.any():
-                if features.shape[1] >= 2:
-                    centroids.append(features[mask, :2].mean(axis=0))
-                else:
-                    centroids.append(features[mask].mean(axis=0))
-            else:
-                centroids.append(np.zeros(features.shape[1]))
+        if self.config.method == RegimeMethod.GMM and self._model is not None and HAS_SKLEARN:
+            try:
+                proba = np.asarray(self._model.predict_proba(X), dtype=float)
+                if proba.shape == (n, k):
+                    return proba
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"GMM predict_proba failed ({e}); using softmax")
 
-        centroids = np.array(centroids)
-        if features.shape[1] >= 2:
-            X = features[:, :2]
-        else:
-            X = features
+        if self._centroids is None:
+            uniform = np.full((n, max(k, 1)), 1.0)
+            return uniform / uniform.shape[1]
 
-        proba = np.zeros((n, k))
-        for i in range(n):
-            distances = np.sum((X[i] - centroids) ** 2, axis=1)
-            # Softmax on negative distances (closer = higher probability)
-            exp_neg_dist = np.exp(-distances)
-            proba[i] = exp_neg_dist / exp_neg_dist.sum()
-
-        return proba
+        distances = np.sum(
+            (X[:, np.newaxis, :] - self._centroids[np.newaxis, :, :]) ** 2, axis=2
+        )
+        exp_neg_dist = np.exp(-distances)
+        return exp_neg_dist / exp_neg_dist.sum(axis=1, keepdims=True)
 
     def current_regime(self, features: npt.NDArray[np.float64]) -> int:
         """Get current regime (last sample)."""

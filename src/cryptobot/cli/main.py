@@ -75,10 +75,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     bot = sub.add_parser(
         "bot",
-        help="Long-running bot stub: starts the health server and keeps the process alive",
+        help="Run the live/paper trading loop (market data -> strategy -> execution)",
     )
     bot.add_argument("--host", default="127.0.0.1")
     bot.add_argument("--port", type=int, default=8080)
+    bot.add_argument("--strategy", default="trend_following")
+    bot.add_argument("--symbol", default="BTCUSDT")
+    bot.add_argument("--timeframe", default="1m")
+    bot.add_argument("--mode", choices=["paper", "live"], default="paper")
+    bot.add_argument("--warmup", type=int, default=300, help="REST bars used to prime indicators")
+    bot.add_argument("--max-bars", type=int, default=None, help="stop after N closed bars (dry-run)")
 
     validate_cmd = sub.add_parser("validate", help="Validate backtest statistical significance")
     validate_cmd.add_argument("--source", choices=["synthetic"], default="synthetic")
@@ -285,16 +291,36 @@ async def _run(args: argparse.Namespace) -> int:
         return 0
 
     if args.command == "bot":
-        from cryptobot.utils.health_server import HealthServer
+        from cryptobot.live.trader import LiveTrader, LiveTraderConfig
 
-        server = HealthServer(host=args.host, port=args.port)
-        server.start()
-        logger.info("bot stub running; health at http://%s:%d/health", args.host, args.port)
-        try:
-            while True:
-                await asyncio.sleep(60)
-        finally:
-            server.stop()
+        if args.mode == "live":
+            logger.warning(
+                "LIVE mode: orders will be sent to the exchange with real funds. "
+                "Ctrl+C to abort within 5s..."
+            )
+            await asyncio.sleep(5)
+
+        trader = LiveTrader(LiveTraderConfig(
+            strategy=args.strategy,
+            symbol=args.symbol,
+            timeframe=args.timeframe,
+            mode=args.mode,
+            host=args.host,
+            port=args.port,
+            warmup_bars=args.warmup,
+            max_bars=args.max_bars,
+        ))
+        loop = asyncio.get_running_loop()
+        import signal
+
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, trader.request_stop)
+            except NotImplementedError:  # pragma: no cover - windows
+                pass
+        logger.info("bot running: %s %s %s mode=%s health=http://%s:%d/health",
+                    args.strategy, args.symbol, args.timeframe, args.mode, args.host, args.port)
+        await trader.run()
         return 0
 
     if args.command == "validate":
