@@ -23,22 +23,23 @@ pub fn rsi(prices: &[f64], period: usize) -> Vec<f64> {
     let mut avg_gain = gains[..period].iter().sum::<f64>() / period as f64;
     let mut avg_loss = losses[..period].iter().sum::<f64>() / period as f64;
 
-    let rs = if avg_loss > 0.0 {
-        avg_gain / avg_loss
+    // Convention: zero average loss in the window -> RSI is exactly 100.
+    if avg_loss > 0.0 {
+        let rs = avg_gain / avg_loss;
+        rsi.push(100.0 - 100.0 / (1.0 + rs));
     } else {
-        100.0
-    };
-    rsi.push(100.0 - 100.0 / (1.0 + rs));
+        rsi.push(100.0);
+    }
 
     for i in period..gains.len() {
         avg_gain = (avg_gain * (period - 1) as f64 + gains[i]) / period as f64;
         avg_loss = (avg_loss * (period - 1) as f64 + losses[i]) / period as f64;
-        let rs = if avg_loss > 0.0 {
-            avg_gain / avg_loss
+        if avg_loss > 0.0 {
+            let rs = avg_gain / avg_loss;
+            rsi.push(100.0 - 100.0 / (1.0 + rs));
         } else {
-            100.0
-        };
-        rsi.push(100.0 - 100.0 / (1.0 + rs));
+            rsi.push(100.0);
+        }
     }
 
     rsi
@@ -49,6 +50,10 @@ pub fn bollinger_bands(
     period: usize,
     std_mult: f64,
 ) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+    // Guard against `windows(0)` panic (issue #53): empty inputs return empty bands.
+    if prices.is_empty() || period == 0 || period > prices.len() {
+        return (Vec::new(), Vec::new(), Vec::new());
+    }
     let mut middle = Vec::new();
     let mut upper = Vec::new();
     let mut lower = Vec::new();

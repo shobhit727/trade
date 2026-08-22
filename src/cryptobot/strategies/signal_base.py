@@ -92,20 +92,43 @@ class SignalStrategy:
         if len(closes) < self.warmup(closes):
             return None
         sig = self.signal(closes, highs, lows, volumes)
-        if sig is None or sig == 0:
+        if sig is None:
             return None
-        target = 1 if sig > 0 else -1
+        target = 1 if sig > 0 else (-1 if sig < 0 else 0)
         cur = self._pos.get(symbol, 0)
         if target == cur:
             return None
         self._pos[symbol] = target
-        return OrderEvent(
-            symbol=symbol,
-            side=OrderSide.BUY if target > 0 else OrderSide.SELL,
-            type=OrderType.MARKET,
-            quantity=self.config.quantity,
-            strategy=self.name,
-        )
+
+        def _order(side: OrderSide, qty: Decimal, reduce_only: bool = False) -> OrderEvent:
+            o = OrderEvent(
+                symbol=symbol,
+                side=side,
+                type=OrderType.MARKET,
+                quantity=qty,
+                strategy=self.name,
+            )
+            o.reduce_only = reduce_only
+            return o
+
+        qty = self.config.quantity
+
+        # Enter from flat: single open order.
+        if cur == 0 and target != 0:
+            return _order(OrderSide.BUY if target > 0 else OrderSide.SELL, qty)
+
+        # Exit to flat (signal == 0): reduce-only close of the open leg.
+        if target == 0:
+            return _order(OrderSide.SELL if cur > 0 else OrderSide.BUY, qty, reduce_only=True)
+
+        # Flip (issue #25): a single MARKET order of 2x quantity — the engine nets it
+        # into "close existing leg + open the reverse leg". Emitting only 1x used to
+        # leave the book flat while this strategy believed it was short/long.
+        # Tagged via payload so equity-fractional rescaling preserves the 2x intent.
+        flip_qty = qty * Decimal(2)
+        o = _order(OrderSide.BUY if target > 0 else OrderSide.SELL, flip_qty)
+        o.payload["flip"] = True
+        return o
 
     def reset(self, symbol: str | None = None) -> None:
         if symbol is None:

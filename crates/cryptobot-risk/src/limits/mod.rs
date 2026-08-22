@@ -39,6 +39,18 @@ pub fn check_order(
     order_exposure_pct: f64,
     leverage: f64,
 ) -> LimitCheck {
+    // NaN fails closed (issue #41): `NaN > x` is always false, so a poisoned
+    // upstream computation used to sail through every gate.
+    if !current_exposure_pct.is_finite()
+        || !order_exposure_pct.is_finite()
+        || !leverage.is_finite()
+    {
+        return LimitCheck::Fail {
+            reason: "non-finite input",
+            limit: 0.0,
+            actual: 0.0,
+        };
+    }
     let total = current_exposure_pct + order_exposure_pct;
     if order_exposure_pct > limits.max_single_position_pct {
         return LimitCheck::Fail {

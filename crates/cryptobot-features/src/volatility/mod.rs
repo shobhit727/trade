@@ -15,7 +15,9 @@ pub fn realized_volatility(returns: &[f64], window: usize) -> Vec<f64> {
 }
 
 pub fn ewma_volatility(returns: &[f64], lambda: f64) -> Vec<f64> {
-    if returns.is_empty() {
+    // Reject invalid decay factors (issue #53): λ outside [0, 1] makes the recursion
+    // negative -> sqrt(NaN) poisons the whole stream.
+    if returns.is_empty() || !(0.0..=1.0).contains(&lambda) {
         return vec![];
     }
     let mut vol = Vec::with_capacity(returns.len());

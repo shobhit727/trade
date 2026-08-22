@@ -77,32 +77,47 @@ pub fn inverse_vol_weights(cov: &[Vec<f64>]) -> Vec<f64> {
     w.iter().map(|x| x / total).collect()
 }
 
-/// Equal-risk-contribution weights via iterative solver (a.k.a. risk parity).
+/// Equal-risk-contribution weights via the Spinu fixed-point iteration
+/// (issue #24): `w_i ∝ b_i / (Σw)_i`, damped and normalized each step.
+///
+/// The previous update reduced algebraically to `w ∝ w²` (the vol terms cancelled),
+/// driving weights to a single-asset corner on any diagonal covariance while the
+/// equal-variance test still passed trivially. For diag(σ₀², σ₁²) the fixed point
+/// is `w_i ∝ 1/σ_i` — exact ERC.
 pub fn risk_parity_weights(cov: &[Vec<f64>], iters: usize) -> Vec<f64> {
     let n = cov.len();
     if n == 0 {
         return Vec::new();
     }
+    let budget = 1.0 / n as f64;
     let mut w = vec![1.0 / n as f64; n];
     for _ in 0..iters {
-        let vol: Vec<f64> = (0..n)
-            .map(|i| {
-                let var = cov[i].iter().zip(&w).map(|(c, ww)| c * ww).sum::<f64>();
-                (w[i] * var).max(1e-12)
-            })
+        // marginal-risk vector Σ·w
+        let sw: Vec<f64> = (0..n)
+            .map(|i| cov[i].iter().zip(&w).map(|(c, ww)| c * ww).sum::<f64>())
             .collect();
-        let total: f64 = vol.iter().sum();
-        if total <= 0.0 {
+        if sw.iter().any(|m| !m.is_finite()) {
             break;
         }
-        for i in 0..n {
-            w[i] = (vol[i] / total) * (w[i] / (w[i] * cov[i][i]).max(1e-12));
+        let mut next: Vec<f64> = (0..n)
+            .map(|i| {
+                let m = sw[i];
+                if m <= 0.0 {
+                    return 0.0;
+                }
+                budget / m
+            })
+            .collect();
+        let s: f64 = next.iter().sum();
+        if s <= 0.0 || !s.is_finite() {
+            break;
         }
-        let s: f64 = w.iter().sum();
-        if s > 0.0 {
-            for value in w.iter_mut() {
-                *value /= s;
-            }
+        for value in next.iter_mut() {
+            *value /= s;
+        }
+        // damped update for stability on ill-conditioned matrices
+        for i in 0..n {
+            w[i] = 0.5 * w[i] + 0.5 * next[i];
         }
     }
     w
@@ -147,5 +162,34 @@ mod tests {
         let w = risk_parity_weights(&cov, 100);
         assert!((w[0] - 0.5).abs() < 1e-6);
         assert!((w[1] - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn risk_parity_diagonal_cov_is_exact_erc() {
+        // diag(4, 9): ERC weights are w_i ∝ 1/σ_i → [0.6, 0.4].
+        // The old solver returned ~[1.0, 0.0] here (issue #24).
+        let cov = diag_cov(&[4.0, 9.0]);
+        let w = risk_parity_weights(&cov, 200);
+        assert!((w[0] - 0.6).abs() < 1e-6, "w = {:?}", w);
+        assert!((w[1] - 0.4).abs() < 1e-6, "w = {:?}", w);
+    }
+
+    #[test]
+    fn risk_parity_risk_contributions_are_equal() {
+        // Non-diagonal positive-definite matrix; verify RC_i equal within tol.
+        let cov = vec![vec![0.04, 0.01], vec![0.01, 0.09]];
+        let w = risk_parity_weights(&cov, 500);
+        let rc: Vec<f64> = (0..2)
+            .map(|i| {
+                let sw: f64 = cov[i].iter().zip(&w).map(|(c, ww)| c * ww).sum();
+                w[i] * sw
+            })
+            .collect();
+        assert!(
+            (rc[0] - rc[1]).abs() / rc[0].max(1e-12) < 1e-4,
+            "rc = {:?}, w = {:?}",
+            rc,
+            w
+        );
     }
 }

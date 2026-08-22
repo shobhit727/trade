@@ -5,7 +5,7 @@ from typing import Any
 
 import numpy as np
 
-from cryptobot.ml.features import build_features, future_returns
+from cryptobot.ml.features import build_features, future_returns, label_valid_mask
 
 
 @dataclass
@@ -138,13 +138,18 @@ def labels_from_returns(returns: np.ndarray, threshold: float = 0.0) -> np.ndarr
 
 
 def features_and_labels(bars, horizon: int = 5) -> tuple[np.ndarray, np.ndarray]:
+    """Feature matrix + binary labels from forward returns.
+
+    Rows whose forward window extends past the data end are dropped via
+    ``label_valid_mask`` — they carry placeholder-zero labels and would poison
+    training.
+    """
     features = build_features(bars)
-    future = future_returns(bars, horizon=horizon)
-    n_labels = future.size
-    n_features = features.shape[0]
-    common = min(n_features, n_labels)
-    X = features[-common:]
-    y = labels_from_returns(future[-common:])
+    close = np.asarray(bars.close, dtype=float)
+    future = future_returns(close, horizons=[horizon])
+    valid = label_valid_mask(close.shape[0], [horizon])
+    X = features.features[valid]
+    y = labels_from_returns(future[valid, 0])
     return X, y
 
 

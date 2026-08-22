@@ -14,9 +14,12 @@ def _make_data():
     f_rates = [0.0005, 0.0004, -0.0002, 0.0006, 0.0003, 0.0001]
     p_ts = [base + timedelta(hours=2 * i) for i in range(30)]
     s_cl = [100.0 + 0.001 * i for i in range(30)]
+    # Perp carries a wide premium (~100bps) decaying to par over ~12 bars, so a
+    # causal decision (previous bar's close — see issue #31) still sees an
+    # entry-grade basis and the subsequent negative-funding decision exits.
     p_cl = (
-        [100.06, 100.06, 100.05, 100.04, 100.03, 100.02, 100.01, 100.0, 100.0, 100.0]
-        + [100.0] * 20
+        [101.0 - 0.1 * i for i in range(12)]
+        + [100.0] * 18
     )
     return f_ts, f_rates, p_ts, s_cl, p_ts, p_cl
 

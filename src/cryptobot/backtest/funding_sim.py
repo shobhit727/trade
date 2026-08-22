@@ -56,7 +56,13 @@ class FundingSimResult:
 
 
 def _price_at(sorted_ts: list[datetime], sorted_close: list[float], ts: datetime) -> float | None:
-    idx = bisect.bisect_right(sorted_ts, ts) - 1
+    """Price of the last bar CLOSED at or before ``ts`` (no lookahead, issue #31).
+
+    ``sorted_ts`` holds kline OPEN times; the close at index i is only known at
+    open[i] + interval, so a decision at ts must use index i-1 (the previous
+    bar's close). The old bisect returned the in-progress bar's future close.
+    """
+    idx = bisect.bisect_left(sorted_ts, ts) - 1
     if idx < 0:
         return None
     return sorted_close[idx]

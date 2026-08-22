@@ -226,8 +226,28 @@ def future_returns(
     close: npt.NDArray[np.float64],
     horizons: list[int],
 ) -> npt.NDArray[np.float64]:
-    """Compute future log returns for labeling."""
-    return _returns(close, horizons)
+    """Compute FORWARD log returns for labeling (issue #21).
+
+    ``out[t, j] = log(close[t+h] / close[t])`` — the return realized over the
+    ``h`` bars AFTER t. Rows ``len(close)-h .. end`` have no full forward window
+    and are left as 0; callers must drop them before training. The previous
+    implementation wrote *backward* returns into rows h..end — identical to the
+    ret_h feature at the same row — so labels leaked features perfectly.
+    """
+    returns = np.zeros((len(close), len(horizons)))
+    for j, h in enumerate(horizons):
+        if 0 < h < len(close):
+            returns[:-h, j] = np.log(close[h:] / close[:-h])
+    return returns
+
+
+def label_valid_mask(n_samples: int, horizons: list[int]) -> npt.NDArray[np.bool_]:
+    """Rows whose forward label used a complete window (callers drop the rest)."""
+    max_h = max(horizons) if horizons else 0
+    mask = np.ones(n_samples, dtype=bool)
+    if max_h > 0:
+        mask[n_samples - max_h :] = False
+    return mask
 
 
 def features_and_labels(

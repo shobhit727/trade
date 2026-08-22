@@ -54,6 +54,11 @@ pub fn walk_forward_accuracy(
     predict: &Predictor,
 ) -> Vec<f64> {
     let total = labels.len();
+    // Guard against feature/label length mismatch (issue #53): slice bounds derive
+    // from labels.len(), so any shorter feature series panicked on indexing.
+    if features.iter().any(|f| f.len() < total) {
+        return Vec::new();
+    }
     let splits = walk_forward_splits(total, train_size, test_size, embargo);
     let mut accuracies = Vec::with_capacity(splits.len());
     for (tr_s, tr_e, te_s, te_e) in splits {
