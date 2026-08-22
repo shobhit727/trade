@@ -73,6 +73,17 @@
 | `.github/workflows/release.yml` | ✅ | Tag-driven multi-arch publish with **SBOM + provenance merged into the build-push step** + concurrency group. |
 | `scripts/build_multiarch.sh` | ✅ | Local multi-arch build via buildx + QEMU. |
 | Rust workspace (`crates/cryptobot-{core,features,risk,stats,orderbook,backtest,py}/`) | ✅ | 7 crates + root workspace manifest. `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (all green on stable Rust 1.97+). PyO3 0.29; `cryptobot_py` extension registers `features`, `risk`, `orderbook`, `backtest` submodules. `.cargo/config.toml` has no `target-cpu=native` (breaks cached CI builds). |
+| `core/fund.py` | ✅ | Seed Phase: global-fund ledger (10% skim/8h, guarded draws, kill-switch freeze) wired into LiveTrader. |
+| `core/allocator.py` | ✅ | Equity-tiered strategy activation (seed/growth/scale), YAML-configurable. |
+| `core/tax.py` | ✅ | India VDA engine: FIFO, §115BBH no-loss-offset, TDS credits, Schedule-VDA CSV; `cryptobot tax` CLI. |
+| `core/gate.py` | ✅ | 60-day paper gate w/ auto-extend; live mode refused until pass; wired into bot + /health. |
+| `core/profiles.py` | ✅ | realistic/aggressive presets; vol-targeted leverage 0–3x with ≥25% liq-distance clamp. |
+| `core/breaker.py` | ✅ | −25%-from-peak breaker; profit-first close; `cryptobot breaker-reset` (audited). |
+| `live/trader.py` | ✅ | Full trading loop: WS klines → strategy → risk-checked execution; harvest loop, tax recording, gate snapshots, protective stops, breaker checks. |
+| `monitoring/monthly_report.py` | ✅ | Family PDF (fpdf2): stats + equity curve + safety systems + tax estimate. |
+| `monitoring/email_digest.py` | ✅ | Daily digest via Gmail SMTP (env-configured). |
+| `monitoring/whatsapp.py` | ✅ | Meta Cloud API sender for EOD summaries (env-configured). |
+| `utils/audit.py` | ✅ | Append-only owner-action JSONL log. |
 | `execution/costs.py` | ✅ | Phase 4 transaction cost model: spread, fees, slippage, funding, rebates. |
 | `execution/venue/realistic.py` | ✅ | Realistic venue: seeded order book with QueuePositions, partial fills, adverse-selection guard, limit fills at price, fees on filled qty. |
 | `live/paper_harness.py` | ✅ | Phase 3 `FundingPaperHarness` — spot bookTicker WS + fapi `premiumIndex` REST-poll fallback, carry accumulation, CSV logs, reconnection backoff. |
