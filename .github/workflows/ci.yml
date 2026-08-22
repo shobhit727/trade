@@ -199,7 +199,7 @@ jobs:
   docker-test:
     name: Docker test image
     runs-on: ubuntu-latest
-    needs: [lint, changes]
+    needs: [lint, unit, changes]
     if: needs.changes.outputs.docker == 'true'
     timeout-minutes: 30
     steps:
@@ -285,6 +285,28 @@ jobs:
           cache-to: type=gha,mode=max
           push: ${{ github.event_name == 'push' }}
           load: true
+      - name: Smoke-run production container (amd64 only)
+        if: matrix.platform == 'linux/amd64'
+        run: |
+          # The audit's blind spot: production target was built+scanned but never RUN.
+          # This proves the shipped CMD actually serves /health (#22 regression guard).
+          IMAGE="${{ env.REGISTRY_IMAGE }}:${{ github.sha }}-linux-amd64"
+          docker run -d --name prod-smoke -p 8080:8080 \
+            -e BINANCE_TESTNET=true -e APP_ENV=production "$IMAGE"
+          ok=""
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/health > /tmp/health.json 2>/dev/null; then
+              ok=yes; break
+            fi
+            sleep 1
+          done
+          docker logs prod-smoke 2>&1 | tail -20 || true
+          docker rm -f prod-smoke > /dev/null || true
+          if [ -z "$ok" ]; then
+            echo "::error::production container never served /health"
+            exit 1
+          fi
+          echo "smoke OK:"; cat /tmp/health.json
       - name: Scan image with Trivy (CRITICAL/HIGH)
         if: always() && github.event_name == 'push'
         uses: aquasecurity/trivy-action@v0.36.0

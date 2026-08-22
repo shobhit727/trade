@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -210,8 +212,11 @@ class StateManager:
         self._account = AccountState()
         self._daily_pnl_start: Decimal = Decimal("0")
         data_dir = Path("/app/data")
-        if not data_dir.exists():
-            data_dir = Path(".")
+        # Existence is not enough: a root-owned /app/data inside a read-only
+        # image layer crashes sqlite at first connect (#prod-smoke finding).
+        if not (data_dir.exists() and os.access(data_dir, os.W_OK)):
+            fallback = Path(".")
+            data_dir = fallback if os.access(fallback, os.W_OK) else Path(tempfile.gettempdir())
         self._db_path = data_dir / f"{settings.database.name}.db"
         if sqlite3 is not None:
             self._init_db()

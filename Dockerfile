@@ -61,6 +61,8 @@ LABEL org.opencontainers.image.title="cryptobot" \
       org.opencontainers.image.created="${BUILD_DATE}"
 
 FROM base AS production
+# Runtime-writable dirs for the non-root user (SQLite db + bot state files).
+RUN mkdir -p /app/data /app/state && chown -R 1000:1000 /app/data /app/state
 USER 1000:1000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3).read()" || exit 1

@@ -6,6 +6,7 @@ services:
       target: test
       args:
         REQUIREMENTS: requirements/test.txt
+        PYTHON_TAG: 3.14-slim
     container_name: cryptobot-test
     environment:
       - APP_ENV=test
@@ -225,6 +226,8 @@ services:
       context: .
       dockerfile: Dockerfile
       target: production
+      args:
+        PYTHON_TAG: 3.14-slim
     container_name: cryptobot-app
     environment:
       - APP_ENV=production
@@ -290,6 +293,8 @@ services:
       context: .
       dockerfile: Dockerfile
       target: production
+      args:
+        PYTHON_TAG: 3.14-slim
     container_name: cryptobot-paper
     environment:
       - APP_ENV=paper
@@ -340,6 +345,8 @@ services:
       context: .
       dockerfile: Dockerfile
       target: production
+      args:
+        PYTHON_TAG: 3.14-slim
     container_name: cryptobot-backtest
     environment:
       - APP_ENV=backtest

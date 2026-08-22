@@ -38,6 +38,7 @@ docker buildx build \
   --target "${TARGET}" \
   --tag "${REGISTRY}:${TAG}" \
   --tag "${REGISTRY}:${GIT_SHA}-${TAG}" \
+  --build-arg PYTHON_TAG="${PYTHON_TAG:-3.14-slim}" \
   --build-arg REQUIREMENTS="${REQUIREMENTS}" \
   --build-arg GIT_SHA="${GIT_SHA}" \
   --build-arg BUILD_DATE="${BUILD_DATE}" \
