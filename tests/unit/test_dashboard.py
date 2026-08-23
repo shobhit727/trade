@@ -24,9 +24,9 @@ def snap_fixture() -> dict:
 
 def test_dashboard_renders_key_rows():
     html = render_dashboard_html(snap_fixture())
-    assert "Equity" in html and "10500.00" in html
-    assert "collecting" in html and "(12/60 days)" in html
-    assert ">ok</td>" in html
+    assert "Equity" in html and "10,500.00" in html
+    assert "collecting" in html and "12 / 60" in html
+    assert "pill ok" in html  # status pill armed/green
     assert "read-only" in html.lower()
 
 
@@ -34,8 +34,8 @@ def test_dashboard_tripped_breaker_is_bad():
     snap = snap_fixture()
     snap["breaker"] = {"tripped": True, "reason": "drawdown -26%"}
     html = render_dashboard_html(snap)
-    assert "TRIPPED: drawdown -26%" in html
-    assert "class='bad'" in html
+    assert ">TRIPPED</span>" in html and "drawdown -26%" in html
+    assert "pill bad" in html
 
 
 def test_dashboard_escapes_html():

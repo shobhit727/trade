@@ -138,6 +138,13 @@ class LiveTrader:
         state = self._portfolio.get_state()
         snap["equity"] = str(state.total_equity)
         snap["open_positions"] = state.open_positions
+        snap["daily_pnl"] = str(state.daily_pnl)
+        snap["peak_equity"] = str(state.peak_equity)
+        snap["max_drawdown_pct"] = f"{float(state.max_drawdown) * 100:.1f}"
+        curve = self._portfolio.get_equity_curve()
+        snap["equity_curve"] = [
+            {"ts": ts.isoformat(), "equity": str(v)} for ts, v in curve[-120:]
+        ]
         snap["global_fund"] = self._fund.summary()
         snap["tax_summary"] = self._tax.summary()
         if self._gate is not None:
@@ -170,6 +177,9 @@ class LiveTrader:
         if self.config.mode != "live" and self._portfolio.get_state().total_equity <= 0:
             seed = Decimal(self.config.initial_equity)
             await self._portfolio.update_equity(seed)
+            # A stale persisted baseline (0) would book the whole seed as
+            # "today's P&L"; reset so day one starts flat.
+            self._portfolio.reset_daily_pnl()
             logger.info("seeded fresh paper portfolio with equity %s", seed)
         self._health.start()
         self._install_health_snapshot()

@@ -112,55 +112,195 @@ class HealthServer:
         self._thread = None
 
 
+def _sparkline_svg(points: list[float], width: int = 560, height: int = 90) -> str:
+    """Inline SVG polyline for the equity curve; handles flat/empty data."""
+    if len(points) < 2:
+        return '<div class="spark-empty">collecting data…</div>'
+    vmin, vmax = min(points), max(points)
+    span = (vmax - vmin) or 1.0
+    step = width / (len(points) - 1)
+    coords = [
+        (i * step, height - 8 - ((v - vmin) / span) * (height - 16))
+        for i, v in enumerate(points)
+    ]
+    poly = " ".join(f"{x:.1f},{y:.1f}" for x, y in coords)
+    color = "#3fb950" if points[-1] >= points[0] else "#f85149"
+    return (
+        f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none" '
+        f'class="spark"><polyline fill="none" stroke="{color}" stroke-width="2" '
+        f'points="{poly}"/></svg>'
+    )
+
+
 def render_dashboard_html(snap: dict) -> str:
-    """Read-only family dashboard: same data as /health, human-shaped."""
+    """Read-only family dashboard: cards, sparkline, gate progress."""
     import html as _html
 
     def esc(value):
         return _html.escape(str(value))
 
-    gate = snap.get("paper_gate") or {}
+    def money(value):
+        try:
+            return f"{float(value):,.2f}"
+        except (TypeError, ValueError):
+            return esc(value)
+
     fund = snap.get("global_fund") or {}
+    gate = snap.get("paper_gate") or {}
     breaker = snap.get("breaker") or {}
     tax = snap.get("tax_summary") or {}
-    breaker_bad = bool(breaker.get("tripped"))
-    rows = [
-        ("Status", snap.get("status"), "ok" if snap.get("status") == "running" else "warn"),
-        ("Strategy", f"{snap.get('strategy')} {snap.get('symbol')} {snap.get('timeframe')}", ""),
-        ("Mode", snap.get("mode"), ""),
-        ("Equity", snap.get("equity"), "ok"),
-        ("Orders / fills / rejects",
-         f"{snap.get('orders_submitted', 0)} / {snap.get('fills', 0)} / {snap.get('rejects', 0)}", ""),
-        ("Global fund", f"{fund.get('fund_balance', '0')}"
-         + (" (FROZEN)" if fund.get("frozen") else ""), ""),
-        ("Paper gate", f"{gate.get('status', '-')} "
-         f"({gate.get('days_elapsed', 0)}/{gate.get('window_days', 60)} days)", ""),
-        ("Circuit breaker", ("TRIPPED: " + breaker.get("reason", "")) if breaker_bad else "ok",
-         "bad" if breaker_bad else "ok"),
-        ("Risk profile", snap.get("risk_profile", "-"), ""),
-        ("Tax estimate (net payable)", tax.get("net_tax_payable", "-"), ""),
-    ]
-    trs = "".join(
-        f"<tr><td>{esc(label)}</td>"
-        f"<td class='{cls}'>{esc(value)}</td></tr>"
-        for label, value, cls in rows
+    curve = [float(p["equity"]) for p in snap.get("equity_curve", []) if p.get("equity")]
+
+    status = snap.get("status", "-")
+    tripped = bool(breaker.get("tripped"))
+    frozen = bool(fund.get("frozen"))
+    daily_pnl = float(snap.get("daily_pnl") or 0)
+    pnl_cls = "pos" if daily_pnl > 0 else ("neg" if daily_pnl < 0 else "")
+
+    days = int(gate.get("days_elapsed", 0))
+    window = int(gate.get("window_days", 60)) or 60
+    pct = min(100, int(days * 100 / window))
+
+    status_cls = "ok" if status == "running" else "warn"
+    breaker_html = (
+        '<span class="pill bad">TRIPPED</span>'
+        f'<div class="sub">{esc(breaker.get("reason", ""))}</div>'
+        if tripped
+        else '<span class="pill ok">armed</span>'
+             f'<div class="sub">trips at {esc(breaker.get("max_drawdown", "-25%"))} from peak</div>'
     )
-    return (
-        "<!doctype html><html><head><meta charset='utf-8'>"
-        "<link rel='icon' href='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><text y=%2213%22 font-size=%2213%22>📈</text></svg>'>"
-        "<title>cryptobot - live status</title><style>"
-        "body{font-family:system-ui;margin:2rem;background:#111;color:#eee}"
-        "h1{font-size:1.3rem}"
-        "table{border-collapse:collapse;min-width:32rem}"
-        "td{padding:.5rem .9rem;border-bottom:1px solid #333}"
-        "td:first-child{color:#9ab;font-weight:600}"
-        ".ok{color:#7dd07d}.warn{color:#e6c34a}.bad{color:#ff6b6b;font-weight:700}"
+
+    warning = ""
+    if snap.get("allocator_warning"):
+        warning = f'<div class="banner warn">⚠ {esc(snap["allocator_warning"])}</div>'
+
+    rows = "".join(
+        f"<tr><td>{esc(k)}</td><td class='num'>{esc(v)}</td></tr>"
+        for k, v in [
+            ("Total proceeds", money(tax.get("total_proceeds"))),
+            ("Taxable income", money(tax.get("taxable_income"))),
+            ("Est. tax (30%+cess)", money(tax.get("estimated_tax"))),
+            ("TDS credits", money(tax.get("tds_credits"))),
+            ("Net payable", money(tax.get("net_tax_payable"))),
+        ]
+    )
+
+    head = (
+        '<!doctype html><html><head><meta charset="utf-8">'
+        '<meta http-equiv="refresh" content="30">'
+        "<title>cryptobot - live status</title>"
+        "<style>"
+        ":root{--bg:#0d1117;--card:#161b22;--line:#21262d;--fg:#e6edf3;"
+        "--dim:#8b949e;--green:#3fb950;--red:#f85149;--amber:#d29922;--blue:#58a6ff}"
+        "*{box-sizing:border-box}"
+        "body{margin:0;padding:24px;background:var(--bg);color:var(--fg);"
+        'font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}'
+        "h1{font-size:18px;margin:0 0 4px;display:inline-block;margin-right:12px}"
+        ".head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px}"
+        ".pill{padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600}"
+        ".pill.ok{background:#12351c;color:var(--green);border:1px solid #1f4d2a}"
+        ".pill.bad{background:#3d1418;color:var(--red);border:1px solid #67272c}"
+        ".pill.warn{background:#332a10;color:var(--amber);border:1px solid #57491b}"
+        ".muted{color:var(--dim);font-size:12px}"
+        ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}"
+        ".card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}"
+        ".card h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;"
+        "color:var(--dim);margin:0 0 8px}"
+        ".big{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}"
+        ".big.pos{color:var(--green)}.big.neg{color:var(--red)}"
+        ".kv{display:flex;justify-content:space-between;gap:8px;padding:3px 0;font-size:13px}"
+        ".kv b{font-weight:600;font-variant-numeric:tabular-nums}"
+        ".kv span{color:var(--dim)}"
+        "table{width:100%;border-collapse:collapse;font-size:13px}"
+        "td{padding:4px 0;border-top:1px solid var(--line)}"
+        "td:first-child{color:var(--dim)}"
+        "td.num{text-align:right;font-variant-numeric:tabular-nums}"
+        ".bar{height:8px;background:#21262d;border-radius:99px;overflow:hidden;margin:8px 0 6px}"
+        ".bar i{display:block;height:100%;background:var(--blue)}"
+        ".spark{width:100%;height:90px;display:block}"
+        '.spark-empty{color:var(--dim);font-size:12px;padding:36px 0;text-align:center}'
+        ".banner{grid-column:1/-1;background:#332a10;border:1px solid #57491b;"
+        "color:var(--amber);border-radius:10px;padding:10px 14px;font-size:13px}"
+        ".foot{margin-top:18px;color:var(--dim);font-size:12px}"
+        "a{color:var(--blue)}"
         "</style></head><body>"
-        "<h1>Cryptobot - read-only status</h1>"
-        f"<table>{trs}</table>"
-        "<p style='color:#666'>Read-only view. Updates on refresh.</p>"
-        "</body></html>"
     )
+
+    parts = [
+        head,
+        '<div class="head"><h1>Cryptobot</h1>',
+        f'<span class="pill {status_cls}">{esc(status)}</span>',
+        '<span class="muted">'
+        f"{esc(snap.get('strategy'))} · {esc(snap.get('symbol'))} · "
+        f"{esc(snap.get('timeframe'))} · {esc(snap.get('mode'))} mode · "
+        f"profile {esc(snap.get('risk_profile'))}</span></div>",
+    ]
+    if warning:
+        parts.append(warning)
+    parts.append('<div class="grid">')
+
+    # Equity card
+    parts.append(
+        '<div class="card"><h2>Equity</h2>'
+        f'<div class="big">{money(snap.get("equity"))}</div>'
+        f'<div class="kv"><span>today&#39;s P&amp;L</span><b class="{pnl_cls}">{money(daily_pnl)}</b></div>'
+        f'<div class="kv"><span>peak equity</span><b>{money(snap.get("peak_equity"))}</b></div>'
+        '<div class="kv"><span>max drawdown</span>'
+        f"<b>{esc(snap.get('max_drawdown_pct', '0.0'))}%</b></div></div>"
+    )
+    # Curve card
+    parts.append(
+        '<div class="card"><h2>Equity curve</h2>'
+        + _sparkline_svg(curve)
+        + f'<div class="muted" style="margin-top:6px">last {len(curve)} snapshots</div></div>'
+    )
+    # Trading card
+    parts.append(
+        '<div class="card"><h2>Trading</h2>'
+        f'<div class="kv"><span>bars seen / fed</span><b>{snap.get("bars_seen", 0)} / {snap.get("bars_fed", 0)}</b></div>'
+        f'<div class="kv"><span>orders submitted</span><b>{snap.get("orders_submitted", 0)}</b></div>'
+        f'<div class="kv"><span>fills</span><b>{snap.get("fills", 0)}</b></div>'
+        f'<div class="kv"><span>rejects</span><b>{snap.get("rejects", 0)}</b></div>'
+        f'<div class="kv"><span>open positions</span><b>{snap.get("open_positions", 0)}</b></div>'
+        f'<div class="kv"><span>last close</span><b>{money(snap.get("last_close") or 0)}</b></div></div>'
+    )
+    # Gate card
+    parts.append(
+        '<div class="card"><h2>Paper gate &rarr; live</h2>'
+        f'<div class="kv"><span>status</span><b>{esc(gate.get("status", "-"))}</b></div>'
+        f'<div class="bar"><i style="width:{pct}%"></i></div>'
+        f'<div class="kv"><span>days</span><b>{days} / {window}</b></div>'
+        f'<div class="kv"><span>extensions used</span><b>{gate.get("extensions_used", 0)} / 2</b></div>'
+        '<div class="kv"><span>live unlocked</span><b>'
+        + ("yes" if gate.get("allows_live") else "not yet")
+        + "</b></div></div>"
+    )
+    # Fund card
+    frozen_pill = (
+        '<span class="pill bad">FROZEN</span>'
+        if frozen
+        else '<span class="pill ok">active</span>'
+    )
+    parts.append(
+        '<div class="card"><h2>Global fund</h2>'
+        f'<div class="big">{money(fund.get("fund_balance"))}</div>{frozen_pill}'
+        '<div class="kv" style="margin-top:8px"><span>ledger entries</span>'
+        f"<b>{fund.get('n_entries', 0)}</b></div></div>"
+    )
+    # Breaker card
+    parts.append(f'<div class="card"><h2>Circuit breaker</h2>{breaker_html}</div>')
+    # Tax card
+    parts.append(
+        '<div class="card"><h2>India VDA tax estimate</h2>' + f"<table>{rows}</table></div>"
+    )
+
+    parts.append("</div>")
+    parts.append(
+        '<div class="foot">Read-only view · auto-refreshes every 30s · '
+        'details at <a href="/health">/health</a></div>'
+    )
+    parts.append("</body></html>")
+    return "".join(parts)
 
 
 async def serve_health(host: str = "127.0.0.1", port: int = 8080) -> None:
