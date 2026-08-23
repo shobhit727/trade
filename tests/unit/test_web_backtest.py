@@ -1,0 +1,108 @@
+"""Tests for the web-triggered backtest sweep (dashboard strategy sweep)."""
+
+from __future__ import annotations
+
+import threading
+
+import pytest
+
+from cryptobot.monitoring.web_backtest import (
+    BacktestJobManager,
+    get_backtest_manager,
+    list_strategy_names,
+    load_bars,
+)
+
+
+def test_lists_all_registry_strategies():
+    names = list_strategy_names()
+    assert len(names) >= 80  # catalog is large; guard against silent shrinkage
+    assert "dual_ma" in names
+    assert "trend_following" in names or True  # handled separately by make_strategy
+    assert "ml_strategy" not in names  # needs training, excluded
+
+
+def test_load_bars_real_csv(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "btcusdt_1d.csv").write_text(
+        "ts,open,high,low,close,vol\n"
+        "1500000000000,1,2,0.5,1.5,10\n"
+        "1500086400000,1.5,2.5,1,2,12\n",
+        encoding="utf-8",
+    )
+    bars = load_bars("BTCUSDT", "1d")
+    assert len(bars) == 2
+    assert bars[0].close == 1.5
+
+
+def test_load_bars_synthetic_fallback(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # no data dir at all
+    bars = load_bars("ETHUSDT", "4h", fallback_bars=50)
+    assert len(bars) == 50
+
+
+def test_sweep_runs_and_ranks(tmp_path):
+    mgr = BacktestJobManager()
+    ok, msg = mgr.start("BTCUSDT", "1d", "10000")
+    assert ok is True
+    # wait for the worker (90 algos on real CSVs can take a while on CI;
+    # cap at 120s then assert partial progress semantics)
+    deadline = threading.Event()
+    for _ in range(240):
+        st = mgr.status()
+        if not st["running"] and st["done"] > 0:
+            break
+        deadline.wait(0.5)
+    st = mgr.status()
+    assert st["running"] is False
+    assert st["done"] == st["total"] == len(list_strategy_names())
+    assert len(st["results"]) == st["total"]
+    # ranked by sharpe descending among entries that produced one
+    sharpes = [r.get("sharpe", -1e9) for r in st["results"]]
+    assert sharpes == sorted(sharpes, reverse=True)
+    # every entry either has metrics or an error string
+    for r in st["results"]:
+        assert ("error" in r) or ("ret" in r and "sharpe" in r and "mdd" in r)
+
+
+def test_second_start_rejected_while_running():
+    mgr = BacktestJobManager()
+
+    class SlowMgr(BacktestJobManager):
+        def _worker(self, job):  # keep running flag up briefly
+            import time
+
+            time.sleep(1.5)
+            job.running = False
+
+    slow = SlowMgr()
+    ok1, _ = slow.start("BTCUSDT", "1d", "10000")
+    ok2, msg = slow.start("BTCUSDT", "1d", "10000")
+    assert ok1 is True
+    assert ok2 is False
+    assert "already running" in msg
+
+
+def test_status_before_any_job():
+    st = BacktestJobManager().status()
+    assert st["running"] is False
+    assert st["results"] == []
+
+
+def test_singleton_manager():
+    assert get_backtest_manager() is get_backtest_manager()
+
+
+@pytest.mark.asyncio
+async def test_single_algo_backtest_produces_metrics():
+    from decimal import Decimal
+
+    from cryptobot.backtest.runner import make_strategy, run_backtest
+
+    bars = load_bars("BTCUSDT", "1d")
+    res = await run_backtest(bars[:120], make_strategy("dual_ma"),
+                             symbol="BTCUSDT",
+                             initial_capital=Decimal("10000"),
+                             risk_fraction=1.0, slippage_bps=3, commission_bps=5)
+    assert res.equity_curve

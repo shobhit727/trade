@@ -500,3 +500,19 @@ docker run -d --name cryptobot --restart unless-stopped \
 - If the port is taken the bot now fails fast with a clear message:
   "health server cannot bind ... use --port". Pick a free port and remap.
 - Backup cron: `tar czf backup_$(date +%F).tgz state/` off-box weekly.
+
+### 12.8 Strategy sweep from the dashboard
+
+The dashboard has a **Strategy sweep** panel: pick symbol/timeframe/capital,
+click *Run all N algorithms*. It backtests every registered strategy on
+`data/{symbol}_{timeframe}.csv` (synthetic fallback if missing) and streams a
+Sharpe-ranked table.
+
+API equivalents:
+
+```bash
+curl -X POST "localhost:8081/api/backtest/start?symbol=BTCUSDT&timeframe=1d&capital=10000"
+curl localhost:8081/api/backtest/status | jq '.results[:5]'
+```
+
+One sweep at a time; per-algorithm errors are captured in the note column.

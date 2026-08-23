@@ -8,6 +8,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from typing import Any
 
+from cryptobot.monitoring.web_backtest import get_backtest_manager
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,9 +38,38 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
         logger.debug("%s - %s", self.address_string(), format % args)
 
+    def do_POST(self):  # noqa: N802
+        from urllib.parse import parse_qs, urlparse
+
+        parsed = urlparse(self.path)
+        if parsed.path != "/api/backtest/start":
+            self.send_response(404)
+            self.end_headers()
+            return
+        qs = parse_qs(parsed.query)
+        symbol = (qs.get("symbol") or ["BTCUSDT"])[0]
+        timeframe = (qs.get("timeframe") or ["1d"])[0]
+        capital = (qs.get("capital") or ["10000"])[0]
+        ok, msg = get_backtest_manager().start(symbol, timeframe, capital)
+        body = ('{"ok": ' + ("true" if ok else "false") + ', "msg": "' + msg.replace('"', "'") + '"}').encode()
+        self.send_response(200 if ok else 409)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):  # noqa: N802
         if self.path == HEALTH_PATH:
             snap = self.server.health_snapshot.snapshot()  # type: ignore[attr-defined]
+            body = json.dumps(snap).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path == "/api/backtest/status":
+            snap = get_backtest_manager().status()
             body = json.dumps(snap).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -223,6 +254,14 @@ def render_dashboard_html(snap: dict) -> str:
         "color:var(--amber);border-radius:10px;padding:10px 14px;font-size:13px}"
         ".foot{margin-top:18px;color:var(--dim);font-size:12px}"
         "a{color:var(--blue)}"
+        "button{background:var(--blue);color:#0d1117;border:0;border-radius:6px;"
+        "padding:6px 14px;font-weight:600;cursor:pointer}"
+        "input,select{background:#0d1117;color:var(--fg);border:1px solid var(--line);"
+        "border-radius:6px;padding:4px 8px}"
+        "th{text-align:left;color:var(--dim);font-size:11px;text-transform:uppercase;"
+        "letter-spacing:.06em;padding:6px 8px;border-bottom:1px solid var(--line)}"
+        "#sw-table td{padding:5px 8px}"
+        ".pos{color:var(--green)}.neg{color:var(--red)}"
         "</style></head><body>"
     )
 
@@ -294,6 +333,78 @@ def render_dashboard_html(snap: dict) -> str:
         '<div class="card"><h2>India VDA tax estimate</h2>' + f"<table>{rows}</table></div>"
     )
 
+    # --- strategy sweep card ---
+    sweep = """
+    <div class="card" style="grid-column:1/-1">
+      <h2>Strategy sweep &mdash; backtest every algorithm</h2>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        <label>symbol <input id="sw-sym" value="{{SYM}}" size="9"></label>
+        <label>timeframe
+          <select id="sw-tf">
+            <option>1d</option><option>4h</option><option>1h</option>
+          </select>
+        </label>
+        <label>capital <input id="sw-cap" value="10000" size="7"></label>
+        <button id="sw-run" onclick="sweepStart()">Run all {{N}} algorithms</button>
+        <span id="sw-progress" class="muted"></span>
+      </div>
+      <div style="max-height:340px;overflow:auto">
+        <table id="sw-table"><thead><tr>
+          <th>#</th><th>algorithm</th><th>return</th><th>sharpe</th>
+          <th>max DD</th><th>note</th>
+        </tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+    <script>
+    function fmt(x, pct) {
+      if (x === null || x === undefined) return "";
+      return pct ? (100 * x).toFixed(1) + "%" : x.toFixed(2);
+    }
+    async function sweepStart() {
+      const sym = document.getElementById("sw-sym").value;
+      const tf = document.getElementById("sw-tf").value;
+      const cap = document.getElementById("sw-cap").value;
+      const btn = document.getElementById("sw-run");
+      btn.disabled = true;
+      await fetch(`/api/backtest/start?symbol=${sym}&timeframe=${tf}&capital=${cap}`,
+                  {method: "POST"});
+      poll();
+    }
+    let polling = null;
+    function poll() {
+      if (polling) return;
+      polling = setInterval(async () => {
+        const r = await fetch("/api/backtest/status");
+        const s = await r.json();
+        document.getElementById("sw-progress").textContent =
+          s.running ? `${s.done}/${s.total} (${
+            s.elapsed_s ? s.elapsed_s.toFixed(0) : 0}s)` : "";
+        if (!s.running && s.done > 0) {
+          clearInterval(polling); polling = null;
+          document.getElementById("sw-run").disabled = false;
+        }
+        if (!s.results || !s.results.length) return;
+        const tb = document.querySelector("#sw-table tbody");
+        tb.innerHTML = s.results.map((row, i) => `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${row.name}</td>
+            <td class="${row.ret >= 0 ? "pos" : "neg"}">${fmt(row.ret, true)}</td>
+            <td>${fmt(row.sharpe)}</td>
+            <td>${fmt(row.mdd, true)}</td>
+            <td class="muted">${row.error || ""}</td>
+          </tr>`).join("");
+      }, 2000);
+    }
+    poll();
+    </script>
+    """
+    sweep = (sweep
+             .replace("{SYM}", esc(snap.get("symbol") or "BTCUSDT"))
+             .replace("{N}", str(len(__import__("cryptobot.monitoring.web_backtest",
+                                                fromlist=["list_strategy_names"])
+                                    .list_strategy_names()))))
+    parts.append(sweep)
     parts.append("</div>")
     parts.append(
         '<div class="foot">Read-only view · auto-refreshes every 30s · '
