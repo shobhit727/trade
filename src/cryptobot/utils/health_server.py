@@ -59,7 +59,10 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):  # noqa: N802
-        if self.path == HEALTH_PATH:
+        from urllib.parse import urlparse
+
+        path = urlparse(self.path).path  # strip query so ?name=... still routes
+        if path == HEALTH_PATH:
             snap = self.server.health_snapshot.snapshot()  # type: ignore[attr-defined]
             body = json.dumps(snap).encode()
             self.send_response(200)
@@ -68,7 +71,20 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
-        if self.path == "/api/backtest/status":
+        if path == "/api/backtest/trades":
+            from urllib.parse import parse_qs, urlparse
+
+            qs = parse_qs(urlparse(self.path).query)
+            name = (qs.get("name") or [""])[0]
+            snap = get_backtest_manager().trades_for(name)
+            body = json.dumps(snap).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if path == "/api/backtest/status":
             snap = get_backtest_manager().status()
             body = json.dumps(snap).encode()
             self.send_response(200)
@@ -77,7 +93,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
-        if self.path == DASHBOARD_PATH:
+        if path == DASHBOARD_PATH:
             snap = self.server.health_snapshot.snapshot()  # type: ignore[attr-defined]
             body = render_dashboard_html(snap).encode()
             self.send_response(200)
@@ -86,7 +102,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
-        if self.path == METRICS_PATH:
+        if path == METRICS_PATH:
             try:
                 from cryptobot.monitoring.metrics import get_metrics_text
                 body = get_metrics_text().encode()
@@ -364,8 +380,20 @@ def render_dashboard_html(snap: dict) -> str:
       <div style="max-height:340px;overflow:auto">
         <table id="sw-table"><thead><tr>
           <th>#</th><th>algorithm</th><th>return</th><th>sharpe</th>
-          <th>max DD</th><th>note</th>
+          <th>max DD</th><th>trades</th><th>note</th>
         </tr></thead><tbody></tbody></table>
+      </div>
+      <div id="sw-trades" style="display:none;margin-top:10px">
+        <h3 style="margin:4px 0;font-size:13px;color:var(--blue)">
+          Trade detail: <span id="sw-tname"></span>
+          <button style="float:right" onclick="document.getElementById('sw-trades').style.display='none'">close</button>
+        </h3>
+        <div style="max-height:260px;overflow:auto">
+          <table id="swt-table"><thead><tr>
+            <th>entry (UTC)</th><th>exit (UTC)</th><th>side</th><th>qty</th>
+            <th>entry px</th><th>exit px</th><th>P&L</th><th>P&L %</th><th>fees</th>
+          </tr></thead><tbody></tbody></table>
+        </div>
       </div>
     </div>
     <script>
@@ -401,10 +429,12 @@ def render_dashboard_html(snap: dict) -> str:
         tb.innerHTML = s.results.map((row, i) => `
           <tr>
             <td>${i + 1}</td>
-            <td>${row.name}</td>
+            <td><a href="#" onclick="showTrades('${row.name}');return false"
+                   style="color:var(--blue)">${row.name}</a></td>
             <td class="${row.ret >= 0 ? "pos" : "neg"}">${fmt(row.ret, true)}</td>
             <td>${fmt(row.sharpe)}</td>
             <td>${fmt(row.mdd, true)}</td>
+            <td>${row.n_trades ?? ""}</td>
             <td class="muted">${row.error || ""}</td>
           </tr>`).join("");
       }, 2000);
@@ -432,6 +462,28 @@ def render_dashboard_html(snap: dict) -> str:
     }
     refreshTrades();
     setInterval(refreshTrades, 5000);
+
+    async function showTrades(name) {
+      const r = await fetch(`/api/backtest/trades?name=${encodeURIComponent(name)}`);
+      const d = await r.json();
+      document.getElementById("sw-tname").textContent =
+        `${name} (${d.trades.length} trades)`;
+      const tb = document.querySelector("#swt-table tbody");
+      tb.innerHTML = d.trades.map(tr => `
+        <tr>
+          <td>${(tr.entry_time || "").slice(0, 16).replace("T", " ")}</td>
+          <td>${(tr.exit_time || "").slice(0, 16).replace("T", " ")}</td>
+          <td class="${tr.side === "long" ? "pos" : "neg"}">${tr.side}</td>
+          <td>${tr.qty}</td>
+          <td>${Number(tr.entry_price).toLocaleString()}</td>
+          <td>${Number(tr.exit_price).toLocaleString()}</td>
+          <td class="${tr.pnl >= 0 ? "pos" : "neg"}">${Number(tr.pnl).toFixed(2)}</td>
+          <td>${Number(tr.pnl_pct).toFixed(2)}%</td>
+          <td class="muted">${Number(tr.fees).toFixed(2)}</td>
+        </tr>`).join("") ||
+        '<tr><td colspan="9" class="muted">no closed trades</td></tr>';
+      document.getElementById("sw-trades").style.display = "block";
+    }
     </script>
     """
     sweep = (sweep

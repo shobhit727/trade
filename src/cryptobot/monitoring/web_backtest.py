@@ -94,6 +94,8 @@ class SweepJob:
     done: int = 0
     total: int = 0
     results: list[dict[str, Any]] = field(default_factory=list)
+    trades: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    max_trades_stored: int = 500
     error: str = ""
 
     def status(self) -> dict[str, Any]:
@@ -137,6 +139,16 @@ class BacktestJobManager:
                 return {"running": False, "results": [], "total": 0, "done": 0}
             return self._job.status()
 
+    def trades_for(self, name: str) -> dict[str, Any]:
+        with self._lock:
+            if self._job is None:
+                return {"name": name, "trades": [], "total": 0}
+            return {
+                "name": name,
+                "trades": self._job.trades.get(name, []),
+                "total": len(self._job.trades.get(name, [])),
+            }
+
     # ------------------------------------------------------------------ worker
 
     def _worker(self, job: SweepJob) -> None:
@@ -156,9 +168,25 @@ class BacktestJobManager:
                     bars, strategy, symbol=job.symbol,
                     initial_capital=capital, risk_fraction=1.0,
                     slippage_bps=_SLIPPAGE_BPS, commission_bps=_COMMISSION_BPS,
+                    collect_trades=True,
                 ))
                 m = _curve_metrics(result.equity_curve)
-                entry.update(ret=m["ret"], sharpe=m["sharpe"], mdd=m["mdd"])
+                entry.update(ret=m["ret"], sharpe=m["sharpe"], mdd=m["mdd"],
+                             n_trades=len(result.trades))
+                job.trades[name] = [
+                    {
+                        "entry_time": str(tr.get("entry_time", "")),
+                        "exit_time": str(tr.get("exit_time", "")),
+                        "side": tr.get("side", ""),
+                        "qty": float(tr.get("quantity", 0)),
+                        "entry_price": float(tr.get("entry_price", 0)),
+                        "exit_price": float(tr.get("exit_price", 0)),
+                        "pnl": float(tr.get("pnl", 0)),
+                        "pnl_pct": float(tr.get("pnl_pct", 0)),
+                        "fees": float(tr.get("fees", 0)),
+                    }
+                    for tr in result.trades[:job.max_trades_stored]
+                ]
             except Exception as exc:  # noqa: BLE001 - one bad algo must not kill the sweep
                 entry.update(error=str(exc)[:120])
             job.results.append(entry)

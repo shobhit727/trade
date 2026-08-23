@@ -158,3 +158,30 @@ def test_flip_order_exposure_nets_against_current_position():
 
     r1, r2 = asyncio.run(scenario())
     assert r2.status.name == "FILLED", r2.payload
+
+
+def test_sweep_stores_per_algo_trades(tmp_path):
+    mgr = BacktestJobManager()
+    mgr.start("BTCUSDT", "1d", "10000")
+    for _ in range(240):
+        st = mgr.status()
+        if not st["running"] and st["done"] > 0:
+            break
+        threading.Event().wait(0.5)
+    st = mgr.status()
+    assert st["running"] is False
+    with_trades = [r for r in st["results"] if r.get("n_trades", 0) > 0]
+    assert with_trades, "expected at least one algo to trade on real BTC data"
+    some = with_trades[0]["name"]
+    got = mgr.trades_for(some)
+    assert got["name"] == some
+    assert len(got["trades"]) == got["total"] > 0
+    tr = got["trades"][0]
+    for key in ("entry_time", "exit_time", "side", "qty",
+                "entry_price", "exit_price", "pnl", "pnl_pct", "fees"):
+        assert key in tr
+
+
+def test_trades_for_unknown_algo_empty():
+    assert BacktestJobManager().trades_for("nope") == {
+        "name": "nope", "trades": [], "total": 0}
