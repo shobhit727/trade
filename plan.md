@@ -36,6 +36,33 @@ tiers → (4) tax engine → (5) gate tracker → (6) dual profiles + breaker �
 
 ---
 
+### HFT pivot — revised gate plan (owner decision 2026-08-23)
+
+Owner direction: production target is **HFT**, not low-frequency. The 1d gate
+bots currently running are a plumbing pilot only; the real gate must validate
+the config that will actually go live.
+
+| phase | what | status |
+|---|---|---|
+| 1 | Matrix sweep: 89 algos × 6 TFs (1m/5m/15m/1h/4h/1d) × BTC+ETH (1,068 backtests) | ⏳ running |
+| 2 | Fee-survival analysis per TF at taker costs; maker-fee scenario for the rest | next |
+| 3 | Walk-forward validate the shortlist on its own timeframe | after |
+| 4 | Restart the gate with prod candidates: top-N algos × short TFs; clock resets to day 0 | then |
+| 5 | Day-60 pass unlocks live mode for that config | end |
+
+Constraints & honesty notes:
+- SimulatedVenue fills at bar close — minute-cadence is honestly simulatable;
+  sub-second order-book HFT (latency, queue position, rebates) is NOT yet.
+  If nothing survives ≥1m at taker fees, build maker-only execution sim next.
+- LiveTrader is single-strategy; step 4 needs the multi-algo portfolio runner
+  (top-N by Sharpe per symbol/TF from the matrix).
+- Current 1d bots stay running until step 4: they exercise tape/gate/tax/
+  breaker plumbing daily so strategy swaps land on proven infrastructure.
+- Data available: 1m(120d)/5m(240d)/15m(400d)/1h/4h/1d CSVs for BTC+ETH;
+  1s klines exist on Binance — evaluate storage/lookback after the matrix.
+
+---
+
 ## 1. Project Context & Goals
 
 > Operational guide: see [`docs/RUNBOOK.md`](docs/RUNBOOK.md) for prerequisites, common Compose commands, profiles, troubleshooting.
