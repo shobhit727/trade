@@ -524,6 +524,18 @@ docker compose restart cryptobot-eth   # single-process restart
 Gate pass criteria (auto): net-positive, Sharpe >= 1, rejects <= 5%, zero
 breaker trips. Fail -> auto-extend 30d (max 2), then review.
 
+### 12.8b Multi-algo mode (one process, N strategies)
+
+```bash
+BOT_ALGOS='[
+  {"name":"dual_ma","params":{"fast":5,"slow":50},"weight":0.6},
+  {"name":"time_series","params":{"period":60,"threshold":0.05},"weight":0.4}
+]' docker compose up -d --no-deps cryptobot
+```
+
+Each algo trades its own equity slice; fills are tagged per algo on the tape.
+Per-algo weights normalize to 1.0.
+
 ## 12.9 Strategy sweep from the dashboard
 
 The dashboard has a **Strategy sweep** panel: pick symbol/timeframe/capital,

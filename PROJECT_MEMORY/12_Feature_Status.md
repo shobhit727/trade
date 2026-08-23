@@ -79,6 +79,7 @@
 | `core/gate.py` | ✅ | 60-day paper gate w/ auto-extend; live mode refused until pass; wired into bot + /health. |
 | `core/profiles.py` | ✅ | realistic/aggressive presets; vol-targeted leverage 0–3x with ≥25% liq-distance clamp. |
 | `core/breaker.py` | ✅ | −25%-from-peak breaker; profit-first close; `cryptobot breaker-reset` (audited). |
+| `live/multi_trader.py` | ✅ | MultiAlgoTrader: N strategies per symbol with equity-slice weights, per-algo attribution; `bot --algos-json` / BOT_ALGOS env. |
 | `live/trader.py` | ✅ | Full trading loop: WS klines → strategy → risk-checked execution; harvest loop, tax recording, gate snapshots, protective stops, breaker checks. |
 | `monitoring/monthly_report.py` | ✅ | Family PDF (fpdf2): stats + equity curve + safety systems + tax estimate. |
 | `monitoring/email_digest.py` | ✅ | Daily digest via Gmail SMTP (env-configured). |
