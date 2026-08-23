@@ -92,7 +92,7 @@ def main():
               f"{opt.oos_score:>8.2f} {opt.oos_return:>7.1%}   "
               f"{ret:>7.1%} / {sharpe:>5.2f} / {mdd:>5.1%}")
 
-        print(f"      plateau (period, thr, ret, sharpe, mdd):")
+        print("      plateau (period, thr, ret, sharpe, mdd):")
         for p2, th2, r2, s2, m2 in plateau(bars, f"{sym}USDT", opt.best_params):
             mark = " <-- winner" if (p2 == p and abs(th2 - th) < 1e-9) else ""
             print(f"        ({p2:>3},{th2:>5})  {r2:>7.1%} {s2:>6.2f} {m2:>6.1%}{mark}")

@@ -33,3 +33,4 @@ logs/
 
 # local market data downloads
 data/
+tmp/
