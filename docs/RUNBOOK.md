@@ -501,7 +501,30 @@ docker run -d --name cryptobot --restart unless-stopped \
   "health server cannot bind ... use --port". Pick a free port and remap.
 - Backup cron: `tar czf backup_$(date +%F).tgz state/` off-box weekly.
 
-### 12.8 Strategy sweep from the dashboard
+### 12.8 The 60-day gate run (started 2026-08-23)
+
+Two processes, one per validated assignment:
+
+| service | container | strategy | dashboard |
+|---|---|---|---|
+| `cryptobot` | cryptobot-app | dual_ma(5,50) BTCUSDT 1d | http://localhost:8081/dashboard |
+| `cryptobot-eth` | cryptobot-eth | time_series(60, 0.05) ETHUSDT 1d | http://localhost:8082/dashboard |
+
+Both seed equity 10k, paper mode, gate collecting (x/60). State lives in
+`./state/` (BTC) and `./state-eth/` (ETH). Daily snapshots land at first bar
+after UTC midnight; the gate auto-evaluates at day 60.
+
+Operations:
+```bash
+docker compose ps                      # both healthy?
+docker compose logs -f cryptobot       # BTC trades: grep TRADE
+docker compose restart cryptobot-eth   # single-process restart
+```
+
+Gate pass criteria (auto): net-positive, Sharpe >= 1, rejects <= 5%, zero
+breaker trips. Fail -> auto-extend 30d (max 2), then review.
+
+## 12.9 Strategy sweep from the dashboard
 
 The dashboard has a **Strategy sweep** panel: pick symbol/timeframe/capital,
 click *Run all N algorithms*. It backtests every registered strategy on

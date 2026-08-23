@@ -239,6 +239,7 @@ services:
       - "--strategy=${BOT_STRATEGY:-dual_ma}"
       - "--symbol=${BOT_SYMBOL:-BTCUSDT}"
       - "--timeframe=${BOT_TIMEFRAME:-1d}"
+      - "--warmup=120"
       - "--profile=${BOT_PROFILE:-realistic}"
       - "--strategy-params=${BOT_PARAMS:-}"
       - "--mode=${BOT_MODE:-paper}"
@@ -309,6 +310,50 @@ services:
     networks:
       - cryptobot-network
     restart: unless-stopped
+
+  # =============================================================================
+  # Gate process 2: ETH time-series momentum (walk-forward validated)
+  # =============================================================================
+  cryptobot-eth:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+      args:
+        PYTHON_TAG: 3.14-slim
+    container_name: cryptobot-eth
+    command:
+      - "cryptobot.cli.main"
+      - "bot"
+      - "--host=0.0.0.0"
+      - "--strategy=time_series"
+      - "--symbol=ETHUSDT"
+      - "--timeframe=1d"
+      - "--profile=realistic"
+      - "--mode=paper"
+      - "--warmup=120"
+      - "--port=8080"
+    environment:
+      - APP_ENV=paper
+      - APP_LOG_LEVEL=INFO
+      - BINANCE_TESTNET=true
+      - BOT_PARAMS={"period":60,"threshold":0.05}
+      - RISK_MAX_SINGLE_POSITION_PCT=${RISK_SINGLE:-1.0}
+      - RISK_MAX_TOTAL_EXPOSURE_PCT=${RISK_TOTAL:-1.0}
+      - RISK_MAX_DAILY_LOSS_PCT=${RISK_DAILY_LOSS:-0.25}
+      - RISK_KILL_SWITCH_DAILY_LOSS_PCT=${RISK_KS_DAILY:-0.25}
+      - RISK_REQUIRE_STOP_LOSS_ABOVE_USD=${RISK_STOP_REQ:-100000000}
+      - RISK_MAX_ORDER_SIZE_USD=${RISK_MAX_ORDER:-100000}
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./state-eth:/app/state
+    ports:
+      - "${ETH_PORT:-8082}:8080"
+    restart: unless-stopped
+    networks:
+      - cryptobot-network
 
   # =============================================================================
   # Cryptobot Paper Trading - Paper trading mode
