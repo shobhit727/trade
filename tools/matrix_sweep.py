@@ -1,10 +1,10 @@
 """HFT matrix sweep: every algorithm x every timeframe x BTC/ETH.
 
 89 algos x 6 timeframes (1m 5m 15m 1h 4h 1d) x 2 symbols = 1068 backtests,
-parallel across cores. Results ranked per (symbol, timeframe) by Sharpe and
-written to PROJECT_MEMORY/30_HFT_Matrix_Sweep.md + a raw JSON.
+parallel across cores. Bars are preloaded in the parent and shared
+copy-on-write with forked workers: one copy in RAM, no per-worker parsing.
 
-Fees: base taker 5bps + 3bps slippage per side. HFT truth serum.
+Results ranked per (symbol, timeframe) by Sharpe -> PROJECT_MEMORY/30.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import sys
+import time
 from concurrent.futures import ProcessPoolExecutor
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -31,6 +32,8 @@ from cryptobot.strategies.registry import _STRATEGY_REGISTRY_MAP  # noqa: E402
 
 SYMBOLS = ["BTCUSDT", "ETHUSDT"]
 TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1d"]
+BARS_PER_TF = {"1m": 172801, "5m": 69120, "15m": 38400,
+               "1h": 19200, "4h": 7200, "1d": 2000}
 OUT_JSON = Path("PROJECT_MEMORY/30_hft_matrix_raw.json")
 OUT_MD = Path("PROJECT_MEMORY/30_HFT_Matrix_Sweep.md")
 
@@ -50,8 +53,21 @@ def load_bars(symbol: str, tf: str) -> list:
     return _FILES[key]
 
 
+def preload_all() -> None:
+    """Parse every CSV once in the PARENT process.
+
+    Workers are forked afterwards, so bar lists are shared copy-on-write:
+    one copy in RAM instead of one per worker (~8x less memory) and zero
+    per-worker parse time.
+    """
+    for sym in SYMBOLS:
+        for tf in TIMEFRAMES:
+            load_bars(sym, tf)
+
+
 def run_one(job):
     symbol, tf, name = job
+    base = {"symbol": symbol, "tf": tf, "name": name}
     try:
         bars = load_bars(symbol, tf)
         strat = make_strategy(name)
@@ -61,7 +77,7 @@ def run_one(job):
             collect_trades=True))
         curve = [float(v) for _t, v in res.equity_curve]
         if len(curve) < 2:
-            return {**job, "ret": 0.0, "sharpe": 0.0, "mdd": 0.0,
+            return {**base, "ret": 0.0, "sharpe": 0.0, "mdd": 0.0,
                     "trades": 0, "error": None}
         pm = PerformanceMetrics()
         pm.add_value(curve[0])
@@ -69,7 +85,7 @@ def run_one(job):
             pm.add_value(v)
         rets = [curve[i] / curve[i - 1] - 1.0 for i in range(1, len(curve))]
         return {
-            **job,
+            **base,
             "ret": curve[-1] / curve[0] - 1.0,
             "sharpe": float(pm.calculate_sharpe_ratio(rets)),
             "mdd": float(pm.calculate_drawdown(pd.Series(curve))) / 100.0,
@@ -77,25 +93,33 @@ def run_one(job):
             "error": None,
         }
     except Exception as exc:  # noqa: BLE001
-        return {**job, "ret": None, "sharpe": None, "mdd": None,
+        return {**base, "ret": None, "sharpe": None, "mdd": None,
                 "trades": None, "error": str(exc)[:100]}
 
 
-def main():
+def main() -> None:
+    t_start = time.perf_counter()
     names = sorted(n for n in _STRATEGY_REGISTRY_MAP if n != "ml_strategy")
     jobs = [(s, tf, n) for s in SYMBOLS for tf in TIMEFRAMES for n in names]
-    print(f"{len(jobs)} backtests on {os.cpu_count()} cores...", flush=True)
+    # lightest first: useful results flow early, heaviest grids finish last
+    jobs.sort(key=lambda j: BARS_PER_TF[j[1]])
+
+    print(f"preloading {len(SYMBOLS) * len(TIMEFRAMES)} bar files...", flush=True)
+    preload_all()
 
     from tqdm import tqdm
 
+    print(f"{len(jobs)} backtests on {os.cpu_count()} cores "
+          f"(bars shared copy-on-write)", flush=True)
     results = []
-    with ProcessPoolExecutor(max_workers=min(8, os.cpu_count() or 4)) as ex:
-        for r in tqdm(ex.map(run_one, jobs, chunksize=4),
+    workers = int(os.getenv("SWEEP_WORKERS", "6"))
+    with ProcessPoolExecutor(max_workers=workers) as ex:
+        for r in tqdm(ex.map(run_one, jobs, chunksize=8),
                       total=len(jobs), unit="bt", ncols=80,
                       desc="matrix sweep"):
             results.append(r)
 
-    OUT_JSON.write_text(json.dumps(results, indent=1))
+    print(f"total {time.perf_counter() - t_start:.0f}s", flush=True)
 
     lines = ["# HFT matrix sweep — 89 algos x 6 timeframes x BTC/ETH",
              "",
@@ -121,15 +145,16 @@ def main():
     if errs:
         lines.append("## Errors")
         lines.append("")
-        seen = set()
+        seen: set = set()
         for r in errs:
-            key = (r["name"], r["error"][:40])
+            key = (r["name"], (r["error"] or "")[:40])
             if key in seen:
                 continue
             seen.add(key)
             lines.append(f"- {r['name']} ({r['tf']}): {r['error']}")
         lines.append("")
     OUT_MD.write_text("\n".join(lines))
+    OUT_JSON.write_text(json.dumps(results, indent=1))
     print(f"wrote {OUT_MD} and {OUT_JSON}", flush=True)
 
 

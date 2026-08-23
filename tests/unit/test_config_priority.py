@@ -1,6 +1,5 @@
 """Env vars must override YAML config values (12-factor contract)."""
 
-from pathlib import Path
 
 from cryptobot.config import Settings
 

@@ -155,3 +155,29 @@ def test_fill_lands_in_trade_tape():
     snap = trader.stats_snapshot()
     assert snap["recent_trades"][0]["side"] == "BUY"
     assert snap["recent_trades"][0]["notional"] == 500.0
+
+
+def test_fill_updates_position_book():
+    cfg = LiveTraderConfig(strategy="dual_ma", warmup_bars=0,
+                           port=18098, gate_enabled=False)
+    trader = LiveTrader(cfg)
+
+    class F:
+        status = OrderStatus.FILLED
+        filled_quantity = Decimal("0.5")
+        avg_fill_price = Decimal("100")
+        price = None
+        symbol = "BTCUSDT"
+        side = OrderSide.BUY
+        strategy = "dual_ma"
+
+    class F2(F):
+        side = OrderSide.SELL
+
+    trader._update_position_book(F())
+    assert trader._net_qty["BTCUSDT"] == Decimal("0.5")
+    trader._update_position_book(F())
+    assert trader._net_qty["BTCUSDT"] == Decimal("1")
+    trader._update_position_book(F2())
+    trader._update_position_book(F2())
+    assert trader._net_qty["BTCUSDT"] == 0

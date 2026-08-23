@@ -127,7 +127,6 @@ def test_flip_order_exposure_nets_against_current_position():
 
     from cryptobot.core.events import OrderEvent, OrderSide, OrderType
     from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
-    from cryptobot.core.state import StateManager
     from cryptobot.execution.engine import ExecutionEngine, build_venue
     from cryptobot.risk.manager import RiskManager
 

@@ -100,6 +100,7 @@ class LiveTrader:
         self._seen_bars: deque[int] = deque(maxlen=64)
         self._trade_log: deque[dict] = deque(maxlen=100)
         self._price_history: deque[tuple[str, float]] = deque(maxlen=400)
+        self._net_qty: dict[str, Decimal] = {}  # symbol -> net position (live book)
         self._fund = GlobalFundLedger(FundConfig(
             skim_fraction=Decimal(config.skim_fraction),
             state_path=config.fund_state_path,
@@ -201,9 +202,8 @@ class LiveTrader:
                 # internal position state without placing any orders. Reset
                 # to flat so the first live signal is a plain entry, not a
                 # 2x flip against a leg that does not exist.
-                if hasattr(self.strategy, "reset"):
-                    self.strategy.reset(self.config.symbol)
-                    logger.info("strategy state reset to flat after warmup")
+                self._reset_strategy_state()
+                logger.info("strategy state reset to flat after warmup")
 
             self._ws = ws
             ws.subscribe(_kline_event_type(), self._on_kline)
@@ -344,6 +344,7 @@ class LiveTrader:
             if filled.status == OrderStatus.FILLED and filled.filled_quantity > 0:
                 self._record_tax_fill(filled)
                 self._record_trade(filled)
+                self._update_position_book(filled)
                 self._place_protective_stop(filled, Decimal(str(close)))
             if filled.status in (OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED):
                 self.stats["fills"] += 1
@@ -401,6 +402,40 @@ class LiveTrader:
             return
         mult = Decimal(2) if order.payload.get("flip") else Decimal(1)
         order.quantity = Decimal(str(round(rf * float(equity / close) * float(mult), 8)))
+
+    def _update_position_book(self, order) -> None:
+        """Keep StateManager's position book in sync with live fills.
+
+        Nothing else wired this in the paper path, so risk checks that read
+        positions (flip netting, exposure) saw an empty book.
+        """
+        from cryptobot.core.events import PositionSide
+        from cryptobot.core.state import Position, StateManager
+
+        signed = order.filled_quantity * (
+            Decimal(1) if order.side == OrderSide.BUY else Decimal(-1))
+        net = self._net_qty.get(order.symbol, Decimal("0")) + signed
+        self._net_qty[order.symbol] = net
+        sm = StateManager()
+        if net == 0:
+            pos = sm.get_positions()
+            for existing in pos:
+                if existing.symbol == order.symbol:
+                    sm._positions.pop(order.symbol, None)
+            return
+        avg = order.avg_fill_price or order.price or Decimal("0")
+        sm.save_position(Position(
+            symbol=order.symbol,
+            side=PositionSide.LONG if net > 0 else PositionSide.SHORT,
+            quantity=abs(net),
+            entry_price=avg,
+            mark_price=avg,
+            strategy=order.strategy or self.config.strategy,
+        ))
+
+    def _reset_strategy_state(self) -> None:
+        if hasattr(self.strategy, "reset"):
+            self.strategy.reset(self.config.symbol)
 
     def _record_trade(self, order) -> None:
         """Append every executed fill to the live trade tape (dashboard+log)."""
