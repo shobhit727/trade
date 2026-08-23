@@ -278,3 +278,37 @@ Returns unchanged; risk numbers slightly worse but honest. OOS validation
 Sweep caveat: GARCH-family fits may be nondeterministic across runs.
 Two-leg strategies (funding_arbitrage, market_making) now degrade gracefully
 on bar feeds instead of crashing sweeps.
+
+## Profile race: realistic vs aggressive leverage (2026-08-23, SEED-6e)
+
+Tool: `tools/race_profiles.py`. Same walk-forward signals (BTC 5/50, ETH 15/80),
+daily bars, 3bps slip + 5bps fees; leveraged legs pay 1bp/8h perp funding and
+run under approximate isolated-margin liquidation (95% margin loss = forced
+close). Engine now supports `max_leverage` + short positions natively.
+
+| asset | profile | ret | sharpe | mdd | liq |
+|---|---|---|---|---|---|
+| BTC | realistic spot | +118% | **0.92** | 29% | 0 |
+| BTC | aggressive 2x | +318% | 0.74 | 49% | 0 |
+| BTC | aggressive 3x | +748% | 0.85 | 68% | 0 |
+| ETH | realistic spot | +296% | **1.17** | 34% | 0 |
+| ETH | aggressive 2x | +899% | 0.92 | 57% | 0 |
+| ETH | aggressive 3x | +1055% | 0.87 | 82% | 0 |
+
+Findings:
+1. **Leverage did not improve risk-adjusted returns** — Sharpe fell on every
+   leveraged variant. Funding drag plus short losses in a bull sample ate the
+   edge; shorts were ~half of BTC trades and all lost money net.
+2. **MDD explodes faster than returns**: 3x drawdowns of 68–82% vs the agreed
+   −25% circuit breaker. Under our own risk rules the aggressive profile never
+   rides those curves — the breaker flattens it near −25% repeatedly. Its true
+   realized path is far below the headline numbers above.
+3. No liquidations fired at 2–3x on daily bars (33%+ adverse single-stretch
+   moves never happened while positioned), but 82% MDD shows how close 3x
+   wanders to the margin cliff.
+
+Verdict: **race winner = realistic profile**, consistent with the agreed
+success bar (beat buy&hold risk-adjusted, MDD < 15% target still unmet —
+portfolio-level 22.6%). Aggressive remains available behind `--profile
+aggressive` but is not recommended until short-side edge is demonstrated in
+its own right (e.g., regime-gated shorts), not just leverage on trend flips.

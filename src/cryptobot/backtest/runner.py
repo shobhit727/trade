@@ -249,6 +249,7 @@ async def run_backtest(
     collect_trades: bool = False,
     funding: FundingProvider | None = None,
     risk_fraction: float = 0.0,
+    max_leverage: Decimal | None = None,
 ) -> BacktestRunResult:
     """Run a backtest with optional equity-fractional order sizing.
 
@@ -281,7 +282,8 @@ async def run_backtest(
         portfolio=portfolio,
         funding=funding,
     )
-    bt_result = await bt_engine.run_bars(bars, strategy, symbol, execution_engine, risk_fraction)
+    bt_result = await bt_engine.run_bars(bars, strategy, symbol, execution_engine,
+                                         risk_fraction, max_leverage=max_leverage)
 
     initial = Decimal(str(initial_capital))
     total_return = float((bt_result.final_equity - initial) / initial) if initial else 0.0

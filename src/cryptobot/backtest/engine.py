@@ -9,7 +9,15 @@ from typing import Any
 
 from cryptobot.backtest.funding import SETTLEMENT_HOURS, FundingProvider, funding_cashflow
 from cryptobot.core.clock import ClockFactory, SimulatedClock
-from cryptobot.core.events import Event, EventType, OrderEvent, OrderStatus, PositionSide
+from cryptobot.core.events import (
+    Event,
+    EventType,
+    OrderEvent,
+    OrderSide,
+    OrderStatus,
+    OrderType,
+    PositionSide,
+)
 from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
 from cryptobot.core.state import Position
 
@@ -175,7 +183,9 @@ class BacktestEngine:
 
         return self._compute_result()
 
-    async def run_bars(self, bars, strategy, symbol: str, execution_engine, risk_fraction: float = 0.0) -> BacktestResult:
+    async def run_bars(self, bars, strategy, symbol: str, execution_engine,
+                       risk_fraction: float = 0.0,
+                       max_leverage: Decimal | None = None) -> BacktestResult:
         """Run the backtest simulation directly over bars.
 
         Fast path: the strategy is fed synchronously bar-by-bar and only dips
@@ -207,6 +217,9 @@ class BacktestEngine:
             for bar in bars:
                 await self._maybe_settle_funding(bar.timestamp)
                 await self._mark_to_market(symbol, Decimal(str(bar.close)), bar.timestamp)
+                if max_leverage is not None and max_leverage > 1:
+                    await self._check_liquidation(symbol, execution_engine, bar,
+                                                  str(bar.close), max_leverage)
                 order = feed(symbol, bar.close)
                 if order is None:
                     continue
@@ -235,6 +248,40 @@ class BacktestEngine:
         else:
             pos.unrealized_pnl = (pos.entry_price - price) * pos.quantity
         await self._update_equity()
+
+    async def _check_liquidation(self, symbol: str, execution_engine, bar,
+                                 close_str: str, leverage: Decimal) -> None:
+        """Approximate isolated-margin liquidation for leveraged backtests.
+
+        Margin for the position is notional / leverage; when unrealized loss
+        eats 95% of that margin the position is force-closed at the mark.
+        Daily bars make this coarse but it keeps leveraged races honest -
+        without it a 3x run silently survives moves that would have wiped it.
+        """
+        pos = self._positions.get(symbol)
+        if pos is None or pos.quantity <= 0:
+            return
+        notional = pos.quantity * pos.mark_price
+        if notional <= 0:
+            return
+        margin = notional / leverage
+        loss = -pos.unrealized_pnl
+        if loss >= margin * Decimal("0.95"):
+            logger.warning(
+                "LIQUIDATION %s: loss %s >= 95%% of margin %s at %s",
+                symbol, loss.quantize(Decimal("0.01")),
+                margin.quantize(Decimal("0.01")), close_str,
+            )
+            liq_order = OrderEvent(
+                symbol=symbol,
+                side=OrderSide.SELL if pos.side == PositionSide.LONG else OrderSide.BUY,
+                type=OrderType.MARKET,
+                quantity=pos.quantity,
+                reduce_only=True,
+                strategy="liquidation",
+            )
+            await self._run_orders(liq_order, execution_engine, bar, close_str,
+                                   None, 0.0)
 
     async def _run_orders(
         self,
