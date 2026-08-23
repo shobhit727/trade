@@ -65,3 +65,23 @@ def test_trade_tape_renders_fills():
     assert "tt-table" in html
     # trades render via JS from /health; ensure payload key exists on snapshot path
     from cryptobot.live.trader import LiveTrader  # noqa: F401 - import sanity
+
+
+def test_price_chart_renders_line_and_markers():
+    snap = snap_fixture()
+    snap["price_history"] = [
+        {"ts": f"2026-08-{d:02d}T00:00:00+00:00", "close": 50000 + d * 100}
+        for d in range(1, 20)
+    ]
+    snap["recent_trades"] = [
+        {"ts": "2026-08-10T00:00:00+00:00", "symbol": "BTCUSDT", "side": "BUY",
+         "qty": 0.01, "price": 50900.0, "notional": 509, "strategy": "dual_ma"},
+    ]
+    html = render_dashboard_html(snap)
+    assert "polyline" in html
+    assert "50,900" in html or "50900" in html  # last-price label or marker title
+
+
+def test_price_chart_empty_history_safe():
+    html = render_dashboard_html(snap_fixture())
+    assert "collecting price history" in html

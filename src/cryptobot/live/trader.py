@@ -99,6 +99,7 @@ class LiveTrader:
         self._stop = asyncio.Event()
         self._seen_bars: deque[int] = deque(maxlen=64)
         self._trade_log: deque[dict] = deque(maxlen=100)
+        self._price_history: deque[tuple[str, float]] = deque(maxlen=400)
         self._fund = GlobalFundLedger(FundConfig(
             skim_fraction=Decimal(config.skim_fraction),
             state_path=config.fund_state_path,
@@ -152,6 +153,9 @@ class LiveTrader:
         snap["global_fund"] = self._fund.summary()
         snap["tax_summary"] = self._tax.summary()
         snap["recent_trades"] = list(self._trade_log)
+        snap["price_history"] = [
+            {"ts": ts, "close": c} for ts, c in self._price_history
+        ]
         if self._gate is not None:
             snap["paper_gate"] = self._gate.summary()
         snap["risk_profile"] = self._profile.name
@@ -281,6 +285,9 @@ class LiveTrader:
 
         for row in rows[:-1] if rows else []:
             close = float(row[4])
+            ts_iso = datetime.fromtimestamp(
+                int(row[0]) / 1000, tz=UTC).isoformat(timespec="seconds")
+            self._price_history.append((ts_iso, close))
             self._feed_strategy(close=close, low=close, high=close, volume=float(row[5]))
         logger.info(
             "Warm-up fed %d %s %s bars to %s",
@@ -312,6 +319,9 @@ class LiveTrader:
         if close <= 0:
             return
         self.stats["last_close"] = close
+        self._price_history.append(
+            (bar.timestamp.isoformat(timespec="seconds") if getattr(bar, "timestamp", None)
+             else datetime.now(UTC).isoformat(timespec="seconds"), close))
 
         if self._check_breaker():
             return  # breaker tripped: no new entries

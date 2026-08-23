@@ -179,6 +179,72 @@ def _sparkline_svg(points: list[float], width: int = 560, height: int = 90) -> s
     )
 
 
+def _price_chart_svg(price_history: list[dict], trades: list[dict],
+                     width: int = 960, height: int = 260) -> str:
+    """Price line + BUY/SELL markers. Times are ISO strings."""
+    if len(price_history) < 2:
+        return '<div class="spark-empty">collecting price history…</div>'
+
+    def tsv(ts: str) -> float:
+        try:
+            from datetime import datetime as _dt
+            return _dt.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+        except Exception:  # noqa: BLE001
+            return 0.0
+
+    pts = [(tsv(p["ts"]), float(p["close"])) for p in price_history]
+    t0, t1 = pts[0][0], pts[-1][0]
+    span_t = (t1 - t0) or 1.0
+    prices = [v for _x, v in pts] + [float(tr.get("price") or 0) for tr in trades]
+    vmin, vmax = min(prices), max(prices)
+    span_p = (vmax - vmin) or 1.0
+
+    def X(ts: float) -> float:
+        return (ts - t0) / span_t * (width - 10) + 5
+
+    def Y(v: float) -> float:
+        return height - 14 - ((v - vmin) / span_p) * (height - 24)
+
+    poly = " ".join(f"{X(x):.1f},{Y(v):.1f}" for x, v in pts)
+    last_x, last_y = X(pts[-1][0]), Y(pts[-1][1])
+
+    markers = []
+    for tr in trades:
+        ts = tsv(tr.get("ts", ""))
+        if ts < t0:
+            continue
+        px = min(X(ts), width - 5)
+        py = Y(min(max(float(tr.get("price") or vmin), vmin), vmax))
+        buy = str(tr.get("side", "")).upper() == "BUY"
+        color = "#3fb950" if buy else "#f85149"
+        shape = (f'<path d="M {px:.1f} {py - 6:.1f} l 5 8 l -10 0 z"'
+                 if buy else
+                 f'<path d="M {px:.1f} {py + 6:.1f} l 5 -8 l -10 0 z"')
+        markers.append(f'<{shape[1:]} fill="{color}" stroke="#0d1117" stroke-width="0.5"><title>'
+                       f'{esc_static(tr.get("side"))} {tr.get("qty")} @ {tr.get("price")}</title></path>')
+
+    first_d = price_history[0]["ts"][:10]
+    last_d = price_history[-1]["ts"][:10]
+    return (
+        f'<svg viewBox="0 0 {width} {height}" class="spark" preserveAspectRatio="none">'
+        f'<polyline fill="none" stroke="#58a6ff" stroke-width="1.6" points="{poly}"/>'
+        f'<circle cx="{last_x:.1f}" cy="{last_y:.1f}" r="3" fill="#58a6ff"/>'
+        + "".join(markers) +
+        f'<text x="6" y="{height - 3}" fill="#8b949e" font-size="10">{first_d}</text>'
+        f'<text x="{width - 6}" y="{height - 3}" fill="#8b949e" font-size="10" '
+        f'text-anchor="end">{last_d}</text>'
+        f'<text x="{last_x - 6:.1f}" y="{max(last_y - 8, 10):.1f}" fill="#58a6ff" '
+        f'font-size="11" text-anchor="end">{pts[-1][1]:,.2f}</text>'
+        "</svg>"
+    )
+
+
+def esc_static(value) -> str:
+    import html as _h
+
+    return _h.escape(str(value))
+
+
 def render_dashboard_html(snap: dict) -> str:
     """Read-only family dashboard: cards, sparkline, gate progress."""
     import html as _html
@@ -303,6 +369,16 @@ def render_dashboard_html(snap: dict) -> str:
         '<div class="kv"><span>max drawdown</span>'
         f"<b>{esc(snap.get('max_drawdown_pct', '0.0'))}%</b></div></div>"
     )
+    # Price & trades chart card
+    parts.append(
+        '<div class="card" style="grid-column:1/-1"><h2>'
+        + esc(snap.get("symbol", "")) + ' price &amp; trades</h2>'
+        + _price_chart_svg(snap.get("price_history", []),
+                           snap.get("recent_trades", []))
+        + '<div class="muted" style="margin-top:6px">'
+          '&#9650; BUY / &#9660; SELL markers on close prices · updates every 30s</div></div>'
+    )
+
     # Curve card
     parts.append(
         '<div class="card"><h2>Equity curve</h2>'
