@@ -71,6 +71,7 @@ class LiveTraderConfig:
     risk_profile: str = "realistic"
     breaker_state_path: str = "state/breaker.json"
     protective_stop_pct: float = 10.0  # exchange-native stop this far below/above entry
+    initial_equity: str = "10000"      # seeded when a fresh paper account starts at 0
 
 
 class LiveTrader:
@@ -164,6 +165,12 @@ class LiveTrader:
         """Run until :meth:`request_stop` (or ``max_bars`` reached)."""
         ws = _new_ws_client(self.config)
         await self._portfolio.initialize()
+        # A fresh paper account starts at equity 0, which would make the
+        # paper gate's net-positive criterion unsatisfiable forever.
+        if self.config.mode != "live" and self._portfolio.get_state().total_equity <= 0:
+            seed = Decimal(self.config.initial_equity)
+            await self._portfolio.update_equity(seed)
+            logger.info("seeded fresh paper portfolio with equity %s", seed)
         self._health.start()
         self._install_health_snapshot()
 

@@ -489,10 +489,14 @@ docker build --target production --build-arg PYTHON_TAG=3.14-slim \
 docker run -d --name cryptobot --restart unless-stopped \
     -v $(pwd)/state:/app/state \
     --env-file .env \
-    cryptobot:seed python3 -m cryptobot.cli.main bot \
+    cryptobot:seed cryptobot.cli.main bot \
         --strategy dual_ma --symbol BTCUSDT --timeframe 1d --mode live
 ```
 
 - `-v state:/app/state` keeps fund/gate/tax/breaker state outside the container.
 - `--restart unless-stopped` survives reboots; protective stops cover the gap.
+- NOTE: the image ENTRYPOINT is `python -m`, so container args start at the
+  module path (`cryptobot.cli.main ...`) — do NOT prefix `python3 -m`.
+- If the port is taken the bot now fails fast with a clear message:
+  "health server cannot bind ... use --port". Pick a free port and remap.
 - Backup cron: `tar czf backup_$(date +%F).tgz state/` off-box weekly.

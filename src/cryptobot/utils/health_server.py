@@ -89,7 +89,15 @@ class HealthServer:
         if self._httpd is not None:
             return
         snap = _HealthSnapshot()
-        httpd = ThreadingHTTPServer((self.host, self.port), _Handler)
+        try:
+            httpd = ThreadingHTTPServer((self.host, self.port), _Handler)
+        except OSError as exc:
+            if exc.errno == 98:  # EADDRINUSE
+                raise RuntimeError(
+                    f"health server cannot bind {self.host}:{self.port} - port already in use. "
+                    f"Start the bot with a free port, e.g. --port 8081"
+                ) from exc
+            raise
         httpd.health_snapshot = snap  # type: ignore[attr-defined]
         self._httpd = httpd
         self._thread = Thread(target=httpd.serve_forever, name="cryptobot-health", daemon=True)
@@ -139,6 +147,7 @@ def render_dashboard_html(snap: dict) -> str:
     )
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
+        "<link rel='icon' href='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><text y=%2213%22 font-size=%2213%22>📈</text></svg>'>"
         "<title>cryptobot - live status</title><style>"
         "body{font-family:system-ui;margin:2rem;background:#111;color:#eee}"
         "h1{font-size:1.3rem}"
