@@ -72,6 +72,7 @@ class LiveTraderConfig:
     breaker_state_path: str = "state/breaker.json"
     protective_stop_pct: float = 10.0  # exchange-native stop this far below/above entry
     initial_equity: str = "10000"      # seeded when a fresh paper account starts at 0
+    risk_fraction: float = 1.0         # equity fraction per entry (flip orders x2)
 
 
 class LiveTrader:
@@ -80,6 +81,8 @@ class LiveTrader:
     def __init__(self, config: LiveTraderConfig):
         self.config = config
         self.strategy = make_strategy(config.strategy, **config.strategy_params)
+        logger.info("strategy %s effective config: %s",
+                    config.strategy, self.strategy.config)
 
         mode = PortfolioMode.LIVE if config.mode == "live" else PortfolioMode.PAPER
         self._portfolio = PortfolioManager(mode)
@@ -95,6 +98,7 @@ class LiveTrader:
         self._health = HealthServer(host=config.host, port=config.port)
         self._stop = asyncio.Event()
         self._seen_bars: deque[int] = deque(maxlen=64)
+        self._trade_log: deque[dict] = deque(maxlen=100)
         self._fund = GlobalFundLedger(FundConfig(
             skim_fraction=Decimal(config.skim_fraction),
             state_path=config.fund_state_path,
@@ -147,6 +151,7 @@ class LiveTrader:
         ]
         snap["global_fund"] = self._fund.summary()
         snap["tax_summary"] = self._tax.summary()
+        snap["recent_trades"] = list(self._trade_log)
         if self._gate is not None:
             snap["paper_gate"] = self._gate.summary()
         snap["risk_profile"] = self._profile.name
@@ -188,6 +193,13 @@ class LiveTrader:
             self._harvest_task = asyncio.create_task(self._harvest_loop())
             if self.config.warmup_bars > 0:
                 await self._warm_up()
+                # Warmup fed history through the strategy and advanced its
+                # internal position state without placing any orders. Reset
+                # to flat so the first live signal is a plain entry, not a
+                # 2x flip against a leg that does not exist.
+                if hasattr(self.strategy, "reset"):
+                    self.strategy.reset(self.config.symbol)
+                    logger.info("strategy state reset to flat after warmup")
 
             self._ws = ws
             ws.subscribe(_kline_event_type(), self._on_kline)
@@ -314,17 +326,22 @@ class LiveTrader:
         for order in orders if isinstance(orders, list) else [orders]:
             if order is None:
                 continue
+            self._rescale_order(order, Decimal(str(close)))
             self._engine.venue.prices[bar.symbol] = Decimal(str(close))
 
             filled = await self._engine.submit_order(order)
             self.stats["orders_submitted"] += 1
             if filled.status == OrderStatus.FILLED and filled.filled_quantity > 0:
                 self._record_tax_fill(filled)
+                self._record_trade(filled)
                 self._place_protective_stop(filled, Decimal(str(close)))
             if filled.status in (OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED):
                 self.stats["fills"] += 1
             elif filled.status == OrderStatus.REJECTED:
                 self.stats["rejects"] += 1
+                logger.warning("ORDER REJECTED %s %s qty=%s reason=%s",
+                               order.side.value, order.symbol, order.quantity,
+                               filled.payload.get("error"))
             self.stats["last_order_at"] = time.time()
 
     def _place_protective_stop(self, order, ref_price: Decimal) -> None:
@@ -348,6 +365,51 @@ class LiveTrader:
                 logger.warning("protective stop skipped for %s: %s", order.symbol, exc)
 
         asyncio.get_event_loop().create_task(_submit())
+
+    def _rescale_order(self, order, close: Decimal) -> None:
+        """Equity-fractional sizing, mirroring BacktestEngine._run_orders.
+
+        Catalog strategies emit unit quantity (1 BTC); without this the live
+        path submitted ~$76k orders against a $10k account and risk rejected
+        every single one.
+        """
+        venue_book = getattr(self._engine.venue, "_position_qty", {})
+        current_qty = abs(venue_book.get(order.symbol, 0))
+        order.payload["current_notional"] = float(current_qty * close)
+
+        rf = self.config.risk_fraction
+        if rf <= 0 or order.quantity <= 0:
+            return
+        equity = self._portfolio.get_state().total_equity
+        if equity <= 0 or close <= 0:
+            return
+        if order.reduce_only:
+            # Close the whole open leg regardless of nominal size.
+            venue_qty = getattr(self._engine.venue, "_position_qty", {}).get(order.symbol)
+            if venue_qty:
+                order.quantity = abs(venue_qty)
+            return
+        mult = Decimal(2) if order.payload.get("flip") else Decimal(1)
+        order.quantity = Decimal(str(round(rf * float(equity / close) * float(mult), 8)))
+
+    def _record_trade(self, order) -> None:
+        """Append every executed fill to the live trade tape (dashboard+log)."""
+        qty = float(order.filled_quantity)
+        price = float(order.avg_fill_price or order.price or 0)
+        entry = {
+            "ts": datetime.now(UTC).isoformat(timespec="seconds"),
+            "symbol": order.symbol,
+            "side": order.side.value if hasattr(order.side, "value") else str(order.side),
+            "qty": qty,
+            "price": price,
+            "notional": round(qty * price, 2),
+            "strategy": order.strategy or self.config.strategy,
+        }
+        self._trade_log.appendleft(entry)
+        logger.info(
+            "TRADE %s %s %s %s @ %s (notional %.2f)",
+            entry["ts"], entry["side"], qty, entry["symbol"], price, entry["notional"],
+        )
 
     def _record_gate_day(self) -> None:
         """Once per UTC day, feed equity/order stats to the paper-gate tracker."""

@@ -45,8 +45,12 @@ class SimulatedVenue(Venue):
         mark = order.price or self.prices.get(order.symbol, Decimal("0"))
         if mark <= 0:
             order.status = OrderStatus.REJECTED
-            self.orders[order.order_id] = order
             order.__post_init__()
+            order.payload["error"] = (
+                f"simulated venue: no positive mark price for {order.symbol} "
+                f"(known marks: {sorted(self.prices)[:5]})"
+            )
+            self.orders[order.order_id] = order
             return order
 
         # Maker (limit) orders rest at their limit price and pay the maker fee;

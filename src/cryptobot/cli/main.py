@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
 from decimal import Decimal
 
@@ -85,6 +86,8 @@ def build_parser() -> argparse.ArgumentParser:
     bot.add_argument("--mode", choices=["paper", "live"], default="paper")
     bot.add_argument("--warmup", type=int, default=300, help="REST bars used to prime indicators")
     bot.add_argument("--max-bars", type=int, default=None, help="stop after N closed bars (dry-run)")
+    bot.add_argument("--strategy-params", default=None,
+                     help="JSON dict of strategy config overrides, e.g. '{\"fast\":5,\"slow\":50}'")
     bot.add_argument("--profile", choices=["realistic", "aggressive"], default="realistic", help="Risk profile preset")
 
     validate_cmd = sub.add_parser("validate", help="Validate backtest statistical significance")
@@ -358,6 +361,9 @@ async def _run(args: argparse.Namespace) -> int:
 
         trader = LiveTrader(LiveTraderConfig(
             risk_profile=args.profile,
+            strategy_params=json.loads(
+                getattr(args, "strategy_params", None)
+                or os.getenv("BOT_PARAMS") or "{}"),
             strategy=args.strategy,
             symbol=args.symbol,
             timeframe=args.timeframe,

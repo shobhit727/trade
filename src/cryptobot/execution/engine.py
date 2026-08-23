@@ -60,6 +60,11 @@ class ExecutionEngine:
         if not risk.passed:
             order.status = OrderStatus.REJECTED
             order.__post_init__()
+            # __post_init__ rebuilds payload from fields; set error AFTER it
+            # or the reason is silently wiped.
+            order.payload["error"] = (
+                f"{risk.message} (current={risk.current_value}, "
+                f"limit={risk.limit_value})")
             self.orders[order.order_id] = order
             await self.event_bus.publish(Event(
                 type=EventType.ORDER_REJECTED,

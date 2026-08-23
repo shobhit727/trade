@@ -178,10 +178,31 @@ class Settings(BaseSettings):
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Settings":
-        """Load settings from a YAML file (yaml.safe_load is used internally)."""
+        """Load settings from a YAML file, then let env vars override.
+
+        Priority (12-factor): environment > yaml file. Without this, mounted
+        configs/base.yaml silently defeated RISK_* / EXCHANGE_* env vars in
+        containers even though the docs promise env-overridable settings.
+        """
         with open(path) as f:
             data = yaml.safe_load(f) or {}
-        return cls(**_flatten_yaml(data))
+        flat = _flatten_yaml(data)
+
+        import os
+
+        for name, field_info in cls.model_fields.items():
+            sub = field_info.default_factory
+            if not callable(sub) or not hasattr(sub, "model_fields"):
+                continue
+            prefix = (sub.model_config.get("env_prefix") or "").upper()
+            if not prefix:
+                continue
+            section = flat.setdefault(name, {})
+            for fname in sub.model_fields:
+                ev = os.getenv(prefix + fname.upper())
+                if ev is not None:
+                    section[fname] = ev
+        return cls(**flat)
 
 
 def _flatten_yaml(data: dict[str, Any]) -> dict[str, Any]:

@@ -159,6 +159,20 @@ class RiskManager:
                 )
 
             additional = notional if notional > 0 else Decimal("0")
+            if order.payload.get("flip") and additional > 0:
+                # A flip closes the existing leg and opens the reverse one;
+                # only the NET new notional is incremental exposure. Counting
+                # the full 2x order rejected every legitimate flip live.
+                current_notional = Decimal(
+                    str(order.payload.get("current_notional", "0")))
+                if current_notional == 0:
+                    from cryptobot.core.state import StateManager
+
+                    current_notional = sum(
+                        abs(p.quantity * p.mark_price)
+                        for p in StateManager().get_positions(order.symbol)
+                    )
+                additional = max(notional - current_notional, Decimal("0"))
             total_exposure = (state.used_margin + additional) / state.total_equity
             if not order.reduce_only and total_exposure > self.limits.max_total_exposure_pct:
                 return RiskCheckResult(

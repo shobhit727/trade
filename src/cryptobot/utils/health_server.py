@@ -333,6 +333,19 @@ def render_dashboard_html(snap: dict) -> str:
         '<div class="card"><h2>India VDA tax estimate</h2>' + f"<table>{rows}</table></div>"
     )
 
+    # --- live trade tape ---
+    parts.append(
+        '<div class="card" style="grid-column:1/-1">'
+        '<h2>Live trades</h2>'
+        '<div style="max-height:260px;overflow:auto">'
+        '<table id="tt-table"><thead><tr>'
+        "<th>time (UTC)</th><th>side</th><th>qty</th><th>symbol</th>"
+        "<th>price</th><th>notional</th><th>strategy</th>"
+        "</tr></thead><tbody>"
+        '<tr><td colspan="7" class="muted">no trades yet this session</td></tr>'
+        "</tbody></table></div></div>"
+    )
+
     # --- strategy sweep card ---
     sweep = """
     <div class="card" style="grid-column:1/-1">
@@ -397,6 +410,28 @@ def render_dashboard_html(snap: dict) -> str:
       }, 2000);
     }
     poll();
+
+    async function refreshTrades() {
+      try {
+        const r = await fetch("/health");
+        const s = await r.json();
+        const trades = s.recent_trades || [];
+        const tb = document.querySelector("#tt-table tbody");
+        if (!trades.length) return;
+        tb.innerHTML = trades.map(t => `
+          <tr>
+            <td>${t.ts}</td>
+            <td class="${t.side === "BUY" ? "pos" : "neg"}">${t.side}</td>
+            <td>${t.qty}</td>
+            <td>${t.symbol}</td>
+            <td>${Number(t.price).toLocaleString()}</td>
+            <td>${Number(t.notional).toLocaleString()}</td>
+            <td class="muted">${t.strategy}</td>
+          </tr>`).join("");
+      } catch (e) { /* health endpoint hiccup; retry next tick */ }
+    }
+    refreshTrades();
+    setInterval(refreshTrades, 5000);
     </script>
     """
     sweep = (sweep

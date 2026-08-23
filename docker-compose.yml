@@ -229,12 +229,36 @@ services:
       args:
         PYTHON_TAG: 3.14-slim
     container_name: cryptobot-app
+    # ENTRYPOINT is `python -m`; these tokens complete the module path.
+    # Override via env: BOT_STRATEGY / BOT_SYMBOL / BOT_TIMEFRAME /
+    # BOT_PROFILE / BOT_PARAMS (JSON) / BOT_MODE.
+    command:
+      - "cryptobot.cli.main"
+      - "bot"
+      - "--host=0.0.0.0"
+      - "--strategy=${BOT_STRATEGY:-dual_ma}"
+      - "--symbol=${BOT_SYMBOL:-BTCUSDT}"
+      - "--timeframe=${BOT_TIMEFRAME:-1d}"
+      - "--profile=${BOT_PROFILE:-realistic}"
+      - "--strategy-params=${BOT_PARAMS:-}"
+      - "--mode=${BOT_MODE:-paper}"
     environment:
       - APP_ENV=production
       - APP_LOG_LEVEL=INFO
       - BINANCE_TESTNET=true
       - BINANCE_API_KEY=${BINANCE_API_KEY:-}
       - BINANCE_API_SECRET=${BINANCE_API_SECRET:-}
+      # Seed-phase parity with validated backtests: full-equity trend
+      # positions. Override via env when going conservative/live.
+      - RISK_MAX_SINGLE_POSITION_PCT=${RISK_SINGLE:-1.0}
+      - RISK_MAX_TOTAL_EXPOSURE_PCT=${RISK_TOTAL:-1.0}
+      - RISK_MAX_DAILY_LOSS_PCT=${RISK_DAILY_LOSS:-0.25}
+      - RISK_KILL_SWITCH_DAILY_LOSS_PCT=${RISK_KS_DAILY:-0.25}
+      # Protective stops are placed exchange-side right after each fill
+      # (trader._place_protective_stop), so the pre-trade stop requirement
+      # is satisfied differently than a static per-order stop price.
+      - RISK_REQUIRE_STOP_LOSS_ABOVE_USD=${RISK_STOP_REQ:-100000000}
+      - RISK_MAX_ORDER_SIZE_USD=${RISK_MAX_ORDER:-100000}
       - DB_HOST=timescaledb
       - DB_PORT=5432
       - DB_NAME=${DB_NAME:-cryptobot}
@@ -260,15 +284,16 @@ services:
       - ./configs:/app/configs:ro
       - ./logs:/app/logs
       - ./data:/app/data
+      - ./state:/app/state
     ports:
-      - "8080:8080"  # Health/Metrics endpoint
+      - "${BOT_PORT:-8081}:8080"  # Health/Metrics endpoint (host:container)
     depends_on:
       timescaledb:
         condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -319,7 +344,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3

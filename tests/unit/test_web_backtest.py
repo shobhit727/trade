@@ -118,3 +118,43 @@ def test_two_leg_strategies_degrade_gracefully_on_bar_feed():
     mm = make_strategy("market_making")
     assert mm.feed("BTCUSDT", 50000.0) is None
     assert mm.last_action == "needs_order_book_feed"
+
+
+def test_flip_order_exposure_nets_against_current_position():
+    """A 2x flip adds only 1x net exposure, so it must pass a 100% cap."""
+    import asyncio
+    from decimal import Decimal
+
+    from cryptobot.core.events import OrderEvent, OrderSide, OrderType
+    from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
+    from cryptobot.core.state import StateManager
+    from cryptobot.execution.engine import ExecutionEngine, build_venue
+    from cryptobot.risk.manager import RiskManager
+
+    async def scenario():
+        pm = PortfolioManager(PortfolioMode.PAPER)
+        await pm.initialize()
+        await pm.update_equity(Decimal("10000"))
+        rm = RiskManager(portfolio=pm)
+        eng = ExecutionEngine(venue=build_venue("paper"), risk_manager=rm)
+        eng.venue.prices["BTCUSDT"] = Decimal("100")
+
+        # open a long: 1 unit at 100 (full equity)
+        o1 = OrderEvent(symbol="BTCUSDT", side=OrderSide.BUY,
+                        type=OrderType.MARKET, quantity=Decimal("1"),
+                        strategy="t")
+        r1 = await eng.submit_order(o1)
+        assert r1.status.name == "FILLED", r1.payload
+
+        # flip: sell 2x -> closes long + opens short; net new = 1x
+        o2 = OrderEvent(symbol="BTCUSDT", side=OrderSide.SELL,
+                        type=OrderType.MARKET, quantity=Decimal("2"),
+                        strategy="t")
+        o2.payload["flip"] = True
+        # live trader attaches the venue's real position notional; do the same
+        o2.payload["current_notional"] = float(Decimal("1") * Decimal("100"))
+        r2 = await eng.submit_order(o2)
+        return r1, r2
+
+    r1, r2 = asyncio.run(scenario())
+    assert r2.status.name == "FILLED", r2.payload
