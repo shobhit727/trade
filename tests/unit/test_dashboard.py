@@ -42,5 +42,5 @@ def test_dashboard_escapes_html():
     snap = snap_fixture()
     snap["strategy"] = "<script>x</script>"
     html = render_dashboard_html(snap)
-    assert "<script>" not in html
+    assert "<script>x</script>" not in html  # payload escaped, our own script tag is fine
     assert "&lt;script&gt;" in html

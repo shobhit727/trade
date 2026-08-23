@@ -106,3 +106,15 @@ async def test_single_algo_backtest_produces_metrics():
                              initial_capital=Decimal("10000"),
                              risk_fraction=1.0, slippage_bps=3, commission_bps=5)
     assert res.equity_curve
+
+
+def test_two_leg_strategies_degrade_gracefully_on_bar_feed():
+    from cryptobot.backtest.runner import make_strategy
+
+    fa = make_strategy("funding_arbitrage")
+    assert fa.feed("BTCUSDT", 50000.0) is None
+    assert fa.last_action == "needs_spot_perp_funding_feed"
+
+    mm = make_strategy("market_making")
+    assert mm.feed("BTCUSDT", 50000.0) is None
+    assert mm.last_action == "needs_order_book_feed"

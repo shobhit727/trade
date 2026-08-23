@@ -222,15 +222,18 @@ class BacktestEngine:
         segments plus jumps. Also keeps funding accrual off stale entry prices.
         """
         pos = self._positions.get(symbol)
+        if self._clock and ts > self._clock.current_time:
+            await self._clock.step(ts - self._clock.current_time)
         if pos is None or price <= 0:
+            # Flat periods must still land on the curve: skipping them made
+            # trade-to-trade jumps look adjacent and inflated Sharpe (#32).
+            await self._update_equity()
             return
         pos.mark_price = price
         if pos.side == PositionSide.LONG:
             pos.unrealized_pnl = (price - pos.entry_price) * pos.quantity
         else:
             pos.unrealized_pnl = (pos.entry_price - price) * pos.quantity
-        if self._clock and ts > self._clock.current_time:
-            await self._clock.step(ts - self._clock.current_time)
         await self._update_equity()
 
     async def _run_orders(

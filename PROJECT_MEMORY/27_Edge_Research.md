@@ -257,3 +257,24 @@ Verdict: **rejected as a system-wide filter.**
   revisiting only if live ETH drawdown becomes a family-communication problem.
 - Caveat: filtered runs compound over fewer days; compare risk-adjusted numbers.
 Decision: keep walk-forward-validated configs unchanged for the 60-day paper race.
+
+## Metric correction: per-bar mark-to-market (2026-08-23, #32 residual)
+
+`BacktestEngine._mark_to_market` skipped equity updates while flat, so flat
+days vanished from curves: Sharpe saw trade-gaps as adjacent returns
+(garch_classic briefly "Sharpe 5.78" on a LOSING strategy) and MDD was
+understated. Fixed: every bar now lands on the curve.
+
+Corrected baselines (tuned walk-forward winners, real daily data):
+
+| | ret | sharpe | mdd |
+|---|---|---|---|
+| BTC (5,50) | +118.1% | 0.92 | 29.0% |
+| ETH (15,80) | +296.3% | 1.17 | 33.5% |
+| 50/50 portfolio | +198.2% | 1.26 | **22.6%** |
+
+Returns unchanged; risk numbers slightly worse but honest. OOS validation
+(+30.2% / +13.1% on unseen tails) unaffected — it was return-based.
+Sweep caveat: GARCH-family fits may be nondeterministic across runs.
+Two-leg strategies (funding_arbitrage, market_making) now degrade gracefully
+on bar feeds instead of crashing sweeps.

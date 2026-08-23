@@ -41,6 +41,15 @@ class MarketMakingStrategy:
         self._equity_curve: deque[float] = deque(maxlen=10_000)
         self.history: list[OrderEvent] = []
 
+    def feed(self, *args):
+        """Bar-feed interface: not supported.
+
+        Market making quotes off a live order book via ``attach_execution``;
+        it cannot act on single OHLCV bars (issue #45 tracks full wiring).
+        """
+        self.last_action = "needs_order_book_feed"
+        return None
+
     def attach_execution(
         self,
         engine: ExecutionEngine,
