@@ -53,3 +53,31 @@
 | triangle | ETH | 1.1% | 0.17 | 45.9% | 80 |
 | garch_classic | ETH | 8.7% | 0.12 | 18.4% | 29 |
 | support | ETH | 3.6% | 0.07 | 30.7% | 36 |
+
+## time_series walk-forward validation (2026-08-23)
+
+Protocol: tune period/threshold on leading 65% of daily bars, score winner on
+untouched final 35% (`tools/validate_time_series.py`).
+
+| asset | tuned params | train sharpe | OOS sharpe | OOS ret | verdict |
+|---|---|---|---|---|---|
+| BTC | (60, 0.05) | 0.96 | **−0.15** | −6.0% | ❌ fails OOS |
+| ETH | (60, 0.05) | 1.62 | **+1.36** | +67.3% | ✅ passes strongly |
+
+Plateau: ETH robust across period 30–60 × all thresholds (Sharpe 1.05–1.28);
+BTC mixed, tuned winner does not generalize there.
+
+## Updated portfolio recommendation
+
+| portfolio | ret | sharpe | mdd |
+|---|---|---|---|
+| A: BTC dual_ma(5,50) + ETH dual_ma(15,80) | +198% | 1.26 | 22.6% |
+| **B: BTC dual_ma(5,50) + ETH time_series(60, 0.05)** | **+335%** | **1.63** | 23.4% |
+
+Per-asset assignment follows the OOS evidence: BTC keeps dual_ma (time_series
+failed its BTC tail test), ETH switches to time_series. Portfolio B dominates
+A on return and Sharpe at essentially unchanged drawdown.
+
+Caveats: single regime (2024–2026 bull), one asset each; the 60-day paper gate
+is the true test. Gate requires running TWO strategy processes (one per symbol)
+— compose service `cryptobot-eth` to be added at gate start.
