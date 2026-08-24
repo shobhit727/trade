@@ -285,14 +285,11 @@ services:
       - ./configs:/app/configs:ro
       - ./logs:/app/logs
       - ./data:/app/data
-      - ./state:/app/state
+      - ./state-btc:/app/state
     ports:
       - "${BOT_PORT:-8081}:8080"  # Health/Metrics endpoint (host:container)
-    depends_on:
-      timescaledb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    # Paper-gate mode needs no TSDB/redis; host ports 5432/6379 are occupied
+    # by another stack, and depending on them deadlocks startup.
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 30s
@@ -312,7 +309,7 @@ services:
     restart: unless-stopped
 
   # =============================================================================
-  # Gate process 2: ETH time-series momentum (walk-forward validated)
+  # Gate process 2: ETH time-series momentum (WF PASS 1d + PASS on 2026 window)
   # =============================================================================
   cryptobot-eth:
     build:
@@ -348,9 +345,53 @@ services:
       - ./configs:/app/configs:ro
       - ./logs:/app/logs
       - ./data:/app/data
-      - ./state-eth:/app/state
+      - ./state-eth-ts:/app/state
     ports:
       - "${ETH_PORT:-8082}:8080"
+    restart: unless-stopped
+    networks:
+      - cryptobot-network
+
+  # =============================================================================
+  # Gate process 3: ETH open-range breakout on 4h (WF PASS, OOS sharpe 0.63)
+  # =============================================================================
+  cryptobot-eth-or:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+      args:
+        PYTHON_TAG: 3.14-slim
+    container_name: cryptobot-eth-or
+    command:
+      - "cryptobot.cli.main"
+      - "bot"
+      - "--host=0.0.0.0"
+      - "--strategy=open_range"
+      - "--symbol=ETHUSDT"
+      - "--timeframe=4h"
+      - "--profile=realistic"
+      - "--mode=paper"
+      - "--warmup=120"
+      - "--port=8080"
+    environment:
+      - APP_ENV=paper
+      - APP_LOG_LEVEL=INFO
+      - BINANCE_TESTNET=true
+      - BOT_PARAMS={"period":24}
+      - RISK_MAX_SINGLE_POSITION_PCT=${RISK_SINGLE:-1.0}
+      - RISK_MAX_TOTAL_EXPOSURE_PCT=${RISK_TOTAL:-1.0}
+      - RISK_MAX_DAILY_LOSS_PCT=${RISK_DAILY_LOSS:-0.25}
+      - RISK_KILL_SWITCH_DAILY_LOSS_PCT=${RISK_KS_DAILY:-0.25}
+      - RISK_REQUIRE_STOP_LOSS_ABOVE_USD=${RISK_STOP_REQ:-100000000}
+      - RISK_MAX_ORDER_SIZE_USD=${RISK_MAX_ORDER:-100000}
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./state-eth-or:/app/state
+    ports:
+      - "${OR_PORT:-8083}:8080"
     restart: unless-stopped
     networks:
       - cryptobot-network

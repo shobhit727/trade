@@ -43,7 +43,7 @@ def show(port: int) -> bool:
 
 
 def main() -> int:
-    ports = [int(a) for a in sys.argv[1:]] or [8081, 8082]
+    ports = [int(a) for a in sys.argv[1:]] or [8081, 8082, 8083]
     ok = all(show(p) for p in ports)
     print("ALL HEALTHY" if ok else "SOME BOTS DOWN")
     return 0 if ok else 1
