@@ -62,11 +62,9 @@ def main() -> None:
     args = ap.parse_args()
 
     specs = []
-    fixed: dict[str, float] = {}
     for kv in args.param:
         k, v = kv.split("=", 1)
         val = float(v)
-        fixed[k] = val
         lo, hi = val * 0.6, val * 1.6
         if float(val).is_integer():
             specs.append(ParamSpec(k, max(1, round(lo)), round(hi), "int"))
@@ -74,11 +72,14 @@ def main() -> None:
             specs.append(ParamSpec(k, lo, hi, "float"))
 
     bars = load(args.symbol, args.tf)
+    # All --param entries become tuned ParamSpecs (±40%); nothing is passed
+    # through as a fixed kwarg — optimize_strategy only accepts its own
+    # signature plus ParamSpecs (#fixed was a bug: TypeError + n_trials=1
+    # made "tuning" a single random draw).
     opt = optimize_strategy(
         bars, specs, symbol=args.symbol, metric="sharpe",
-        n_trials=1, oos_fraction=args.oos, risk_fraction=1.0,
+        n_trials=30, oos_fraction=args.oos, risk_fraction=1.0,
         strategy_name=args.algo, slippage_bps=3, commission_bps=5,
-        **fixed,
     )
     res = asyncio.run(run_backtest(
         bars, make_strategy(args.algo, **opt.best_params), symbol=args.symbol,
