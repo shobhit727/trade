@@ -21,10 +21,12 @@ LIMIT = 1000
 
 
 async def fetch_interval(session: aiohttp.ClientSession, symbol: str,
-                         interval: str, days: int, out_dir: Path) -> str:
+                         interval: str, days: int, out_dir: Path,
+                         start_ms: int | None = None,
+                         end_ms: int | None = None) -> str:
     out = out_dir / f"{symbol.lower()}_{interval}.csv"
-    end_ms = int(datetime.now(UTC).timestamp() * 1000)
-    start_ms = end_ms - days * 86_400_000
+    end_ms = end_ms or int(datetime.now(UTC).timestamp() * 1000)
+    start_ms = start_ms if start_ms is not None else end_ms - days * 86_400_000
     rows: list[list] = []
     cur = start_ms
     while cur < end_ms:
@@ -73,13 +75,28 @@ async def fetch_interval(session: aiohttp.ClientSession, symbol: str,
 async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="data")
+    ap.add_argument("--start", default=None,
+                    help="YYYY-MM-DD: fixed window start (overrides lookback caps)")
+    ap.add_argument("--end", default=None,
+                    help="YYYY-MM-DD: window end (default now)")
+    ap.add_argument("--intervals", default=None,
+                    help="comma list, e.g. 5m,15m,4h,1d (default all)")
     args = ap.parse_args()
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    start_ms = end_ms = None
+    if args.start:
+        start_ms = int(datetime.fromisoformat(args.start).replace(tzinfo=UTC).timestamp() * 1000)
+        end_ms = (int(datetime.fromisoformat(args.end).replace(tzinfo=UTC).timestamp() * 1000)
+                  if args.end else int(datetime.now(UTC).timestamp() * 1000))
+
+    wanted = set(args.intervals.split(",")) if args.intervals else None
     jobs = []
     for sym in SYMBOLS:
         for iv, days in INTERVALS.items():
+            if wanted and iv not in wanted:
+                continue
             jobs.append((sym, iv, days))
 
     from tqdm import tqdm
@@ -87,7 +104,8 @@ async def main() -> None:
     async with aiohttp.ClientSession() as session:
         # sequential per job but many jobs: keep rate-limit friendly
         for sym, iv, days in tqdm(jobs, unit="dl", ncols=80, desc="klines"):
-            msg = await fetch_interval(session, sym, iv, days, out_dir)
+            msg = await fetch_interval(session, sym, iv, days, out_dir,
+                                       start_ms=start_ms, end_ms=end_ms)
             print(msg, flush=True)
 
 

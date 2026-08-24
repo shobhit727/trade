@@ -29,8 +29,8 @@ from cryptobot.backtest.runner import OhlcvBar, make_strategy, run_backtest  # n
 LOG = Path("PROJECT_MEMORY/32_WF_Validation_Log.md")
 
 
-def load(symbol: str, tf: str) -> list[OhlcvBar]:
-    df = pd.read_csv(f"data/{symbol.lower()}_{tf}.csv")
+def load(symbol: str, tf: str, data_dir: str = "data") -> list[OhlcvBar]:
+    df = pd.read_csv(f"{data_dir}/{symbol.lower()}_{tf}.csv")
     return [
         OhlcvBar(timestamp=datetime.fromtimestamp(int(r.ts) / 1000, tz=UTC),
                  open=float(r.open), high=float(r.high), low=float(r.low),
@@ -59,6 +59,8 @@ def main() -> None:
     ap.add_argument("--oos", type=float, default=0.35)
     ap.add_argument("--param", action="append", default=[],
                     help="name=value; int if integer else float")
+    ap.add_argument("--data-dir", default="data",
+                    help="directory holding {symbol}_{tf}.csv (e.g. data/2026)")
     args = ap.parse_args()
 
     specs = []
@@ -71,7 +73,7 @@ def main() -> None:
         else:
             specs.append(ParamSpec(k, lo, hi, "float"))
 
-    bars = load(args.symbol, args.tf)
+    bars = load(args.symbol, args.tf, args.data_dir)
     # All --param entries become tuned ParamSpecs (±40%); nothing is passed
     # through as a fixed kwarg — optimize_strategy only accepts its own
     # signature plus ParamSpecs (#fixed was a bug: TypeError + n_trials=1

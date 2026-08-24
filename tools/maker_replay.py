@@ -159,8 +159,8 @@ def maker_replay(
     }
 
 
-def load(symbol: str, tf: str) -> list[OhlcvBar]:
-    df = pd.read_csv(f"data/{symbol.lower()}_{tf}.csv")
+def load(symbol: str, tf: str, data_dir: str = "data") -> list[OhlcvBar]:
+    df = pd.read_csv(f"{data_dir}/{symbol.lower()}_{tf}.csv")
     return [
         OhlcvBar(timestamp=datetime.fromtimestamp(int(r.ts) / 1000, tz=UTC),
                  open=float(r.open), high=float(r.high), low=float(r.low),
@@ -177,6 +177,8 @@ def main() -> None:
     ap.add_argument("--symbol", default="ETHUSDT")
     ap.add_argument("--param", action="append", default=[])
     ap.add_argument("--kill-bars", type=int, default=3)
+    ap.add_argument("--data-dir", default="data",
+                    help="directory holding {symbol}_{tf}.csv (e.g. data/2026)")
     args = ap.parse_args()
 
     params: dict[str, float] = {}
@@ -184,7 +186,7 @@ def main() -> None:
         k, v = kv.split("=", 1)
         params[k] = int(v) if v.isdigit() else float(v)
 
-    bars = load(args.symbol, args.tf)
+    bars = load(args.symbol, args.tf, args.data_dir)
     strat = make_strategy(args.algo, **params)
     targets = collect_signal_targets(bars, strat)
     res = maker_replay(bars, targets, kill_bars=args.kill_bars)
