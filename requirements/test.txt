@@ -5,4 +5,4 @@ pytest-cov>=6.0
 pytest-timeout>=2.4
 hypothesis>=6.108
 ccxt>=4.0
-tqdm>=4.66
+tqdm>=4.70.0
