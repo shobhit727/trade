@@ -36,6 +36,9 @@ BARS_PER_TF = {"1m": 172801, "5m": 69120, "15m": 38400,
                "1h": 19200, "4h": 7200, "1d": 2000}
 OUT_JSON = Path("PROJECT_MEMORY/30_hft_matrix_raw.json")
 OUT_MD = Path("PROJECT_MEMORY/30_HFT_Matrix_Sweep.md")
+DATA_DIR = "data"
+FEE_BPS = 3.0
+SLIP_BPS = 5.0
 
 _FILES: dict[str, list] = {}
 
@@ -43,7 +46,7 @@ _FILES: dict[str, list] = {}
 def load_bars(symbol: str, tf: str) -> list:
     key = f"{symbol}_{tf}"
     if key not in _FILES:
-        df = pd.read_csv(f"data/{key.lower()}.csv")
+        df = pd.read_csv(f"{DATA_DIR}/{key.lower()}.csv")
         _FILES[key] = [
             OhlcvBar(timestamp=datetime.fromtimestamp(int(r.ts) / 1000, tz=UTC),
                      open=float(r.open), high=float(r.high), low=float(r.low),
@@ -73,7 +76,7 @@ def run_one(job):
         strat = make_strategy(name)
         res = asyncio.run(run_backtest(
             bars, strat, symbol=symbol, initial_capital=Decimal("10000"),
-            risk_fraction=1.0, slippage_bps=3, commission_bps=5,
+            risk_fraction=1.0, slippage_bps=SLIP_BPS, commission_bps=FEE_BPS,
             collect_trades=True))
         curve = [float(v) for _t, v in res.equity_curve]
         if len(curve) < 2:
@@ -98,6 +101,26 @@ def run_one(job):
 
 
 def main() -> None:
+    global SYMBOLS, TIMEFRAMES, DATA_DIR, FEE_BPS, SLIP_BPS, OUT_JSON, OUT_MD
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--data-dir", default="data")
+    ap.add_argument("--symbols", default=None, help="comma list (default BTCUSDT,ETHUSDT)")
+    ap.add_argument("--timeframes", default=",".join(TIMEFRAMES))
+    ap.add_argument("--fee-bps", type=float, default=3.0)
+    ap.add_argument("--slip-bps", type=float, default=5.0)
+    ap.add_argument("--out-suffix", default="", help="appended to output filenames")
+    args = ap.parse_args()
+
+    DATA_DIR = args.data_dir
+    FEE_BPS, SLIP_BPS = args.fee_bps, args.slip_bps
+    if args.symbols:
+        SYMBOLS = [s.strip() for s in args.symbols.split(",")]
+    TIMEFRAMES = [s.strip() for s in args.timeframes.split(",")]
+    if args.out_suffix:
+        OUT_JSON = OUT_JSON.with_name(OUT_JSON.stem.replace(".json", "") + args.out_suffix + ".json")
+        OUT_MD = OUT_MD.with_name(OUT_MD.stem.replace(".md", "") + args.out_suffix + ".md")
+
     t_start = time.perf_counter()
     names = sorted(n for n in _STRATEGY_REGISTRY_MAP if n != "ml_strategy")
     jobs = [(s, tf, n) for s in SYMBOLS for tf in TIMEFRAMES for n in names]
@@ -113,7 +136,12 @@ def main() -> None:
           f"(bars shared copy-on-write)", flush=True)
     results = []
     workers = int(os.getenv("SWEEP_WORKERS", "6"))
-    with ProcessPoolExecutor(max_workers=workers) as ex:
+    # Explicit fork: forkserver (the 3.14 Linux default) re-imports this
+    # module in a clean server process, losing CLI-patched globals AND the
+    # copy-on-write bar sharing from preload_all().
+    import multiprocessing as _mp
+    with ProcessPoolExecutor(max_workers=workers,
+                             mp_context=_mp.get_context("fork")) as ex:
         for r in tqdm(ex.map(run_one, jobs, chunksize=8),
                       total=len(jobs), unit="bt", ncols=80,
                       desc="matrix sweep"):
