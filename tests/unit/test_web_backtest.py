@@ -47,9 +47,9 @@ def test_sweep_runs_and_ranks(tmp_path):
     ok, msg = mgr.start("BTCUSDT", "1d", "10000")
     assert ok is True
     # wait for the worker (90 algos on real CSVs can take a while on CI;
-    # cap at 120s then assert partial progress semantics)
+    # cap at 360s — a loaded 8-core laptop needs ~140s, so 120s was flaky)
     deadline = threading.Event()
-    for _ in range(240):
+    for _ in range(720):
         st = mgr.status()
         if not st["running"] and st["done"] > 0:
             break
@@ -67,8 +67,6 @@ def test_sweep_runs_and_ranks(tmp_path):
 
 
 def test_second_start_rejected_while_running():
-    mgr = BacktestJobManager()
-
     class SlowMgr(BacktestJobManager):
         def _worker(self, job):  # keep running flag up briefly
             import time
@@ -162,7 +160,7 @@ def test_flip_order_exposure_nets_against_current_position():
 def test_sweep_stores_per_algo_trades(tmp_path):
     mgr = BacktestJobManager()
     mgr.start("BTCUSDT", "1d", "10000")
-    for _ in range(240):
+    for _ in range(720):  # 360s — loaded-laptop safe (see test_sweep_runs_and_ranks)
         st = mgr.status()
         if not st["running"] and st["done"] > 0:
             break

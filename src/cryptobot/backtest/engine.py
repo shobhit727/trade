@@ -73,6 +73,7 @@ class BacktestResult:
     avg_win: Decimal
     avg_loss: Decimal
     equity_curve: list[tuple[datetime, Decimal]]
+    bankrupt: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -185,7 +186,8 @@ class BacktestEngine:
 
     async def run_bars(self, bars, strategy, symbol: str, execution_engine,
                        risk_fraction: float = 0.0,
-                       max_leverage: Decimal | None = None) -> BacktestResult:
+                       max_leverage: Decimal | None = None,
+                       bankruptcy_floor: Decimal | None = None) -> BacktestResult:
         """Run the backtest simulation directly over bars.
 
         Fast path: the strategy is fed synchronously bar-by-bar and only dips
@@ -205,10 +207,22 @@ class BacktestEngine:
         logger.info("Initial capital: %s", self.initial_capital)
 
         feed = strategy.feed
+        self._bankrupt = False
+        # Default floor mirrors a maintenance-margin liquidation buffer: fire
+        # slightly ABOVE zero so the flatten lands in positive cash. A floor
+        # of exactly 0 cannot prevent crossing zero between bars.
+        floor = (
+            bankruptcy_floor
+            if bankruptcy_floor is not None
+            else self.initial_capital * Decimal("0.02")
+        )
         if getattr(strategy, "name", "") == "trend_following":
             for bar in bars:
                 await self._maybe_settle_funding(bar.timestamp)
                 await self._mark_to_market(symbol, Decimal(str(bar.close)), bar.timestamp)
+                if await self._check_bankruptcy(symbol, execution_engine, bar,
+                                                str(bar.close), floor):
+                    break
                 order = feed(symbol, bar.high, bar.low, bar.close)
                 if order is None:
                     continue
@@ -217,6 +231,9 @@ class BacktestEngine:
             for bar in bars:
                 await self._maybe_settle_funding(bar.timestamp)
                 await self._mark_to_market(symbol, Decimal(str(bar.close)), bar.timestamp)
+                if await self._check_bankruptcy(symbol, execution_engine, bar,
+                                                str(bar.close), floor):
+                    break
                 if max_leverage is not None and max_leverage > 1:
                     await self._check_liquidation(symbol, execution_engine, bar,
                                                   str(bar.close), max_leverage)
@@ -248,6 +265,37 @@ class BacktestEngine:
         else:
             pos.unrealized_pnl = (pos.entry_price - price) * pos.quantity
         await self._update_equity()
+
+    async def _check_bankruptcy(self, symbol: str, execution_engine, bar,
+                                close_str: str, floor: Decimal) -> bool:
+        """Halt trading when equity hits the bankruptcy floor (issue #55).
+
+        Flattens every position at the current mark so equity lands as pure
+        cash, records the liquidation trades, and stops the run. Without this
+        the engine happily compounded to negative equity on losing configs.
+        """
+        state = self._portfolio.get_state()
+        if state.total_equity > floor:
+            return False
+
+        logger.error(
+            "BANKRUPTCY FLOOR HIT: equity %s <= %s at %s; flattening and halting",
+            state.total_equity.quantize(Decimal("0.01")),
+            floor.quantize(Decimal("0.01")), close_str,
+        )
+        for pos_sym, pos in list(self._positions.items()):
+            close_side = OrderSide.SELL if pos.side == PositionSide.LONG else OrderSide.BUY
+            liq = OrderEvent(
+                symbol=pos_sym,
+                side=close_side,
+                type=OrderType.MARKET,
+                quantity=abs(pos.quantity),
+                reduce_only=True,
+                strategy="bankruptcy",
+            )
+            await self._run_orders(liq, execution_engine, bar, close_str, None, 0.0)
+        self._bankrupt = True
+        return True
 
     async def _check_liquidation(self, symbol: str, execution_engine, bar,
                                  close_str: str, leverage: Decimal) -> None:
@@ -446,6 +494,7 @@ class BacktestEngine:
         )
 
         return BacktestResult(
+            bankrupt=self._bankrupt,
             start_time=self.start_time,
             end_time=self.end_time,
             initial_capital=self.initial_capital,

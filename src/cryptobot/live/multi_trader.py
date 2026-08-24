@@ -14,6 +14,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from decimal import Decimal
+from pathlib import Path
 
 from cryptobot.backtest.runner import make_strategy
 from cryptobot.live.trader import LiveTrader, LiveTraderConfig
@@ -83,7 +84,6 @@ class MultiAlgoTrader(LiveTrader):
         """Per-algo equity slice sizing with per-algo position state."""
         slot = next((s for s in self.slots if s.name == order.strategy),
                     self.slots[0])
-        venue_book = getattr(self._engine.venue, "_position_qty", {})
         current_notional = float(abs(slot.net_qty) * close)
         order.payload["current_notional"] = current_notional
 
