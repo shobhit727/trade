@@ -16,7 +16,15 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-BOT_PORTS = [8081, 8082, 8083]
+import os
+# Targets as "host:port" pairs. Inside compose we use service DNS names and
+# container ports; standalone host runs can pass localhost published ports.
+TARGETS = [
+    tuple(t.split(":")) for t in os.environ.get(
+        "ROOM_TARGETS",
+        "localhost:8081,localhost:8082,localhost:8083,localhost:8084",
+    ).split(",")
+]
 RESEARCH_FILES = [
     "PROJECT_MEMORY/38_NSE_MidFreq_Results.md",
     "PROJECT_MEMORY/37_NSE_All_Timeframes.md",
@@ -26,19 +34,20 @@ RESEARCH_FILES = [
 CACHE: dict = {"bots": [], "ts": 0.0}
 
 
-def fetch_bot(port: int) -> dict | None:
+def fetch_bot(target: tuple[str, str]) -> dict | None:
+    host, port = target
     try:
-        with urllib.request.urlopen(f"http://localhost:{port}/health", timeout=4) as r:
+        with urllib.request.urlopen(f"http://{host}:{port}/health", timeout=4) as r:
             d = json.load(r)
-        d["_port"] = port
+        d["_port"] = int(port)
         return d
     except Exception as exc:  # noqa: BLE001
-        return {"_port": port, "status": "DOWN", "error": str(exc)[:60]}
+        return {"_port": int(port), "status": "DOWN", "error": str(exc)[:60]}
 
 
 def bots_snapshot() -> list[dict]:
     if time.time() - CACHE["ts"] > 3.0:
-        CACHE["bots"] = [fetch_bot(p) for p in BOT_PORTS]
+        CACHE["bots"] = [fetch_bot(tg) for tg in TARGETS]
         CACHE["ts"] = time.time()
     return CACHE["bots"]
 

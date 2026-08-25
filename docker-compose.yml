@@ -397,6 +397,33 @@ services:
       - cryptobot-network
 
   # =============================================================================
+  # NSE basket - daily-bar paper gate, all 50 Nifty50 (trend_following)
+  # =============================================================================
+  nse-basket:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+      args:
+        PYTHON_TAG: 3.14-slim
+    container_name: cryptobot-nse-basket
+    entrypoint: ["python", "-m"]
+    command:
+      - "cryptobot.live.nse_basket"
+      - "--symbols-file=/app/tmp/nifty50.csv"
+      - "--capital=${NSE_CAPITAL:-10000}"
+      - "--port=8084"
+      - "--run-now"
+    environment:
+      - APP_ENV=production
+    volumes:
+      - ./state-nse:/app/state-nse
+      - ./tmp/nifty50.csv:/app/tmp/nifty50.csv:ro
+    ports:
+      - "8084:8084"
+    restart: unless-stopped
+
+  # =============================================================================
   # Control room - unified live dashboard (bots + research) on :8090
   # =============================================================================
   control-room:
@@ -407,20 +434,17 @@ services:
       args:
         PYTHON_TAG: 3.14-slim
     container_name: cryptobot-control-room
-    # host networking: the room polls bots' published host ports
-    network_mode: host
-    command:
-      - "python3"
-      - "/app/tools/control_room.py"
+    entrypoint: ["python"]
     environment:
       - APP_ENV=production
+      - ROOM_TARGETS=nse-basket:8084
+    command:
+      - "/app/tools/control_room.py"
     volumes:
       - ./tools:/app/tools:ro
       - ./PROJECT_MEMORY:/app/PROJECT_MEMORY:ro
-    depends_on:
-      - cryptobot
-      - cryptobot-eth
-      - cryptobot-eth-or
+    ports:
+      - "8090:8090"
     restart: unless-stopped
 
   # =============================================================================
