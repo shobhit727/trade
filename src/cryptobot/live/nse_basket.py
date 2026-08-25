@@ -270,14 +270,52 @@ class NseBasket:
                 "skipped": dict(list(self.state.skipped.items())[:8]),
             }
 
+    def _dashboard_html(self) -> str:
+        s = self.snapshot()
+        eq = float(s["equity"])
+        pnl = eq - self.state.capital
+        cls = "pos" if pnl >= 0 else "neg"
+        pos_rows = "".join(
+            f"<tr><td>{sym}</td><td>{p}</td></tr>"
+            for sym, p in s.get("positions", {}).items()) or "<tr><td colspan=2>flat</td></tr>"
+        trade_rows = "".join(
+            f"<tr><td>{t['time'][-8:]}</td><td>{t['symbol']}</td>"
+            f"<td>{t['side']}</td><td>{t['qty']} @ {t['price']}</td></tr>"
+            for t in reversed(s.get("recent_trades", [])[-10:])) or "<tr><td colspan=4>no trades yet</td></tr>"
+        skip_rows = "".join(f"<tr><td>{k}</td><td>{v}</td></tr>" for k, v in s.get("skipped", {}).items())
+        return f"""<!doctype html><html><head><meta charset=utf-8>
+<title>NSE basket — live</title><meta http-equiv=refresh content="15">
+<style>body{{background:#0d1117;color:#e6edf3;font-family:ui-monospace,monospace;margin:24px}}
+h1{{color:#58a6ff}} .big{{font-size:30px;font-weight:700}}
+.pos{{color:#3fb950}} .neg{{color:#f85149}} .muted{{color:#8b949e}}
+table{{border-collapse:collapse;margin:10px 0;font-size:13px}}
+td,th{{border-bottom:1px solid #21262d;padding:4px 10px;text-align:left}} th{{color:#8b949e}}</style></head><body>
+<h1>◉ NSE Nifty50 basket <span class=muted>trend_following(5,12) · daily · paper</span></h1>
+<div class=big>₹{eq:,.2f} <span class="{cls}">({pnl:+,.2f})</span></div>
+<p class=muted>gate day {s["paper_gate"]["days_elapsed"]} · positions {s["open_positions"]}
+ · orders {s["orders_submitted"]} · fills {s["fills"]} · last run {s.get("last_run","—")}</p>
+<h3>holdings</h3><table>{pos_rows}</table>
+<h3>recent trades</h3><table><tr><th>time</th><th>symbol</th><th>side</th><th>fill</th></tr>{trade_rows}</table>
+{"" if not skip_rows else '<h3>skipped (unaffordable)</h3><table>' + skip_rows + '</table>'}
+<p class=muted>JSON: /health · refreshes every 15s</p></body></html>"""
+
     def serve_forever(self) -> None:
         basket = self
 
         class H(BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802
-                body = json.dumps(basket.snapshot()).encode()
+                if self.path.startswith("/health"):
+                    body = json.dumps(basket.snapshot()).encode()
+                    ctype = "application/json"
+                elif self.path.startswith("/dashboard") or self.path == "/":
+                    body = basket._dashboard_html().encode()
+                    ctype = "text/html; charset=utf-8"
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
                 self.send_response(200)
-                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Type", ctype)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)

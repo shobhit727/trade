@@ -57,19 +57,23 @@
   {
    "date": "2026-08-25",
    "equity": 9994.33
+  },
+  {
+   "date": "2026-08-25",
+   "equity": 9996.23
   }
  ],
  "skipped": {
-  "ADANIENT": "unaffordable @ 3064 (slice 798)",
-  "BAJAJ-AUTO": "unaffordable @ 11780 (slice 798)",
-  "EICHERMOT": "unaffordable @ 8046 (slice 798)",
-  "GRASIM": "unaffordable @ 3233 (slice 798)",
-  "HINDALCO": "unaffordable @ 1047 (slice 798)",
-  "JSWSTEEL": "unaffordable @ 1313 (slice 798)",
-  "LT": "unaffordable @ 4094 (slice 798)",
-  "M&M": "unaffordable @ 3422 (slice 798)",
-  "SHRIRAMFIN": "unaffordable @ 1127 (slice 798)",
-  "TITAN": "unaffordable @ 5086 (slice 798)"
+  "ADANIENT": "unaffordable @ 3066 (slice 798)",
+  "BAJAJ-AUTO": "unaffordable @ 11785 (slice 798)",
+  "EICHERMOT": "unaffordable @ 8040 (slice 798)",
+  "GRASIM": "unaffordable @ 3232 (slice 798)",
+  "HINDALCO": "unaffordable @ 1048 (slice 798)",
+  "JSWSTEEL": "unaffordable @ 1315 (slice 798)",
+  "LT": "unaffordable @ 4095 (slice 798)",
+  "M&M": "unaffordable @ 3423 (slice 798)",
+  "SHRIRAMFIN": "unaffordable @ 1129 (slice 798)",
+  "TITAN": "unaffordable @ 5095 (slice 798)"
  },
- "last_run": "2026-08-25T14:20:16+05:30"
+ "last_run": "2026-08-25T14:28:36+05:30"
 }
