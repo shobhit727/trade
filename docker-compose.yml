@@ -421,6 +421,12 @@ services:
       - ./tmp/nifty50.csv:/app/tmp/nifty50.csv:ro
     ports:
       - "8084:8084"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8084/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped
 
   # =============================================================================
@@ -445,6 +451,12 @@ services:
       - ./PROJECT_MEMORY:/app/PROJECT_MEMORY:ro
     ports:
       - "8090:8090"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8090/api/bots"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped
 
   # =============================================================================
