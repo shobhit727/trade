@@ -84,6 +84,12 @@ from cryptobot.strategies.catalog.vol_scaling import VolScalingConfig, VolScalin
 from cryptobot.strategies.catalog.vol_target import VolTargetConfig, VolTargetStrategy
 from cryptobot.strategies.catalog.volume_momentum import VolumeMomentumConfig, VolumeMomentumStrategy
 from cryptobot.strategies.catalog.volume_profile import VolumeProfileConfig, VolumeProfileStrategy
+from cryptobot.strategies.catalog.nse_intraday import (
+    NseOrbConfig,
+    NseOrbStrategy,
+    VwapRevertConfig,
+    VwapRevertStrategy,
+)
 from cryptobot.strategies.catalog.volume_spike import VolumeSpikeConfig, VolumeSpikeStrategy
 from cryptobot.strategies.catalog.vw_momentum import VwMomentumConfig, VwMomentumStrategy
 from cryptobot.strategies.catalog.vwap import VwapConfig, VwapStrategy
@@ -171,6 +177,8 @@ _SPECS: list[tuple[str, type, type]] = [
     ("volume_momentum", VolumeMomentumStrategy, VolumeMomentumConfig),
     ("volume_profile", VolumeProfileStrategy, VolumeProfileConfig),
     ("volume_spike", VolumeSpikeStrategy, VolumeSpikeConfig),
+    ("nse_orb", NseOrbStrategy, NseOrbConfig),
+    ("vwap_revert", VwapRevertStrategy, VwapRevertConfig),
     ("vw_momentum", VwMomentumStrategy, VwMomentumConfig),
     ("vwap", VwapStrategy, VwapConfig),
     ("williams_r", WilliamsRStrategy, WilliamsRConfig),

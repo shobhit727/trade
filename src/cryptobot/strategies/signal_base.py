@@ -70,6 +70,10 @@ class SignalStrategy:
             self._volumes[symbol],
         )
 
+    def _last_ts(self, symbol: str):
+        """Timestamp of the most recent bar (epoch ms int or None)."""
+        return getattr(self, "_ts_map", {}).get(symbol)
+
     def as_lists(self, symbol: str) -> tuple[list[float], list[float], list[float], list[float]]:
         c, h, lo, v = self._bufs(symbol)
         return list(c), list(h), list(lo), list(v)
@@ -81,7 +85,12 @@ class SignalStrategy:
         high: float | None = None,
         low: float | None = None,
         volume: float | None = None,
+        ts: int | None = None,
     ) -> OrderEvent | None:
+        if not hasattr(self, "_ts_map"):
+            self._ts_map = {}
+        if ts is not None:
+            self._ts_map[symbol] = ts
         c, h, lo, v = self._bufs(symbol)
         c.append(float(close))
         h.append(float(high if high is not None else close))
