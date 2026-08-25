@@ -210,6 +210,7 @@ async def _stream_filled_events(
                 try:
                     order = strategy.feed(
                         symbol, bar.close, bar.high, bar.low, bar.volume,
+                        ts=int(bar.timestamp.timestamp() * 1000),
                     )
                 except TypeError:
                     order = _feed_with_ts(strategy, symbol, bar.close,
@@ -241,19 +242,32 @@ async def _stream_filled_events(
 
 
 def _feed_with_ts(strategy_or_feed, symbol: str, *args, ts: int | None = None):
-    """Pass ts only to feeds that accept it (session-aware strategies).
+    """Call a strategy feed with the OHLCV args it actually accepts.
 
+    ``args`` is the full (close, high, low, volume) tail; legacy feeds that
+    only take (symbol, close) get truncated to what their signature allows.
+    Session-aware strategies (ts kwarg or **kwargs) also receive ts.
     Accepts either a strategy object or an already-bound ``strategy.feed``.
     """
     import inspect
     feed = getattr(strategy_or_feed, "feed", strategy_or_feed)
     try:
-        params = inspect.signature(feed).parameters
+        sig = inspect.signature(feed)
     except (TypeError, ValueError):
-        params = {}
-    if "ts" in params:
-        return feed(symbol, *args, ts=ts)
-    return feed(symbol, *args)
+        return feed(symbol, *args)
+    params = [p for p in sig.parameters.values()
+              if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
+    if params and params[0].name == "self":
+        params = params[1:]
+    var_kw = any(p.kind is p.VAR_KEYWORD for p in sig.parameters.values())
+    names = [p.name for p in params]
+
+    # Feeds are positional by convention: (symbol, close[, high[, low[, volume]]]).
+    n_ohlcv = max(0, min(len(params) - 1, len(args)))
+    if var_kw:
+        n_ohlcv = len(args)
+    kw = {"ts": ts} if (ts is not None and ("ts" in names or var_kw)) else {}
+    return feed(symbol, *args[:n_ohlcv], **kw)
 
 async def run_backtest(
     bars: Sequence[OhlcvBar],
