@@ -397,6 +397,33 @@ services:
       - cryptobot-network
 
   # =============================================================================
+  # Control room - unified live dashboard (bots + research) on :8090
+  # =============================================================================
+  control-room:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+      args:
+        PYTHON_TAG: 3.14-slim
+    container_name: cryptobot-control-room
+    # host networking: the room polls bots' published host ports
+    network_mode: host
+    command:
+      - "python3"
+      - "/app/tools/control_room.py"
+    environment:
+      - APP_ENV=production
+    volumes:
+      - ./tools:/app/tools:ro
+      - ./PROJECT_MEMORY:/app/PROJECT_MEMORY:ro
+    depends_on:
+      - cryptobot
+      - cryptobot-eth
+      - cryptobot-eth-or
+    restart: unless-stopped
+
+  # =============================================================================
   # Cryptobot Paper Trading - Paper trading mode
   # =============================================================================
   cryptobot-paper:
