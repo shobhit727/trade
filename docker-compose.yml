@@ -411,7 +411,7 @@ services:
     command:
       - "cryptobot.live.nse_basket"
       - "--symbols-file=/app/tmp/nifty50.csv"
-      - "--capital=${NSE_CAPITAL:-10000}"
+      - "--capital=${NSE_CAPITAL:-2100000}"
       - "--port=8084"
       - "--run-now"
     environment:

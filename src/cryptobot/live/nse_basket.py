@@ -90,6 +90,27 @@ def trend_signal(closes: list[float], fast: int = 5, slow: int = 12) -> int:
     return 1 if ef > es else 0
 
 
+def _svg_chart(values: list[float], w: int = 260, h: int = 64) -> str:
+    """Minimal inline SVG area chart."""
+    if len(values) < 2:
+        return "<span class=muted>collecting…</span>"
+    lo, hi = min(values), max(values)
+    rng = (hi - lo) or 1
+    pts = [(i / (len(values) - 1)) * w for i in range(len(values))]
+    ys = [h - ((v - lo) / rng) * (h - 6) - 3 for v in values]
+    poly = " ".join(f"{x:.1f},{y:.1f}" for x, y in zip(pts, ys, strict=False))
+    up = values[-1] >= values[0]
+    color = "#22c55e" if up else "#ef4444"
+    gid = f"g{abs(hash(tuple(values[:9]))) % 99999}"
+    return (f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}">'
+            f'<defs><linearGradient id="{gid}" x1=0 y1=0 x2=0 y2=1>'
+            f'<stop offset=0 stop-color="{color}" stop-opacity=.25/>'
+            f'<stop offset=1 stop-color="{color}" stop-opacity=0/></linearGradient></defs>'
+            f'<polygon points="0,{h} {poly} {w},{h}" fill="url(#{gid})"/>'
+            f'<polyline points="{poly}" fill=none stroke="{color}" stroke-width=1.8 '
+            f'stroke-linejoin=round/></svg>')
+
+
 class BasketState:
     def __init__(self, capital: float):
         self.capital = capital
@@ -247,9 +268,17 @@ class NseBasket:
                 if first:
                     d0 = datetime.fromisoformat(first).date()
                     gate_day = (datetime.now(IST).date() - d0).days + 1
+            pos_view = {}
+            for s, p in self.state.positions.items():
+                mark = self._closes.get(s, [p["entry"]])[-1] if self._closes.get(s) else p["entry"]
+                qty = p["qty"]
+                pos_view[s] = {"qty": qty, "entry": round(p["entry"], 2),
+                               "mark": round(mark, 2),
+                               "pnl": round(qty * (mark - p["entry"]), 2)}
             return {
                 "status": "running",
                 "service": "nse-basket",
+                "equity_curve": self.state.equity_curve[-120:],
                 "symbol": f"NSE×{len(self.symbols)}",
                 "strategy": "trend_following(5,12)",
                 "timeframe": "1d",
@@ -262,6 +291,7 @@ class NseBasket:
                 "fills": self.stats["fills"],
                 "rejects": self.stats["skipped_unaffordable"],
                 "open_positions": len(self.state.positions),
+                "positions_detail": pos_view,
                 "positions": {s: f"{p['qty']}@{p['entry']}" for s, p in self.state.positions.items()},
                 "recent_trades": self.state.trades[-12:],
                 "paper_gate": {"days_elapsed": gate_day or 0,
@@ -274,30 +304,90 @@ class NseBasket:
         s = self.snapshot()
         eq = float(s["equity"])
         pnl = eq - self.state.capital
+        pnl_pct = pnl / self.state.capital * 100
         cls = "pos" if pnl >= 0 else "neg"
+        curve = s.get("equity_curve", [])
+        spark = _svg_chart([c["equity"] for c in curve])
+        day = s["paper_gate"]["days_elapsed"]
+        gate_pct = min(100, day / 60 * 100)
         pos_rows = "".join(
-            f"<tr><td>{sym}</td><td>{p}</td></tr>"
-            for sym, p in s.get("positions", {}).items()) or "<tr><td colspan=2>flat</td></tr>"
+            f"<tr><td class=sym>{sym}</td><td class=num>{p['qty']}</td>"
+            f"<td class=num>₹{p['entry']:,.2f}</td><td class=num>₹{p['mark']:,.2f}</td>"
+            f"<td class=num class={'pos' if p['pnl']>=0 else 'neg'}>₹{p['pnl']:+,.2f}</td></tr>"
+            for sym, p in sorted(s.get("positions_detail", {}).items())
+        ) or '<tr><td colspan=5 class=muted>flat — waiting for signals</td></tr>'
         trade_rows = "".join(
-            f"<tr><td>{t['time'][-8:]}</td><td>{t['symbol']}</td>"
-            f"<td>{t['side']}</td><td>{t['qty']} @ {t['price']}</td></tr>"
-            for t in reversed(s.get("recent_trades", [])[-10:])) or "<tr><td colspan=4>no trades yet</td></tr>"
-        skip_rows = "".join(f"<tr><td>{k}</td><td>{v}</td></tr>" for k, v in s.get("skipped", {}).items())
-        return f"""<!doctype html><html><head><meta charset=utf-8>
-<title>NSE basket — live</title><meta http-equiv=refresh content="15">
-<style>body{{background:#0d1117;color:#e6edf3;font-family:ui-monospace,monospace;margin:24px}}
-h1{{color:#58a6ff}} .big{{font-size:30px;font-weight:700}}
-.pos{{color:#3fb950}} .neg{{color:#f85149}} .muted{{color:#8b949e}}
-table{{border-collapse:collapse;margin:10px 0;font-size:13px}}
-td,th{{border-bottom:1px solid #21262d;padding:4px 10px;text-align:left}} th{{color:#8b949e}}</style></head><body>
-<h1>◉ NSE Nifty50 basket <span class=muted>trend_following(5,12) · daily · paper</span></h1>
-<div class=big>₹{eq:,.2f} <span class="{cls}">({pnl:+,.2f})</span></div>
-<p class=muted>gate day {s["paper_gate"]["days_elapsed"]} · positions {s["open_positions"]}
- · orders {s["orders_submitted"]} · fills {s["fills"]} · last run {s.get("last_run","—")}</p>
-<h3>holdings</h3><table>{pos_rows}</table>
-<h3>recent trades</h3><table><tr><th>time</th><th>symbol</th><th>side</th><th>fill</th></tr>{trade_rows}</table>
-{"" if not skip_rows else '<h3>skipped (unaffordable)</h3><table>' + skip_rows + '</table>'}
-<p class=muted>JSON: /health · refreshes every 15s</p></body></html>"""
+            f"<tr><td class=muted>{t['time'][5:16].replace('T',' ')}</td>"
+            f"<td class=sym>{t['symbol']}</td>"
+            f"<td><span class='pill {"buy" if t["side"]=="BUY" else "sell"}'>{t['side']}</span></td>"
+            f"<td class=num>{t['qty']}</td><td class=num>₹{t['price']:,.2f}</td></tr>"
+            for t in reversed(s.get("recent_trades", [])[-12:])
+        ) or '<tr><td colspan=5 class=muted>no trades yet</td></tr>'
+        skip_rows = "".join(
+            f"<tr><td class=sym>{k}</td><td class=muted>{v}</td></tr>"
+            for k, v in list(s.get("skipped", {}).items())[:10])
+        return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<title>NSE Basket — Live</title><meta http-equiv=refresh content="15">
+<style>
+:root{{--bg:#0a0e14;--s1:#11161f;--s2:#161d29;--bd:#1f2733;--tx:#e6edf3;
+--mut:#8b98a9;--ac:#4a9eff;--pos:#22c55e;--neg:#ef4444}}
+*{{box-sizing:border-box;margin:0}}
+body{{background:var(--bg);color:var(--tx);font:14px/1.5 system-ui,-apple-system,sans-serif;padding:28px;max-width:1080px;margin-inline:auto}}
+.num{{font-variant-numeric:tabular-nums}}
+header{{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}}
+h1{{font-size:17px;font-weight:600;letter-spacing:.2px;display:flex;gap:10px;align-items:center}}
+.dot{{width:8px;height:8px;border-radius:50%;background:var(--pos);box-shadow:0 0 8px var(--pos);animation:pulse 2s infinite}}
+@keyframes pulse{{50%{{opacity:.4}}}}
+.muted{{color:var(--mut)}}
+.grid{{display:grid;grid-template-columns:1fr 1fr;gap:14px}}
+.card{{background:var(--s1);border:1px solid var(--bd);border-radius:12px;padding:18px}}
+.card h3{{font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:var(--mut);margin-bottom:12px}}
+.hero{{grid-column:1/-1;display:flex;gap:24px;align-items:center;flex-wrap:wrap}}
+.eq{{font-size:38px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-1px}}
+.chg{{font-size:16px;font-weight:600}}
+.pos{{color:var(--pos)}} .neg{{color:var(--neg)}}
+.spark{{flex:1;min-width:220px}}
+table{{width:100%;border-collapse:collapse;font-size:13px}}
+td,th{{padding:7px 6px;border-bottom:1px solid var(--bd);text-align:left}}
+th{{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--mut);font-weight:500}}
+tr:last-child td{{border-bottom:none}}
+tbody tr:hover{{background:var(--s2)}}
+.sym{{font-weight:600;letter-spacing:.3px}}
+.pill{{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;letter-spacing:.5px}}
+.pill.buy{{background:rgba(34,197,94,.12);color:var(--pos)}}
+.pill.sell{{background:rgba(239,68,68,.12);color:var(--neg)}}
+.gate{{grid-column:1/-1}}
+.bar{{height:6px;background:var(--s2);border-radius:6px;overflow:hidden;margin-top:8px}}
+.fill{{height:100%;background:linear-gradient(90deg,var(--ac),#7c5cff);border-radius:6px}}
+footer{{margin-top:20px;font-size:12px;color:var(--mut)}}
+a{{color:var(--ac)}}
+@media(max-width:720px){{.grid{{grid-template-columns:1fr}}}}
+</style></head><body>
+<header><h1><span class=dot></span>NSE Nifty50 Basket</h1>
+<span class="muted num">{s.get("last_run","—")} IST</span></header>
+<div class=grid>
+<div class="card hero">
+ <div><div class=muted style=font-size:11px;letter-spacing:1px>EQUITY</div>
+   <div class="eq num">₹{eq:,.0f}</div>
+   <div class="chg {cls} num">{pnl:+,.0f} ({pnl_pct:+.2f}%)</div></div>
+ <div class=spark>{spark}</div>
+</div>
+<div class="card gate">
+ <h3>Paper gate · day {day} of 60</h3>
+ <div class=bar><div class=fill style="width:{gate_pct}%"></div></div>
+ <p class="muted" style="margin-top:8px;font-size:12px">pass = net positive · Sharpe ≥ 1 · zero breaker trips</p>
+</div>
+<div class=card><h3>Holdings ({s["open_positions"]})</h3>
+<table><thead><tr><th>Symbol</th><th style=text-align:right>Qty</th><th style=text-align:right>Entry</th><th style=text-align:right>Mark</th><th style=text-align:right>P&L</th></tr></thead>
+<tbody>{pos_rows}</tbody></table></div>
+<div class=card><h3>Recent trades</h3>
+<table><thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th style=text-align:right>Qty</th><th style=text-align:right>Price</th></tr></thead>
+<tbody>{trade_rows}</tbody></table></div>
+{"" if not skip_rows else f'<div class="card" style="grid-column:1/-1"><h3>Skipped — unaffordable at current slice</h3><table><tbody>{skip_rows}</tbody></table></div>'}
+</div>
+<footer>JSON <a href=/health>/health</a> · refresh 15s · capital ₹{self.state.capital:,.0f} · delivery costs 11+1 bps/side</footer>
+</body></html>"""
 
     def serve_forever(self) -> None:
         basket = self

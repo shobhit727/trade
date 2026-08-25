@@ -1,0 +1,85 @@
+{
+ "capital": 10000.0,
+ "cash": 7977.926426110841,
+ "positions": {
+  "BEL": {
+   "qty": 1,
+   "entry": 408.6000061035156
+  },
+  "ETERNAL": {
+   "qty": 2,
+   "entry": 329.8500061035156
+  },
+  "HDFCLIFE": {
+   "qty": 1,
+   "entry": 550.7999877929688
+  },
+  "KOTAKBANK": {
+   "qty": 1,
+   "entry": 400.54998779296875
+  }
+ },
+ "trades": [
+  {
+   "time": "2026-08-25T11:29:07+05:30",
+   "symbol": "BEL",
+   "side": "BUY",
+   "qty": 1,
+   "price": 408.6
+  },
+  {
+   "time": "2026-08-25T11:29:07+05:30",
+   "symbol": "ETERNAL",
+   "side": "BUY",
+   "qty": 2,
+   "price": 329.85
+  },
+  {
+   "time": "2026-08-25T11:29:07+05:30",
+   "symbol": "HDFCLIFE",
+   "side": "BUY",
+   "qty": 1,
+   "price": 550.8
+  },
+  {
+   "time": "2026-08-25T11:29:07+05:30",
+   "symbol": "KOTAKBANK",
+   "side": "BUY",
+   "qty": 1,
+   "price": 400.55
+  }
+ ],
+ "equity_curve": [
+  {
+   "date": "2026-08-25",
+   "equity": 9997.58
+  },
+  {
+   "date": "2026-08-25",
+   "equity": 9994.33
+  },
+  {
+   "date": "2026-08-25",
+   "equity": 9996.23
+  },
+  {
+   "date": "2026-08-25",
+   "equity": 10001.48
+  }
+ ],
+ "skipped": {
+  "ADANIENT": "unaffordable @ 3110 (slice 665)",
+  "BAJAJ-AUTO": "unaffordable @ 11927 (slice 665)",
+  "DRREDDY": "unaffordable @ 1194 (slice 665)",
+  "EICHERMOT": "unaffordable @ 8055 (slice 665)",
+  "GRASIM": "unaffordable @ 3290 (slice 665)",
+  "HINDALCO": "unaffordable @ 1051 (slice 665)",
+  "JSWSTEEL": "unaffordable @ 1320 (slice 665)",
+  "LT": "unaffordable @ 4119 (slice 665)",
+  "M&M": "unaffordable @ 3443 (slice 665)",
+  "RELIANCE": "unaffordable @ 1317 (slice 665)",
+  "SHRIRAMFIN": "unaffordable @ 1138 (slice 665)",
+  "TITAN": "unaffordable @ 5125 (slice 665)"
+ },
+ "last_run": "2026-08-25T15:36:18+05:30"
+}
