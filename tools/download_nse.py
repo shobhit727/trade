@@ -67,8 +67,10 @@ def yf_download(ticker: str, start, interval: str):
     import pandas as pd
     import yfinance as yf
 
+    # auto_adjust=True: split/bonus-adjusted OHLC — mandatory for honest
+    # backtests (raw prices show splits as -50/80% cliffs, #58).
     df = yf.download(ticker, start=start, interval=interval,
-                     auto_adjust=False, progress=False, threads=False)
+                     auto_adjust=True, progress=False, threads=False)
     if df is None or df.empty:
         return df
     if isinstance(df.columns, pd.MultiIndex):  # yfinance >=0.2 multi-ticker shape
