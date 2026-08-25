@@ -74,3 +74,59 @@ def test_run_once_flattens_on_exit_signal(tmp_path, monkeypatch):
     assert out["positions"] >= 1
     assert "UPSTOCK" in b.state.positions
     assert "DOWNSTOCK" not in b.state.positions
+
+
+def test_breaker_trips_at_25pct_drawdown_and_flattens(tmp_path, monkeypatch):
+    from cryptobot.live import nse_basket as nb
+
+    prices = {"value": 100.0}
+
+    def fake_bars(sym):
+        # uptrend into the current price so EMA(5)>EMA(12) -> long signal
+        base = prices["value"]
+        hist = [base * (0.99 ** (40 - i)) for i in range(40)]
+        return [{"ts": i, "date": f"2026-08-{i%28+1:02d}", "open": c,
+                 "high": c, "low": c, "close": c, "volume": 1e6}
+                for i, c in enumerate(hist)]
+
+    monkeypatch.setattr(nb, "fetch_bars", fake_bars)
+    b = nb.NseBasket(["UPSTOCK"], capital=10_000.0, port=8095,
+                     state_file=tmp_path / "b.json")
+    b.run_once()                                   # opens full-notional long
+    assert b.state.positions and not b.state.breaker_tripped
+
+    prices["value"] = 70.0                         # -30% crash
+    b.run_once()
+    assert b.state.breaker_tripped is True
+    assert b.state.positions == {}                 # flattened
+    assert "75% of peak" in (b.state.breaker_reason or "")
+
+
+def test_breaker_blocks_reentry_until_reset(tmp_path, monkeypatch):
+    from cryptobot.live import nse_basket as nb
+
+    seq = {"i": 0}
+    def fake_bars(sym):
+        seq["i"] += 1
+        c = 100.0 if seq["i"] <= 20 else 60.0      # long entry, then crash
+        return [{"ts": i, "date": f"2026-08-{i%28+1:02d}", "open": c,
+                 "high": c, "low": c, "close": c, "volume": 1e6}
+                for i, c in enumerate([c] * 40)]
+
+    monkeypatch.setattr(nb, "fetch_bars", fake_bars)
+    b = nb.NseBasket(["S"], capital=10_000.0, port=8094,
+                     state_file=tmp_path / "b.json")
+    b.run_once()
+    prices_held = True
+    # force trip
+    b.state.peak_equity = max(b.state.peak_equity, 10_000)
+    b.state.cash = 7_000                            # simulate -30%
+    b.run_once()
+    assert b.state.breaker_tripped
+    n_pos_after_trip = len(b.state.positions)
+
+    b.run_once()                                    # next day: must stay flat
+    assert n_pos_after_trip == 0 and len(b.state.positions) == 0
+
+    b.reset_breaker()
+    assert b.state.breaker_tripped is False

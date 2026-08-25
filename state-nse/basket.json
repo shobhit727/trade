@@ -1,6 +1,9 @@
 {
  "capital": 2100000.0,
  "cash": 15219.096668432729,
+ "peak_equity": 2100000.0,
+ "breaker_tripped": false,
+ "breaker_reason": null,
  "positions": {
   "ADANIENT": {
    "qty": 42,
@@ -193,8 +196,18 @@
   {
    "date": "2026-08-25",
    "equity": 2097501.26
+  },
+  {
+   "date": "2026-08-25",
+   "equity": 2097501.26
+  },
+  {
+   "date": "2026-08-25",
+   "equity": 2097501.26
   }
  ],
  "skipped": {},
- "last_run": "2026-08-25T19:34:04+05:30"
+ "last_run": "2026-08-25T22:10:30+05:30",
+ "tax_lots": {},
+ "tax_records": []
 }

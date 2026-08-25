@@ -33,3 +33,24 @@ nse_orb / vwap_revert on 49 stocks @15m with realistic intraday costs:
 best mean sharpe −1.32 — naive session algos don't survive either.
 Consistent with the bar-data finding: intraday edge needs order-book
 information, not more bar-data algos.
+
+
+## Recheck on adjusted data (2026-08-25, post-#58 fix)
+
+All 8 original PASSes confirmed; ONGC (+0.88 sharpe!) and SUNPHARMA join.
+**10/50 pass.** Log: tmp/wf_adjusted.log.
+
+| stock | OOS sharpe | OOS ret |
+|---|---|---|
+| ONGC | 0.88 | +162.5% |
+| APOLLOHOSP * | 0.59 | +144.0% |
+| TATASTEEL * | 0.59 | +126.6% |
+| CIPLA * | 0.51 | +60.8% |
+| BEL * | 0.50 | +141.7% |
+| TATACONSUM * | 0.46 | +198.3% |
+| TITAN * | 0.42 | +129.2% |
+| ULTRACEMCO * | 0.37 | +97.0% |
+| ADANIENT * | 0.24 | +39.5% |
+| SUNPHARMA | 0.22 | +46.4% |
+
+(* = in original list; none dropped.)

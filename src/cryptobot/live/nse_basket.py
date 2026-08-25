@@ -36,6 +36,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from cryptobot.core.tax_equity import TaxLedger
+
 logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -115,11 +117,15 @@ class BasketState:
     def __init__(self, capital: float):
         self.capital = capital
         self.cash = capital
+        self.peak_equity: float = capital
+        self.breaker_tripped: bool = False
+        self.breaker_reason: str | None = None
         self.positions: dict[str, dict] = {}   # sym -> {qty, entry}
         self.trades: list[dict] = []
         self.equity_curve: list[dict] = []
         self.skipped: dict[str, str] = {}      # sym -> reason (affordability)
         self.last_run: str | None = None
+        self.tax = TaxLedger()
 
     def equity(self, marks: dict[str, float]) -> float:
         eq = self.cash
@@ -130,19 +136,34 @@ class BasketState:
 
     def to_dict(self) -> dict:
         return {"capital": self.capital, "cash": self.cash,
+                "peak_equity": self.peak_equity,
+                "breaker_tripped": self.breaker_tripped,
+                "breaker_reason": self.breaker_reason,
                 "positions": self.positions, "trades": self.trades[-200:],
                 "equity_curve": self.equity_curve[-400:],
-                "skipped": self.skipped, "last_run": self.last_run}
+                "skipped": self.skipped, "last_run": self.last_run,
+                "tax_lots": {s: [{"qty": lot.qty, "price": lot.price,
+                                  "date": lot.date.isoformat()}
+                                 for lot in lots]
+                             for s, lots in self.tax.lots.items()},
+                "tax_records": self.tax.to_dicts()}
 
     @classmethod
     def from_dict(cls, d: dict) -> BasketState:
         s = cls(d["capital"])
         s.cash = d["cash"]
+        s.peak_equity = d.get("peak_equity", d["capital"])
+        s.breaker_tripped = d.get("breaker_tripped", False)
+        s.breaker_reason = d.get("breaker_reason")
         s.positions = d.get("positions", {})
         s.trades = d.get("trades", [])
         s.equity_curve = d.get("equity_curve", [])
         s.skipped = d.get("skipped", {})
         s.last_run = d.get("last_run")
+        for sym, lots in d.get("tax_lots", {}).items():
+            for lot in lots:
+                s.tax.on_buy(sym, lot["qty"], lot["price"],
+                             datetime.fromisoformat(lot["date"]))
         return s
 
 
@@ -209,6 +230,20 @@ class NseBasket:
                 self._buy(sym, qty, px)
             eq = st.equity(marks)
             st.equity_curve.append({"date": today, "equity": round(eq, 2)})
+            # Circuit breaker: -25% from peak equity flattens everything and
+            # halts entries until manual reset (plan.md live-deployment gate).
+            if not st.breaker_tripped:
+                st.peak_equity = max(st.peak_equity, eq)
+                if st.peak_equity > 0 and eq <= st.peak_equity * 0.75:
+                    st.breaker_tripped = True
+                    st.breaker_reason = (f"equity {eq:,.0f} <= 75% of peak "
+                                         f"{st.peak_equity:,.0f} on {today}")
+                    logger.error("BREAKER TRIPPED: %s — flattening all positions",
+                                 st.breaker_reason)
+                    for sym in list(st.positions.keys()):
+                        self._close(sym, marks.get(sym))
+            if st.breaker_tripped:
+                wanted = {}   # breaker open: no new entries
             st.last_run = datetime.now(IST).isoformat(timespec="seconds")
             self.stats["runs"] += 1
             self.state_file.write_text(json.dumps(st.to_dict(), indent=1))
@@ -229,6 +264,7 @@ class NseBasket:
         elif self.kite_session is not None:
             logger.info("kite dry-run order: BUY %s x%d @~%.2f", sym, qty, px)
         st.cash -= notional + fee
+        st.tax.on_buy(sym, float(qty), px, datetime.now(IST))
         st.positions[sym] = {"qty": qty, "entry": px}
         st.trades.append({"time": datetime.now(IST).isoformat(timespec="seconds"),
                           "symbol": sym, "side": "BUY", "qty": qty,
@@ -252,6 +288,8 @@ class NseBasket:
         st.trades.append({"time": datetime.now(IST).isoformat(timespec="seconds"),
                           "symbol": sym, "side": "SELL", "qty": pos["qty"],
                           "price": round(px, 2)})
+        st.tax.on_sell(sym, float(pos["qty"]), px,
+                       datetime.now(IST))
         del st.positions[sym]
         self.stats["orders"] += 1
         self.stats["fills"] += 1
@@ -285,7 +323,6 @@ class NseBasket:
                 "mode": "paper",
                 "equity": f"{eq:.2f}",
                 "daily_pnl": f"{eq - self.state.capital:.2f}",
-                "peak_equity": f"{max([e['equity'] for e in self.state.equity_curve] or [self.state.capital]):.2f}",
                 "bars_fed": sum(len(v) for v in self._closes.values()),
                 "orders_submitted": self.stats["orders"],
                 "fills": self.stats["fills"],
@@ -294,9 +331,12 @@ class NseBasket:
                 "positions_detail": pos_view,
                 "positions": {s: f"{p['qty']}@{p['entry']}" for s, p in self.state.positions.items()},
                 "trades_total": len(self.state.trades),
+                "tax_summary": self.state.tax.summary(),
                 "recent_trades": self.state.trades[-60:],
                 "paper_gate": {"days_elapsed": gate_day or 0,
-                               "breaker_tripped": False},
+                               "breaker_tripped": self.state.breaker_tripped,
+                               "breaker_reason": self.state.breaker_reason},
+                "peak_equity": f"{self.state.peak_equity:.2f}",
                 "last_run": self.state.last_run,
                 "skipped": dict(list(self.state.skipped.items())[:8]),
             }
@@ -389,6 +429,17 @@ a{{color:var(--ac)}}
 </div>
 <footer>JSON <a href=/health>/health</a> · refresh 15s · capital ₹{self.state.capital:,.0f} · delivery costs 11+1 bps/side</footer>
 </body></html>"""
+
+    def reset_breaker(self) -> None:
+        """Manual reset after a breaker trip (owner decision, never auto)."""
+        with self._lock:
+            self.state.breaker_tripped = False
+            self.state.breaker_reason = None
+            # re-anchor peak at current equity so the next trip needs a fresh -25%
+            marks = {s: v[-1] for s, v in self._closes.items()}
+            self.state.peak_equity = self.state.equity(marks)
+            self.state_file.write_text(json.dumps(self.state.to_dict(), indent=1))
+        logger.warning("breaker manually reset; peak re-anchored")
 
     def serve_forever(self) -> None:
         basket = self
