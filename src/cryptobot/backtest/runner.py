@@ -202,7 +202,8 @@ async def _stream_filled_events(
         order = None
         if hasattr(strategy, "feed") and hasattr(strategy, "name"):
             if strategy.name == "trend_following":
-                order = strategy.feed(symbol, bar.high, bar.low, bar.close)
+                order = _feed_with_ts(strategy, symbol, bar.high, bar.low, bar.close,
+                                      ts=int(bar.timestamp.timestamp() * 1000))
             else:
                 # New signal strategies (catalog) accept (symbol, close, high, low, volume);
                 # legacy 2-arg feed takes (symbol, close) — try both.
@@ -211,7 +212,8 @@ async def _stream_filled_events(
                         symbol, bar.close, bar.high, bar.low, bar.volume,
                     )
                 except TypeError:
-                    order = strategy.feed(symbol, bar.close)
+                    order = _feed_with_ts(strategy, symbol, bar.close,
+                                          ts=int(bar.timestamp.timestamp() * 1000))
         if order is None:
             continue
         if not isinstance(order, list):
@@ -237,6 +239,21 @@ async def _stream_filled_events(
                     },
                 )
 
+
+def _feed_with_ts(strategy_or_feed, symbol: str, *args, ts: int | None = None):
+    """Pass ts only to feeds that accept it (session-aware strategies).
+
+    Accepts either a strategy object or an already-bound ``strategy.feed``.
+    """
+    import inspect
+    feed = getattr(strategy_or_feed, "feed", strategy_or_feed)
+    try:
+        params = inspect.signature(feed).parameters
+    except (TypeError, ValueError):
+        params = {}
+    if "ts" in params:
+        return feed(symbol, *args, ts=ts)
+    return feed(symbol, *args)
 
 async def run_backtest(
     bars: Sequence[OhlcvBar],

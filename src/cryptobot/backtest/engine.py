@@ -111,6 +111,22 @@ class TradeRecord:
     strategy: str
 
 
+
+def _feed_with_ts(strategy_or_feed, symbol: str, *args, ts: int | None = None):
+    """Pass ts only to feeds that accept it (session-aware strategies).
+
+    Accepts either a strategy object or an already-bound ``strategy.feed``.
+    """
+    import inspect
+    feed = getattr(strategy_or_feed, "feed", strategy_or_feed)
+    try:
+        params = inspect.signature(feed).parameters
+    except (TypeError, ValueError):
+        params = {}
+    if "ts" in params:
+        return feed(symbol, *args, ts=ts)
+    return feed(symbol, *args)
+
 class BacktestEngine:
     """
     Event-driven backtesting engine.
@@ -223,7 +239,8 @@ class BacktestEngine:
                 if await self._check_bankruptcy(symbol, execution_engine, bar,
                                                 str(bar.close), floor):
                     break
-                order = feed(symbol, bar.high, bar.low, bar.close)
+                order = _feed_with_ts(feed, symbol, bar.high, bar.low, bar.close,
+                                      ts=int(bar.timestamp.timestamp() * 1000))
                 if order is None:
                     continue
                 await self._run_orders(order, execution_engine, bar, str(bar.close), strategy, risk_fraction)
@@ -237,7 +254,8 @@ class BacktestEngine:
                 if max_leverage is not None and max_leverage > 1:
                     await self._check_liquidation(symbol, execution_engine, bar,
                                                   str(bar.close), max_leverage)
-                order = feed(symbol, bar.close)
+                order = _feed_with_ts(feed, symbol, bar.close,
+                                  ts=int(bar.timestamp.timestamp() * 1000))
                 if order is None:
                     continue
                 await self._run_orders(order, execution_engine, bar, str(bar.close), strategy, risk_fraction)

@@ -322,6 +322,9 @@ class LiveTrader:
         self._price_history.append(
             (bar.timestamp.isoformat(timespec="seconds") if getattr(bar, "timestamp", None)
              else datetime.now(UTC).isoformat(timespec="seconds"), close))
+        # Session-aware algos read the closed bar's open time (epoch ms).
+        bt = getattr(bar, "open_time", None) or getattr(bar, "timestamp", None)
+        self._closed_bar_ts = int(bt.timestamp() * 1000) if bt is not None else None
 
         if self._check_breaker():
             return  # breaker tripped: no new entries
@@ -541,6 +544,10 @@ class LiveTrader:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("close order failed for %s: %s", pos["symbol"], exc)
 
+    def _last_bar_ts(self) -> int | None:
+        """Epoch-ms of the most recent closed bar (for session-aware algos)."""
+        return getattr(self, "_closed_bar_ts", None)
+
     def _feed_strategy(self, close: float, high: float, low: float, volume: float):
         if self._breaker.tripped:
             self.stats["bars_fed"] += 1  # keep counting bars; entries halted
@@ -550,9 +557,11 @@ class LiveTrader:
         self.stats["bars_fed"] += 1
         name = getattr(self.strategy, "name", "")
         if name == "trend_following":
-            return self.strategy.feed(symbol, high, low, close)
+            return self.strategy.feed(symbol, high, low, close,
+                                      ts=self._last_bar_ts())
         try:
-            return self.strategy.feed(symbol, close, high, low, volume)
+            return self.strategy.feed(symbol, close, high, low, volume,
+                                      ts=self._last_bar_ts())
         except TypeError:
             return self.strategy.feed(symbol, close)
 
