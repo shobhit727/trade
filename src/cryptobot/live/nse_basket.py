@@ -322,7 +322,7 @@ class NseBasket:
             f"<td class=sym>{t['symbol']}</td>"
             f"<td><span class='pill {"buy" if t["side"]=="BUY" else "sell"}'>{t['side']}</span></td>"
             f"<td class=num>{t['qty']}</td><td class=num>₹{t['price']:,.2f}</td></tr>"
-            for t in reversed(s.get("recent_trades", [])[-12:])
+            for t in reversed(s.get("recent_trades", []))
         ) or '<tr><td colspan=5 class=muted>no trades yet</td></tr>'
         skip_rows = "".join(
             f"<tr><td class=sym>{k}</td><td class=muted>{v}</td></tr>"
