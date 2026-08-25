@@ -293,7 +293,8 @@ class NseBasket:
                 "open_positions": len(self.state.positions),
                 "positions_detail": pos_view,
                 "positions": {s: f"{p['qty']}@{p['entry']}" for s, p in self.state.positions.items()},
-                "recent_trades": self.state.trades[-12:],
+                "trades_total": len(self.state.trades),
+                "recent_trades": self.state.trades[-60:],
                 "paper_gate": {"days_elapsed": gate_day or 0,
                                "breaker_tripped": False},
                 "last_run": self.state.last_run,
@@ -378,10 +379,10 @@ a{{color:var(--ac)}}
  <div class=bar><div class=fill style="width:{gate_pct}%"></div></div>
  <p class="muted" style="margin-top:8px;font-size:12px">pass = net positive · Sharpe ≥ 1 · zero breaker trips</p>
 </div>
-<div class=card><h3>Holdings ({s["open_positions"]})</h3>
+<div class=card><h3>Holdings · {s["open_positions"]}</h3>
 <table><thead><tr><th>Symbol</th><th style=text-align:right>Qty</th><th style=text-align:right>Entry</th><th style=text-align:right>Mark</th><th style=text-align:right>P&L</th></tr></thead>
 <tbody>{pos_rows}</tbody></table></div>
-<div class=card><h3>Recent trades</h3>
+<div class=card><h3>Trades · {s["trades_total"]} total</h3>
 <table><thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th style=text-align:right>Qty</th><th style=text-align:right>Price</th></tr></thead>
 <tbody>{trade_rows}</tbody></table></div>
 {"" if not skip_rows else f'<div class="card" style="grid-column:1/-1"><h3>Skipped — unaffordable at current slice</h3><table><tbody>{skip_rows}</tbody></table></div>'}
