@@ -552,6 +552,54 @@ mkdir -p docker seccomp compose scripts migrations
 - Requirements: `requirements/prod.txt`
 
 ### Current Phase
+**NSE ERA (2026-08-25) — live paper gate on Indian equities.**
+
+> **2026-08-23 PIVOT**: owner directed trading focus to NSE (Nifty50) over crypto.
+> Crypto gate v2 stopped, states archived (`state-archive/gate-v2-*`).
+
+**What is running now**
+- `nse-basket` (:8084): trend_following(5,12) long-only across ALL 50 Nifty50
+  constituents, daily bars, rebalance 15:36 IST post-close, delivery costs
+  (11+1bps/side), affordability guard. **Seed: ₹21,00,000** — first rebalance
+  opened 16 positions, all 50 names affordable at ₹42k slices.
+- `control-room` (:8090): unified dashboard — basket equity/holdings/trades
+  live + research artifacts.
+- Paper gate rules: day counter from first equity point; pass = net positive,
+  Sharpe ≥ 1, zero breaker trips over 60 days.
+
+**Validated edge (what we bet on)**
+- Daily bars are the ONLY timeframe with edge — proven twice (crypto + NSE):
+  ~30k backtests; intraday taker AND maker both dead (adverse selection).
+- trend_following won 46/50 stocks raw; walk-forward honest pass = 8/50
+  (TATACONSUM, BEL, TITAN, APOLLOHOSP, TATASTEEL, ULTRACEMCO, CIPLA, ADANIENT).
+- Capacity sim (PROJECT_MEMORY/40): ₹21L sits in the sweet spot (~8% CAGR
+  character); ₹100cr degrades to 3.3% via participation caps.
+
+**Built this era**
+- NSE data pipeline: official constituents list + yfinance downloader
+  (adjusted OHLC after #58), matrix_sweep CLI generalization.
+- `RealisticSimVenue`: latency, partial fills, impact slippage, queue-aware limits.
+- Session-aware intraday algos (nse_orb, vwap_revert) — tested, negative:
+  confirms bar-data intraday has no edge.
+- `live/nse_basket.py`: scheduled daily rebalancer (Yahoo chart API, stdlib).
+- `execution/venue/kite_venue.py` + `tools/kite_login.py`: Zerodha Kite
+  Connect adapter (dry-run default; awaiting owner's API key for live).
+- Control room dashboard; bankruptcy guard (#55); macd O(n²)→O(n) fix.
+
+**Known data caveats**
+- #58 unadjusted prices fixed (auto_adjust=True); #58b corrupt outlier prints
+  scrubbed in analysis tooling. Pre-fix sweep/WF tables shift slightly on
+  adjusted data; rankings robust.
+
+**Next**
+1. Owner provides Kite API key/secret → daily login flow → `--kite-live`.
+2. Re-run WF shortlist on adjusted data to confirm the 8-stock list.
+3. Equity tax engine (STCG 20%/LTCG 12.5%) before real orders.
+4. Optional: order-book (L2) data exploration for genuine intraday edge.
+
+---
+
+### Prior phase (crypto, archived)
 **Phase 3/4/5/6/8 complete + catalog delivered**: Core infrastructure ✅, Backtester ✅, **Strategy Framework ✅ (PositionManager + Optuna strategy optimizer + grid fallback + 84 catalog signal strategies in src/cryptobot/strategies/catalog/)**, Strategies 6/6 ✅ (ml_strategy.py created), ML core ✅ (features, direction/volatility/regime/ensemble, training/inference/auto_retrain, walk-forward optimizer), Execution ✅ (incl. realistic venue + transaction cost model), **Risk ✅ (incl. HRP/CVaR portfolio optimizer + live risk-metric wiring)**, Monitoring ✅, Live/Compose ✅ (incl. Phase 3 funding-carry paper harness), K8s ✅, **CI/CD green ✅ (public repo, 769 pytest + 63 Rust tests, ruff + clippy -D warnings + fmt clean)**, **Rust workspace fleshed out (stats + risk submodules, backtest metrics)**, **Release v0.1.0 published ✅**, **WalkForwardOptimizer functional (#27 fixed)**, **live trading loop wired (`cryptobot bot`, paper default)**.
 
 > ⚠️ **2026-08-22 audit caveat**: "✅" above means *implemented and tested*, not *correct*. The
