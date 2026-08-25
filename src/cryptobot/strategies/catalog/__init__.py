@@ -54,6 +54,12 @@ from cryptobot.strategies.catalog.momentum_factor import MomentumFactorConfig, M
 from cryptobot.strategies.catalog.momentum_vol import MomentumVolConfig, MomentumVolStrategy
 from cryptobot.strategies.catalog.multi_factor import MultiFactorConfig, MultiFactorStrategy
 from cryptobot.strategies.catalog.nr4 import Nr4Config, Nr4Strategy
+from cryptobot.strategies.catalog.nse_intraday import (
+    NseOrbConfig,
+    NseOrbStrategy,
+    VwapRevertConfig,
+    VwapRevertStrategy,
+)
 from cryptobot.strategies.catalog.obv import ObvConfig, ObvStrategy
 from cryptobot.strategies.catalog.open_range import OpenRangeConfig, OpenRangeStrategy
 from cryptobot.strategies.catalog.price_channel import PriceChannelConfig, PriceChannelStrategy
@@ -84,12 +90,6 @@ from cryptobot.strategies.catalog.vol_scaling import VolScalingConfig, VolScalin
 from cryptobot.strategies.catalog.vol_target import VolTargetConfig, VolTargetStrategy
 from cryptobot.strategies.catalog.volume_momentum import VolumeMomentumConfig, VolumeMomentumStrategy
 from cryptobot.strategies.catalog.volume_profile import VolumeProfileConfig, VolumeProfileStrategy
-from cryptobot.strategies.catalog.nse_intraday import (
-    NseOrbConfig,
-    NseOrbStrategy,
-    VwapRevertConfig,
-    VwapRevertStrategy,
-)
 from cryptobot.strategies.catalog.volume_spike import VolumeSpikeConfig, VolumeSpikeStrategy
 from cryptobot.strategies.catalog.vw_momentum import VwMomentumConfig, VwMomentumStrategy
 from cryptobot.strategies.catalog.vwap import VwapConfig, VwapStrategy

@@ -14,7 +14,7 @@ gap risk and no delivery STT — pure intraday cost economics.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 
 from cryptobot.strategies.signal_base import SignalStrategy
@@ -28,7 +28,7 @@ FLAT_AT = (15, 25)  # force-flat 5 min before close
 def _ist_minute_of_day(ts_ms: int | None) -> int | None:
     if ts_ms is None:
         return None
-    dt = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).astimezone(IST)
+    dt = datetime.fromtimestamp(ts_ms / 1000, tz=UTC).astimezone(IST)
     return dt.hour * 60 + dt.minute
 
 
