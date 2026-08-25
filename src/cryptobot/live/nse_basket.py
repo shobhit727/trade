@@ -128,7 +128,10 @@ class BasketState:
 class NseBasket:
     def __init__(self, symbols: list[str], capital: float = 10_000.0,
                  fast: int = 5, slow: int = 12, port: int = 8084,
-                 state_file: Path | None = None):
+                 state_file: Path | None = None,
+                 kite_session=None, dry_run: bool = True):
+        self.kite_session = kite_session
+        self.dry_run = dry_run
         self.symbols = symbols
         self.fast, self.slow = fast, slow
         self.port = port
@@ -200,6 +203,10 @@ class NseBasket:
                 return
             notional = qty * px
             fee = notional * float(DELIVERY_FEE_BPS + SLIP_BPS) / 10_000
+        if self.kite_session is not None and not self.dry_run:
+            logger.warning("LIVE ORDER (Kite): BUY %s x%d @~%.2f", sym, qty, px)
+        elif self.kite_session is not None:
+            logger.info("kite dry-run order: BUY %s x%d @~%.2f", sym, qty, px)
         st.cash -= notional + fee
         st.positions[sym] = {"qty": qty, "entry": px}
         st.trades.append({"time": datetime.now(IST).isoformat(timespec="seconds"),
@@ -214,6 +221,10 @@ class NseBasket:
         if not pos:
             return
         px = px or pos["entry"]
+        if self.kite_session is not None:
+            logger.warning("%s order: SELL %s x%d @~%.2f",
+                           "LIVE" if not self.dry_run else "kite dry-run",
+                           sym, pos["qty"], px)
         notional = pos["qty"] * px
         fee = notional * float(DELIVERY_FEE_BPS + SLIP_BPS) / 10_000
         st.cash += notional - fee
@@ -297,6 +308,10 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=8084)
     ap.add_argument("--run-now", action="store_true",
                     help="rebalance immediately at startup (else wait for next close)")
+    ap.add_argument("--kite", action="store_true",
+                    help="route orders through KiteVenue (dry-run unless --kite-live)")
+    ap.add_argument("--kite-live", action="store_true",
+                    help="REAL MONEY: send actual Kite orders")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO)
@@ -304,8 +319,23 @@ def main() -> None:
     with open(args.symbols_file, newline="", encoding="utf-8") as f:
         symbols = [r["Symbol"].strip().upper() for r in csv.DictReader(f)]
 
+    kite_session = None
+    if args.kite or args.kite_live:
+        import os
+
+        from cryptobot.execution.venue.kite_venue import KiteSession
+        api_key = os.environ.get("KITE_API_KEY", "")
+        if not api_key:
+            raise SystemExit("KITE_API_KEY missing — cannot route via Kite")
+        kite_session = KiteSession(api_key=api_key,
+                                   api_secret=os.environ.get("KITE_API_SECRET", ""))
+        logger.warning("Kite routing enabled (%s)",
+                       "LIVE ORDERS" if args.kite_live else "DRY-RUN")
+
     basket = NseBasket(symbols, capital=args.capital, fast=args.fast,
-                       slow=args.slow, port=args.port)
+                       slow=args.slow, port=args.port,
+                       kite_session=kite_session,
+                       dry_run=not args.kite_live)
     threading.Thread(target=basket.serve_forever, daemon=True).start()
     logger.info("nse-basket up on :%d — %d symbols, ₹%.0f", args.port,
                 len(symbols), args.capital)
