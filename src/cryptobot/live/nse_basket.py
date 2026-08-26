@@ -31,6 +31,7 @@ import threading
 import time
 import urllib.request
 from datetime import UTC, datetime, timedelta
+from datetime import time as dt_time
 from decimal import Decimal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -188,7 +189,10 @@ class NseBasket:
     # ------------------------------------------------------------ trading
 
     def _ist_today(self) -> str:
-        return datetime.now(IST).date().isoformat()
+        return self._ist_now().date().isoformat()
+
+    def _ist_now(self) -> datetime:
+        return datetime.now(IST)
 
     def run_once(self) -> dict:
         """One daily rebalance across every symbol."""
@@ -224,6 +228,28 @@ class NseBasket:
 
         with self._lock:
             st = self.state
+            # Breaker runs EVERY cycle — even on restarts mid-day.
+            eq_now = st.equity(marks)
+            if not st.breaker_tripped:
+                st.peak_equity = max(st.peak_equity, eq_now)
+                if st.peak_equity > 0 and eq_now <= st.peak_equity * 0.75:
+                    st.breaker_tripped = True
+                    st.breaker_reason = (f"equity {eq_now:,.0f} <= 75% of peak "
+                                         f"{st.peak_equity:,.0f} on {today}")
+                    logger.error("BREAKER TRIPPED: %s — flattening all positions",
+                                 st.breaker_reason)
+                    for sym in list(st.positions.keys()):
+                        self._close(sym, marks.get(sym))
+            # Trade at most ONCE per calendar day, never while the market is
+            # open: restarts (--run-now) must warm up, not churn the book.
+            already_traded = bool(st.last_run and st.last_run[:10] == today)
+            market_open = self._ist_now().time() < dt_time(15, 30)
+            if already_traded or market_open or st.breaker_tripped:
+                why = ("breaker tripped" if st.breaker_tripped else
+                       "already traded today" if already_traded else "market open")
+                logger.info("trade gate: %s — marks refreshed, no orders", why)
+                return {"date": today, "equity": st.equity(marks),
+                        "positions": len(st.positions), "no_trade_reason": why}
             st.skipped = {}
             # exits first (free capital), then entries
             for sym in [s for s, p in st.positions.items() if wanted.get(s, 0) == 0]:
@@ -244,21 +270,9 @@ class NseBasket:
                 self._buy(sym, qty, px)
             eq = st.equity(marks)
             st.equity_curve.append({"date": today, "equity": round(eq, 2)})
-            # Circuit breaker: -25% from peak equity flattens everything and
-            # halts entries until manual reset (plan.md live-deployment gate).
-            if not st.breaker_tripped:
-                st.peak_equity = max(st.peak_equity, eq)
-                if st.peak_equity > 0 and eq <= st.peak_equity * 0.75:
-                    st.breaker_tripped = True
-                    st.breaker_reason = (f"equity {eq:,.0f} <= 75% of peak "
-                                         f"{st.peak_equity:,.0f} on {today}")
-                    logger.error("BREAKER TRIPPED: %s — flattening all positions",
-                                 st.breaker_reason)
-                    for sym in list(st.positions.keys()):
-                        self._close(sym, marks.get(sym))
             if st.breaker_tripped:
-                wanted = {}   # breaker open: no new entries
-            st.last_run = datetime.now(IST).isoformat(timespec="seconds")
+                wanted = {}   # breaker open: no further entries
+            st.last_run = self._ist_now().isoformat(timespec="seconds")
             self.stats["runs"] += 1
             self.state_file.write_text(json.dumps(st.to_dict(), indent=1))
             result = {"date": today, "equity": eq, "positions": len(st.positions)}

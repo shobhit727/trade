@@ -70,7 +70,8 @@ def test_run_once_flattens_on_exit_signal(tmp_path, monkeypatch):
     monkeypatch.setattr(nb, "fetch_bars", fake_bars)
     b = NseBasket(["UPSTOCK", "DOWNSTOCK"], capital=10_000.0, port=8097,
                   state_file=tmp_path / "b.json")
-    b._ist_today = lambda: "2026-08-12"   # match fake bar dates
+    b._ist_today = lambda: "2026-08-12"
+    b._ist_now = lambda: __import__("datetime").datetime(2026, 8, 12, 15, 36, tzinfo=__import__("zoneinfo").ZoneInfo("Asia/Kolkata"))   # match fake bar dates
     out = b.run_once()
     assert out["positions"] >= 1
     assert "UPSTOCK" in b.state.positions
@@ -93,7 +94,8 @@ def test_breaker_trips_at_25pct_drawdown_and_flattens(tmp_path, monkeypatch):
     monkeypatch.setattr(nb, "fetch_bars", fake_bars)
     b = nb.NseBasket(["UPSTOCK"], capital=10_000.0, port=8095,
                      state_file=tmp_path / "b.json")
-    b._ist_today = lambda: "2026-08-12"            # match fake bar dates
+    b._ist_today = lambda: "2026-08-12"
+    b._ist_now = lambda: __import__("datetime").datetime(2026, 8, 12, 15, 36, tzinfo=__import__("zoneinfo").ZoneInfo("Asia/Kolkata"))            # match fake bar dates
     b.run_once()                                   # opens full-notional long
     assert b.state.positions and not b.state.breaker_tripped
 
@@ -119,6 +121,7 @@ def test_breaker_blocks_reentry_until_reset(tmp_path, monkeypatch):
     b = nb.NseBasket(["S"], capital=10_000.0, port=8094,
                      state_file=tmp_path / "b.json")
     b._ist_today = lambda: "2026-08-12"
+    b._ist_now = lambda: __import__("datetime").datetime(2026, 8, 12, 15, 36, tzinfo=__import__("zoneinfo").ZoneInfo("Asia/Kolkata"))
     b.run_once()
     prices_held = True
     # force trip
@@ -151,3 +154,31 @@ def test_holiday_skips_rebalance(tmp_path, monkeypatch):
     out = b.run_once()
     assert out.get("skipped_holiday") is True
     assert b.state.positions == {}
+
+
+def test_restart_mid_market_does_not_retrade(tmp_path, monkeypatch):
+    """--run-now during market hours must warm up, never place orders."""
+    from cryptobot.live import nse_basket as nb
+
+    def fake_bars(sym):
+        base = [100 * (1.01 ** i) for i in range(40)]
+        return [{"ts": i, "date": f"2026-08-{i%28+1:02d}", "open": c,
+                 "high": c, "low": c, "close": c, "volume": 1e6}
+                for i, c in enumerate(base)]
+
+    monkeypatch.setattr(nb, "fetch_bars", fake_bars)
+    b = nb.NseBasket(["UPSTOCK"], capital=10_000.0, port=8092,
+                     state_file=tmp_path / "b.json")
+    b._ist_today = lambda: "2026-08-12"
+    b._ist_now = lambda: __import__("datetime").datetime(
+        2026, 8, 12, 11, 1, tzinfo=__import__("zoneinfo").ZoneInfo("Asia/Kolkata"))
+    out = b.run_once()                       # 11:01 — market open
+    assert out.get("no_trade_reason") == "market open"
+    assert b.state.positions == {}
+    b._ist_now = lambda: __import__("datetime").datetime(
+        2026, 8, 12, 15, 36, tzinfo=__import__("zoneinfo").ZoneInfo("Asia/Kolkata"))
+    out2 = b.run_once()                      # after close — trades
+    assert out2["positions"] == 1
+    out3 = b.run_once()                      # same day again — latched
+    assert out3.get("no_trade_reason") == "already traded today"
+    assert len(b.state.trades) == 1
