@@ -70,6 +70,7 @@ def test_run_once_flattens_on_exit_signal(tmp_path, monkeypatch):
     monkeypatch.setattr(nb, "fetch_bars", fake_bars)
     b = NseBasket(["UPSTOCK", "DOWNSTOCK"], capital=10_000.0, port=8097,
                   state_file=tmp_path / "b.json")
+    b._ist_today = lambda: "2026-08-12"   # match fake bar dates
     out = b.run_once()
     assert out["positions"] >= 1
     assert "UPSTOCK" in b.state.positions
@@ -92,6 +93,7 @@ def test_breaker_trips_at_25pct_drawdown_and_flattens(tmp_path, monkeypatch):
     monkeypatch.setattr(nb, "fetch_bars", fake_bars)
     b = nb.NseBasket(["UPSTOCK"], capital=10_000.0, port=8095,
                      state_file=tmp_path / "b.json")
+    b._ist_today = lambda: "2026-08-12"            # match fake bar dates
     b.run_once()                                   # opens full-notional long
     assert b.state.positions and not b.state.breaker_tripped
 
@@ -116,6 +118,7 @@ def test_breaker_blocks_reentry_until_reset(tmp_path, monkeypatch):
     monkeypatch.setattr(nb, "fetch_bars", fake_bars)
     b = nb.NseBasket(["S"], capital=10_000.0, port=8094,
                      state_file=tmp_path / "b.json")
+    b._ist_today = lambda: "2026-08-12"
     b.run_once()
     prices_held = True
     # force trip
@@ -130,3 +133,21 @@ def test_breaker_blocks_reentry_until_reset(tmp_path, monkeypatch):
 
     b.reset_breaker()
     assert b.state.breaker_tripped is False
+
+
+def test_holiday_skips_rebalance(tmp_path, monkeypatch):
+    """When no bar is dated today (NSE closed), do nothing."""
+    from cryptobot.live import nse_basket as nb
+
+    def fake_bars(sym):
+        return [{"ts": i, "date": f"2026-08-{i+1:02d}", "open": 100,
+                 "high": 100, "low": 100, "close": 100 * (1.01 ** i),
+                 "volume": 1e6} for i in range(40)]
+
+    monkeypatch.setattr(nb, "fetch_bars", fake_bars)
+    b = nb.NseBasket(["UPSTOCK"], capital=10_000.0, port=8093,
+                     state_file=tmp_path / "b.json")
+    b._ist_today = lambda: "2026-09-15"            # not in the data
+    out = b.run_once()
+    assert out.get("skipped_holiday") is True
+    assert b.state.positions == {}

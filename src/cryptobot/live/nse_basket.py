@@ -187,11 +187,15 @@ class NseBasket:
 
     # ------------------------------------------------------------ trading
 
+    def _ist_today(self) -> str:
+        return datetime.now(IST).date().isoformat()
+
     def run_once(self) -> dict:
         """One daily rebalance across every symbol."""
         marks: dict[str, float] = {}
         wanted: dict[str, int] = {}
         today = None
+        stale: set[str] = set()
         for sym in self.symbols:
             try:
                 bars = fetch_bars(sym)
@@ -205,8 +209,18 @@ class NseBasket:
             last = bars[-1]
             marks[sym] = last["close"]
             today = max(today or "", last["date"])
+            # NSE holiday / session not closed yet: newest bar is stale.
+            if last["date"] != self._ist_today():
+                stale.add(sym)
             sig = trend_signal(closes, self.fast, self.slow)
             wanted[sym] = sig
+
+        # If EVERY symbol is stale, the market did not trade today (holiday)
+        # — do nothing rather than re-trade yesterday's signals.
+        if len(stale) == len(self.symbols):
+            logger.info("market closed today (%s) — rebalance skipped", today)
+            return {"date": today, "equity": self.state.equity(marks),
+                    "positions": len(self.state.positions), "skipped_holiday": True}
 
         with self._lock:
             st = self.state
@@ -247,7 +261,36 @@ class NseBasket:
             st.last_run = datetime.now(IST).isoformat(timespec="seconds")
             self.stats["runs"] += 1
             self.state_file.write_text(json.dumps(st.to_dict(), indent=1))
-            return {"date": today, "equity": eq, "positions": len(st.positions)}
+            result = {"date": today, "equity": eq, "positions": len(st.positions)}
+        # notify OUTSIDE the lock: snapshot() takes it too (non-reentrant)
+        try:
+            self._notify(result)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("notify failed: %s", exc)
+        return result
+
+    def _notify(self, result: dict) -> None:
+        """Evening P&L ping via WhatsApp/email when env-configured."""
+        s = self.snapshot()
+        pnl = float(s["equity"]) - self.state.capital
+        lines = [f"NSE basket {result.get('date','')}",
+                 f"Equity Rs {float(s['equity']):,.0f} ({pnl:+,.0f})",
+                 f"Positions {s['open_positions']} | gate day {s['paper_gate']['days_elapsed']}/60"]
+        if self.state.breaker_tripped:
+            lines.append(f"BREAKER TRIPPED: {self.state.breaker_reason}")
+        text = "\n".join(lines)
+        from cryptobot.monitoring.whatsapp import WhatsAppConfig, send_whatsapp
+        cfg = WhatsAppConfig.from_env()
+        if cfg.configured():
+            import asyncio
+            asyncio.run(send_whatsapp(text, cfg))
+        from cryptobot.monitoring.email_digest import EmailConfig, send_digest
+        if EmailConfig.from_env().configured():
+            send_digest({"equity": s["equity"],
+                         "daily_pnl": f"{pnl:+,.2f}",
+                         "open_positions": s["open_positions"],
+                         "recent_trades": s.get("recent_trades", [])},
+                        subject_prefix="[nse-basket]")
 
     def _buy(self, sym: str, qty: int, px: float) -> None:
         st = self.state
@@ -334,6 +377,7 @@ class NseBasket:
                 "tax_summary": self.state.tax.summary(),
                 "recent_trades": self.state.trades[-60:],
                 "paper_gate": {"days_elapsed": gate_day or 0,
+                               "required_days": 60,
                                "breaker_tripped": self.state.breaker_tripped,
                                "breaker_reason": self.state.breaker_reason},
                 "peak_equity": f"{self.state.peak_equity:.2f}",
