@@ -430,6 +430,38 @@ services:
     restart: unless-stopped
 
   # =============================================================================
+  # NSE power hour - intraday 14:00->15:15, flat by close, paper gate
+  # =============================================================================
+  nse-powerhour:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+      args:
+        PYTHON_TAG: 3.14-slim
+    container_name: cryptobot-nse-powerhour
+    entrypoint: ["python", "-m"]
+    command:
+      - "cryptobot.live.nse_powerhour"
+      - "--symbols-file=/app/tmp/nifty50.csv"
+      - "--capital=${PH_CAPITAL:-100000}"
+      - "--port=8085"
+    environment:
+      - APP_ENV=production
+    volumes:
+      - ./state-nse:/app/state-nse
+      - ./tmp/nifty50.csv:/app/tmp/nifty50.csv:ro
+    ports:
+      - "8085:8085"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8085/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  # =============================================================================
   # Control room - unified live dashboard (bots + research) on :8090
   # =============================================================================
   control-room:
@@ -443,7 +475,7 @@ services:
     entrypoint: ["python"]
     environment:
       - APP_ENV=production
-      - ROOM_TARGETS=nse-basket:8084
+      - ROOM_TARGETS=nse-basket:8084,nse-powerhour:8085
     command:
       - "/app/tools/control_room.py"
     volumes:
