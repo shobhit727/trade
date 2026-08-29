@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import uuid
 from collections.abc import Mapping
 from decimal import Decimal
 from typing import Any
@@ -140,6 +141,29 @@ class CcxtVenue(Venue):
             order.payload["error"] = message
         return order
 
+    # --------------------------------------------------- retry classification
+
+    @staticmethod
+    def _is_retryable_error(exc: Exception) -> bool:
+        """Only transport/network failures are safe to retry.
+
+        Exchange-reported rejections (``InsufficientFunds``, ``InvalidOrder``,
+        ``BadRequest``, ``AccountSuspended``, ...) are subclasses of
+        ``ccxt.ExchangeError`` and must NOT be retried: the order was already
+        rejected server-side, so a retry wastes time and can double-fill a
+        market order. Network errors (timeouts, connection resets, rate-limit /
+        DDoS protection, exchange temporarily unavailable) are subclasses of
+        ``ccxt.NetworkError`` and are safe to retry.
+        """
+        if ccxt_async is None:
+            return False
+        network_err = getattr(ccxt_async, "NetworkError", None)
+        if network_err is None:
+            # ccxt not actually importable (e.g. test fakes): fall back to a
+            # conservative transport-error heuristic.
+            return isinstance(exc, (TimeoutError, ConnectionError, OSError))
+        return isinstance(exc, network_err)
+
     # --------------------------------------------------------------- mapping
 
     def _map_order_type(self, type_: OrderType) -> str:
@@ -180,9 +204,16 @@ class CcxtVenue(Venue):
         type_ = self._map_order_type(order.type)
         amount = float(order.quantity)
 
-        params: dict[str, Any] = {"type": self.market_type}
+        # Idempotency: always attach a client order id so a retried submit
+        # (e.g. after a network drop) cannot double-fill on exchanges that
+        # dedupe by client order id (Binance and others). Without this, a
+        # market order retried after a lost response would send a second order.
         if order.client_order_id:
-            params["newClientOrderId"] = order.client_order_id
+            client_order_id = order.client_order_id
+        else:
+            client_order_id = uuid.uuid4().hex
+            order.client_order_id = client_order_id
+        params: dict[str, Any] = {"type": self.market_type, "newClientOrderId": client_order_id}
         if order.reduce_only:
             params["reduceOnly"] = True
 
@@ -202,6 +233,10 @@ class CcxtVenue(Venue):
                 return self._apply_fill(order, raw)
             except Exception as exc:
                 last_exc = exc
+                if not self._is_retryable_error(exc):
+                    # Explicit exchange rejection: retrying will not help and
+                    # risks a duplicate fill. Reject immediately, no backoff.
+                    return self._reject(order, OrderStatus.REJECTED, str(exc))
                 backoff = 0.5 * (2 ** attempt)
                 logger.warning(
                     "%s submit_order failed (attempt %d/%d): %s. Retrying in %.1fs",
