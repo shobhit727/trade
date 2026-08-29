@@ -84,4 +84,21 @@ mod tests {
         assert!(!rsi.is_empty());
         assert!(rsi.iter().all(|&v| (0.0..=100.0).contains(&v)));
     }
+
+    #[test]
+    fn rsi_zero_loss_is_exactly_100() {
+        // Monotonic uptrend -> zero average loss -> RSI must be exactly 100.0,
+        // not the 99.01 the old `100 - 100/(1+rs)` formula produced (issue #53).
+        let prices = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let rsi = rsi(&prices, 2);
+        assert!(!rsi.is_empty());
+        assert!(rsi.iter().all(|&v| (v - 100.0).abs() < 1e-12), "rsi = {:?}", rsi);
+    }
+
+    #[test]
+    fn bollinger_period_zero_is_empty() {
+        // `windows(0)` panicked before the guard (issue #53).
+        let (mid, up, low) = bollinger_bands(&[1.0, 2.0, 3.0], 0, 2.0);
+        assert!(mid.is_empty() && up.is_empty() && low.is_empty());
+    }
 }

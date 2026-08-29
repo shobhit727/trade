@@ -142,4 +142,23 @@ mod tests {
         let m = mean_accuracy(&acc);
         assert!((0.0..=1.0).contains(&m));
     }
+
+    #[test]
+    fn mismatched_feature_length_is_empty() {
+        // A feature series shorter than the labels panicked on indexing before the
+        // guard (issue #53). Now it returns an empty accuracy vector.
+        let labels: Vec<f64> = (0..20).map(|i| (i % 2) as f64).collect();
+        let long: Vec<f64> = vec![0.5; 20];
+        let short: Vec<f64> = vec![0.5; 5]; // shorter than labels
+        let feats_refs: Vec<&[f64]> = vec![long.as_slice(), short.as_slice()];
+        let acc = walk_forward_accuracy(
+            &feats_refs,
+            &labels,
+            10,
+            5,
+            0,
+            &|_train_feats, _train_labels| vec![1.0; 5],
+        );
+        assert!(acc.is_empty());
+    }
 }

@@ -1,6 +1,10 @@
 //! PyO3 bindings for cryptobot-backtest
 
 use pyo3::prelude::*;
+// `to_f64()` (issue #53): Decimal -> f64 via the native ToPrimitive conversion
+// instead of `to_string().parse()`, which is lossy and panics on parse failure
+// paths. rust_decimal re-exports the trait from its prelude.
+use rust_decimal::prelude::ToPrimitive;
 
 /// Python wrapper for PerformanceMetrics
 #[pyclass(from_py_object)]
@@ -69,9 +73,9 @@ fn py_simulate_fill(
 ) -> PyResult<(f64, f64, f64)> {
     let sim = crate::simulator::FillSimulator::new(commission_bps, slippage_bps);
     let fill = sim.simulate_fill(&symbol, &side, quantity, mid_price);
-    let price: f64 = fill.price.to_string().parse().unwrap_or(0.0);
-    let qty: f64 = fill.quantity.to_string().parse().unwrap_or(0.0);
-    let comm: f64 = fill.commission.to_string().parse().unwrap_or(0.0);
+    let price: f64 = fill.price.to_f64().unwrap_or(0.0);
+    let qty: f64 = fill.quantity.to_f64().unwrap_or(0.0);
+    let comm: f64 = fill.commission.to_f64().unwrap_or(0.0);
     Ok((price, qty, comm))
 }
 
