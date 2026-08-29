@@ -35,7 +35,7 @@ click>=8.1
 rich>=13.9
 orjson>=3.10
 
-requests>=2.32
+requests>=2.34.2
 
 # Security: CVE-2025-47273 (Path Traversal) fixed in setuptools 78.1.1
 setuptools>=78.1.1
