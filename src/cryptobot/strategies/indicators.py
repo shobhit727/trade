@@ -29,6 +29,82 @@ def ema(values, period: int) -> float:
     return float(out)
 
 
+def _ema_series(values, period: int) -> "np.ndarray":
+    """Full EMA series (prefix-stable recursion), one value per input bar."""
+    a = np.asarray(values, dtype=float)
+    k = 2.0 / (period + 1)
+    out = np.empty(len(a), dtype=float)
+    out[0] = a[0]
+    for i in range(1, len(a)):
+        out[i] = k * a[i] + (1 - k) * out[i - 1]
+    return out
+
+
+def dema(values, period: int) -> float:
+    """Double exponential moving average: 2*EMA - EMA(EMA)."""
+    if len(values) < period:
+        return float("nan")
+    e1 = _ema_series(values, period)
+    e2 = _ema_series(e1, period)
+    return float(2.0 * e1[-1] - e2[-1])
+
+
+def tema(values, period: int) -> float:
+    """Triple exponential moving average: 3*EMA1 - 3*EMA2 + EMA3."""
+    if len(values) < period:
+        return float("nan")
+    e1 = _ema_series(values, period)
+    e2 = _ema_series(e1, period)
+    e3 = _ema_series(e2, period)
+    return float(3.0 * e1[-1] - 3.0 * e2[-1] + e3[-1])
+
+
+def _wma_last(values, period: int) -> float:
+    """Last weighted-moving-average value (most recent bar weighted highest)."""
+    if len(values) < period:
+        return float("nan")
+    a = np.asarray(values[-period:], dtype=float)
+    w = np.arange(1, period + 1, dtype=float)
+    return float(np.sum(a * w) / w.sum())
+
+
+def hull(values, period: int) -> float:
+    """Hull moving average: WMA(2*WMA(n/2) - WMA(n), sqrt(n))."""
+    if len(values) < period:
+        return float("nan")
+    half = max(1, period // 2)
+    sqrt_p = max(1, int(round(period ** 0.5)))
+    raws: list[float] = []
+    for back in range(sqrt_p - 1, -1, -1):
+        sub = values if back == 0 else values[: len(values) - back]
+        wf = _wma_last(sub, period)
+        wh = _wma_last(sub, half)
+        if wf != wf or wh != wh:
+            return float("nan")
+        raws.append(2.0 * wf - wh)
+    w = np.arange(1, sqrt_p + 1, dtype=float)
+    return float(np.sum(np.asarray(raws) * w) / w.sum())
+
+
+def kama(values, period: int = 20, fast: int = 2, slow: int = 30) -> float:
+    """Kaufman adaptive moving average (efficiency-ratio smoothed)."""
+    a = np.asarray(values, dtype=float)
+    n = len(a)
+    if n < period + 1:
+        return float("nan")
+    fast_sc = 2.0 / (fast + 1)
+    slow_sc = 2.0 / (slow + 1)
+    vol = float(sum(abs(a[j] - a[j - 1]) for j in range(1, period + 1)))
+    kama_prev = float(a[period])
+    for i in range(period + 1, n):
+        vol = vol - abs(a[i - period] - a[i - period - 1]) + abs(a[i] - a[i - 1])
+        change = abs(a[i] - a[i - period])
+        er = 0.0 if vol == 0 else change / vol
+        sc = (er * (fast_sc - slow_sc) + slow_sc) ** 2
+        kama_prev = kama_prev + sc * (a[i] - kama_prev)
+    return float(kama_prev)
+
+
 def rsi(closes, period: int = 14) -> float:
     if len(closes) < period + 1:
         return float("nan")
@@ -211,6 +287,10 @@ __all__ = [
     "donchian_high",
     "donchian_low",
     "ema",
+    "dema",
+    "tema",
+    "hull",
+    "kama",
     "fisher_transform",
     "keltner_mid",
     "inside_bar",
