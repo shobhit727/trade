@@ -283,17 +283,20 @@ async def _run(args: argparse.Namespace) -> int:
 
     if args.command == "ml":
         from cryptobot.backtest.data import load_bars
-        from cryptobot.ml.features import build_features
-        from cryptobot.ml.models.direction import DirectionClassifier
+        from cryptobot.ml.models.direction import (
+            DirectionClassifier,
+            DirectionConfig,
+            features_and_labels,
+        )
 
         ds = load_bars(source=args.source, symbol="BTCUSDT", timeframe="1h")
-        bars = ds.bars[: args.bars]
-        features = build_features(bars)
-        clf = DirectionClassifier(horizon=args.horizon)
-        score = clf.walk_forward_score(features, n_splits=4)
+        ds.bars = ds.bars[: args.bars]
+        clf = DirectionClassifier(DirectionConfig(horizon=args.horizon))
+        X, y = features_and_labels(ds, horizon=args.horizon)
+        score = clf.walk_forward_score(X, labels=y, n_splits=4)
         out = {
-            "n_samples": len(features),
-            "n_features": features.shape[1] if hasattr(features, "shape") else len(features[0]),
+            "n_samples": int(len(X)),
+            "n_features": int(X.shape[1]),
             "walk_forward_score": score,
             "model": clf.summary(),
         }
