@@ -24,7 +24,7 @@ fpdf2>=2.8
 
 # ML (lightweight for laptop)
 scikit-learn>=1.6
-joblib>=1.4
+joblib>=1.5.3
 
 # Monitoring
 prometheus-client>=0.21
