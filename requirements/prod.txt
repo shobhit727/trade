@@ -20,7 +20,7 @@ asyncpg>=0.29
 pyarrow>=17.0
 
 # Reporting (monthly PDF)
-fpdf2>=2.8
+fpdf2>=2.8.8
 
 # ML (lightweight for laptop)
 scikit-learn>=1.6
