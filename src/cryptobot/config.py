@@ -127,6 +127,12 @@ class MonitoringSettings(BaseSettings):
     telegram_chat_id: str = ""
     discord_webhook: str = ""
     email_enabled: bool = False
+    email_smtp_host: str = ""
+    email_smtp_port: int = 587
+    email_username: str = ""
+    email_password: str = ""
+    email_from: str = ""
+    email_to: list[str] = []
     health_check_interval: int = 30
 
     model_config = SettingsConfigDict(env_prefix="MONITORING_", extra="ignore")

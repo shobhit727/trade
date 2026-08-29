@@ -142,7 +142,7 @@ class VWAPSchedule:
         per_minute = len(self.slices) / self.horizon_minutes
         if per_minute <= 0:
             return Decimal("0")
-        idx = int(minute * per_minute / self.horizon_minutes * len(self.slices))
+        idx = int(minute * per_minute)
         idx = max(0, min(idx, len(self.slices) - 1))
         return self.slices[idx]
 

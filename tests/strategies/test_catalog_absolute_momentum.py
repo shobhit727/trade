@@ -22,3 +22,15 @@ def test_absolute_momentum_long_signal():
 
 def test_absolute_momentum_short_signal():
     assert any(o.side.value == "SELL" for o in _series(False))
+
+
+def test_absolute_momentum_neutral_zone_no_signal():
+    # Flat prices => momentum ~0 => neutral zone must yield NO order (issue #47).
+    # A -1 in the neutral zone would wrongly flip the book short on flat markets.
+    s = AbsoluteMomentumStrategy()
+    out = []
+    for i in range(200):
+        o = s.feed("BTC", 100.0, 100.0, 100.0, 1000.0)
+        if o:
+            out.append(o)
+    assert out == []

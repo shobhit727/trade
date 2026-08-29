@@ -29,4 +29,4 @@ class AbsoluteMomentumStrategy(SignalStrategy):
         m = roc(closes, self.config.period)
         if m != m:
             return 0
-        return 1 if m > self.config.threshold else (-1 if m < -self.config.threshold else -1)
+        return 1 if m > self.config.threshold else (-1 if m < -self.config.threshold else 0)
