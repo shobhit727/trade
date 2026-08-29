@@ -40,6 +40,32 @@ class RiskCheckResult:
         )
 
 
+def _price_returns(prices: "deque[tuple[float, Decimal]]") -> list[float]:
+    """Period-over-period simple returns from a price-history deque."""
+    out: list[float] = []
+    for i in range(1, len(prices)):
+        prev = float(prices[i - 1][1])
+        if prev == 0:
+            continue
+        out.append((float(prices[i][1]) - prev) / prev)
+    return out
+
+
+def _pearson(a: list[float], b: list[float]) -> "float | None":
+    """Pearson correlation of two equal-length return series, or None if undefined."""
+    n = len(a)
+    if n < 2:
+        return None
+    mean_a = sum(a) / n
+    mean_b = sum(b) / n
+    cov = sum((x - mean_a) * (y - mean_b) for x, y in zip(a, b))
+    var_a = sum((x - mean_a) ** 2 for x in a)
+    var_b = sum((y - mean_b) ** 2 for y in b)
+    if var_a == 0 or var_b == 0:
+        return None
+    return cov / (var_a**0.5 * var_b**0.5)
+
+
 @dataclass
 class RiskManager:
     portfolio: PortfolioManager = field(default_factory=get_portfolio_manager)
@@ -204,16 +230,21 @@ class RiskManager:
                         scaled_cap,
                     )
 
-        if correlation_matrix and notional > 0:
-            for (a, b), corr in correlation_matrix.items():
-                if a == order.symbol or b == order.symbol:
-                    if abs(corr) > self.limits.max_correlation:
-                        return RiskCheckResult(
-                            False,
-                            f"Correlation with {a}/{b} = {corr:.2f} exceeds limit {self.limits.max_correlation:.2f}",
-                            abs(corr),
-                            self.limits.max_correlation,
-                        )
+        if notional > 0:
+            corr = Decimal("0")
+            if correlation_matrix:
+                for (a, b), c in correlation_matrix.items():
+                    if a == order.symbol or b == order.symbol:
+                        corr = max(corr, abs(c))
+            else:
+                corr = self._max_correlation_for(order.symbol)
+            if corr > self.limits.max_correlation:
+                return RiskCheckResult(
+                    False,
+                    f"Correlation {corr:.2f} with existing positions exceeds limit {self.limits.max_correlation:.2f}",
+                    corr,
+                    self.limits.max_correlation,
+                )
 
         # Stop-loss requirement applies in backtest too (#33): a strategy that
         # would be rejected live for lacking a stop must also be rejected in
@@ -230,20 +261,44 @@ class RiskManager:
                 self.limits.require_stop_loss_above_usd,
             )
 
-        strat_state = self.strategy_tracker.get(order.strategy)
         # Daily-loss limit applies in backtest too (#33): identical risk posture
-        # between simulation and production.
-        if (
-            strat_state.daily_pnl < -self.limits.max_daily_loss_pct * state.total_equity
-        ):
+        # between simulation and production. Uses the portfolio aggregate daily
+        # P&L (the per-strategy tracker is not wired to live P&L events, so the
+        # portfolio-level figure is the authoritative source here).
+        if state.daily_pnl < -self.limits.max_daily_loss_pct * state.total_equity:
             return RiskCheckResult(
                 False,
                 f"Strategy {order.strategy} daily loss limit exceeded",
-                strat_state.daily_pnl,
+                state.daily_pnl,
                 -self.limits.max_daily_loss_pct * state.total_equity,
             )
 
         return RiskCheckResult(True, "OK")
+
+    def _max_correlation_for(self, symbol: str) -> Decimal:
+        """Max absolute correlation of ``symbol`` against all other tracked symbols.
+
+        Used when no explicit ``correlation_matrix`` is supplied to ``check_order``.
+        Correlations are derived from the rolling price history the risk manager
+        already records per symbol (see ``_record_price``). Returns 0 when there is
+        insufficient history or no other symbol to compare against.
+        """
+        target = self._price_history.get(symbol)
+        if target is None or len(target) < 2:
+            return Decimal("0")
+        target_rets = _price_returns(target)
+        best = Decimal("0")
+        for other, hist in self._price_history.items():
+            if other == symbol or len(hist) < 2:
+                continue
+            other_rets = _price_returns(hist)
+            n = min(len(target_rets), len(other_rets))
+            if n < 2:
+                continue
+            c = _pearson(target_rets[-n:], other_rets[-n:])
+            if c is not None:
+                best = max(best, Decimal(str(abs(c))))
+        return best
 
     def report_risk_metrics(self) -> None:
         """Emit current portfolio risk gauges (Prometheus). Safe to call on a timer."""

@@ -16,8 +16,15 @@ class KillSwitch:
             self.active = False
             self.reason = ""
             return False, ""
-        self.active, self.reason = portfolio.check_kill_switch()
-        return self.active, self.reason
+        # Latch: once tripped, stay tripped until an explicit reset() so a
+        # transient recovery in portfolio metrics cannot silently re-arm trading.
+        if self.active:
+            return True, self.reason
+        active, reason = portfolio.check_kill_switch()
+        if active:
+            self.active = True
+            self.reason = reason
+        return active, reason
 
     def reset(self) -> None:
         self.active = False
