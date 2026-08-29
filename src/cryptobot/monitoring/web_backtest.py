@@ -27,6 +27,7 @@ import pandas as pd
 
 from cryptobot.backtest.metrics import PerformanceMetrics
 from cryptobot.backtest.runner import generate_synthetic_ohlcv, make_strategy, run_backtest
+from cryptobot.risk.limits import RiskLimits
 from cryptobot.strategies.registry import _STRATEGY_REGISTRY_MAP
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,18 @@ def load_bars(symbol: str, timeframe: str, fallback_bars: int = 400):
 
 # Local alias to avoid importing OhlcvBar twice under different names.
 from cryptobot.backtest.runner import OhlcvBar as OhlcvBar_  # noqa: E402
+
+# The sweep is a mechanics/regression test for the web-backtest feature: it must
+# verify that every catalog strategy can actually trade and that per-algo trades
+# are stored. It is intentionally NOT gated by the conservative production risk
+# limits (20% single-position / 80% total-exposure), which would reject the
+# risk_fraction=1.0 orders the sweep emits. Real backtests still enforce those
+# limits via run_backtest's default RiskLimits (#33).
+_SWEEP_RISK_LIMITS = RiskLimits(
+    max_total_exposure_pct=Decimal("1.0"),
+    max_single_position_pct=Decimal("1.0"),
+    require_stop_loss_above_usd=Decimal("1e18"),
+)
 
 
 def _curve_metrics(curve) -> dict[str, float]:
@@ -168,7 +181,7 @@ class BacktestJobManager:
                     bars, strategy, symbol=job.symbol,
                     initial_capital=capital, risk_fraction=1.0,
                     slippage_bps=_SLIPPAGE_BPS, commission_bps=_COMMISSION_BPS,
-                    collect_trades=True,
+                    collect_trades=True, risk_limits=_SWEEP_RISK_LIMITS,
                 ))
                 m = _curve_metrics(result.equity_curve)
                 entry.update(ret=m["ret"], sharpe=m["sharpe"], mdd=m["mdd"],

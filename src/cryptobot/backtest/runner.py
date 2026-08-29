@@ -15,6 +15,7 @@ from cryptobot.core.events import Event, EventType, OrderStatus
 from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
 from cryptobot.execution.engine import ExecutionEngine
 from cryptobot.execution.venue.simulated import SimulatedVenue
+from cryptobot.risk.limits import RiskLimits
 from cryptobot.risk.manager import RiskManager
 from cryptobot.strategies.mean_reversion import MeanReversionConfig, MeanReversionStrategy
 from cryptobot.strategies.trend_following import TrendFollowingConfig, TrendFollowingStrategy
@@ -281,6 +282,7 @@ async def run_backtest(
     funding: FundingProvider | None = None,
     risk_fraction: float = 0.0,
     max_leverage: Decimal | None = None,
+    risk_limits: RiskLimits | None = None,
 ) -> BacktestRunResult:
     """Run a backtest with optional equity-fractional order sizing.
 
@@ -299,7 +301,11 @@ async def run_backtest(
         )
         execution_engine = ExecutionEngine(
             venue=venue,
-            risk_manager=RiskManager(portfolio=portfolio, backtest_mode=True),
+            risk_manager=RiskManager(
+                portfolio=portfolio,
+                backtest_mode=True,
+                limits=risk_limits or RiskLimits(),
+            ),
         )
     else:
         portfolio = execution_engine.risk_manager.portfolio

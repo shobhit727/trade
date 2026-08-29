@@ -23,6 +23,7 @@ class SignalConfig:
     position_pct: float = 1.0  # fraction of signal captured per flip
     quick_enter: bool = True
     quick_exit: bool = False
+    stop_pct: float = 0.05  # protective stop distance for the risk-manager stop-loss requirement
 
 
 class SignalStrategy:
@@ -118,6 +119,17 @@ class SignalStrategy:
                 strategy=self.name,
             )
             o.reduce_only = reduce_only
+            if not reduce_only:
+                # Emit a protective stop so the order satisfies the risk manager's
+                # stop-loss requirement (enforced in backtest too, #33). The backtest
+                # engine does not simulate stop fills, so this is metadata only.
+                stop_pct = Decimal(str(getattr(self.config, "stop_pct", 0.05)))
+                price = Decimal(str(close))
+                o.stop_price = (
+                    price * (Decimal(1) - stop_pct)
+                    if side is OrderSide.BUY
+                    else price * (Decimal(1) + stop_pct)
+                )
             return o
 
         qty = self.config.quantity

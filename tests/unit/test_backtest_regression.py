@@ -62,11 +62,14 @@ def test_regression_same_seed_is_deterministic():
 
 
 def test_regression_risk_manager_skips_wall_clock_checks_in_backtest(monkeypatch):
-    """Backtests must not depend on wall-clock time.
+    """Backtests must not depend on wall-clock time, but still enforce limits.
 
-    The order rate limiter and reference-price history window on real elapsed
-    time; at scale (long runs) that makes fills depend on machine pacing.
-    backtest_mode must short-circuit both paths.
+    backtest_mode short-circuits only the two genuinely time-dependent
+    operational checks: the order rate limiter and the reference-price history
+    window (both key off real elapsed time). Every *structural* risk limit
+    (order size, leverage, exposure, positions, stop-loss, daily loss) applies
+    in backtest mode too (#33) so a backtest cannot be "certified" under limits
+    that do not exist in production.
     """
     import importlib
     from decimal import Decimal
@@ -109,6 +112,53 @@ def test_regression_risk_manager_skips_wall_clock_checks_in_backtest(monkeypatch
     bt = run_with(backtest_mode=True)
     assert bt.n_trades > 0
     assert bt.final_equity != live.final_equity
+
+    # Structural limits still apply in backtest mode (#33): an oversized order
+    # that would be rejected live must also be rejected in simulation, so a
+    # backtest cannot be "certified" under limits that do not exist in prod.
+    from cryptobot.core.events import OrderEvent, OrderSide, OrderType
+
+    portfolio_bt = PortfolioManager(PortfolioMode.BACKTEST)
+    venue_bt = SimulatedVenue(slippage_bps=Decimal("3"), commission_bps=Decimal("5"))
+    venue_bt.prices["BTCUSDT"] = Decimal("65000")
+    risk_bt = RiskManager(portfolio=portfolio_bt, backtest_mode=True)
+    ee_bt = ExecutionEngine(venue=venue_bt, risk_manager=risk_bt)
+    oversized = OrderEvent(
+        symbol="BTCUSDT",
+        side=OrderSide.BUY,
+        type=OrderType.MARKET,
+        quantity=Decimal("1"),
+        price=Decimal("65000"),
+    )
+    filled = asyncio.run(ee_bt.submit_order(oversized))
+    assert filled.status.value == "REJECTED"
+
+    # Stop-loss guard (#33 root cause): an entry/flip order whose notional is at
+    # or above require_stop_loss_above_usd (1000) but carries no stop_price must
+    # be rejected in backtest mode too. Catalog strategies used to emit orders
+    # with stop_price=None, which silently killed every sweep backtest.
+    no_stop = OrderEvent(
+        symbol="BTCUSDT",
+        side=OrderSide.BUY,
+        type=OrderType.MARKET,
+        quantity=Decimal("1"),
+        price=Decimal("2000"),  # 2000 notional >= 1000, within size limits
+    )
+    assert no_stop.stop_price is None
+    filled_no_stop = asyncio.run(ee_bt.submit_order(no_stop))
+    assert filled_no_stop.status.value == "REJECTED"
+
+    # And the same order WITH a stop_price must pass the stop-loss guard.
+    with_stop = OrderEvent(
+        symbol="BTCUSDT",
+        side=OrderSide.BUY,
+        type=OrderType.MARKET,
+        quantity=Decimal("1"),
+        price=Decimal("2000"),
+        stop_price=Decimal("1900"),
+    )
+    filled_with_stop = asyncio.run(ee_bt.submit_order(with_stop))
+    assert filled_with_stop.status.value == "FILLED"
 
 
 def test_regression_more_bars_changes_trades():
@@ -208,8 +258,9 @@ def test_regression_reduce_only_exit_after_rejected_entry_opens_nothing():
 
     portfolio = PortfolioManager(PortfolioMode.BACKTEST)
     venue = SimulatedVenue(slippage_bps=Decimal("3"), commission_bps=Decimal("5"))
-    # backtest_mode=False so the entry can actually be rejected by risk (live
-    # gates); under backtest_mode=True every sizing gate is bypassed.
+    # backtest_mode=False so the entry is rejected by the (live) sizing gates;
+    # note sizing gates now also apply under backtest_mode=True (#33), so the
+    # rejection would occur either way — this test pins the reduce_only skip.
     risk = RiskManager(portfolio=portfolio, backtest_mode=False)
     ee = ExecutionEngine(venue=venue, risk_manager=risk)
 

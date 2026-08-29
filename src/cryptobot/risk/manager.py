@@ -111,7 +111,11 @@ class RiskManager:
         else:
             notional = Decimal("0")
 
-        if not self.backtest_mode and notional > 0:
+        # Structural sizing limits apply in BOTH live and backtest mode (#33):
+        # a backtest must be rejected by the same order-size / leverage gates
+        # that would reject it live, otherwise backtest equity is "certified"
+        # under limits that do not exist in production.
+        if notional > 0:
             if notional < self.limits.min_order_size_usd:
                 return RiskCheckResult(
                     False,
@@ -135,20 +139,27 @@ class RiskManager:
                     self.limits.max_leverage,
                 )
 
-            ref_price = self._get_reference_price(order.symbol)
-            if ref_price is not None and ref_price > 0:
-                deviation = abs(notional_price - ref_price) / ref_price
-                if deviation > self.limits.price_deviation_pct:
-                    return RiskCheckResult(
-                        False,
-                        f"Price deviates {deviation:.2%} from reference (> {self.limits.price_deviation_pct:.2%})",
-                        deviation,
-                        self.limits.price_deviation_pct,
-                    )
+            # Reference-price deviation relies on a wall-clock price window and
+            # is intentionally bypassed in backtest mode (backtests must not
+            # depend on real elapsed time); all other sizing gates above apply.
+            if not self.backtest_mode:
+                ref_price = self._get_reference_price(order.symbol)
+                if ref_price is not None and ref_price > 0:
+                    deviation = abs(notional_price - ref_price) / ref_price
+                    if deviation > self.limits.price_deviation_pct:
+                        return RiskCheckResult(
+                            False,
+                            f"Price deviates {deviation:.2%} from reference (> {self.limits.price_deviation_pct:.2%})",
+                            deviation,
+                            self.limits.price_deviation_pct,
+                        )
             self._record_price(order.symbol, notional_price)
 
         state = self.portfolio.get_state()
-        if state.total_equity > 0 and not self.backtest_mode:
+        # Position-count / exposure / single-position limits apply in backtest
+        # too (#33): they bound how much risk a strategy may take on, which is
+        # identical between simulation and production.
+        if state.total_equity > 0:
             open_positions = sum(1 for p in state_manager.get_positions() if p.quantity > 0)
             if not order.reduce_only and open_positions >= self.limits.max_open_positions:
                 return RiskCheckResult(
@@ -204,9 +215,11 @@ class RiskManager:
                             self.limits.max_correlation,
                         )
 
+        # Stop-loss requirement applies in backtest too (#33): a strategy that
+        # would be rejected live for lacking a stop must also be rejected in
+        # simulation, so backtest P&L reflects the same risk posture.
         if (
-            not self.backtest_mode
-            and not order.reduce_only
+            not order.reduce_only
             and notional >= self.limits.require_stop_loss_above_usd
             and order.stop_price is None
         ):
@@ -218,9 +231,10 @@ class RiskManager:
             )
 
         strat_state = self.strategy_tracker.get(order.strategy)
+        # Daily-loss limit applies in backtest too (#33): identical risk posture
+        # between simulation and production.
         if (
-            not self.backtest_mode
-            and strat_state.daily_pnl < -self.limits.max_daily_loss_pct * state.total_equity
+            strat_state.daily_pnl < -self.limits.max_daily_loss_pct * state.total_equity
         ):
             return RiskCheckResult(
                 False,
