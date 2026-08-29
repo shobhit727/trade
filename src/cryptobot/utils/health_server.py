@@ -24,12 +24,37 @@ class _HealthSnapshot:
 
     def snapshot(self) -> dict[str, Any]:
         uptime = (datetime.now(UTC) - self.started_at).total_seconds()
-        return {
+        base: dict[str, Any] = {
             "status": "ok",
             "service": "cryptobot",
             "uptime_seconds": round(uptime, 3),
             "now": datetime.now(UTC).isoformat(),
         }
+        try:
+            from cryptobot.monitoring.health import get_health_monitor
+
+            monitor = get_health_monitor()
+            component_health = monitor.get_all_health()
+            if component_health:
+                base["status"] = monitor.get_overall_status().value
+                base["components"] = {
+                    comp.value: {
+                        "status": ch.status.value,
+                        "checks": [
+                            {
+                                "name": c.check_name,
+                                "status": c.status.value,
+                                "message": c.message,
+                                "details": c.details,
+                            }
+                            for c in ch.checks
+                        ],
+                    }
+                    for comp, ch in component_health.items()
+                }
+        except Exception:  # pragma: no cover - health monitor is best-effort
+            logger.debug("health snapshot: monitor unavailable", exc_info=True)
+        return base
 
 
 class _Handler(BaseHTTPRequestHandler):

@@ -326,22 +326,27 @@ class HealthMonitor:
                     if check.check_name not in latest_checks or check.timestamp > latest_checks[check.check_name].timestamp:
                         latest_checks[check.check_name] = check
 
-                # Determine status
+                # Determine status. `latest_checks` holds the most recent result
+                # for every check name, including results produced by HealthChecker
+                # instances (e.g. RiskEngineHealthChecker, DataFeedHealthChecker)
+                # which are NOT registered in self._checks. A result with no
+                # matching registered HealthCheck is treated as critical so that
+                # e.g. a risk kill-switch surfaces as UNHEALTHY on its component.
+                registered = {
+                    c.name: c for c in self._checks.values() if c.component == component
+                }
                 critical_failed = False
                 any_failed = False
                 any_degraded = False
 
-                for check in self._checks.values():
-                    if check.component != component:
-                        continue
-                    latest = latest_checks.get(check.name)
-                    if latest:
-                        if latest.status == HealthStatus.UNHEALTHY:
-                            any_failed = True
-                            if check.critical:
-                                critical_failed = True
-                        elif latest.status == HealthStatus.DEGRADED:
-                            any_degraded = True
+                for name, latest in latest_checks.items():
+                    if latest.status == HealthStatus.UNHEALTHY:
+                        any_failed = True
+                        reg = registered.get(name)
+                        if reg is None or reg.critical:
+                            critical_failed = True
+                    elif latest.status == HealthStatus.DEGRADED:
+                        any_degraded = True
 
                 if critical_failed:
                     health.status = HealthStatus.UNHEALTHY
@@ -483,7 +488,16 @@ class DataFeedHealthChecker(HealthChecker):
                     age = (_utcnow() - ticker.timestamp).total_seconds()
                     staleness[symbol] = age
 
-            max_staleness = max(staleness.values()) if staleness else 0
+            if not staleness:
+                # No ticker data at all: the feed is down, not "fresh".
+                return HealthResult(
+                    check_name="data_freshness",
+                    component=ComponentType.DATA_FEED,
+                    status=HealthStatus.UNHEALTHY,
+                    message="No market data received from feed",
+                    details={"staleness": staleness},
+                )
+            max_staleness = max(staleness.values())
             if max_staleness > 60:
                 return HealthResult(
                     check_name="data_freshness",
@@ -771,11 +785,17 @@ async def _check_data_freshness(manager: Any):
     """Check data feed freshness."""
     symbols = settings.exchange.symbols or [settings.exchange.default_symbol]
     max_age = 0
+    saw_ticker = False
     for symbol in symbols:
         ticker = manager.get_ticker(symbol)
         if ticker:
+            saw_ticker = True
             age = (_utcnow() - ticker.timestamp).total_seconds()
             max_age = max(max_age, age)
+
+    if not saw_ticker:
+        # No ticker data at all: the feed is down, not "fresh".
+        raise Exception("No market data received from feed")
 
     if max_age > 60:
         raise Exception(f"Data stale: max age {max_age:.0f}s")

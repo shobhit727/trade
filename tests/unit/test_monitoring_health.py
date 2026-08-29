@@ -20,6 +20,7 @@ from cryptobot.monitoring.health import (
     HealthStatus,
     RiskEngineHealthChecker,
     StrategyEngineHealthChecker,
+    _check_data_freshness,
     create_standard_checks,
 )
 
@@ -322,3 +323,52 @@ async def test_false_return_is_unhealthy():
     assert exchange_health is not None
     check = next(c for c in exchange_health.checks if c.check_name == "returns_false")
     assert check.status == HealthStatus.UNHEALTHY
+
+
+# --- Issue #34: a feed that delivers no ticker data must be UNHEALTHY, not "fresh" ---
+
+
+class _NoDataManager:
+    """A market-data manager that never returns any ticker."""
+
+    def get_ticker(self, symbol):  # noqa: ANN001
+        return None
+
+
+@pytest.mark.asyncio
+async def test_data_feed_checker_unhealthy_without_tickers():
+    checker = DataFeedHealthChecker(_NoDataManager())
+    result = await checker.check()
+    assert result.status == HealthStatus.UNHEALTHY
+    assert "No market data received from feed" in result.message
+
+
+@pytest.mark.asyncio
+async def test_check_data_freshness_raises_without_tickers():
+    with pytest.raises(Exception, match="No market data received from feed"):
+        await _check_data_freshness(_NoDataManager())
+
+
+# --- Issue #35: HealthChecker results (not registered HealthChecks) must surface ---
+
+
+@pytest.mark.asyncio
+async def test_component_status_reflects_checker_results():
+    monitor = HealthMonitor(check_interval=0.01)
+    comp = ComponentType.RISK_ENGINE
+    monitor._component_health[comp] = ComponentHealth(
+        component=comp,
+        status=HealthStatus.UNKNOWN,
+        checks=[
+            HealthResult(
+                check_name="risk_limits",
+                component=comp,
+                status=HealthStatus.UNHEALTHY,
+                message="Kill switch engaged",
+            )
+        ],
+    )
+    await monitor._update_component_statuses()
+    health = monitor.get_component_health(comp)
+    assert health is not None
+    assert health.status == HealthStatus.UNHEALTHY
