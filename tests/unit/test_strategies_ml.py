@@ -23,7 +23,7 @@ from cryptobot.strategies.stat_arb import StatArbConfig, StatArbStrategy
 
 
 def test_market_making_quote_changes_with_inventory():
-    cfg = MarketMakingConfig(gamma=0.5, sigma=0.01, kappa=1.5, A=0.025)
+    cfg = MarketMakingConfig(gamma=0.5, sigma=0.01, kappa=1.5)
     strat = MarketMakingStrategy(cfg)
     bid_a, ask_a = strat.quote(Decimal("100"), t_remaining=1.0)
     strat.inventory = Decimal("3")
@@ -32,12 +32,12 @@ def test_market_making_quote_changes_with_inventory():
     assert ask_b < ask_a
 
 
-def test_market_making_run_on_history_emits_fills():
+async def test_market_making_run_on_history_emits_fills():
     bars = load_bars(source="synthetic", symbol="BTCUSDT", timeframe="1h")
     bars.bars = bars.bars[:30]
     cfg = MarketMakingConfig(quantity=Decimal("0.5"), max_inventory=Decimal("5"))
     strat = MarketMakingStrategy(cfg)
-    fills = strat.run_on_history(bars.bars)
+    fills = await strat.run_on_history(bars.bars)
     assert isinstance(fills, list)
     assert all(f.filled_quantity > 0 for f in fills)
 

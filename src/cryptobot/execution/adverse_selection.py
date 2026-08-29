@@ -159,25 +159,40 @@ class AdverseSelectionGuard:
         return list(self._positions.keys())
 
 
-async def attach_to_engine(engine, guard: AdverseSelectionGuard) -> None:
-    """Optional helper: register cancel handler on ExecutionEngine.submit_order path.
+def _install_guard_hook(engine, guard: AdverseSelectionGuard) -> None:
+    """Wrap ``engine.submit_order`` so every filled order is registered with the
+    adverse-selection guard at the most recent book top (``engine._last_top``).
 
-    The guard stores ``QueuePosition`` snapshots and the caller is expected to:
-    1. Call ``guard.register(order, top)`` right after submit.
-    2. Periodically call ``guard.step(order_id, top)`` with fresh book snapshots.
-    3. Act on ``AdverseAction.CANCEL`` by calling ``engine.cancel_order(order_id)``.
+    Idempotent: safe to call more than once. Raises ``TypeError`` if the engine
+    lacks a ``cancel_order`` coroutine (the guard needs it to cancel toxic flow).
     """
-
     if not hasattr(engine, "cancel_order"):
         raise TypeError("expected object with cancel_order coroutine")
 
-    original_submit = engine.submit_order
-
-    async def wrapped(order: OrderEvent) -> OrderEvent:
-        return await original_submit(order)
-
-    engine.submit_order = wrapped  # type: ignore[assignment]
     engine.adverse_guard = guard  # type: ignore[attr-defined]
+    original_submit = engine.submit_order
+    if getattr(original_submit, "_adverse_wrapped", False):
+        return
+
+    async def wrapped(order: OrderEvent, *args, **kwargs) -> OrderEvent:
+        filled = await original_submit(order, *args, **kwargs)
+        top = getattr(engine, "_last_top", None)
+        if top is not None:
+            guard.register(order, top)
+        return filled
+
+    wrapped._adverse_wrapped = True  # type: ignore[attr-defined]
+    engine.submit_order = wrapped  # type: ignore[assignment]
+
+
+async def attach_to_engine(engine, guard: AdverseSelectionGuard) -> None:
+    """Optional helper: register the adverse-selection guard on the engine's
+    submit path. Every order submitted after this is auto-registered with the
+    guard at the last known book top (``engine._last_top``), which the strategy
+    sets via ``on_top``. Act on ``AdverseAction.CANCEL`` (from ``guard.step``)
+    by calling ``engine.cancel_order(order_id)``.
+    """
+    _install_guard_hook(engine, guard)
     logger.debug("AdverseSelectionGuard attached to engine")
 
 
@@ -188,4 +203,5 @@ __all__ = [
     "QueuePosition",
     "TopOfBook",
     "attach_to_engine",
+    "_install_guard_hook",
 ]

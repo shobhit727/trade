@@ -246,6 +246,11 @@ async def _run(args: argparse.Namespace) -> int:
         ds.bars = ds.bars[: args.bars]
         venue = SimulatedVenue()
         engine = ExecutionEngine(venue=venue, risk_manager=RiskManager())
+        # The mm CLI is a simulation: bypass the live kill-switch / rate-limiter
+        # gates (which depend on wall-clock time) while keeping the structural
+        # order-size limits. Without this, the per-minute rate limit rejects
+        # every order after the first 60 in a tight loop.
+        engine.risk_manager.backtest_mode = True
         cfg = MarketMakingConfig(
             symbol=args.symbol,
             gamma=args.gamma,
@@ -255,7 +260,7 @@ async def _run(args: argparse.Namespace) -> int:
         )
         strategy = MarketMakingStrategy(cfg)
         strategy.attach_execution(engine)
-        fills = strategy.run_on_history(ds.bars)
+        fills = await strategy.run_on_history(ds.bars)
         if args.json:
             json.dump(
                 {
