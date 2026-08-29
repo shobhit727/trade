@@ -595,6 +595,7 @@ def record_position_update(
     else:
         positions_open.labels(strategy=strategy, symbol=symbol, side=side).set(0)
         position_size.labels(strategy=strategy, symbol=symbol, side=side).set(0)
+        position_pnl_unrealized.labels(strategy=strategy, symbol=symbol).set(0.0)
 
     if realized_pnl != 0:
         key = (strategy, symbol)

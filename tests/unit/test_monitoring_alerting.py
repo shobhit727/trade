@@ -208,3 +208,89 @@ def test_get_alert_manager_returns_singleton():
     m2 = get_alert_manager()
     assert m1 is m2
     assert isinstance(m1, AlertManager)
+
+
+# --- Issue #50: re-notify, escalation, auto-resolve, bounded history ---
+
+
+@pytest.mark.asyncio
+async def test_fire_renotifies_after_cooldown_and_updates_timestamp():
+    mgr = AlertManager()
+    ch = _RecordingChannel(name="a")
+    mgr.add_channel(ch)
+    mgr.add_rule(
+        AlertRule(
+            name="r",
+            severity=AlertSeverity.WARNING,
+            channels=["a"],
+            cooldown=timedelta(seconds=0),  # allow immediate re-fire
+        )
+    )
+    alert = _alert()
+    first = await mgr.fire(alert)
+    assert first == 1
+    assert len(ch.alerts) == 1
+    # Re-fire: cooldown elapsed (0s) -> re-notify, updates last-seen timestamp.
+    second = await mgr.fire(alert)
+    assert second == 1
+    assert len(ch.alerts) == 2
+    assert mgr.active_alerts[alert.fingerprint].timestamp == alert.timestamp
+
+
+@pytest.mark.asyncio
+async def test_fire_escalates_persistent_alert_to_extra_channels():
+    mgr = AlertManager()
+    base = _RecordingChannel(name="a")
+    esc = _RecordingChannel(name="b")
+    mgr.add_channel(base)
+    mgr.add_channel(esc)
+    mgr.add_rule(
+        AlertRule(
+            name="r",
+            severity=AlertSeverity.WARNING,
+            channels=["a"],
+            cooldown=timedelta(seconds=0),
+            escalation={AlertSeverity.WARNING: ["b"]},
+        )
+    )
+    alert = _alert()
+    await mgr.fire(alert)  # first fire: base channel only
+    assert len(base.alerts) == 1
+    assert len(esc.alerts) == 0
+    await mgr.fire(alert)  # re-notify: escalate to b
+    assert len(base.alerts) == 2
+    assert len(esc.alerts) == 1
+
+
+@pytest.mark.asyncio
+async def test_cleanup_auto_resolves_stale_alert_from_first_seen():
+    mgr = AlertManager()
+    ch = _RecordingChannel(name="a")
+    mgr.add_channel(ch)
+    mgr.add_rule(
+        AlertRule(
+            name="r",
+            severity=AlertSeverity.WARNING,
+            channels=["a"],
+            auto_resolve=True,
+            resolve_after=timedelta(seconds=0),
+        )
+    )
+    old = _alert()
+    old.timestamp = datetime.now(UTC) - timedelta(hours=2)
+    await mgr.fire(old)
+    assert len(mgr.active_alerts) == 1
+    await mgr._cleanup()
+    assert len(mgr.active_alerts) == 0
+    assert old.fingerprint not in mgr._first_seen
+
+
+def test_alert_history_is_bounded_deque():
+    from collections import deque
+
+    mgr = AlertManager()
+    assert isinstance(mgr.alert_history, deque)
+    assert mgr.alert_history.maxlen == 1000
+    for _ in range(1001):
+        mgr.alert_history.append(_alert())
+    assert len(mgr.alert_history) == 1000

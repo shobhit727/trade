@@ -372,3 +372,33 @@ async def test_component_status_reflects_checker_results():
     health = monitor.get_component_health(comp)
     assert health is not None
     assert health.status == HealthStatus.UNHEALTHY
+
+
+@pytest.mark.asyncio
+async def test_health_monitor_respects_per_check_interval():
+    """Issue #50: per-check interval_seconds must gate the monitor loop."""
+    monitor = HealthMonitor(check_interval=0.01)
+    calls = {"n": 0}
+
+    def fn():
+        calls["n"] += 1
+        return True
+
+    monitor.register_check(
+        HealthCheck(
+            name="slow_interval",
+            component="EXCHANGE",
+            check_fn=fn,
+            interval_seconds=1000.0,  # far in the future
+            timeout_seconds=1.0,
+        )
+    )
+    # First due_only run executes the check (nothing scheduled yet).
+    await monitor.run_all_checks(due_only=True)
+    assert calls["n"] == 1
+    # Second immediate run must skip it (interval not elapsed).
+    await monitor.run_all_checks(due_only=True)
+    assert calls["n"] == 1
+    # A full run (due_only=False) always executes.
+    await monitor.run_all_checks(due_only=False)
+    assert calls["n"] == 2

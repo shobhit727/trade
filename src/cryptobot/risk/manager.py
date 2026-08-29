@@ -312,7 +312,7 @@ class RiskManager:
         record_risk(
             exposure_pct=float(exposure),
             daily_loss_pct=float(daily_loss),
-            drawdown_pct=float(state.max_drawdown_pct),
+            drawdown_pct=float(state.max_drawdown) * 100,
             kill_switch=bool(active),
             concentration_pct=0.0,
         )

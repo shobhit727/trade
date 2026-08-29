@@ -144,6 +144,8 @@ class HealthMonitor:
         self._running = False
         self._monitor_task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
+        # Per-check next-due timestamps (monotonic seconds); empty until first loop.
+        self._next_due: dict[str, float] = {}
 
         # Callbacks
         self._status_change_callbacks: list[Callable[[ComponentType, HealthStatus, HealthStatus], Any]] = []
@@ -207,17 +209,38 @@ class HealthMonitor:
         """Main monitoring loop."""
         while self._running:
             try:
-                await self.run_all_checks()
+                await self.run_all_checks(due_only=True)
             except Exception as e:
                 logger.error("Health monitor error: %s", e)
-            await asyncio.sleep(self.check_interval)
+            # Sleep until the next per-check is due (or the global interval).
+            sleep_for = self.check_interval
+            if self._next_due:
+                now = time.monotonic()
+                soonest = min(self._next_due.values())
+                sleep_for = max(0.0, min(self.check_interval, soonest - now))
+            await asyncio.sleep(sleep_for)
 
-    async def run_all_checks(self) -> dict[ComponentType, ComponentHealth]:
-        """Run all registered health checks."""
+    async def run_all_checks(
+        self, due_only: bool = False
+    ) -> dict[ComponentType, ComponentHealth]:
+        """Run registered health checks.
+
+        When ``due_only`` is True (used by the monitor loop), checks whose
+        per-check ``interval_seconds`` has not elapsed since their last run are
+        skipped; component checkers always run. This honors per-check intervals
+        set via :meth:`update_check_interval` instead of running everything at
+        the global ``check_interval``.
+        """
+        now = time.monotonic()
         async with self._lock:
-            # Run check functions
+            # Run check functions (respecting per-check intervals when due_only)
             for check in self._checks.values():
+                if due_only:
+                    due_at = self._next_due.get(check.name)
+                    if due_at is not None and now < due_at:
+                        continue
                 await self._run_check(check)
+                self._next_due[check.name] = now + max(0.0, check.interval_seconds)
 
             # Run checkers
             for checker in self._checkers.values():
