@@ -128,4 +128,23 @@ mod tests {
         assert!(mid < 1.0 && mid > 0.2);
         assert_eq!(drawdown_scale(1.0, 0.10, 0.2), 0.2);
     }
+
+    #[test]
+    fn non_finite_inputs_fail_closed() {
+        // Issue #41: NaN/inf inputs must fail closed, not pass every gate
+        // (NaN > x is always false, so the raw comparisons would pass).
+        let l = RiskLimits::default();
+        assert!(matches!(
+            check_order(&l, f64::NAN, 0.1, 1.0),
+            LimitCheck::Fail { .. }
+        ));
+        assert!(matches!(
+            check_order(&l, 0.1, f64::NAN, 1.0),
+            LimitCheck::Fail { .. }
+        ));
+        assert!(matches!(
+            check_order(&l, 0.1, 0.1, f64::INFINITY),
+            LimitCheck::Fail { .. }
+        ));
+    }
 }
