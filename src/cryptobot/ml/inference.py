@@ -214,6 +214,17 @@ class InferencePipeline:
         # Simple hash-based assignment
         return "treatment" if (time.time() * 1000) % 100 < (self.config.ab_test_split * 100) else "control"
 
+    def _cache_key(self, request: InferenceRequest) -> str | None:
+        """Stable cache key for a request, or None when features are absent.
+
+        The cache lookup and the cache store must use the *same* key, otherwise
+        the cache can never hit (issue #48). The model version is part of the
+        key so different versions are never conflated.
+        """
+        if request.features is None:
+            return None
+        return f"{request.model_type}:{request.version}:{hash(request.features.tobytes())}"
+
     async def predict(
         self,
         request: InferenceRequest,
@@ -222,8 +233,8 @@ class InferencePipeline:
         start_time = time.perf_counter()
 
         # Check cache
-        cache_key = f"{request.model_type}:{request.version}:{hash(request.features.tobytes()) if request.features is not None else 'none'}"
-        if self.config.enable_caching:
+        cache_key = self._cache_key(request)
+        if self.config.enable_caching and cache_key is not None:
             cached = await self.cache.get(cache_key)
             if cached:
                 response = InferenceResponse(
@@ -273,8 +284,8 @@ class InferencePipeline:
         )
 
         # Cache result
-        if self.config.enable_caching:
-            cache_key = f"{request.model_type}:{hash(request.features.tobytes())}"
+        cache_key = self._cache_key(request)
+        if self.config.enable_caching and cache_key is not None:
             await self.cache.set(cache_key, {
                 "predictions": predictions,
                 "probabilities": probs,

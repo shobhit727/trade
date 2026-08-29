@@ -112,4 +112,53 @@ def test_model_registry_get_latest():
     assert model in ("model1", "model2")
 
 
+def test_cache_key_consistent_and_includes_version():
+    import numpy as np
+
+    from cryptobot.ml.inference import InferencePipeline
+
+    req = InferenceRequest(model_type="direction", features=np.zeros((4, 3)))
+    k1 = InferencePipeline._cache_key(None, req)
+    k2 = InferencePipeline._cache_key(None, req)
+    assert k1 == k2
+    assert k1 is not None
+    # The model version must be part of the key; the original bug dropped it,
+    # so the store key never matched the lookup key (issue #48).
+    assert "latest" in k1
+
+
+def test_cache_key_none_when_features_absent():
+    from cryptobot.ml.inference import InferencePipeline
+
+    req = InferenceRequest(model_type="direction", features=None)
+    assert InferencePipeline._cache_key(None, req) is None
+
+
+def test_inference_cache_hit_uses_same_key():
+    import asyncio
+    import numpy as np
+
+    from cryptobot.ml.inference import (
+        InferenceConfig,
+        InferencePipeline,
+        InferenceRequest,
+    )
+
+    class FakeModel:
+        def predict(self, features):
+            return np.zeros(features.shape[0])
+
+        def predict_proba(self, features):
+            return np.tile([0.5, 0.5], (features.shape[0], 1))
+
+    pipe = InferencePipeline(config=InferenceConfig(enable_caching=True))
+    pipe._get_model = lambda model_type, version, specific=None: FakeModel()
+
+    req = InferenceRequest(model_type="direction", features=np.zeros((4, 3)))
+    r1 = asyncio.run(pipe.predict(req))
+    r2 = asyncio.run(pipe.predict(req))
+    assert r1.cache_hit is False
+    assert r2.cache_hit is True
+
+
 __all__ = []

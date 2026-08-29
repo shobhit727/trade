@@ -154,3 +154,44 @@ def test_walk_forward_trainer_splits():
         assert train_end > train_start
         assert test_end > test_start
         assert test_start >= train_end + trainer.embargo
+
+
+def test_featureset_to_array_returns_features():
+    from cryptobot.ml.features import FeatureSet
+
+    feats = np.arange(12, dtype=float).reshape(4, 3)
+    fs = FeatureSet(
+        features=feats,
+        feature_names=["a", "b", "c"],
+        timestamps=np.zeros(4, dtype="datetime64[ns]"),
+        config=None,
+    )
+    out = fs.to_array()
+    assert out.shape == (4, 3)
+    assert np.array_equal(out, feats)
+    assert out.dtype == np.float64
+
+
+def test_walk_forward_score_requires_labels():
+    import pytest
+
+    rng = np.random.default_rng(1)
+    X = rng.normal(size=(100, 6))
+    clf = DirectionClassifier()
+    # Labels must not be fabricated when absent (issue #48)
+    with pytest.raises(ValueError):
+        clf.walk_forward_score(X, labels=None, n_splits=4)
+
+
+def test_drift_detector_zero_mean_does_not_saturate():
+    # A near-zero-mean baseline (e.g. returns) must not produce a saturated
+    # drift score when the recent window has only a small mean shift (#48).
+    detector = DriftDetector(DriftConfig(baseline_size=50, recent_size=20, threshold=0.9))
+    rng = np.random.default_rng(0)
+    for _ in range(50):
+        detector.update(rng.normal(0.0, 1.0))  # zero-mean baseline
+    for _ in range(20):
+        detector.update(rng.normal(0.1, 1.0))  # small mean shift, same std
+    score = detector.drift_score()
+    assert 0.0 <= score <= 1.0
+    assert score < 0.5  # old mean-normalized bug saturated this to ~1.0

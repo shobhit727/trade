@@ -45,6 +45,14 @@ class FeatureSet:
     timestamps: npt.NDArray[np.datetime64]
     config: FeatureConfig
 
+    def to_array(self) -> npt.NDArray[np.float64]:
+        """Return the feature matrix as a contiguous float64 array.
+
+        Provided so callers (e.g. inference) can obtain a stable array form
+        without reaching into the internal ``features`` field (issue #48).
+        """
+        return np.ascontiguousarray(self.features, dtype=np.float64)
+
 
 def _rsi(close: npt.NDArray[np.float64], period: int = 14) -> npt.NDArray[np.float64]:
     """Relative Strength Index."""
