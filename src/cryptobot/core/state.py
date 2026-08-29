@@ -382,7 +382,7 @@ class StateManager:
                 str(order.filled_quantity), str(order.avg_fill_price) if order.avg_fill_price else None,
                 str(order.commission), order.commission_asset, order.time_in_force.value,
                 int(order.reduce_only), order.position_side.value, order.strategy,
-                order.timestamp.isoformat(), order.updated_at.isoformat()
+                order.created_at.isoformat(), order.updated_at.isoformat()
             ))
 
     def save_position(self, position: Position):

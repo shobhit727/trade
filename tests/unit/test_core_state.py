@@ -63,9 +63,10 @@ def test_save_order_in_memory_path(monkeypatch, tmp_path: Path):
     monkeypatch.setattr("cryptobot.core.state.sqlite3", None)
     StateManager._instance = None
     sm = StateManager()
-    from cryptobot.core.events import OrderEvent, OrderSide, OrderStatus, OrderType
+    from cryptobot.core.state import Order
+    from cryptobot.core.events import OrderSide, OrderStatus, OrderType
 
-    order = OrderEvent(
+    order = Order(
         order_id="o2", symbol="BTCUSDT", side=OrderSide.BUY, type=OrderType.LIMIT,
         quantity=Decimal("1"), price=Decimal("100"), status=OrderStatus.NEW,
     )
@@ -75,11 +76,12 @@ def test_save_order_in_memory_path(monkeypatch, tmp_path: Path):
 
 def test_save_order_persists_to_sqlite(tmp_path: Path):
     """Regression for a latent bug: the sqlite INSERT referenced
-    ``order.created_at`` (which does not exist) — now uses ``order.timestamp``
-    and carries the correct number of columns (19)."""
+    ``order.timestamp`` (which does not exist on Order) — now uses
+    ``order.created_at`` and carries the correct number of columns (19)."""
     import sqlite3
 
-    from cryptobot.core.events import OrderEvent, OrderSide, OrderStatus, OrderType
+    from cryptobot.core.state import Order
+    from cryptobot.core.events import OrderSide, OrderStatus, OrderType
 
     db_file = tmp_path / "state.db"
 
@@ -88,7 +90,7 @@ def test_save_order_persists_to_sqlite(tmp_path: Path):
     sm._db_path = str(db_file)
     sm._init_db()
 
-    order = OrderEvent(
+    order = Order(
         order_id="o-sql-1", symbol="BTCUSDT", side=OrderSide.BUY, type=OrderType.LIMIT,
         quantity=Decimal("1"), price=Decimal("100"), status=OrderStatus.NEW,
     )
