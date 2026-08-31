@@ -92,7 +92,7 @@ async def test_send_posts_to_graph_api(fake_http):
     ok = await send_whatsapp("hello", cfg)
     assert ok is True
     url, payload, headers = fake_http.posts[0]
-    assert "PID/messages" in url
+    assert url == "https://graph.facebook.com/v21.0/PID/messages"
     assert payload["to"] == "919999999999"
     assert payload["text"]["body"] == "hello"
     assert headers["Authorization"] == "Bearer tok"

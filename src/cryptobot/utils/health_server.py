@@ -10,6 +10,14 @@ from typing import Any
 
 from cryptobot.monitoring.web_backtest import get_backtest_manager
 
+from cryptobot.config import get_settings
+
+def _get_server_host() -> str:
+    return get_settings().server.host
+
+def _get_server_port() -> int:
+    return get_settings().server.port
+
 logger = logging.getLogger(__name__)
 
 
@@ -151,9 +159,9 @@ class _Handler(BaseHTTPRequestHandler):
 class HealthServer:
     """Tiny stdlib HTTP server exposing ``/health`` and ``/metrics``."""
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 8080):
-        self.host = host
-        self.port = port
+    def __init__(self, host: str | None = None, port: int | None = None):
+        self.host = host if host is not None else _get_server_host()
+        self.port = port if port is not None else _get_server_port()
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: Thread | None = None
 
@@ -602,7 +610,7 @@ def render_dashboard_html(snap: dict) -> str:
     return "".join(parts)
 
 
-async def serve_health(host: str = "127.0.0.1", port: int = 8080) -> None:
+async def serve_health(host: str | None = None, port: int | None = None) -> None:
     server = HealthServer(host=host, port=port)
     server.start()
     try:

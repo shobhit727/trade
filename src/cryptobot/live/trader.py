@@ -42,7 +42,16 @@ from cryptobot.utils.health_server import HealthServer
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_REST_URL = "https://api.binance.com"
+from cryptobot.config import get_settings
+
+def _get_binance_production_url() -> str:
+    return get_settings().external_services.binance_production_url
+
+def _get_http_short_timeout() -> int:
+    return get_settings().timeouts.http_short_timeout
+
+
+DEFAULT_REST_URL = _get_binance_production_url()
 
 
 @dataclass
@@ -55,7 +64,7 @@ class LiveTraderConfig:
     host: str = "127.0.0.1"
     port: int = 8080
     warmup_bars: int = 300
-    rest_url: str = DEFAULT_REST_URL
+    rest_url: str = ""
     # Market DATA comes from the public production socket regardless of where
     # orders go; the testnet combined-stream endpoint rejects large URLs.
     data_ws_url: str = "wss://stream.binance.com:9443"
@@ -73,6 +82,10 @@ class LiveTraderConfig:
     protective_stop_pct: float = 10.0  # exchange-native stop this far below/above entry
     initial_equity: str = "10000"      # seeded when a fresh paper account starts at 0
     risk_fraction: float = 1.0         # equity fraction per entry (flip orders x2)
+
+    def __post_init__(self):
+        if not self.rest_url:
+            self.rest_url = _get_binance_production_url()
 
 
 class LiveTrader:
@@ -232,11 +245,13 @@ class LiveTrader:
 
     async def _harvest_loop(self) -> None:
         """Every ``harvest_hours``, skim realized-PnL growth into the fund."""
+        from cryptobot.config import get_settings
+        stop_wait_timeout = get_settings().timeouts.stop_wait_timeout
         window = max(int(self.config.harvest_hours), 1) * 3600
         deadline = time.monotonic() + window
         while not self._stop.is_set():
             try:
-                await asyncio.wait_for(self._stop.wait(), timeout=30)
+                await asyncio.wait_for(self._stop.wait(), timeout=stop_wait_timeout)
                 break  # stop requested
             except TimeoutError:
                 pass
@@ -275,7 +290,7 @@ class LiveTrader:
             f"&limit={min(self.config.warmup_bars, 1000)}"
         )
         try:
-            timeout = aiohttp.ClientTimeout(total=10)
+            timeout = aiohttp.ClientTimeout(total=_get_http_short_timeout())
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url) as resp:
                     rows = json.loads(await resp.text())

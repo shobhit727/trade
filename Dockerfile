@@ -66,9 +66,9 @@ RUN mkdir -p /app/data /app/state && chown -R 1000:1000 /app/data /app/state
 USER 1000:1000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3).read()" || exit 1
-ENTRYPOINT ["python", "-m"]
-CMD ["cryptobot.cli.main", "bot", "--host=0.0.0.0", "--port=8080"]
+ENTRYPOINT ["python", "-m", "cryptobot.cli.main"]
+CMD ["bot", "--host=0.0.0.0", "--port=8080"]
 
 FROM base AS test
-ENTRYPOINT ["python", "-m"]
-CMD ["pytest", "-q", "tests"]
+ENTRYPOINT ["python", "-m", "pytest"]
+CMD ["-q", "tests"]

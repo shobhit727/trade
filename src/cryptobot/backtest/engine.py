@@ -178,6 +178,7 @@ class BacktestEngine:
         self._cash: Decimal = Decimal("0")
         self._initialized = False
         self._last_bar_utc: datetime | None = None
+        self._bankrupt = False
 
     async def initialize(self):
         """Initialize the backtest engine."""
@@ -285,7 +286,7 @@ class BacktestEngine:
         segments plus jumps. Also keeps funding accrual off stale entry prices.
         """
         pos = self._positions.get(symbol)
-        if self._clock and ts > self._clock.current_time:
+        if self._clock and ts >= self._clock.current_time:
             await self._clock.step(ts - self._clock.current_time)
         if pos is None or price <= 0:
             # Flat periods must still land on the curve: skipping them made

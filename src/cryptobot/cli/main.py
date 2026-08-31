@@ -8,7 +8,14 @@ import os
 import sys
 from decimal import Decimal
 
+from cryptobot.config import get_settings
 from cryptobot.core.events import OrderEvent, OrderSide, OrderStatus, OrderType
+
+def _get_server_host() -> str:
+    return get_settings().server.host
+
+def _get_server_port() -> int:
+    return get_settings().server.port
 
 logger = logging.getLogger(__name__)
 
@@ -71,15 +78,15 @@ def build_parser() -> argparse.ArgumentParser:
     predict.add_argument("--json", action="store_true")
 
     serve = sub.add_parser("serve", help="Run the health/metrics HTTP server only")
-    serve.add_argument("--host", default="127.0.0.1")
-    serve.add_argument("--port", type=int, default=8080)
+    serve.add_argument("--host", default=None, help=f"Host to bind (default: {_get_server_host()})")
+    serve.add_argument("--port", type=int, default=None, help=f"Port to bind (default: {_get_server_port()})")
 
     bot = sub.add_parser(
         "bot",
         help="Run the live/paper trading loop (market data -> strategy -> execution)",
     )
-    bot.add_argument("--host", default="127.0.0.1")
-    bot.add_argument("--port", type=int, default=8080)
+    bot.add_argument("--host", default=None, help=f"Host to bind (default: {_get_server_host()})")
+    bot.add_argument("--port", type=int, default=None, help=f"Port to bind (default: {_get_server_port()})")
     bot.add_argument("--strategy", default="trend_following")
     bot.add_argument("--symbol", default="BTCUSDT")
     bot.add_argument("--timeframe", default="1m")
@@ -371,6 +378,8 @@ async def _run(args: argparse.Namespace) -> int:
             )
             await asyncio.sleep(5)
 
+        host = args.host if args.host is not None else _get_server_host()
+        port = args.port if args.port is not None else _get_server_port()
         base_cfg = LiveTraderConfig(
             risk_profile=args.profile,
             strategy_params=json.loads(
@@ -380,8 +389,8 @@ async def _run(args: argparse.Namespace) -> int:
             symbol=args.symbol,
             timeframe=args.timeframe,
             mode=args.mode,
-            host=args.host,
-            port=args.port,
+            host=host,
+            port=port,
             warmup_bars=args.warmup,
             max_bars=args.max_bars,
         )
@@ -402,8 +411,10 @@ async def _run(args: argparse.Namespace) -> int:
                 pass
         _label = (f"multi[{len(trader.slots)}]" if hasattr(trader, "slots")
                   else args.strategy)
+        log_host = host
+        log_port = port
         logger.info("bot running: %s %s %s mode=%s health=http://%s:%d/health",
-                    _label, args.symbol, args.timeframe, args.mode, args.host, args.port)
+                    _label, args.symbol, args.timeframe, args.mode, log_host, log_port)
         await trader.run()
         return 0
 

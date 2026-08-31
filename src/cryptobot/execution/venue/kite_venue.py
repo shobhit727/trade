@@ -38,8 +38,21 @@ from cryptobot.execution.venue.base import Venue
 
 logger = logging.getLogger(__name__)
 
-KITE_BASE = "https://api.kite.trade"
+from cryptobot.config import get_settings
+
 SESSION_FILE = Path("state-nse/kite_session.json")
+
+
+def _get_kite_base() -> str:
+    return get_settings().external_services.kite_base_url
+
+
+def _get_kite_login_url() -> str:
+    return get_settings().external_services.kite_login_url
+
+
+def _get_http_default_timeout() -> int:
+    return get_settings().timeouts.http_default_timeout
 
 
 class KiteSession:
@@ -55,8 +68,7 @@ class KiteSession:
             self.access_token = json.loads(session_file.read_text()).get("access_token")
 
     def login_url(self) -> str:
-        return ("https://kite.zerodha.com/connect/login"
-                f"?v=3&api_key={self.api_key}")
+        return (f"{_get_kite_login_url()}?v=3&api_key={self.api_key}")
 
     def exchange_token(self, request_token: str) -> str:
         checksum = hashlib.sha256(
@@ -67,9 +79,9 @@ class KiteSession:
             "checksum": checksum,
         }).encode()
         req = urllib.request.Request(
-            f"{KITE_BASE}/session/token", data=data, method="POST",
+            f"{_get_kite_base()}/session/token", data=data, method="POST",
             headers={"X-Kite-Version": "3"})
-        with urllib.request.urlopen(req, timeout=20) as r:
+        with urllib.request.urlopen(req, timeout=_get_http_default_timeout()) as r:
             payload = json.load(r)
         self.access_token = payload["data"]["access_token"]
         self.session_file.parent.mkdir(parents=True, exist_ok=True)
@@ -108,12 +120,12 @@ class KiteVenue(Venue):
 
     def _request(self, path: str, params: dict | None = None,
                  method: str = "GET") -> dict:
-        url = f"{KITE_BASE}{path}"
+        url = f"{_get_kite_base()}{path}"
         data = urllib.parse.urlencode(params).encode() if params else None
         req = urllib.request.Request(url, data=data, method=method,
                                      headers=self.session.headers())
         try:
-            with urllib.request.urlopen(req, timeout=20) as r:
+            with urllib.request.urlopen(req, timeout=_get_http_default_timeout()) as r:
                 out = json.load(r)
         except urllib.error.HTTPError as exc:
             body = exc.read().decode()[:200]

@@ -207,6 +207,10 @@ monitoring:
     telegram_chat_id: "${TELEGRAM_CHAT_ID}"
     discord_webhook: "${DISCORD_WEBHOOK}"
     email_enabled: false
+    whatsapp_enabled: false
+    whatsapp_token: "${WHATSAPP_TOKEN}"
+    whatsapp_phone_id: "${WHATSAPP_PHONE_ID}"
+    whatsapp_to: []
   health_check_interval: 30
 
 # Database
@@ -229,3 +233,30 @@ backtest:
   commission_bps: 5
   slippage_bps: 3
   funding_rate_included: true
+
+# External Service URLs
+external_services:
+  kite_base_url: "https://api.kite.trade"
+  kite_login_url: "https://kite.zerodha.com/connect/login"
+  yahoo_finance_chart_url: "https://query1.finance.yahoo.com/v8/finance/chart/"
+  binance_production_url: "https://api.binance.com"
+  binance_futures_url: "https://fapi.binance.com"
+  telegram_api_url: "https://api.telegram.org"
+  pagerduty_events_url: "https://events.pagerduty.com/v2/enqueue"
+  whatsapp_api_url: "https://graph.facebook.com/v21.0/{phone_id}/messages"
+
+# Timeout Configuration (seconds)
+timeouts:
+  http_default_timeout: 20
+  http_long_timeout: 30
+  http_short_timeout: 10
+  strategy_feed_timeout: 0.5
+  stop_wait_timeout: 30
+  smtp_timeout: 30
+
+# Server Bind Configuration
+server:
+  host: "127.0.0.1"
+  port: 8080
+  nse_basket_port: 8084
+  nse_powerhour_port: 8085

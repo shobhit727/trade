@@ -42,8 +42,17 @@ from cryptobot.core.tax_equity import TaxLedger
 logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 
-YAHOO_CHART = ("https://query1.finance.yahoo.com/v8/finance/chart/"
-               "{ticker}?interval=1d&range=180d")
+from cryptobot.config import get_settings
+
+def _get_yahoo_chart_url() -> str:
+    return get_settings().external_services.yahoo_finance_chart_url
+
+def _get_http_default_timeout() -> int:
+    return get_settings().timeouts.http_default_timeout
+
+def _get_nse_basket_port() -> int:
+    return get_settings().server.nse_basket_port
+
 DELIVERY_FEE_BPS = Decimal("11")
 SLIP_BPS = Decimal("1")
 STATE_DIR = Path("state-nse")
@@ -51,9 +60,9 @@ STATE_DIR = Path("state-nse")
 
 def fetch_bars(symbol: str) -> list[dict]:
     """Yahoo chart JSON -> [{ts,date,open,high,low,close,volume}] ascending."""
-    url = YAHOO_CHART.format(ticker=f"{symbol}.NS")
+    url = f"{_get_yahoo_chart_url()}{symbol}.NS?interval=1d&range=180d"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=20) as r:
+    with urllib.request.urlopen(req, timeout=_get_http_default_timeout()) as r:
         payload = json.load(r)
     res = payload["chart"]["result"][0]
     ts = res.get("timestamp") or []
@@ -170,14 +179,14 @@ class BasketState:
 
 class NseBasket:
     def __init__(self, symbols: list[str], capital: float = 10_000.0,
-                 fast: int = 5, slow: int = 12, port: int = 8084,
+                 fast: int = 5, slow: int = 12, port: int | None = None,
                  state_file: Path | None = None,
                  kite_session=None, dry_run: bool = True):
         self.kite_session = kite_session
         self.dry_run = dry_run
         self.symbols = symbols
         self.fast, self.slow = fast, slow
-        self.port = port
+        self.port = port if port is not None else _get_nse_basket_port()
         self.state_file = state_file or (STATE_DIR / "basket.json")
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
         self.state = (BasketState.from_dict(json.loads(self.state_file.read_text()))
@@ -501,6 +510,8 @@ a{{color:var(--ac)}}
 
     def serve_forever(self) -> None:
         basket = self
+        from cryptobot.config import get_settings
+        bind_host = "0.0.0.0"  # Always bind to all interfaces for container compatibility
 
         class H(BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802
@@ -523,7 +534,7 @@ a{{color:var(--ac)}}
             def log_message(self, *a):
                 pass
 
-        ThreadingHTTPServer(("0.0.0.0", self.port), H).serve_forever()
+        ThreadingHTTPServer((bind_host, self.port), H).serve_forever()
 
     # ------------------------------------------------------------ scheduling
 
@@ -543,7 +554,7 @@ def main() -> None:
     ap.add_argument("--capital", type=float, default=10_000.0)
     ap.add_argument("--fast", type=int, default=5)
     ap.add_argument("--slow", type=int, default=12)
-    ap.add_argument("--port", type=int, default=8084)
+    ap.add_argument("--port", type=int, default=None, help=f"Port to bind (default: {_get_nse_basket_port()})")
     ap.add_argument("--run-now", action="store_true",
                     help="rebalance immediately at startup (else wait for next close)")
     ap.add_argument("--kite", action="store_true",
@@ -575,7 +586,7 @@ def main() -> None:
                        kite_session=kite_session,
                        dry_run=not args.kite_live)
     threading.Thread(target=basket.serve_forever, daemon=True).start()
-    logger.info("nse-basket up on :%d — %d symbols, ₹%.0f", args.port,
+    logger.info("nse-basket up on :%d — %d symbols, ₹%.0f", args.port or _get_nse_basket_port(),
                 len(symbols), args.capital)
 
     if args.run_now:

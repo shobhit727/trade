@@ -229,11 +229,10 @@ services:
       args:
         PYTHON_TAG: 3.14-slim
     container_name: cryptobot-app
-    # ENTRYPOINT is `python -m`; these tokens complete the module path.
+    # ENTRYPOINT is `python -m cryptobot.cli.main`; these tokens are arguments.
     # Override via env: BOT_STRATEGY / BOT_SYMBOL / BOT_TIMEFRAME /
     # BOT_PROFILE / BOT_PARAMS (JSON) / BOT_MODE.
     command:
-      - "cryptobot.cli.main"
       - "bot"
       - "--host=0.0.0.0"
       - "--strategy=${BOT_STRATEGY:-dual_ma}"
@@ -320,7 +319,6 @@ services:
         PYTHON_TAG: 3.14-slim
     container_name: cryptobot-eth
     command:
-      - "cryptobot.cli.main"
       - "bot"
       - "--host=0.0.0.0"
       - "--strategy=time_series"
@@ -364,7 +362,6 @@ services:
         PYTHON_TAG: 3.14-slim
     container_name: cryptobot-eth-or
     command:
-      - "cryptobot.cli.main"
       - "bot"
       - "--host=0.0.0.0"
       - "--strategy=open_range"
@@ -407,9 +404,8 @@ services:
       args:
         PYTHON_TAG: 3.14-slim
     container_name: cryptobot-nse-basket
-    entrypoint: ["python", "-m"]
+    entrypoint: ["python", "-m", "cryptobot.live.nse_basket"]
     command:
-      - "cryptobot.live.nse_basket"
       - "--symbols-file=/app/tmp/nifty50.csv"
       - "--capital=${NSE_CAPITAL:-2100000}"
       - "--port=8084"
@@ -440,9 +436,8 @@ services:
       args:
         PYTHON_TAG: 3.14-slim
     container_name: cryptobot-nse-powerhour
-    entrypoint: ["python", "-m"]
+    entrypoint: ["python", "-m", "cryptobot.live.nse_powerhour"]
     command:
-      - "cryptobot.live.nse_powerhour"
       - "--symbols-file=/app/tmp/nifty50.csv"
       - "--capital=${PH_CAPITAL:-100000}"
       - "--port=8085"
@@ -477,7 +472,8 @@ services:
       - APP_ENV=production
       - ROOM_TARGETS=nse-basket:8084,nse-powerhour:8085
     command:
-      - "/app/tools/control_room.py"
+      - "-m"
+      - "tools.control_room"
     volumes:
       - ./tools:/app/tools:ro
       - ./PROJECT_MEMORY:/app/PROJECT_MEMORY:ro
@@ -502,6 +498,13 @@ services:
       args:
         PYTHON_TAG: 3.14-slim
     container_name: cryptobot-paper
+    command:
+      - "bot"
+      - "--host=0.0.0.0"
+      - "--strategy=${BOT_STRATEGY:-dual_ma}"
+      - "--symbol=${BOT_SYMBOL:-BTCUSDT}"
+      - "--timeframe=${BOT_TIMEFRAME:-1m}"
+      - "--mode=paper"
     environment:
       - APP_ENV=paper
       - APP_LOG_LEVEL=DEBUG

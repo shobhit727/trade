@@ -12,12 +12,16 @@ propagate into the trading loop.
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
+
+from cryptobot.config import settings
 
 logger = logging.getLogger(__name__)
 
-_API_URL = "https://graph.facebook.com/v21.0/{phone_id}/messages"
+
+def _get_whatsapp_api_url() -> str:
+    return settings.external_services.whatsapp_api_url
+
 _MAX_LEN = 4096
 
 
@@ -29,11 +33,12 @@ class WhatsAppConfig:
 
     @classmethod
     def from_env(cls) -> WhatsAppConfig:
-        raw = os.getenv("WHATSAPP_TO", "")
+        m = settings.monitoring
+        to_raw = m.whatsapp_to
         return cls(
-            token=os.getenv("WHATSAPP_TOKEN", ""),
-            phone_id=os.getenv("WHATSAPP_PHONE_ID", ""),
-            to=[w.strip() for w in raw.split(",") if w.strip()],
+            token=m.whatsapp_token,
+            phone_id=m.whatsapp_phone_id,
+            to=list(to_raw) if to_raw else [],
         )
 
     def configured(self) -> bool:
@@ -65,14 +70,16 @@ def format_daily_summary(stats: dict) -> str:
 async def send_whatsapp(text: str, cfg: WhatsAppConfig | None = None) -> bool:
     """Send to every recipient; True only if all sends succeed."""
     import aiohttp
+    from cryptobot.config import get_settings
 
     cfg = cfg or WhatsAppConfig.from_env()
     if not cfg.configured():
         logger.warning("whatsapp not configured (WHATSAPP_TOKEN/PHONE_ID/TO); skipped")
         return False
 
-    url = _API_URL.format(phone_id=cfg.phone_id)
+    url = _get_whatsapp_api_url().format(phone_id=cfg.phone_id)
     headers = {"Authorization": f"Bearer {cfg.token}"}
+    timeout = get_settings().timeouts.http_long_timeout
     ok = True
     async with aiohttp.ClientSession() as session:
         for recipient in cfg.to or []:
@@ -84,7 +91,7 @@ async def send_whatsapp(text: str, cfg: WhatsAppConfig | None = None) -> bool:
             }
             try:
                 async with session.post(url, json=payload, headers=headers,
-                                        timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                                        timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
                     if resp.status >= 400:
                         body = await resp.text()
                         logger.warning("whatsapp send to %s failed: %s %s",

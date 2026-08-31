@@ -98,9 +98,10 @@ class TelegramChannel(NotificationChannel):
     """Telegram bot notification channel."""
 
     def __init__(self, bot_token: str, chat_id: str):
+        from cryptobot.config import get_settings
         self.bot_token = bot_token
         self.chat_id = chat_id
-        self.api_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        self.api_url = f"{get_settings().external_services.telegram_api_url}/bot{bot_token}/sendMessage"
 
     def get_name(self) -> str:
         return "telegram"
@@ -138,8 +139,10 @@ class TelegramChannel(NotificationChannel):
 
         try:
             import aiohttp
+            from cryptobot.config import get_settings
+            timeout = get_settings().timeouts.http_short_timeout
             async with aiohttp.ClientSession() as session:
-                async with session.post(self.api_url, json=payload, timeout=10) as resp:
+                async with session.post(self.api_url, json=payload, timeout=timeout) as resp:
                     if resp.status == 200:
                         logger.info(f"Telegram alert sent: {alert.id}")
                         return True
@@ -196,8 +199,10 @@ class DiscordChannel(NotificationChannel):
 
         try:
             import aiohttp
+            from cryptobot.config import get_settings
+            timeout = get_settings().timeouts.http_short_timeout
             async with aiohttp.ClientSession() as session:
-                async with session.post(self.webhook_url, json=payload, timeout=10) as resp:
+                async with session.post(self.webhook_url, json=payload, timeout=timeout) as resp:
                     if resp.status in (200, 204):
                         logger.info(f"Discord alert sent: {alert.id}")
                         return True
@@ -299,8 +304,9 @@ class PagerDutyChannel(NotificationChannel):
     """PagerDuty notification channel."""
 
     def __init__(self, integration_key: str):
+        from cryptobot.config import get_settings
         self.integration_key = integration_key
-        self.api_url = "https://events.pagerduty.com/v2/enqueue"
+        self.api_url = get_settings().external_services.pagerduty_events_url
 
     def get_name(self) -> str:
         return "pagerduty"
@@ -336,8 +342,10 @@ class PagerDutyChannel(NotificationChannel):
 
         try:
             import aiohttp
+            from cryptobot.config import get_settings
+            timeout = get_settings().timeouts.http_short_timeout
             async with aiohttp.ClientSession() as session:
-                async with session.post(self.api_url, json=payload, timeout=10) as resp:
+                async with session.post(self.api_url, json=payload, timeout=timeout) as resp:
                     if resp.status == 202:
                         logger.info(f"PagerDuty alert sent: {alert.id}")
                         return True

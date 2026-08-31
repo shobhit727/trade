@@ -8,10 +8,11 @@ Credentials come from env (never hardcoded):
 from __future__ import annotations
 
 import logging
-import os
 import smtplib
 from dataclasses import dataclass
 from email.message import EmailMessage
+
+from cryptobot.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +27,12 @@ class EmailConfig:
 
     @classmethod
     def from_env(cls) -> EmailConfig:
-        to_raw = os.getenv("EMAIL_TO", "")
+        m = settings.monitoring
+        to_raw = m.email_to
         return cls(
-            user=os.getenv("EMAIL_SMTP_USER", ""),
-            password=os.getenv("EMAIL_SMTP_PASS", ""),
-            to=[addr.strip() for addr in to_raw.split(",") if addr.strip()],
+            user=m.email_username,
+            password=m.email_password,
+            to=list(to_raw) if to_raw else [],
         )
 
     def configured(self) -> bool:

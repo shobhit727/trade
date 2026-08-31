@@ -30,6 +30,17 @@ logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 STATE_DIR = Path("state-nse")
 
+from cryptobot.config import get_settings
+
+def _get_yahoo_chart_url() -> str:
+    return get_settings().external_services.yahoo_finance_chart_url
+
+def _get_http_default_timeout() -> int:
+    return get_settings().timeouts.http_default_timeout
+
+def _get_nse_powerhour_port() -> int:
+    return get_settings().server.nse_powerhour_port
+
 FEE_BPS, SLIP_BPS = Decimal("2"), Decimal("1")
 
 
@@ -54,10 +65,9 @@ def _svg_chart(values: list[float], w: int = 260, h: int = 64) -> str:
 
 
 def fetch_bars(symbol: str) -> list[dict]:
-    url = ("https://query1.finance.yahoo.com/v8/finance/chart/"
-           f"{symbol}.NS?interval=15m&range=10d")
+    url = f"{_get_yahoo_chart_url()}{symbol}.NS?interval=15m&range=10d"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=20) as r:
+    with urllib.request.urlopen(req, timeout=_get_http_default_timeout()) as r:
         payload = json.load(r)
     res = payload["chart"]["result"][0]
     ts = res.get("timestamp") or []
@@ -144,9 +154,9 @@ class PowerHourState:
 
 class PowerHourTrader:
     def __init__(self, symbols: list[str], capital: float = 100_000.0,
-                 port: int = 8085, state_file: Path | None = None):
+                 port: int | None = None, state_file: Path | None = None):
         self.symbols = symbols
-        self.port = port
+        self.port = port if port is not None else _get_nse_powerhour_port()
         self.state_file = state_file or (STATE_DIR / "powerhour.json")
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
         self.state = (PowerHourState.from_dict(json.loads(self.state_file.read_text()))
@@ -358,6 +368,7 @@ th{{font-size:10px;text-transform:uppercase;color:#8b98a9;letter-spacing:1px}}
 
     def serve_forever(self) -> None:
         trader = self
+        bind_host = "0.0.0.0"  # Always bind to all interfaces for container compatibility
 
         class H(BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802
@@ -380,7 +391,7 @@ th{{font-size:10px;text-transform:uppercase;color:#8b98a9;letter-spacing:1px}}
             def log_message(self, *a):
                 pass
 
-        ThreadingHTTPServer(("0.0.0.0", self.port), H).serve_forever()
+        ThreadingHTTPServer((bind_host, self.port), H).serve_forever()
 
     # --------------------------------------------------------- scheduling
 
@@ -416,7 +427,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbols-file", default="tmp/nifty50.csv")
     ap.add_argument("--capital", type=float, default=100_000.0)
-    ap.add_argument("--port", type=int, default=8085)
+    ap.add_argument("--port", type=int, default=None, help=f"Port to bind (default: {_get_nse_powerhour_port()})")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO)
@@ -427,7 +438,7 @@ def main() -> None:
     trader = PowerHourTrader(symbols, capital=args.capital, port=args.port)
     threading.Thread(target=trader.serve_forever, daemon=True).start()
     logger.info("power-hour up on :%d — %d symbols, Rs %.0f",
-                args.port, len(symbols), args.capital)
+                args.port or _get_nse_powerhour_port(), len(symbols), args.capital)
     trader.loop()
 
 
