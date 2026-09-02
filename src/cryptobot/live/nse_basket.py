@@ -37,12 +37,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from cryptobot.config import get_settings
 from cryptobot.core.tax_equity import TaxLedger
 
 logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
-
-from cryptobot.config import get_settings
 
 def _get_yahoo_chart_url() -> str:
     return get_settings().external_services.yahoo_finance_chart_url
@@ -525,7 +524,6 @@ a{{color:var(--ac)}}
 
     def serve_forever(self) -> None:
         basket = self
-        from cryptobot.config import get_settings
         bind_host = "0.0.0.0"  # Always bind to all interfaces for container compatibility
 
         class H(BaseHTTPRequestHandler):

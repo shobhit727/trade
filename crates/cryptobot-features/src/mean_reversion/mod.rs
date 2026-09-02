@@ -92,7 +92,11 @@ mod tests {
         let prices = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let rsi = rsi(&prices, 2);
         assert!(!rsi.is_empty());
-        assert!(rsi.iter().all(|&v| (v - 100.0).abs() < 1e-12), "rsi = {:?}", rsi);
+        assert!(
+            rsi.iter().all(|&v| (v - 100.0).abs() < 1e-12),
+            "rsi = {:?}",
+            rsi
+        );
     }
 
     #[test]

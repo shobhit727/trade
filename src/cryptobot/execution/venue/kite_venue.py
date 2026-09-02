@@ -33,12 +33,11 @@ import urllib.request
 from decimal import Decimal
 from pathlib import Path
 
+from cryptobot.config import get_settings
 from cryptobot.core.events import OrderEvent, OrderStatus
 from cryptobot.execution.venue.base import Venue
 
 logger = logging.getLogger(__name__)
-
-from cryptobot.config import get_settings
 
 SESSION_FILE = Path("state-nse/kite_session.json")
 

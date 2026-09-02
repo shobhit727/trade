@@ -90,7 +90,7 @@ mod tests {
         assert_eq!(vol_target(10_000.0, 0.10, 0.0), 0.0);
         assert_eq!(vol_target(10_000.0, 0.10, f64::NAN), 0.0); // was NaN
         assert_eq!(vol_target(10_000.0, 0.10, -0.2), 0.0); // was negative size
-        // Absurd ratio clamped to MAX_VOL_TARGET_LEVERAGE (was ~1e12 notional).
+                                                           // Absurd ratio clamped to MAX_VOL_TARGET_LEVERAGE (was ~1e12 notional).
         assert_eq!(vol_target(10_000.0, 0.10, 1e-9), 100_000.0);
     }
 }

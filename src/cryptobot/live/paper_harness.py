@@ -27,6 +27,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
+from cryptobot.config import get_settings
 from cryptobot.strategies.funding_arb import (
     FundingArbConfig,
     FundingArbState,
@@ -35,14 +36,20 @@ from cryptobot.strategies.funding_arb import (
 
 logger = logging.getLogger(__name__)
 
-from cryptobot.config import get_settings
 
 def _get_binance_futures_url() -> str:
     return get_settings().external_services.binance_futures_url
 
+def _get_binance_spot_ws_url() -> str:
+    return get_settings().external_services.binance_spot_ws_url
+
+def _get_binance_futures_ws_url() -> str:
+    return get_settings().external_services.binance_futures_ws_url
+
 def _get_http_short_timeout() -> int:
     return get_settings().timeouts.http_short_timeout
 
+# Kept for backwards-compat; prefer _get_*_ws_url() which is config-driven
 SPOT_WS = "wss://stream.binance.com:9443/stream?streams="
 FUTURES_WS = "wss://fstream.binance.com/stream?streams="
 

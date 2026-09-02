@@ -521,7 +521,9 @@ class DataFeedHealthChecker(HealthChecker):
                     details={"staleness": staleness},
                 )
             max_staleness = max(staleness.values())
-            if max_staleness > 60:
+            stale = settings.monitoring.data_stale_threshold_seconds
+            degraded = settings.monitoring.data_degraded_threshold_seconds
+            if max_staleness > stale:
                 return HealthResult(
                     check_name="data_freshness",
                     component=ComponentType.DATA_FEED,
@@ -529,7 +531,7 @@ class DataFeedHealthChecker(HealthChecker):
                     message=f"Stale data: max age {max_staleness:.0f}s",
                     details={"staleness": staleness},
                 )
-            elif max_staleness > 10:
+            elif max_staleness > degraded:
                 return HealthResult(
                     check_name="data_freshness",
                     component=ComponentType.DATA_FEED,
@@ -820,7 +822,7 @@ async def _check_data_freshness(manager: Any):
         # No ticker data at all: the feed is down, not "fresh".
         raise Exception("No market data received from feed")
 
-    if max_age > 60:
+    if max_age > settings.monitoring.data_stale_threshold_seconds:
         raise Exception(f"Data stale: max age {max_age:.0f}s")
 
 

@@ -8,9 +8,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from typing import Any
 
+from cryptobot.config import get_settings
 from cryptobot.monitoring.web_backtest import get_backtest_manager
 
-from cryptobot.config import get_settings
 
 def _get_server_host() -> str:
     return get_settings().server.host
@@ -291,12 +291,6 @@ def render_dashboard_html(snap: dict) -> str:
         except (TypeError, ValueError):
             return esc(value)
 
-    def pct_str(value):
-        try:
-            return f"{float(value)*100:.2f}%"
-        except (TypeError, ValueError):
-            return esc(value)
-
     fund = snap.get("global_fund") or {}
     gate = snap.get("paper_gate") or {}
     breaker = snap.get("breaker") or {}
@@ -314,8 +308,6 @@ def render_dashboard_html(snap: dict) -> str:
     pct = min(100, int(days * 100 / window))
 
     status_cls = "ok" if status == "running" else "warn"
-    tripped = bool(breaker.get("tripped"))
-    frozen = bool(fund.get("frozen"))
     breaker_html = (
         '<span class="pill bad">TRIPPED</span>'
         f'<div class="sub">{esc(breaker.get("reason", ""))}</div>'
@@ -339,7 +331,6 @@ def render_dashboard_html(snap: dict) -> str:
         ]
     )
 
-    # Calculate gate progress color
     gate_progress_color = "var(--green)" if pct >= 80 else ("var(--amber)" if pct >= 40 else "var(--blue)")
 
     head = (
@@ -399,8 +390,8 @@ def render_dashboard_html(snap: dict) -> str:
         "td:first-child{font-weight:400}"
         "tr:first-child td{border-top:none;padding-top:0}"
         ".bar{height:10px;background:var(--line);border-radius:99px;overflow:hidden;margin:12px 0 8px;position:relative}"
-        ".bar i{display:block;height:100%;background:var(--gate-color);border-radius:99px;"
-        "transition:width 0.5s ease,background 0.3s ease;box-shadow:0 0 8px var(--gate-color-glow)}"
+        ".bar i{display:block;height:100%;border-radius:99px;"
+        "transition:width 0.5s ease,background 0.3s ease;box-shadow:0 0 8px rgba(88,166,255,0.2)}"
         ".spark{width:100%;height:100px;display:block}"
         '.spark-empty{color:var(--dim);font-size:0.85em;padding:40px 0;text-align:center}'
         ".banner{grid-column:1/-1;background:rgba(210,153,34,0.08);border:1px solid rgba(210,153,34,0.25);"
@@ -498,7 +489,7 @@ def render_dashboard_html(snap: dict) -> str:
     parts.append(
         '<div class="card"><h2>Paper gate &rarr; live</h2>'
         f'<div class="kv"><span>status</span><b>{esc(gate.get("status", "-"))}</b></div>'
-        f'<div class="bar"><i style="width:{pct}%"></i></div>'
+        f'<div class="bar"><i style="width:{pct}%;background:{gate_progress_color}"></i></div>'
         f'<div class="kv"><span>days</span><b>{days} / {window}</b></div>'
         f'<div class="kv"><span>extensions used</span><b>{gate.get("extensions_used", 0)} / 2</b></div>'
         '<div class="kv"><span>live unlocked</span><b>'

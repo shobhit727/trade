@@ -139,6 +139,7 @@ class TelegramChannel(NotificationChannel):
 
         try:
             import aiohttp
+
             from cryptobot.config import get_settings
             timeout = get_settings().timeouts.http_short_timeout
             async with aiohttp.ClientSession() as session:
@@ -199,6 +200,7 @@ class DiscordChannel(NotificationChannel):
 
         try:
             import aiohttp
+
             from cryptobot.config import get_settings
             timeout = get_settings().timeouts.http_short_timeout
             async with aiohttp.ClientSession() as session:
@@ -342,6 +344,7 @@ class PagerDutyChannel(NotificationChannel):
 
         try:
             import aiohttp
+
             from cryptobot.config import get_settings
             timeout = get_settings().timeouts.http_short_timeout
             async with aiohttp.ClientSession() as session:

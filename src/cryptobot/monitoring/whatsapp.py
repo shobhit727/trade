@@ -70,6 +70,7 @@ def format_daily_summary(stats: dict) -> str:
 async def send_whatsapp(text: str, cfg: WhatsAppConfig | None = None) -> bool:
     """Send to every recipient; True only if all sends succeed."""
     import aiohttp
+
     from cryptobot.config import get_settings
 
     cfg = cfg or WhatsAppConfig.from_env()

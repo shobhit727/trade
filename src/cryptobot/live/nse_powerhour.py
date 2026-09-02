@@ -24,13 +24,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from cryptobot.config import get_settings
 from cryptobot.core.tax_equity import TaxLedger
 
 logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 STATE_DIR = Path("state-nse")
-
-from cryptobot.config import get_settings
 
 def _get_yahoo_chart_url() -> str:
     return get_settings().external_services.yahoo_finance_chart_url
@@ -261,8 +260,6 @@ class PowerHourTrader:
                 del st.positions[sym]
                 closed += 1
             self.stats["exits"] += closed
-            marks = {s: self._marks.get(s, p["entry"])
-                     for s, p in st.positions.items()}
             eq = st.equity() if not st.positions else None
             eq_final = eq if eq is not None else (
                 st.cash + sum(p["qty"] * self._marks.get(s, p["entry"])

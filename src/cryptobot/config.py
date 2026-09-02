@@ -138,6 +138,8 @@ class MonitoringSettings(BaseSettings):
     whatsapp_phone_id: str = ""
     whatsapp_to: list[str] = []
     health_check_interval: int = 30
+    data_stale_threshold_seconds: int = 60
+    data_degraded_threshold_seconds: int = 10
 
     model_config = SettingsConfigDict(env_prefix="MONITORING_", extra="ignore")
 
@@ -173,6 +175,9 @@ class ExternalServicesSettings(BaseSettings):
     yahoo_finance_chart_url: str = "https://query1.finance.yahoo.com/v8/finance/chart/"
     binance_production_url: str = "https://api.binance.com"
     binance_futures_url: str = "https://fapi.binance.com"
+    binance_spot_ws_url: str = "wss://stream.binance.com:9443/stream?streams="
+    binance_futures_ws_url: str = "wss://fstream.binance.com/stream?streams="
+    binance_data_ws_url: str = "wss://stream.binance.com:9443"
     telegram_api_url: str = "https://api.telegram.org"
     pagerduty_events_url: str = "https://events.pagerduty.com/v2/enqueue"
     whatsapp_api_url: str = "https://graph.facebook.com/v21.0"
@@ -331,6 +336,8 @@ def _flatten_yaml(data: dict[str, Any]) -> dict[str, Any]:
             "whatsapp_phone_id": alerts_cfg.get("whatsapp_phone_id", ""),
             "whatsapp_to": alerts_cfg.get("whatsapp_to", []),
             "health_check_interval": monitoring.get("health_check_interval", 30),
+            "data_stale_threshold_seconds": monitoring.get("data_stale_threshold_seconds", 60),
+            "data_degraded_threshold_seconds": monitoring.get("data_degraded_threshold_seconds", 10),
         },
         "database": data.get("database", {}),
         "backtest": data.get("backtest", {}),
@@ -340,6 +347,9 @@ def _flatten_yaml(data: dict[str, Any]) -> dict[str, Any]:
             "yahoo_finance_chart_url": external_services.get("yahoo_finance_chart_url", "https://query1.finance.yahoo.com/v8/finance/chart/"),
             "binance_production_url": external_services.get("binance_production_url", "https://api.binance.com"),
             "binance_futures_url": external_services.get("binance_futures_url", "https://fapi.binance.com"),
+            "binance_spot_ws_url": external_services.get("binance_spot_ws_url", "wss://stream.binance.com:9443/stream?streams="),
+            "binance_futures_ws_url": external_services.get("binance_futures_ws_url", "wss://fstream.binance.com/stream?streams="),
+            "binance_data_ws_url": external_services.get("binance_data_ws_url", "wss://stream.binance.com:9443"),
             "telegram_api_url": external_services.get("telegram_api_url", "https://api.telegram.org"),
             "pagerduty_events_url": external_services.get("pagerduty_events_url", "https://events.pagerduty.com/v2/enqueue"),
             "whatsapp_api_url": external_services.get("whatsapp_api_url", "https://graph.facebook.com/v21.0"),

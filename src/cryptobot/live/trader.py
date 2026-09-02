@@ -27,6 +27,7 @@ from pathlib import Path
 import aiohttp
 
 from cryptobot.backtest.runner import make_strategy
+from cryptobot.config import get_settings
 from cryptobot.core.allocator import CapitalAllocator, default_tiers
 from cryptobot.core.breaker import BreakerConfig, CircuitBreaker
 from cryptobot.core.bus import get_event_bus
@@ -42,7 +43,6 @@ from cryptobot.utils.health_server import HealthServer
 
 logger = logging.getLogger(__name__)
 
-from cryptobot.config import get_settings
 
 def _get_binance_production_url() -> str:
     return get_settings().external_services.binance_production_url
@@ -52,6 +52,9 @@ def _get_http_short_timeout() -> int:
 
 
 DEFAULT_REST_URL = _get_binance_production_url()
+
+def _get_binance_data_ws_url() -> str:
+    return get_settings().external_services.binance_data_ws_url
 
 
 @dataclass
@@ -67,7 +70,7 @@ class LiveTraderConfig:
     rest_url: str = ""
     # Market DATA comes from the public production socket regardless of where
     # orders go; the testnet combined-stream endpoint rejects large URLs.
-    data_ws_url: str = "wss://stream.binance.com:9443"
+    data_ws_url: str = ""
     max_bars: int | None = None  # stop after N closed bars (tests / dry-runs)
     # Global-fund harvest (Seed Phase step 1): every harvest_hours, skim
     # skim_fraction of realized PnL into the cross-algorithm reserve pool.
@@ -86,6 +89,8 @@ class LiveTraderConfig:
     def __post_init__(self):
         if not self.rest_url:
             self.rest_url = _get_binance_production_url()
+        if not self.data_ws_url:
+            self.data_ws_url = _get_binance_data_ws_url()
 
 
 class LiveTrader:

@@ -10,8 +10,7 @@ invented prices.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 from decimal import Decimal
 
 from cryptobot.core.events import OrderEvent, OrderSide, OrderStatus
@@ -171,9 +170,8 @@ class MarketMakingStrategy:
         start = len(self.history)
         for i, bar in enumerate(bars):
             mid = Decimal(str(bar.close))
-            bid = mid - Decimal("0.5")
-            ask = mid + Decimal("0.5")
             t_remaining = max(0.0, 1.0 - (i / max(len(bars), 1)))
+            bid, ask = self.quote(mid, t_remaining)
             await self.on_book_update(
                 bid=bid,
                 ask=ask,

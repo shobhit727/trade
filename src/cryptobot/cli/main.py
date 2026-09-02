@@ -11,6 +11,7 @@ from decimal import Decimal
 from cryptobot.config import get_settings
 from cryptobot.core.events import OrderEvent, OrderSide, OrderStatus, OrderType
 
+
 def _get_server_host() -> str:
     return get_settings().server.host
 
