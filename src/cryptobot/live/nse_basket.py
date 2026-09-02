@@ -170,10 +170,25 @@ class BasketState:
         s.equity_curve = d.get("equity_curve", [])
         s.skipped = d.get("skipped", {})
         s.last_run = d.get("last_run")
+        # Restore tax lots from saved state
         for sym, lots in d.get("tax_lots", {}).items():
             for lot in lots:
                 s.tax.on_buy(sym, lot["qty"], lot["price"],
                              datetime.fromisoformat(lot["date"]))
+        # Reconcile: if positions exist but tax lots are missing, rebuild from trades
+        for sym, pos in s.positions.items():
+            if sym not in s.tax.lots or not s.tax.lots[sym]:
+                # Find first BUY trade for this symbol to get entry date/price
+                entry_trade = next(
+                    (t for t in s.trades if t["symbol"] == sym and t["side"] == "BUY"),
+                    None
+                )
+                if entry_trade:
+                    entry_date = datetime.fromisoformat(entry_trade["time"])
+                    s.tax.on_buy(sym, pos["qty"], pos["entry"], entry_date)
+                else:
+                    # Fallback: use position entry price and current time
+                    s.tax.on_buy(sym, pos["qty"], pos["entry"], datetime.now(IST))
         return s
 
 

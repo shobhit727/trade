@@ -284,7 +284,7 @@ Alert ID: {alert.id}
         try:
             # Run in shared executor to avoid blocking
             executor = await self._get_executor()
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             await loop.run_in_executor(executor, self._send_sync, msg)
             logger.info(f"Email alert sent: {alert.id}")
             return True

@@ -228,7 +228,12 @@ docker compose logs --since="2024-01-01T00:00:00" cryptobot-paper
 
 ## 9. Configuration knobs
 
-The bot reads `configs/base.yaml`. Override anything via env (prefixes: `APP_`, `RISK_`, `EXECUTION_`, `BINANCE_`, `MARKET_DATA_`, `MONITORING_`, `DB_`, `ML_`, `BACKTEST_`).
+The bot reads `configs/base.yaml`. Override anything via env (prefixes: `APP_`, `RISK_`, `EXECUTION_`, `BINANCE_`, `MARKET_DATA_`, `MONITORING_`, `DB_`, `ML_`, `BACKTEST_`, `EXTERNAL_`, `TIMEOUT_`, `SERVER_`).
+
+> Note (2026-08-31): The configuration system was extended with three new sections:
+> - `EXTERNAL_*`: External service URLs (Kite, Yahoo Finance, Binance prod/futures, Telegram, PagerDuty, WhatsApp)
+> - `TIMEOUT_*`: HTTP timeouts (default=20s, long=30s, short=10s, strategy=0.5s, stop=30s, SMTP=30s)
+> - `SERVER_*`: Bind host/ports (127.0.0.1:8080, NSE basket=8084, NSE powerhour=8085)
 
 > Note (2026-08-22): large blocks of base.yaml (`strategies.*`, `ml.models.*`) are parsed but never
 > read by `Settings` — strategy/model params come from code defaults. See issue #52.
@@ -244,9 +249,31 @@ RISK_MAX_DAILY_LOSS_PCT=0.02 RISK_KILL_SWITCH_DAILY_LOSS_PCT=0.05 \
 EXECUTION_MODE=binance BINANCE_TESTNET=false \
   BINANCE_API_KEY=$BINANCE_API_KEY BINANCE_API_SECRET=$BINANCE_API_SECRET \
   docker compose up -d cryptobot
+
+# Custom timeouts
+TIMEOUT_HTTP_DEFAULT_TIMEOUT=30 TIMEOUT_SMTP_TIMEOUT=60 \
+  docker compose up -d cryptobot-paper
 ```
 
 The YAML structure (`exchanges.binance`, `monitoring.alerts.*`) is flattened into the Settings namespace by `Settings.from_yaml_safe` in `src/cryptobot/config.py`.
+
+### 9.1 WhatsApp alerting (new in v0.3.0)
+
+```yaml
+# configs/base.yaml
+alerts:
+  whatsapp_enabled: false
+  whatsapp_token: "${WHATSAPP_TOKEN}"
+  whatsapp_phone_id: "${WHATSAPP_PHONE_ID}"
+  whatsapp_to: []
+```
+
+```bash
+export MONITORING_WHATSAPP_ENABLED=true
+export WHATSAPP_TOKEN="your-token"
+export WHATSAPP_PHONE_ID="your-phone-id"
+export WHATSAPP_TO="+919999999999,+918888888888"
+```
 
 ## 10. Health checks and `/health` endpoint
 
@@ -258,16 +285,33 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 ```
 
 The endpoint is served by `src/cryptobot/utils/health_server.py` (stdlib ThreadingHTTPServer,
-`/health` + `/metrics`). `cryptobot bot` starts it; `cryptobot serve` runs it standalone.
+`/health` + `/metrics` + `/dashboard`). `cryptobot bot` starts it; `cryptobot serve` runs it standalone.
 
-> ⚠️ **2026-08-22**: the production image cannot start at all until #22 is fixed (CMD duplicates
-> `-m` under ENTRYPOINT). The test target is unaffected.
+> ✅ **2026-08-31**: Production image starts correctly (issue #22 fixed in `Dockerfile`).
+
+### 10.1 Dashboard (v0.3.0+)
+
+The `/dashboard` endpoint renders a read-only family dashboard with:
+
+- **Equity card** — current equity, today's P&L, peak equity, max drawdown
+- **Price & trades chart** — inline SVG with BUY/SELL markers
+- **Equity curve** — sparkline of historical equity
+- **Trading stats** — bars seen/fed, orders, fills, rejects, open positions
+- **Paper gate progress** — dynamic bar (blue→amber→green) with 60-day target
+- **Global fund** — balance + frozen state pill
+- **Circuit breaker** — TRIPPED/armed status with reason
+- **India VDA tax** — tax breakdown table
+- **Live trade tape** — auto-refreshes every 5s
+- **Strategy sweep** — backtest all registered strategies, drill into trades
+
+Auto-refreshes every 30s via meta tag; live trades poll every 5s.
 
 When the container runs:
 
 ```bash
 curl -fsS http://localhost:8080/health
 curl -fsS http://localhost:8080/metrics | head
+open http://localhost:8080/dashboard  # browser
 ```
 
 If you override the entrypoint, keep the healthcheck in mind:
@@ -335,6 +379,28 @@ Expected when `BINANCE_API_KEY` is empty. Either set real testnet keys or set `E
 
 ```bash
 EXECUTION_MODE=paper docker compose up -d cryptobot-paper
+```
+
+### "Ledger corrupt" on startup (NSE basket / tax engine)
+
+**Symptom:** `ERROR: sell X SYMBOL without open lots — ledger corrupt` on container restart.
+
+**Root cause:** State file restored positions but tax ledger lots were missing (version mismatch or corruption).
+
+**Fixed in v0.3.0:** `BasketState.from_dict()` now reconciles missing tax lots from trade history on load.
+
+```bash
+# Verify fix
+docker compose restart nse-basket
+docker logs cryptobot-nse-basket | grep -i "ledger corrupt"
+# Should show no errors; rebalance should complete
+```
+
+If you see the error on an older image, rebuild:
+
+```bash
+docker compose build nse-basket
+docker compose up -d nse-basket
 ```
 
 ### Wipe persistent state

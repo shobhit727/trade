@@ -141,7 +141,7 @@ class CircuitBreaker:
         async with self._lock:
             if self._state == "OPEN":
                 if self._last_failure_time and (
-                    asyncio.get_event_loop().time() - self._last_failure_time >= self.reset_timeout
+                    asyncio.get_running_loop().time() - self._last_failure_time >= self.reset_timeout
                 ):
                     self._state = "HALF_OPEN"
                     self._success_count = 0
@@ -176,7 +176,7 @@ class CircuitBreaker:
 
     def _on_failure(self):
         self._failure_count += 1
-        self._last_failure_time = asyncio.get_event_loop().time()
+        self._last_failure_time = asyncio.get_running_loop().time()
 
         if self._state == "HALF_OPEN":
             self._state = "OPEN"

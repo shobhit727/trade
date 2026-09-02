@@ -265,7 +265,7 @@ class InferencePipeline:
         time.perf_counter()
         if self.config.mode == InferenceMode.ASYNC:
             # Run in thread pool for CPU-bound models
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             predictions = await loop.run_in_executor(None, lambda: model.predict(features))
             probs = await loop.run_in_executor(None, lambda: model.predict_proba(features))
         else:

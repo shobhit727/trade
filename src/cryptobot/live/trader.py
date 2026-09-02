@@ -393,7 +393,7 @@ class LiveTrader:
             except Exception as exc:  # noqa: BLE001 - venue may not support it
                 logger.warning("protective stop skipped for %s: %s", order.symbol, exc)
 
-        asyncio.get_event_loop().create_task(_submit())
+        asyncio.get_running_loop().create_task(_submit())
 
     def _rescale_order(self, order, close: Decimal) -> None:
         """Equity-fractional sizing, mirroring BacktestEngine._run_orders.
@@ -526,7 +526,7 @@ class LiveTrader:
             self._gate.save()
         if not self._fund.frozen:
             self._fund.freeze()
-        asyncio.get_event_loop().create_task(self._graceful_close())
+        asyncio.get_running_loop().create_task(self._graceful_close())
         return True
 
     async def _graceful_close(self) -> None:

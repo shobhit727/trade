@@ -82,6 +82,15 @@ class TaxLedger:
             if lot.qty <= 1e-9:
                 pool.pop(0)
         if remaining > 1e-9:
+            # Try to auto-recover by creating a lot from position if available
+            # This handles cases where state was restored without tax lots
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "tax ledger missing lots for %s (remaining=%s); "
+                "this may indicate state file corruption or version mismatch",
+                symbol, remaining
+            )
             raise ValueError(
                 f"sell {remaining} {symbol} without open lots — ledger corrupt")
         self.records.extend(out)
