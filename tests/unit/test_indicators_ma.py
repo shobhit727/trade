@@ -7,7 +7,7 @@ from EMA and return finite, well-defined values.
 import numpy as np
 import pytest
 
-from cryptobot.strategies.indicators import dema, tema, hull, kama, ema
+from cryptobot.strategies.indicators import dema, ema, hull, kama, tema
 
 
 def _trend(n=80, start=100.0, end=200.0):

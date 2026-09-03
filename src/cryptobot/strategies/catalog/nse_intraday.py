@@ -77,11 +77,11 @@ class NseOrbStrategy(SignalStrategy):
         if mod < SESSION_START[0] * 60 + SESSION_START[1]:
             return 0
 
-        c, h, l = closes[-1], highs[-1], lows[-1]
+        c, high, low = closes[-1], highs[-1], lows[-1]
         # Build the opening range.
         if st["bars"] < self.config.range_bars:
-            st["hi"] = h if st["hi"] is None else max(st["hi"], h)
-            st["lo"] = l if st["lo"] is None else min(st["lo"], l)
+            st["hi"] = high if st["hi"] is None else max(st["hi"], high)
+            st["lo"] = low if st["lo"] is None else min(st["lo"], low)
             st["bars"] += 1
             return 0
 

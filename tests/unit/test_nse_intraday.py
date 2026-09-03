@@ -14,8 +14,8 @@ def _ts(day: int, hour: int, minute: int) -> int:
 
 
 class Bar:
-    def __init__(self, o, h, l, c, ts):
-        self.open, self.high, self.low, self.close = o, h, l, c
+    def __init__(self, o, h, low, c, ts):  # noqa: E741 - test helper, low is domain term
+        self.open, self.high, self.low, self.close = o, h, low, c
         self.volume = 1000.0
         self.ts = ts
 
@@ -61,7 +61,6 @@ def test_orb_flat_by_close():
     bars = _session(1, closes_above=102.0)
     orders = _feed_all(strat, bars)
     # last bar is 15:30 -> force-flat signal 0; ensure no NEW entries after 15:25
-    late_ts = [_ts(1, 15, 30)]
     assert all(o is None or o.side.value != "BUY" or True for o in orders[-1:])
 
 

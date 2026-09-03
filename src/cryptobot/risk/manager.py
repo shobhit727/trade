@@ -40,7 +40,7 @@ class RiskCheckResult:
         )
 
 
-def _price_returns(prices: "deque[tuple[float, Decimal]]") -> list[float]:
+def _price_returns(prices: deque[tuple[float, Decimal]]) -> list[float]:
     """Period-over-period simple returns from a price-history deque."""
     out: list[float] = []
     for i in range(1, len(prices)):
@@ -51,14 +51,14 @@ def _price_returns(prices: "deque[tuple[float, Decimal]]") -> list[float]:
     return out
 
 
-def _pearson(a: list[float], b: list[float]) -> "float | None":
+def _pearson(a: list[float], b: list[float]) -> float | None:
     """Pearson correlation of two equal-length return series, or None if undefined."""
     n = len(a)
     if n < 2:
         return None
     mean_a = sum(a) / n
     mean_b = sum(b) / n
-    cov = sum((x - mean_a) * (y - mean_b) for x, y in zip(a, b))
+    cov = sum((x - mean_a) * (y - mean_b) for x, y in zip(a, b, strict=True))
     var_a = sum((x - mean_a) ** 2 for x in a)
     var_b = sum((y - mean_b) ** 2 for y in b)
     if var_a == 0 or var_b == 0:

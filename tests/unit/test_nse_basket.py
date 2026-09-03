@@ -123,7 +123,6 @@ def test_breaker_blocks_reentry_until_reset(tmp_path, monkeypatch):
     b._ist_today = lambda: "2026-08-12"
     b._ist_now = lambda: __import__("datetime").datetime(2026, 8, 12, 15, 36, tzinfo=__import__("zoneinfo").ZoneInfo("Asia/Kolkata"))
     b.run_once()
-    prices_held = True
     # force trip
     b.state.peak_equity = max(b.state.peak_equity, 10_000)
     b.state.cash = 7_000                            # simulate -30%

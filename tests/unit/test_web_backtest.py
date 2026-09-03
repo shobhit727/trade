@@ -107,9 +107,10 @@ async def test_single_algo_backtest_produces_metrics():
 
 
 def test_two_leg_strategies_degrade_gracefully_on_bar_feed():
+    from decimal import Decimal
+
     from cryptobot.backtest.runner import make_strategy
     from cryptobot.execution.adverse_selection import TopOfBook
-    from decimal import Decimal
 
     fa = make_strategy("funding_arbitrage")
     assert fa.feed("BTCUSDT", 50000.0) is None

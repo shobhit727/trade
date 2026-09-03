@@ -63,8 +63,8 @@ def test_trade_tape_renders_fills():
     ]
     html = render_dashboard_html(snap_fixture())  # renderer reads snap only for structure
     assert "tt-table" in html
-    # trades render via JS from /health; ensure payload key exists on snapshot path
-    from cryptobot.live.trader import LiveTrader  # noqa: F401 - import sanity
+    # trades render via JS from /health; ensure snapshot path doesn't crash
+    assert html.count("tt-table") == 1
 
 
 def test_price_chart_renders_line_and_markers():

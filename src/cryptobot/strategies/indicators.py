@@ -29,7 +29,7 @@ def ema(values, period: int) -> float:
     return float(out)
 
 
-def _ema_series(values, period: int) -> "np.ndarray":
+def _ema_series(values, period: int) -> np.ndarray:
     """Full EMA series (prefix-stable recursion), one value per input bar."""
     a = np.asarray(values, dtype=float)
     k = 2.0 / (period + 1)

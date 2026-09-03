@@ -136,6 +136,7 @@ def test_cache_key_none_when_features_absent():
 
 def test_inference_cache_hit_uses_same_key():
     import asyncio
+
     import numpy as np
 
     from cryptobot.ml.inference import (

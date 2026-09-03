@@ -184,9 +184,8 @@ def test_sqlite_state_manager_roundtrip(tmp_path):
     if sqlite3 is None:  # pragma: no cover - graceful fallback path
         pytest.skip("sqlite3 unavailable in this interpreter")
 
-    from cryptobot.core.state import Order
     from cryptobot.core.events import OrderSide, OrderStatus, OrderType
-    from cryptobot.core.state import StateManager
+    from cryptobot.core.state import Order, StateManager
 
     db_file = tmp_path / "cryptobot.db"
     mgr = StateManager()

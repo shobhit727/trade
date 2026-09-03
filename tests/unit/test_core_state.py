@@ -63,8 +63,8 @@ def test_save_order_in_memory_path(monkeypatch, tmp_path: Path):
     monkeypatch.setattr("cryptobot.core.state.sqlite3", None)
     StateManager._instance = None
     sm = StateManager()
-    from cryptobot.core.state import Order
     from cryptobot.core.events import OrderSide, OrderStatus, OrderType
+    from cryptobot.core.state import Order
 
     order = Order(
         order_id="o2", symbol="BTCUSDT", side=OrderSide.BUY, type=OrderType.LIMIT,
@@ -80,8 +80,8 @@ def test_save_order_persists_to_sqlite(tmp_path: Path):
     ``order.created_at`` and carries the correct number of columns (19)."""
     import sqlite3
 
-    from cryptobot.core.state import Order
     from cryptobot.core.events import OrderSide, OrderStatus, OrderType
+    from cryptobot.core.state import Order
 
     db_file = tmp_path / "state.db"
 
