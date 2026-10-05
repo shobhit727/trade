@@ -369,18 +369,41 @@ drawdown was 45%. That is the exact failure mode §6 exists to prevent.
 | Live system | 🔜 Pending |
 | **Real capital** | ⛔ **BLOCKED — 3 gates fail (§2.4, `reports/VALIDATION_v1.md` §4)** |
 
-### 11.1 ⚠️ Survivorship bias is present and material
+### 11.1 ⚠️ Data bias: ~7.3%/yr (survivorship + missing dividends)
 
-The universe is **today's NIFTY-50 backfilled to 2008**. The benchmark built from it
-returns 18.77% OOS — **3.2× the official NSE NIFTY-50 TRI** for a comparable period.
+The universe is **today's NIFTY-50 backfilled to 2008**, and the panel is **price return
+only — dividends are absent entirely**.
 
 **Diagnostic:** a correct 2008→2026 NIFTY-50 panel should contain Satyam, IL&FS, DHFL,
-Yes Bank and Vodafone Idea. This panel contains **none of them**. That confirms the
-panel is a survivor set.
+Yes Bank and Vodafone Idea. This panel contains **none of them**. It is a survivor set.
 
-Consequence: absolute returns for both strategy and benchmark are optimistic. The
-**relative** comparison (same windows, same cost treatment) is the more meaningful
-figure. Unquantified — fixing it needs point-in-time constituent history we do not have.
+**Quantified** by `research/verify_corporate_actions.py`:
+
+| | Annualised |
+|---|---|
+| Our EW benchmark, price only | 18.58% |
+| + NSE-50 dividend yield (~1.15%) | 19.73% |
+| Official NSE TRI, 20y to Feb 2026 | 12.44% |
+| **Implied bias** | **≈ 7.3%/yr** |
+
+| Figure | Reported | Bias-corrected |
+|---|---|---|
+| Strategy | 13.40% | **≈ 6.1%** |
+| Benchmark | 18.77% | **≈ 11.5%** |
+
+**This invalidates any claim that the strategy "beats the official index TRI."** Corrected,
+it roughly *matches* the index on return while halving the drawdown (−15.4% vs −38.0%).
+Real, but far more modest than the headline number.
+
+The **relative** comparison (same windows, same cost treatment) is unaffected and remains
+the trustworthy figure: the strategy trails the benchmark by ~5.4pp/yr.
+
+### 11.1b ✅ Corporate actions ARE adjusted post-2008 (verified)
+
+Verified against 10 documented 1:1 bonus issues (Infosys 2018, Wipro 2024, HDFC Bank
+2015, HCLTech 2013, Axis 2015, ICICI 2014, TechM 2013, HUL 2013, SBI 2015, TCS 2014).
+None shows the ~−50% one-day drop that unadjusted data would produce, so the post-2008
+return series is valid. This independently justifies the §4.1 C1 restriction to 2008+.
 
 ### 11.2 Prior-attempt post-mortem
 

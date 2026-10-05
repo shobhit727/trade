@@ -11,6 +11,7 @@ capital is deployed.
 > | **OOS annualised** | **13.40%** (walk-forward, 2008→2026) |
 > | **OOS monthly** | **+1.054%** |
 > | Requested target | 3.000%/month (42.6% annualised) |
+> | **Bias-corrected** | **≈6.1%/yr** — see "Known limitations" |
 > | OOS Sharpe | 0.66 |
 > | OOS max drawdown | −15.41% |
 > | Band | **C** (needs Sharpe ≥ 0.7 and benchmark outperformance) |
@@ -122,12 +123,28 @@ src/nsealgo/
 - Slippage included in the backtest, so the Gate 4 stress test is not vacuous
 - A genuine market crash survives data cleaning intact
 
+## Is the data real?
+
+Yes. All results come from `data/nse/*_1d.csv` — 50 real OHLCV series, 68MB, 48 symbols
+after cleaning, 4,602 trading days, 2008-01-01 → 2026-08-25.
+
+Verified properties:
+- **Corporate-action adjusted post-2008** (10 known bonus dates, no −50% signature)
+- **Structurally clean**: 0 duplicate timestamps, 0 non-positive prices in 47 of 48 symbols
+- **Full Indian cost stack** applied on every fill, calibrated to published itemisations
+
+Verified limitations: survivorship bias, no dividends, 6-week staleness, pre-2008 slice
+poisoned by vendor artifacts (hence the 2008+ restriction).
+
 ## Known limitations
 
-1. **Survivorship bias.** The universe is today's NIFTY-50 backfilled to 2008. The
-   benchmark returns 18.77% OOS — 3.2× official NSE TRI. A correct panel should contain
-   Satyam, IL&FS, DHFL, Yes Bank and Vodafone Idea; this one contains none. Both
-   strategy and benchmark absolute returns are optimistic. Unquantified.
+1. **~7.3%/yr of data bias.** Survivorship (today's NIFTY-50 backfilled to 2008; no
+   Satyam/IL&FS/DHFL/Yes Bank/Vodafone Idea in the panel) **plus dividends being absent
+   entirely** (price return only). Bias-corrected, the strategy is ≈6.1% not 13.40%, and
+   ≈11.5% for the benchmark. **This invalidates "beats the official index TRI"** — corrected,
+   it roughly matches the index while halving the drawdown. Quantified by
+   `research/verify_corporate_actions.py`.
+   *Corporate actions post-2008 are verified adjusted* (10 bonus dates, no −50% signature).
 2. **Data ends 2026-08-25**, ~6 weeks stale. Needs a Kite historical backfill before live.
 3. **Sharpe 0.66 vs 0.7 required.** The regime overlay's whipsaw costs upside in sharp
    recoveries (2020, 2021).

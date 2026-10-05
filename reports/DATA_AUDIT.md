@@ -117,7 +117,38 @@ Applied in `nsealgo/data/cleaning.py`. No backtest may run on unclean data.
   data, and including them would corrupt every metric we compute.
 - Coverage after C1: **≥ 40 symbols with ≥ 15 years** → `GOAL.md` §5 Gate 1 ✅
 
-### 5.2 Survivorship bias — DISCLOSED (unquantified)
+### 5.2 Corporate actions are ADJUSTED post-2008 (verified)
+
+Verified by `research/verify_corporate_actions.py` against 10 documented 1:1 bonus
+issues. An unadjusted series would show a ~-50% one-day drop on each ex-date:
+
+| Symbol | Bonus | Worst day in that window |
+|---|---|---|
+| Infosys | 1:1, ex-Sep 2018 | −0.98% |
+| Wipro | 1:1, ex-Nov 2024 | −2.44% |
+| HDFC Bank | 1:1, ex-Jul 2015 | −1.66% |
+| HCLTech | 1:1, ex-Jul 2013 | −1.87% |
+| Axis Bank | 1:1, ex-Sep 2015 | −3.88% |
+| ICICI Bank | 1:1, ex-Jun 2014 | −2.13% |
+| Tech Mahindra | 1:1, ex-May 2013 | −2.17% |
+| HUL | 1:1, ex-Dec 2013 | −1.21% |
+| SBI | 1:1, ex-Sep 2015 | −3.58% |
+| TCS | 1:1, ex-Jul 2014 | −2.09% |
+
+**No -50% signature at any bonus date -> the post-2008 panel is corporate-action
+adjusted and returns are usable.** This independently justifies the C1 restriction:
+the pre-2008 slice is where the vendor's adjustment *breaks down*.
+
+### 5.3 ⚠️ DIVIDENDS ARE ABSENT — price return only
+
+The panel is **price return only**. The official NSE NIFTY-50 TRI (12.44% over 20y)
+*includes* dividends; our figures do not. NSE-50 long-run dividend yield is ~1.15%/yr.
+
+Every number this project reports is therefore a **price return** and is understated
+by roughly 1.15%/yr as a total return. Combined with survivorship, see
+`reports/VALIDATION_v1.md` §6.1 for the resulting ~7.3%/yr bias estimate.
+
+### 5.4 Survivorship bias — DISCLOSED and now QUANTIFIED
 
 31 of 50 symbols have **truncated history matching their listing date**:
 

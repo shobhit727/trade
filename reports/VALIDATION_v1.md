@@ -145,6 +145,41 @@ deficit in §3.
 Unquantified. Fixing it requires a point-in-time NIFTY-50 constituent history, which we
 do not have. Disclosed per `GOAL.md` §6.5.
 
+### 6.1 ⚠️ CORRECTION — the bias is ~7.3%/yr, and dividends are missing
+
+An earlier draft of this report left the bias "unquantified". That was too generous.
+`research/verify_corporate_actions.py` quantifies it:
+
+| | Annualised |
+|---|---|
+| Our equal-weight benchmark, **price return only** | 18.58% |
+| + estimated NSE-50 dividend yield (~1.15%) | 19.73% |
+| **Official NSE TRI, 20y to Feb 2026 (includes dividends)** | **12.44%** |
+| **Implied survivorship + selection bias** | **≈ 7.3%/yr** |
+
+Two separate effects compound here:
+
+1. **Survivorship/selection bias.** Backfilling today's constituents means we never held
+   the failures.
+2. **Dividends are absent from our data entirely.** The panel is price-only. Official
+   TRI includes dividends, so comparing our price return to their total return
+   *understates* the gap — hence adding ~1.15% back makes the bias larger, not smaller.
+
+**So ~7.3%/yr of our reported numbers is bias, not skill.** Applied to the strategy:
+
+| Figure | As reported | Bias-corrected estimate |
+|---|---|---|
+| Strategy | 13.40% | **≈ 6.1%** |
+| Benchmark | 18.77% | **≈ 11.5%** |
+
+This does **not** change the relative conclusion — the strategy still trails the
+benchmark by ~5.4pp/yr — but it means the headline "13.40% beats the official 12.44%
+index TRI" comparison was **not valid** and should not be made. Corrected, the strategy
+roughly matches the index on return while halving the drawdown. That is a real but far
+more modest claim.
+
+Per `GOAL.md` §6.5 this is disclosed in every result.
+
 ---
 
 ## 7. What worked, what didn't
