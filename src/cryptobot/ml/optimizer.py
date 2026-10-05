@@ -32,6 +32,9 @@ except ImportError:
     HAS_OPTUNA = False
 
 
+from dataclasses import fields
+
+import pandas as pd
 from sklearn.metrics import (
     accuracy_score,
     f1_score,
@@ -43,14 +46,16 @@ from sklearn.metrics import (
 
 from cryptobot.ml.models.direction import DirectionClassifier, DirectionConfig
 from cryptobot.ml.models.ensemble import EnsembleConfig, EnsembleModel
-from cryptobot.ml.models.regime import RegimeConfig, RegimeDetector
-from cryptobot.ml.models.volatility import VolatilityConfig, VolatilityModel
+from cryptobot.ml.models.regime import RegimeConfig, RegimeDetector, RegimeMethod
+from cryptobot.ml.models.volatility import VolatilityConfig, VolatilityMethod, VolatilityModel
 from cryptobot.ml.training import (
     PurgedKFold,
     TrainingConfig,
     WalkForwardCV,
     WalkForwardTrainer,
 )
+
+HAS_PANDAS = True
 
 logger = logging.getLogger(__name__)
 
@@ -107,51 +112,46 @@ class ModelSearchSpace:
         return params
 
 
-# Default search spaces per model type
+# Default search spaces per model type.
+#
+# Issue #27: the previous spaces suggested fields that do not exist on the model
+# configs (n_estimators/max_depth/learning_rate/... for direction; alpha/tol/... for
+# volatility/regime), so every Optuna trial raised TypeError on config construction.
+# These spaces match the actual dataclass fields exactly.
 DEFAULT_SEARCH_SPACES = {
     "direction": ModelSearchSpace(
         model_type="direction",
         parameters=[
-            ParameterSpace("threshold", "float", low=0.5, high=0.7, step=0.01),
+            ParameterSpace("threshold", "float", low=0.50, high=0.70, step=0.01),
             ParameterSpace("horizon", "int", low=1, high=20),
-            ParameterSpace("max_features", "int", low=4, high=20),
-            ParameterSpace("n_estimators", "int", low=50, high=300, log=True),
-            ParameterSpace("max_depth", "int", low=3, high=15),
-            ParameterSpace("learning_rate", "float", low=0.01, high=0.3, log=True),
-            ParameterSpace("subsample", "float", low=0.6, high=1.0),
-            ParameterSpace("colsample_bytree", "float", low=0.6, high=1.0),
-            ParameterSpace("reg_alpha", "float", low=1e-8, high=10.0, log=True),
-            ParameterSpace("reg_lambda", "float", low=1e-8, high=10.0, log=True),
+            ParameterSpace("max_features", "int", low=2, high=16),
         ],
         fixed_params={},
     ),
     "volatility": ModelSearchSpace(
         model_type="volatility",
         parameters=[
-            ParameterSpace("window", "int", low=10, high=252),
-            ParameterSpace("method", "categorical", choices=["ewma", "garch", "realized"]),
-            ParameterSpace("alpha", "float", low=0.9, high=0.99),
-            ParameterSpace("lambda_", "float", low=0.9, high=0.999),
+            ParameterSpace("method", "categorical", choices=["ewma", "realized", "garch", "quantile"]),
+            ParameterSpace("window", "int", low=10, high=120),
+            ParameterSpace("lambda_", "float", low=0.90, high=0.99, step=0.005),
+            ParameterSpace("horizon", "int", low=1, high=20),
         ],
         fixed_params={},
     ),
     "regime": ModelSearchSpace(
         model_type="regime",
         parameters=[
-            ParameterSpace("n_regimes", "int", low=2, high=6),
-            ParameterSpace("covariance_type", "categorical", choices=["full", "tied", "diag", "spherical"]),
-            ParameterSpace("n_init", "int", low=5, high=20),
-            ParameterSpace("max_iter", "int", low=100, high=500),
-            ParameterSpace("tol", "float", low=1e-4, high=1e-2, log=True),
+            ParameterSpace("method", "categorical", choices=["hmm", "kmeans", "gmm", "threshold"]),
+            ParameterSpace("n_regimes", "int", low=2, high=5),
+            ParameterSpace("window", "int", low=20, high=120),
+            ParameterSpace("min_duration", "int", low=1, high=10),
         ],
         fixed_params={},
     ),
     "ensemble": ModelSearchSpace(
         model_type="ensemble",
         parameters=[
-            ParameterSpace("n_estimators", "int", low=10, high=100),
-            ParameterSpace("voting", "categorical", choices=["soft", "hard"]),
-            ParameterSpace("weights", "categorical", choices=[None, "auto"]),
+            ParameterSpace("meta_learner", "categorical", choices=["weighted_vote", "logistic_regression"]),
         ],
         fixed_params={},
     ),
@@ -271,7 +271,10 @@ class WalkForwardOptimizer:
                 )
                 regime_results[f"regime_{regime}"] = regime_result
 
-        # Overall optimization per model type
+        # Overall optimization per model type. Only types whose evaluator produces
+        # the configured objective metric are comparable for best_overall — e.g.
+        # SHARPE exists only for signal models (direction/ensemble), while
+        # volatility/regime report their own unsupervised proxies (#27).
         for model_type in model_types:
             if model_type not in self.search_spaces:
                 continue
@@ -283,8 +286,9 @@ class WalkForwardOptimizer:
             )
             all_trials.extend(result.all_trials)
 
-            # Track best overall
-            score = result.best_metrics.get(self.objective_metric.value, float("-inf"))
+            score = result.best_metrics.get(self.objective_metric.value)
+            if score is None:
+                continue
             if best_overall is None or score > best_score:
                 best_score = score
                 best_overall = model_type
@@ -340,12 +344,29 @@ class WalkForwardOptimizer:
                 X_train, X_test = features[train_idx], features[test_idx]
                 y_train = labels[train_idx]
 
-                # Train model
+                # Train model — fit signature differs per model type (issue #27):
+                # VolatilityModel.fit(returns), RegimeDetector.fit(features),
+                # DirectionClassifier/EnsembleModel.fit(X, y).
                 model = self._create_model(model_type, model_config)
-                model.fit(X_train, y_train)
+                if model_type == "volatility":
+                    if returns is None:
+                        if HAS_OPTUNA:
+                            raise optuna.TrialPruned()
+                        raise ValueError("volatility optimization requires `returns`")
+                    model.fit(returns[train_idx])
+                elif model_type == "regime":
+                    model.fit(X_train)
+                else:
+                    model.fit(X_train, y_train)
 
-                # Evaluate
-                metrics = self._evaluate_model(model, X_test, labels[test_idx], returns)
+                # Evaluate on the held-out fold only
+                metrics = self._evaluate_model(
+                    model,
+                    model_type,
+                    X_test,
+                    labels[test_idx],
+                    returns[test_idx] if returns is not None else None,
+                )
 
                 # Record all metrics
                 for k, v in metrics.items():
@@ -383,7 +404,7 @@ class WalkForwardOptimizer:
             n_trials=self.config.n_trials,
             timeout=self.config.optuna_timeout,
             n_jobs=self.n_jobs,
-            show_progress_bar=True,
+            show_progress_bar=False,
         )
 
         # Extract best result
@@ -432,35 +453,44 @@ class WalkForwardOptimizer:
         labels: npt.NDArray[np.float64],
         returns: npt.NDArray[np.float64] | None = None,
     ) -> SymbolOptimizationResult:
-        """Train with default parameters (fallback)."""
-        trainer = WalkForwardTrainer(self.config, self.cv_splitter)
+        """Train with default parameters, evaluated OUT-OF-SAMPLE (issue #27).
 
-        if model_type == "direction":
-            model = trainer.train_direction(features, labels)
-        elif model_type == "volatility":
-            model = trainer.train_volatility(returns) if returns is not None else None
-        elif model_type == "regime":
-            model = trainer.train_regime(features)
-        elif model_type == "ensemble":
-            model = trainer.train_ensemble(features, labels)
-        else:
-            raise ValueError(f"Unknown model type: {model_type}")
+        The previous fallback scored predictions on the training data itself —
+        in-sample numbers drove best_overall selection. Now every fold's test
+        segment is scored via the same evaluator used by the Optuna path.
+        """
+        model_config = self._create_model_config(model_type, {})
+        fold_metrics: list[dict[str, float]] = []
 
-        # Evaluate on full data
-        metrics = {}
-        if model and hasattr(model, "predict"):
-            preds = model.predict(features)
-            from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
-            metrics["accuracy"] = float(accuracy_score(labels, preds))
-            metrics["f1"] = float(f1_score(labels, preds, average="weighted", zero_division=0))
-            metrics["precision"] = float(precision_score(labels, preds, average="weighted", zero_division=0))
-            metrics["recall"] = float(recall_score(labels, preds, average="weighted", zero_division=0))
-        elif model_type == "volatility" and returns is not None and model is not None:
-            # VolatilityModel has no predict(); report its forecast as a metric proxy.
+        for _train_idx, test_idx in self.cv_splitter.split(features, labels):
+            X_test = features[test_idx]
+            y_test = labels[test_idx]
+            returns_test = returns[test_idx] if returns is not None else None
+
             try:
-                metrics["forecast"] = float(model.forecast_series(horizon=1)[0])
-            except Exception:
-                pass
+                train_idx_full = self._fold_train_indices(features, test_idx)
+                model = self._create_model(model_type, model_config)
+                if model_type == "volatility":
+                    if returns is None:
+                        continue
+                    model.fit(returns[train_idx_full])
+                elif model_type == "regime":
+                    model.fit(features[train_idx_full])
+                else:
+                    model.fit(features[train_idx_full], labels[train_idx_full])
+            except Exception as e:  # noqa: BLE001 - skip degenerate folds
+                logger.debug("default-path fold skipped (%s): %s", model_type, e)
+                continue
+
+            fold_metrics.append(self._evaluate_model(model, model_type, X_test, y_test, returns_test))
+
+        metrics: dict[str, float] = {}
+        if fold_metrics:
+            keys = fold_metrics[0].keys()
+            metrics = {
+                k: float(np.mean([m.get(k, 0.0) for m in fold_metrics]))
+                for k in keys
+            }
 
         return SymbolOptimizationResult(
             symbol=symbol,
@@ -470,17 +500,40 @@ class WalkForwardOptimizer:
             all_trials=[],
         )
 
+    def _fold_train_indices(
+        self,
+        features: npt.NDArray[np.float64],
+        test_idx: npt.NDArray[np.int64],
+    ) -> npt.NDArray[np.int64]:
+        """All indices before the test fold start (walk-forward style fallback)."""
+        start = int(np.min(test_idx)) if len(test_idx) else len(features)
+        return np.arange(0, max(start, 1))
+
     def _create_model_config(self, model_type: str, params: dict[str, Any]) -> Any:
-        """Create model config from parameters."""
-        if model_type == "direction":
-            return DirectionConfig(**params)
-        elif model_type == "volatility":
-            return VolatilityConfig(**params)
-        elif model_type == "regime":
-            return RegimeConfig(**params)
-        elif model_type == "ensemble":
-            return EnsembleConfig(**params)
-        raise ValueError(f"Unknown model type: {model_type}")
+        """Create model config from parameters.
+
+        Filters sampled params down to fields the dataclass actually defines and
+        coerces string choices into the StrEnum types the models compare against
+        (issue #27 — unknown kwargs used to raise TypeError on every trial).
+        """
+        config_cls = {
+            "direction": DirectionConfig,
+            "volatility": VolatilityConfig,
+            "regime": RegimeConfig,
+            "ensemble": EnsembleConfig,
+        }.get(model_type)
+        if config_cls is None:
+            raise ValueError(f"Unknown model type: {model_type}")
+
+        valid = {f.name for f in fields(config_cls)}
+        kwargs = {k: v for k, v in params.items() if k in valid}
+
+        if model_type == "volatility" and "method" in kwargs:
+            kwargs["method"] = VolatilityMethod(str(kwargs["method"]).lower())
+        if model_type == "regime" and "method" in kwargs:
+            kwargs["method"] = RegimeMethod(str(kwargs["method"]).lower())
+
+        return config_cls(**kwargs)
 
     def _create_model(self, model_type: str, config: Any) -> Any:
         """Create model instance."""
@@ -497,37 +550,109 @@ class WalkForwardOptimizer:
     def _evaluate_model(
         self,
         model: Any,
+        model_type: str,
         X_test: npt.NDArray[np.float64],
         y_test: npt.NDArray[np.float64],
-        returns: npt.NDArray[np.float64] | None = None,
+        returns_test: npt.NDArray[np.float64] | None = None,
     ) -> dict[str, float]:
-        """Evaluate model with multiple metrics."""
+        """Evaluate a fitted model on its held-out fold (issue #27).
 
-        preds = model.predict(X_test)
+        Signal models (direction / ensemble) get classification plus TRADING
+        metrics computed from the signals applied to the fold's realized returns
+        — previously the SHARPE objective was never produced at all. Volatility
+        is scored by forecast RMSE vs realized rolling vol; regimes by label
+        persistence.
+        """
+        if model_type == "volatility":
+            return self._evaluate_volatility(model, returns_test)
+        if model_type == "regime":
+            return self._evaluate_regime(model, X_test)
 
-        metrics = {
-            "accuracy": float(accuracy_score(y_test, preds)),
-            "f1": float(f1_score(y_test, preds, average="weighted", zero_division=0)),
-            "precision": float(precision_score(y_test, preds, average="weighted", zero_division=0)),
-            "recall": float(recall_score(y_test, preds, average="weighted", zero_division=0)),
+        preds = np.asarray(model.predict(X_test)).ravel()
+        y_true = np.asarray(y_test).ravel()
+        n = min(len(preds), len(y_true))
+        preds, y_true = preds[:n], y_true[:n]
+
+        metrics: dict[str, float] = {
+            "accuracy": float(accuracy_score(y_true, preds)),
+            "f1": float(f1_score(y_true, preds, average="weighted", zero_division=0)),
+            "precision": float(precision_score(y_true, preds, average="weighted", zero_division=0)),
+            "recall": float(recall_score(y_true, preds, average="weighted", zero_division=0)),
         }
 
-        # Add probability-based metrics if available
         if hasattr(model, "predict_proba"):
             try:
-                probas = model.predict_proba(X_test)
-                metrics["log_loss"] = float(log_loss(y_test, probas))
-                if probas.shape[1] == 2:
-                    metrics["roc_auc"] = float(roc_auc_score(y_test, probas[:, 1]))
+                probas = np.asarray(model.predict_proba(X_test))
+                if probas.ndim == 2 and probas.shape[1] >= 2:
+                    metrics["log_loss"] = float(log_loss(y_true[: len(probas)], probas))
+                    metrics["roc_auc"] = float(roc_auc_score(y_true[: len(probas)], probas[:, 1]))
             except Exception:
                 pass
 
-        # Add financial metrics if returns provided
-        if returns is not None:
-            # This would need trade simulation - simplified here
-            pass
+        # Trading performance of the signal on this fold's realized returns
+        r = np.zeros(n) if returns_test is None else np.asarray(returns_test, dtype=float).ravel()[:n]
+        position = np.where(preds > 0, 1.0, 0.0)  # long-if-signal / flat
+        strat = position * r
 
+        mean_ret = float(np.mean(strat)) if n else 0.0
+        std_ret = float(np.std(strat, ddof=1)) if n > 1 else 0.0
+        downside_dev = float(np.sqrt(np.mean(np.minimum(strat, 0.0) ** 2))) if n else 0.0
+
+        equity = np.cumprod(1.0 + strat)
+        peak = np.maximum.accumulate(equity)
+        drawdowns = (peak - equity) / np.where(peak > 0, peak, 1.0)
+        max_dd = float(np.max(drawdowns)) if n else 0.0
+        total_return = float(equity[-1] - 1.0) if n else 0.0
+
+        metrics.update({
+            "sharpe": mean_ret / std_ret * (252 ** 0.5) if std_ret > 0 else 0.0,   # daily-bar assumption
+            "sortino": mean_ret / downside_dev * (252 ** 0.5) if downside_dev > 0 else 0.0,
+            "calmar": total_return / max_dd if max_dd > 0 else 0.0,
+            "max_drawdown": max_dd,
+            "total_return": total_return,
+        })
         return metrics
+
+    def _evaluate_volatility(
+        self,
+        model: Any,
+        returns_test: npt.NDArray[np.float64] | None,
+    ) -> dict[str, float]:
+        """Score volatility forecasts by RMSE against realized rolling vol."""
+        empty = {"vol_rmse": float("inf"), "objective": float("-inf")}
+        if returns_test is None or len(returns_test) < 3:
+            return empty
+        try:
+            forecasts = np.asarray(model.forecast_series(returns_test), dtype=float)
+        except Exception:
+            return empty
+        window = max(int(getattr(model.config, "window", 20)), 2)
+        realized = (
+            pd.Series(returns_test).rolling(window).std().bfill().to_numpy()
+            if HAS_PANDAS
+            else np.full(len(returns_test), float(np.std(returns_test)))
+        )
+        mask = np.isfinite(forecasts) & np.isfinite(realized)
+        if not mask.any():
+            return empty
+        rmse = float(np.sqrt(np.mean((forecasts[mask] - realized[mask]) ** 2)))
+        return {"vol_rmse": rmse, "objective": -rmse}
+
+    def _evaluate_regime(
+        self,
+        model: Any,
+        X_test: npt.NDArray[np.float64],
+    ) -> dict[str, float]:
+        """Score regime labels by persistence (fraction of unchanged transitions)."""
+        try:
+            labels = np.asarray(model.predict(X_test)).ravel()
+        except Exception:
+            return {"regime_persistence": 0.0, "objective": 0.0}
+        if len(labels) < 2:
+            return {"regime_persistence": 0.0, "objective": 0.0}
+        changes = int(np.sum(labels[1:] != labels[:-1]))
+        persistence = 1.0 - changes / (len(labels) - 1)
+        return {"regime_persistence": float(persistence), "objective": float(persistence)}
 
     def optimize_all_symbols(
         self,
@@ -608,57 +733,6 @@ def create_optimizer(
     )
 
 
-# Default search spaces
-DEFAULT_SEARCH_SPACES = {
-    "direction": ModelSearchSpace(
-        model_type="direction",
-        parameters=[
-            ParameterSpace("threshold", "float", low=0.5, high=0.7, step=0.01),
-            ParameterSpace("horizon", "int", low=1, high=20),
-            ParameterSpace("max_features", "int", low=4, high=20),
-            ParameterSpace("n_estimators", "int", low=50, high=300, log=True),
-            ParameterSpace("max_depth", "int", low=3, high=15),
-            ParameterSpace("learning_rate", "float", low=0.01, high=0.3, log=True),
-            ParameterSpace("subsample", "float", low=0.6, high=1.0),
-            ParameterSpace("colsample_bytree", "float", low=0.6, high=1.0),
-            ParameterSpace("reg_alpha", "float", low=1e-8, high=10.0, log=True),
-            ParameterSpace("reg_lambda", "float", low=1e-8, high=10.0, log=True),
-        ],
-        fixed_params={},
-    ),
-    "volatility": ModelSearchSpace(
-        model_type="volatility",
-        parameters=[
-            ParameterSpace("window", "int", low=10, high=252),
-            ParameterSpace("method", "categorical", choices=["ewma", "garch", "realized"]),
-            ParameterSpace("alpha", "float", low=0.9, high=0.99),
-            ParameterSpace("lambda_", "float", low=0.9, high=0.999),
-        ],
-        fixed_params={},
-    ),
-    "regime": ModelSearchSpace(
-        model_type="regime",
-        parameters=[
-            ParameterSpace("n_regimes", "int", low=2, high=6),
-            ParameterSpace("covariance_type", "categorical", choices=["full", "tied", "diag", "spherical"]),
-            ParameterSpace("n_init", "int", low=5, high=20),
-            ParameterSpace("max_iter", "int", low=100, high=500),
-            ParameterSpace("tol", "float", low=1e-4, high=1e-2, log=True),
-        ],
-        fixed_params={},
-    ),
-    "ensemble": ModelSearchSpace(
-        model_type="ensemble",
-        parameters=[
-            ParameterSpace("n_estimators", "int", low=10, high=100),
-            ParameterSpace("voting", "categorical", choices=["soft", "hard"]),
-            ParameterSpace("weights", "categorical", choices=[None, "auto"]),
-        ],
-        fixed_params={},
-    ),
-}
-
-
 __all__ = [
     "OptimizationMetric",
     "ParameterSpace",
@@ -671,4 +745,3 @@ __all__ = [
 ]
 
 
-# Add missing imports

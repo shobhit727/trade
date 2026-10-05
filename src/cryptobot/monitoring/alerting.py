@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import smtplib
 from abc import ABC, abstractmethod
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -97,9 +98,10 @@ class TelegramChannel(NotificationChannel):
     """Telegram bot notification channel."""
 
     def __init__(self, bot_token: str, chat_id: str):
+        from cryptobot.config import get_settings
         self.bot_token = bot_token
         self.chat_id = chat_id
-        self.api_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        self.api_url = f"{get_settings().external_services.telegram_api_url}/bot{bot_token}/sendMessage"
 
     def get_name(self) -> str:
         return "telegram"
@@ -137,8 +139,11 @@ class TelegramChannel(NotificationChannel):
 
         try:
             import aiohttp
+
+            from cryptobot.config import get_settings
+            timeout = get_settings().timeouts.http_short_timeout
             async with aiohttp.ClientSession() as session:
-                async with session.post(self.api_url, json=payload, timeout=10) as resp:
+                async with session.post(self.api_url, json=payload, timeout=timeout) as resp:
                     if resp.status == 200:
                         logger.info(f"Telegram alert sent: {alert.id}")
                         return True
@@ -195,8 +200,11 @@ class DiscordChannel(NotificationChannel):
 
         try:
             import aiohttp
+
+            from cryptobot.config import get_settings
+            timeout = get_settings().timeouts.http_short_timeout
             async with aiohttp.ClientSession() as session:
-                async with session.post(self.webhook_url, json=payload, timeout=10) as resp:
+                async with session.post(self.webhook_url, json=payload, timeout=timeout) as resp:
                     if resp.status in (200, 204):
                         logger.info(f"Discord alert sent: {alert.id}")
                         return True
@@ -278,7 +286,7 @@ Alert ID: {alert.id}
         try:
             # Run in shared executor to avoid blocking
             executor = await self._get_executor()
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             await loop.run_in_executor(executor, self._send_sync, msg)
             logger.info(f"Email alert sent: {alert.id}")
             return True
@@ -298,8 +306,9 @@ class PagerDutyChannel(NotificationChannel):
     """PagerDuty notification channel."""
 
     def __init__(self, integration_key: str):
+        from cryptobot.config import get_settings
         self.integration_key = integration_key
-        self.api_url = "https://events.pagerduty.com/v2/enqueue"
+        self.api_url = get_settings().external_services.pagerduty_events_url
 
     def get_name(self) -> str:
         return "pagerduty"
@@ -335,8 +344,11 @@ class PagerDutyChannel(NotificationChannel):
 
         try:
             import aiohttp
+
+            from cryptobot.config import get_settings
+            timeout = get_settings().timeouts.http_short_timeout
             async with aiohttp.ClientSession() as session:
-                async with session.post(self.api_url, json=payload, timeout=10) as resp:
+                async with session.post(self.api_url, json=payload, timeout=timeout) as resp:
                     if resp.status == 202:
                         logger.info(f"PagerDuty alert sent: {alert.id}")
                         return True
@@ -357,8 +369,9 @@ class AlertManager:
         self.channels: dict[str, NotificationChannel] = {}
         self.rules: list[AlertRule] = []
         self.active_alerts: dict[str, Alert] = {}
-        self.alert_history: list[Alert] = []
+        self.alert_history: deque[Alert] = deque(maxlen=1000)
         self._cooldowns: dict[str, datetime] = {}
+        self._first_seen: dict[str, datetime] = {}
         self._running = False
         self._cleanup_task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
@@ -397,6 +410,24 @@ class AlertManager:
             channels = set(self.channels.values())
         return list(channels)
 
+    def _get_escalation_channels(self, alert: Alert) -> list[NotificationChannel]:
+        """Channels to escalate to for a persistent (re-notified) alert.
+
+        Reads the ``escalation`` mapping on matching rules: severity -> channel names.
+        """
+        channels: list[NotificationChannel] = []
+        for rule in self.rules:
+            if not self._match_rule(alert, rule):
+                continue
+            targets = (rule.escalation or {}).get(alert.severity)
+            if not targets:
+                continue
+            for ch_name in targets:
+                ch = self.channels.get(ch_name)
+                if ch is not None and ch not in channels:
+                    channels.append(ch)
+        return channels
+
     def _is_cooldown(self, alert: Alert) -> bool:
         """Check if alert is in cooldown period."""
         last_sent = self._cooldowns.get(alert.fingerprint)
@@ -420,20 +451,26 @@ class AlertManager:
                 logger.debug(f"Alert in cooldown: {alert.fingerprint}")
                 return 0
 
-            # Check if already active
-            if alert.fingerprint in self.active_alerts:
-                existing = self.active_alerts[alert.fingerprint]
-                existing.timestamp = alert.timestamp
+            existing = self.active_alerts.get(alert.fingerprint)
+            if existing is not None:
+                # Update mutable fields but preserve first_seen so auto-resolve
+                # is measured from the original activation, not the last re-fire.
                 existing.message = alert.message
                 existing.annotations.update(alert.annotations)
-                return 0  # Don't re-notify for same active alert
-
-            # Store active alert
-            self.active_alerts[alert.fingerprint] = alert
-            self.alert_history.append(alert)
+                existing.timestamp = alert.timestamp  # last-seen
+                renotify = True
+            else:
+                # Store active alert
+                self.active_alerts[alert.fingerprint] = alert
+                self.alert_history.append(alert)
+                self._first_seen[alert.fingerprint] = alert.timestamp
+                renotify = False
 
         # Send notifications
         channels = self._get_channels_for_alert(alert)
+        if renotify:
+            # Escalate persistent (re-notified) alerts to configured targets.
+            channels = channels + self._get_escalation_channels(alert)
         sent_count = 0
 
         for channel in channels:
@@ -526,18 +563,20 @@ class AlertManager:
             if now - v < timedelta(hours=1)
         }
 
-        # Auto-resolve stale alerts
+        # Auto-resolve stale alerts (measured from first activation, not last re-fire)
         async with self._lock:
             to_resolve = []
-            for _fingerprint, alert in self.active_alerts.items():
+            for fingerprint, alert in self.active_alerts.items():
+                first_seen = self._first_seen.get(fingerprint, alert.timestamp)
                 for rule in self.rules:
                     if self._match_rule(alert, rule) and rule.auto_resolve:
-                        if now - alert.timestamp > rule.resolve_after:
+                        if now - first_seen > rule.resolve_after:
                             to_resolve.append(alert)
                             break
 
         for alert in to_resolve:
             await self.resolve(alert)
+            self._first_seen.pop(alert.fingerprint, None)
 
     def get_active_alerts(self) -> list[Alert]:
         """Get all active alerts."""

@@ -15,19 +15,22 @@ from cryptobot.risk.manager import RiskManager, get_risk_manager
 logger = logging.getLogger(__name__)
 
 
-def build_venue(mode: str | None = None) -> Venue:
+def build_venue(mode: str | None = None, exchange_id: str | None = None) -> Venue:
     mode = (mode or settings.execution.mode or "paper").lower()
     if mode in {"paper", "backtest"}:
         return SimulatedVenue()
     if mode in {"testnet", "live", "binance"}:
         try:
+            if exchange_id and exchange_id.lower() not in {"binance", "binanceusdm"}:
+                from cryptobot.execution.venue.ccxt_venue import CcxtVenue
+                return CcxtVenue(exchange_id=exchange_id)
             from cryptobot.execution.venue.binance import BinanceVenue
             return BinanceVenue()
         except ImportError as e:
-            logger.warning(f"BinanceVenue unavailable (missing ccxt?): {e}; falling back to SimulatedVenue")
+            logger.warning(f"ccxt venue unavailable (missing ccxt?): {e}; falling back to SimulatedVenue")
             return SimulatedVenue()
         except Exception as e:
-            logger.error(f"BinanceVenue initialization failed: {e}; re-raising for live mode")
+            logger.error(f"ccxt venue initialization failed: {e}; re-raising for live mode")
             raise
     return SimulatedVenue()
 
@@ -46,7 +49,7 @@ class ExecutionEngine:
 
         # For market orders, try to get current market price for risk check
         risk_price = order.price
-        if risk_price is None and order.type == OrderType.MARKET:
+        if (risk_price is None or risk_price <= 0) and order.type == OrderType.MARKET:
             try:
                 risk_price = await self.venue.get_price(order.symbol)
             except Exception:
@@ -57,6 +60,11 @@ class ExecutionEngine:
         if not risk.passed:
             order.status = OrderStatus.REJECTED
             order.__post_init__()
+            # __post_init__ rebuilds payload from fields; set error AFTER it
+            # or the reason is silently wiped.
+            order.payload["error"] = (
+                f"{risk.message} (current={risk.current_value}, "
+                f"limit={risk.limit_value})")
             self.orders[order.order_id] = order
             await self.event_bus.publish(Event(
                 type=EventType.ORDER_REJECTED,

@@ -2,7 +2,7 @@
 pydantic>=2.10
 pydantic-settings>=2.7
 pyyaml>=6.0
-python-dotenv>=1.0
+python-dotenv>=1.2.3
 
 # Async/Networking
 aiohttp>=3.11
@@ -15,18 +15,33 @@ ccxt>=4.4
 # Data
 pandas>=2.2
 numpy>=2.2
+# Database / storage (lazy imports in data/storage.py: asyncpg for TimescaleDB, pyarrow for Parquet)
+asyncpg>=0.31.0
+pyarrow>=17.0
+
+# Reporting (monthly PDF)
+fpdf2>=2.8.8
 
 # ML (lightweight for laptop)
-scikit-learn>=1.6
-joblib>=1.4
+
+scikit-learn>=1.9.0
+joblib>=1.5.3
+
 
 # Monitoring
 prometheus-client>=0.21
 structlog>=24.4
 
 # CLI/Utils
-click>=8.1
-rich>=13.9
-orjson>=3.10
 
-requests>=2.32
+click>=8.1
+rich>=15.0.0
+orjson>=3.12.0
+
+requests>=2.34.2
+
+# Security: CVE-2025-47273 (Path Traversal) fixed in setuptools 78.1.1
+setuptools>=78.1.1
+
+# Security: GHSA-6v7p-g79w-8964 (msgpack OOB read/crash) fixed in 1.2.1
+msgpack>=1.2.1

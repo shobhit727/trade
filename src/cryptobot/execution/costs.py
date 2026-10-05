@@ -200,7 +200,7 @@ class TransactionCostModel:
         costs["spread"] = spread_cost
         costs["spread_bps"] = (spread_cost / notional * Decimal("10000")) if notional > 0 else Decimal("0")
 
-        # 3. Slippage
+        # 3. Slippage (returned in quote currency, not a fraction — issue #26)
         slippage_cost, slippage_bps = self._calculate_slippage(
             notional, price, volatility, daily_volume, side, order_type
         )
@@ -228,12 +228,14 @@ class TransactionCostModel:
             rebate = self._calculate_rebate(notional)
         costs["rebate"] = rebate  # Negative = rebate received
 
-        # Total cost
-        total = sum(costs.values())
+        # Total cost in quote currency. Only *_cost components are summed — the
+        # raw bps scalars used to pollute this sum and corrupt everything (#26).
+        currency_keys = ("fee", "spread", "slippage", "market_impact", "funding", "rebate")
+        total = sum((costs[k] for k in currency_keys), Decimal("0"))
         costs["total"] = total
         costs["total_bps"] = (total / notional * Decimal("10000")) if notional > 0 else Decimal("0")
 
-        # Sanity checks
+        # Sanity checks (scale bps + their currency counterparts consistently)
         costs = self._apply_bounds(costs, notional)
 
         return costs
@@ -307,7 +309,8 @@ class TransactionCostModel:
             slippage_bps = cfg.base_slippage_bps
 
         slippage_bps = min(slippage_bps, cfg.max_slippage_bps)
-        return (slippage_bps / Decimal("10000")).quantize(Decimal("0.0001")), slippage_bps
+        # Convert bps to quote-currency cost so it sums with fee/spread/impact.
+        return (notional * slippage_bps / Decimal("10000")).quantize(Decimal("0.0001")), slippage_bps
 
     def _calculate_market_impact(
         self,
@@ -379,25 +382,24 @@ class TransactionCostModel:
         return -rebate  # Negative = money received
 
     def _apply_bounds(self, costs: dict[str, Decimal], notional: Decimal) -> dict[str, Decimal]:
-        """Apply sanity bounds to costs."""
+        """Apply sanity bounds to the total (scales currency + bps consistently)."""
         total_bps = costs.get("total_bps", Decimal("0"))
+        currency_keys = ("fee", "spread", "slippage", "market_impact", "funding", "rebate")
 
-        if total_bps < self.config.min_cost_bps:
-            # Scale up
-            scale = self.config.min_cost_bps / max(total_bps, Decimal("0.0001"))
-            for k in costs:
-                if k.endswith("_bps"):
-                    costs[k] = costs[k] * self.config.min_cost_bps / max(total_bps, Decimal("0.0001"))
-                elif k != "total_bps":
-                    costs[k] = costs[k] * self.config.min_cost_bps / max(total_bps, Decimal("0.0001"))
+        if 0 < total_bps < self.config.min_cost_bps:
+            scale = self.config.min_cost_bps / total_bps
+            for k in list(costs):
+                if k == "total" or k in currency_keys:
+                    costs[k] = costs[k] * scale
+                elif k.endswith("_bps"):
+                    costs[k] = costs[k] * scale
 
         if total_bps > self.config.max_cost_bps:
-            # Scale down
             scale = self.config.max_cost_bps / total_bps
-            for k in costs:
-                if k.endswith("_bps"):
+            for k in list(costs):
+                if k == "total" or k in currency_keys:
                     costs[k] = costs[k] * scale
-                elif k != "total_bps":
+                elif k.endswith("_bps"):
                     costs[k] = costs[k] * scale
 
         return costs

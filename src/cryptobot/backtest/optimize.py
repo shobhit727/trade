@@ -1,9 +1,14 @@
 """Bayesian strategy-parameter optimization via Optuna.
 
 Bridges the grid `--algorithms` sweep with a search-space-aware optimizer:
-suggest integer/float/categorical strategy config params, run a backtest,
+suggest integer/float/categorical strategy config params, run backtests,
 score by Sharpe (or returns), track best params. Optuna is optional —
 a deterministic grid fallback over a coarse space runs when it is absent.
+
+Selection is WALK-FORWARD (issue #51-M7): candidates are scored on the train
+segment only; the winner's score on the untouched test segment is reported
+alongside, so the caller sees honest out-of-sample expectations instead of an
+in-sample upper bound.
 """
 
 from __future__ import annotations
@@ -70,9 +75,26 @@ def _coarse_grid(params: list[ParamSpec]) -> list[dict[str, Any]]:
     return [dict(zip([p.name for p in params], combo, strict=True)) for combo in itertools.product(*dims)]
 
 
-async def _score(params: dict[str, Any], bars, symbol: str, metric: str) -> float:
-    strategy = make_strategy("mean_reversion", **{k: v for k, v in params.items()})
-    result = await run_backtest(bars, strategy, symbol=symbol)
+async def _score(
+    strategy_name: str,
+    params: dict[str, Any],
+    bars,
+    symbol: str,
+    metric: str,
+    *,
+    slippage_bps: int = 3,
+    commission_bps: int = 5,
+    risk_fraction: float = 0.0,
+) -> float:
+    strategy = make_strategy(strategy_name, **params)
+    result = await run_backtest(
+        bars,
+        strategy,
+        symbol=symbol,
+        slippage_bps=slippage_bps,
+        commission_bps=commission_bps,
+        risk_fraction=risk_fraction,
+    )
     curve = result.equity_curve
     values = [float(v) for _t, v in curve]
     if not values or len(values) < 2:
@@ -97,24 +119,14 @@ def _pd_series(values: list[float]):
     return pd.Series(values)
 
 
-def _optuna_objective(trial, params, bars, symbol, metric):
-    kwargs = {}
-    for p in params:
-        if p.kind == "categorical":
-            kwargs[p.name] = trial.suggest_categorical(p.name, p.choices)
-        elif p.kind == "int":
-            kwargs[p.name] = trial.suggest_int(p.name, int(p.low), int(p.high))
-        else:
-            kwargs[p.name] = trial.suggest_float(p.name, p.low, p.high)
-    return asyncio.run(_score(kwargs, bars, symbol, metric))
-
-
 @dataclass
 class OptimizationResult:
     best_params: dict[str, Any]
-    best_score: float
+    best_score: float          # in-sample (train-segment) score of the winner
     n_trials: int
     method: str  # "optuna" | "grid"
+    oos_score: float | None = None   # same params scored on the held-out segment
+    oos_return: float | None = None  # net total return on the held-out segment
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -122,6 +134,8 @@ class OptimizationResult:
             "best_score": self.best_score,
             "n_trials": self.n_trials,
             "method": self.method,
+            "oos_score": self.oos_score,
+            "oos_return": self.oos_return,
         }
 
 
@@ -133,38 +147,84 @@ def optimize_strategy(
     n_trials: int = 30,
     random_seed: int = 42,
     progress: Callable[[int, int, float], None] | None = None,
+    strategy_name: str = "mean_reversion",
+    oos_fraction: float = 0.3,
+    slippage_bps: int = 3,
+    commission_bps: int = 5,
+    risk_fraction: float = 0.0,
 ) -> OptimizationResult:
-    """Optimize a mean-reversion strategy's config params on synthetic/real bars."""
+    """Optimize any registered strategy's config params, walk-forward.
+
+    Candidates are scored on the leading ``(1 - oos_fraction)`` of the bars;
+    the winning parameter set is then evaluated once on the held-out tail so
+    ``oos_score``/``oos_return`` reflect unseen data (#51-M7).
+    """
     if not params:
         raise ValueError("at least one ParamSpec required")
 
-    if HAS_OPTUNA and n_trials > 1:
-        study = optuna.create_study(direction="maximize")
-        study.optimize(
-            lambda trial: _optuna_objective(trial, params, bars, symbol, metric),
-            n_trials=n_trials,
-            show_progress_bar=False,
-        )
-        return OptimizationResult(
-            best_params=dict(study.best_params),
-            best_score=float(study.best_value),
-            n_trials=len(study.trials),
-            method="optuna",
+    split = len(bars)
+    if oos_fraction > 0 and len(bars) >= 50:
+        split = max(int(len(bars) * (1.0 - oos_fraction)), 10)
+    train_bars, test_bars = bars[:split], bars[split:]
+
+    async def _train_score(combo: dict[str, Any]) -> float:
+        return await _score(
+            strategy_name, combo, train_bars, symbol, metric,
+            slippage_bps=slippage_bps, commission_bps=commission_bps,
+            risk_fraction=risk_fraction,
         )
 
-    grid = _coarse_grid(params)
-    best_params, best_score = {}, -1e18
-    for i, combo in enumerate(grid):
-        score = asyncio.run(_score(combo, bars, symbol, metric))
-        if progress is not None:
-            progress(i + 1, len(grid), score)
-        if score > best_score:
-            best_score, best_params = score, combo
+    if HAS_OPTUNA and n_trials > 1:
+        def _objective(trial):
+            kwargs = {}
+            for p in params:
+                if p.kind == "categorical":
+                    kwargs[p.name] = trial.suggest_categorical(p.name, p.choices)
+                elif p.kind == "int":
+                    kwargs[p.name] = trial.suggest_int(p.name, int(p.low), int(p.high))
+                else:
+                    kwargs[p.name] = trial.suggest_float(p.name, p.low, p.high)
+            return asyncio.run(_train_score(kwargs))
+
+        study = optuna.create_study(direction="maximize")
+        study.optimize(_objective, n_trials=n_trials, show_progress_bar=False)
+        best_params = dict(study.best_params)
+        best_score = float(study.best_value)
+        n_done = len(study.trials)
+        method = "optuna"
+    else:
+        grid = _coarse_grid(params)
+        best_params, best_score = {}, -1e18
+        for i, combo in enumerate(grid):
+            score = asyncio.run(_train_score(combo))
+            if progress is not None:
+                progress(i + 1, len(grid), score)
+            if score > best_score:
+                best_score, best_params = score, combo
+        n_done = len(grid)
+        method = "grid"
+
+    oos_score = oos_return = None
+    if test_bars:
+        oos_score = asyncio.run(_score(
+            strategy_name, best_params, test_bars, symbol, metric,
+            slippage_bps=slippage_bps, commission_bps=commission_bps,
+            risk_fraction=risk_fraction,
+        ))
+        res = asyncio.run(run_backtest(
+            test_bars, make_strategy(strategy_name, **best_params), symbol=symbol,
+            slippage_bps=slippage_bps, commission_bps=commission_bps,
+            risk_fraction=risk_fraction,
+        ))
+        oos_return = float(res.total_return)
+
     return OptimizationResult(
         best_params=best_params,
         best_score=float(best_score),
-        n_trials=len(grid),
-        method="grid",
+        n_trials=n_done,
+        method=method,
+        oos_score=oos_score,
+        oos_return=oos_return,
     )
 
 
