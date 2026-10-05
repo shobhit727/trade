@@ -1,0 +1,74 @@
+{
+ "capital": 100000.0,
+ "cash": 100006.22915902254,
+ "peak_equity": 100006.22915902254,
+ "breaker_tripped": false,
+ "breaker_reason": null,
+ "day": "2026-08-31",
+ "phase": "closed",
+ "positions": {},
+ "trades": [
+  {
+   "time": "2026-08-28T14:00:19+05:30",
+   "symbol": "ADANIENT",
+   "side": "BUY",
+   "qty": 7,
+   "price": 3152.4
+  },
+  {
+   "time": "2026-08-28T14:00:19+05:30",
+   "symbol": "BAJFINANCE",
+   "side": "BUY",
+   "qty": 23,
+   "price": 1075.3
+  },
+  {
+   "time": "2026-08-28T14:00:19+05:30",
+   "symbol": "BEL",
+   "side": "BUY",
+   "qty": 60,
+   "price": 410.0
+  },
+  {
+   "time": "2026-08-28T14:00:19+05:30",
+   "symbol": "ONGC",
+   "side": "BUY",
+   "qty": 107,
+   "price": 232.27
+  },
+  {
+   "time": "2026-08-28T15:00:19+05:30",
+   "symbol": "ADANIENT",
+   "side": "SELL",
+   "qty": 7,
+   "price": 3155.0
+  },
+  {
+   "time": "2026-08-28T15:00:20+05:30",
+   "symbol": "BAJFINANCE",
+   "side": "SELL",
+   "qty": 23,
+   "price": 1075.0
+  },
+  {
+   "time": "2026-08-28T15:00:20+05:30",
+   "symbol": "BEL",
+   "side": "SELL",
+   "qty": 60,
+   "price": 410.7
+  },
+  {
+   "time": "2026-08-28T15:00:20+05:30",
+   "symbol": "ONGC",
+   "side": "SELL",
+   "qty": 107,
+   "price": 232.37
+  }
+ ],
+ "equity_curve": [
+  {
+   "date": "2026-08-28",
+   "equity": 100006.23
+  }
+ ]
+}

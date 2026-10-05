@@ -16,7 +16,9 @@ def volatility_target_size(
 ) -> Decimal:
     if observed_vol <= 0:
         return fixed_fraction_size(equity, Decimal(str(settings.risk.max_single_position_pct)), price)
-    return fixed_fraction_size(equity, min(target_vol / observed_vol, Decimal("1")), price)
+    return fixed_fraction_size(
+        equity, min(target_vol / observed_vol, Decimal(str(settings.risk.max_single_position_pct))), price
+    )
 
 
 def kelly_size(equity: Decimal, win_rate: Decimal, win_loss_ratio: Decimal, price: Decimal) -> Decimal:
