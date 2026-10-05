@@ -7,6 +7,8 @@ dedicated test built from synthetic frames that reproduce the exact defect.
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -211,6 +213,18 @@ class TestUniverseLoading:
         assert "CLEANING REPORT" in rep.describe()
 
 
+#: The real dataset is ~68MB of OHLCV CSVs and is deliberately gitignored, so these
+#: run wherever the data is mounted (dev host, the research/nsealgo containers) and
+#: skip on a clean CI checkout. The audit itself is reproducible via
+#: `research/audit_data.py`; see reports/DATA_AUDIT.md.
+REAL_DATA = os.path.join(os.environ.get("NSE_DATA", "data/nse"), "asianpaint_1d.csv")
+requires_real_data = pytest.mark.skipif(
+    not os.path.exists(REAL_DATA),
+    reason=f"real dataset not mounted at {REAL_DATA} (68MB, gitignored)",
+)
+
+
+@requires_real_data
 class TestRealDataset:
     """Checks against the actual shipped data — the regression net for the audit."""
 
