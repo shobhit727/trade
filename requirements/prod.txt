@@ -2,7 +2,7 @@
 pydantic>=2.10
 pydantic-settings>=2.7
 pyyaml>=6.0
-python-dotenv>=1.0
+python-dotenv>=1.2.3
 
 # Async/Networking
 aiohttp>=3.11
