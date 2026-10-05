@@ -200,8 +200,21 @@ jobs:
             tests/unit/test_nsealgo_backtest.py tests/unit/test_nsealgo_risk.py \
             tests/unit/test_nsealgo_data.py
       - name: nsealgo unit tests
-        run: python -m pytest tests/unit -q -k "nsealgo" --timeout=120
+        # Target the nsealgo files explicitly rather than `-k nsealgo` over the whole
+        # directory: -k filters *after* collection, so the crypto test modules were
+        # still imported and failed on `No module named 'cryptobot'` in a job that
+        # deliberately installs only requirements/nse.txt.
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m pytest -q --timeout=120 \
+            tests/unit/test_nsealgo_costs.py \
+            tests/unit/test_nsealgo_backtest.py \
+            tests/unit/test_nsealgo_risk.py \
+            tests/unit/test_nsealgo_data.py
       - name: Cost model must match published Indian itemisation
+        env:
+          PYTHONPATH: src
         # GOAL.md §6.4: costs may never be tuned to rescue a result. This job fails
         # if the calibration drifts from the published 11.65-11.66 bps reference.
         run: |
@@ -209,6 +222,8 @@ jobs:
           grep -q "11.92" /tmp/costs.txt || {
             echo "::error::round-trip bps drifted from the calibrated 11.92 (published 11.65-11.66)"; exit 1; }
       - name: Risk limits must match GOAL.md section 3.3
+        env:
+          PYTHONPATH: src
         run: |
           python -m nsealgo.cli limits | tee /tmp/limits.txt
           for want in 0.15 0.25 0.08 0.02 0.04 0.12 0.25; do
