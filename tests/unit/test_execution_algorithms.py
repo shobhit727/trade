@@ -100,6 +100,16 @@ def test_vwap_schedule_at_handles_bounds():
     assert sched.at(99) == Decimal("0")
 
 
+def test_vwap_schedule_at_non_constant_profile_maps_correct_slice():
+    # Non-constant profile with horizon != len exposes the double-scaled index bug (#46).
+    # per_minute = len / horizon = 5 / 10 = 0.5; correct idx = int(minute * 0.5).
+    profile = [Decimal(1), Decimal(3), Decimal(1), Decimal(3), Decimal(1)]
+    sched = vwap_schedule(Decimal("100"), profile, horizon_minutes=10)
+    assert sched.at(0) == sched.slices[0]
+    assert sched.at(9) == sched.slices[4]  # last slice near end of horizon
+    assert sched.at(10) == Decimal("0")  # at/after horizon -> exhausted
+
+
 def test_liquidity_seek_slices_consumes_levels():
     out = liquidity_seek_slices(
         Decimal("10"),

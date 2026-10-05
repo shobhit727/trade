@@ -9,6 +9,7 @@ from cryptobot.config import settings
 from cryptobot.core.events import OrderEvent, RiskEvent
 from cryptobot.core.portfolio import PortfolioManager, get_portfolio_manager
 from cryptobot.core.state import state_manager
+from cryptobot.monitoring.metrics import record_risk
 from cryptobot.risk.kill_switch import KillSwitch
 from cryptobot.risk.limits import RiskLimits
 from cryptobot.risk.rate_limit import RateLimiter
@@ -39,6 +40,32 @@ class RiskCheckResult:
         )
 
 
+def _price_returns(prices: deque[tuple[float, Decimal]]) -> list[float]:
+    """Period-over-period simple returns from a price-history deque."""
+    out: list[float] = []
+    for i in range(1, len(prices)):
+        prev = float(prices[i - 1][1])
+        if prev == 0:
+            continue
+        out.append((float(prices[i][1]) - prev) / prev)
+    return out
+
+
+def _pearson(a: list[float], b: list[float]) -> float | None:
+    """Pearson correlation of two equal-length return series, or None if undefined."""
+    n = len(a)
+    if n < 2:
+        return None
+    mean_a = sum(a) / n
+    mean_b = sum(b) / n
+    cov = sum((x - mean_a) * (y - mean_b) for x, y in zip(a, b, strict=True))
+    var_a = sum((x - mean_a) ** 2 for x in a)
+    var_b = sum((y - mean_b) ** 2 for y in b)
+    if var_a == 0 or var_b == 0:
+        return None
+    return cov / (var_a**0.5 * var_b**0.5)
+
+
 @dataclass
 class RiskManager:
     portfolio: PortfolioManager = field(default_factory=get_portfolio_manager)
@@ -48,6 +75,10 @@ class RiskManager:
     strategy_tracker: StrategyRiskTracker = field(default_factory=StrategyRiskTracker)
     _price_history: dict[str, deque[tuple[float, Decimal]]] = field(default_factory=dict)
     _order_count: int = 0
+    # When True (backtest path), wall-clock based checks (order rate limiting,
+    # reference-price history) are skipped — they would otherwise make results
+    # depend on real elapsed time instead of simulated time.
+    backtest_mode: bool = False
 
     def __post_init__(self):
         self.rate_limiter = RateLimiter(
@@ -88,29 +119,42 @@ class RiskManager:
         correlation_matrix: dict[tuple[str, str], Decimal] | None = None,
     ) -> RiskCheckResult:
         self._order_count += 1
+        self.report_risk_metrics()
 
         active, reason = self.kill_switch.evaluate(self.portfolio)
-        if active:
+        if active and not self.backtest_mode:
             return RiskCheckResult(False, f"Kill switch active: {reason}")
 
-        if not self.rate_limiter.try_acquire():
+        if not self.rate_limiter.try_acquire() and not self.backtest_mode:
             return RiskCheckResult(
                 False,
                 f"Order rate exceeded ({self.limits.max_orders_per_minute}/min)",
             )
 
         notional_price = price or order.price or order.avg_fill_price
-
         if notional_price is not None and notional_price > 0:
             notional = order.quantity * notional_price
+        else:
+            notional = Decimal("0")
 
+        # Structural sizing limits apply in BOTH live and backtest mode (#33):
+        # a backtest must be rejected by the same order-size / leverage gates
+        # that would reject it live, otherwise backtest equity is "certified"
+        # under limits that do not exist in production.
+        if notional > 0:
             if notional < self.limits.min_order_size_usd:
                 return RiskCheckResult(
-                    False, "Order below minimum size", notional, self.limits.min_order_size_usd,
+                    False,
+                    "Order below minimum size",
+                    notional,
+                    self.limits.min_order_size_usd,
                 )
             if notional > self.limits.max_order_size_usd:
                 return RiskCheckResult(
-                    False, "Order above maximum size", notional, self.limits.max_order_size_usd,
+                    False,
+                    "Order above maximum size",
+                    notional,
+                    self.limits.max_order_size_usd,
                 )
 
             if order.leverage > 0 and order.leverage > self.limits.max_leverage:
@@ -121,26 +165,29 @@ class RiskManager:
                     self.limits.max_leverage,
                 )
 
-            ref_price = self._get_reference_price(order.symbol)
-            if ref_price is not None and ref_price > 0:
-                deviation = abs(notional_price - ref_price) / ref_price
-                if deviation > self.limits.price_deviation_pct:
-                    return RiskCheckResult(
-                        False,
-                        f"Price deviates {deviation:.2%} from reference (> {self.limits.price_deviation_pct:.2%})",
-                        deviation,
-                        self.limits.price_deviation_pct,
-                    )
+            # Reference-price deviation relies on a wall-clock price window and
+            # is intentionally bypassed in backtest mode (backtests must not
+            # depend on real elapsed time); all other sizing gates above apply.
+            if not self.backtest_mode:
+                ref_price = self._get_reference_price(order.symbol)
+                if ref_price is not None and ref_price > 0:
+                    deviation = abs(notional_price - ref_price) / ref_price
+                    if deviation > self.limits.price_deviation_pct:
+                        return RiskCheckResult(
+                            False,
+                            f"Price deviates {deviation:.2%} from reference (> {self.limits.price_deviation_pct:.2%})",
+                            deviation,
+                            self.limits.price_deviation_pct,
+                        )
             self._record_price(order.symbol, notional_price)
-        else:
-            notional = Decimal("0")
 
         state = self.portfolio.get_state()
+        # Position-count / exposure / single-position limits apply in backtest
+        # too (#33): they bound how much risk a strategy may take on, which is
+        # identical between simulation and production.
         if state.total_equity > 0:
-            open_positions = sum(
-                1 for p in state_manager.get_positions() if p.quantity > 0
-            )
-            if open_positions >= self.limits.max_open_positions:
+            open_positions = sum(1 for p in state_manager.get_positions() if p.quantity > 0)
+            if not order.reduce_only and open_positions >= self.limits.max_open_positions:
                 return RiskCheckResult(
                     False,
                     f"Max open positions reached ({self.limits.max_open_positions})",
@@ -149,8 +196,22 @@ class RiskManager:
                 )
 
             additional = notional if notional > 0 else Decimal("0")
+            if order.payload.get("flip") and additional > 0:
+                # A flip closes the existing leg and opens the reverse one;
+                # only the NET new notional is incremental exposure. Counting
+                # the full 2x order rejected every legitimate flip live.
+                current_notional = Decimal(
+                    str(order.payload.get("current_notional", "0")))
+                if current_notional == 0:
+                    from cryptobot.core.state import StateManager
+
+                    current_notional = sum(
+                        abs(p.quantity * p.mark_price)
+                        for p in StateManager().get_positions(order.symbol)
+                    )
+                additional = max(notional - current_notional, Decimal("0"))
             total_exposure = (state.used_margin + additional) / state.total_equity
-            if total_exposure > self.limits.max_total_exposure_pct:
+            if not order.reduce_only and total_exposure > self.limits.max_total_exposure_pct:
                 return RiskCheckResult(
                     False,
                     "Total exposure limit exceeded",
@@ -158,7 +219,7 @@ class RiskManager:
                     self.limits.max_total_exposure_pct,
                 )
 
-            if notional > 0:
+            if not order.reduce_only and notional > 0:
                 position_pct = notional / state.total_equity
                 scaled_cap = self.limits.max_single_position_pct * self._drawdown_scale()
                 if position_pct > scaled_cap:
@@ -169,18 +230,30 @@ class RiskManager:
                         scaled_cap,
                     )
 
-        if correlation_matrix and notional > 0:
-            for (a, b), corr in correlation_matrix.items():
-                if a == order.symbol or b == order.symbol:
-                    if abs(corr) > self.limits.max_correlation:
-                        return RiskCheckResult(
-                            False,
-                            f"Correlation with {a}/{b} = {corr:.2f} exceeds limit {self.limits.max_correlation:.2f}",
-                            abs(corr),
-                            self.limits.max_correlation,
-                        )
+        if notional > 0:
+            corr = Decimal("0")
+            if correlation_matrix:
+                for (a, b), c in correlation_matrix.items():
+                    if a == order.symbol or b == order.symbol:
+                        corr = max(corr, abs(c))
+            else:
+                corr = self._max_correlation_for(order.symbol)
+            if corr > self.limits.max_correlation:
+                return RiskCheckResult(
+                    False,
+                    f"Correlation {corr:.2f} with existing positions exceeds limit {self.limits.max_correlation:.2f}",
+                    corr,
+                    self.limits.max_correlation,
+                )
 
-        if notional >= self.limits.require_stop_loss_above_usd and order.stop_price is None:
+        # Stop-loss requirement applies in backtest too (#33): a strategy that
+        # would be rejected live for lacking a stop must also be rejected in
+        # simulation, so backtest P&L reflects the same risk posture.
+        if (
+            not order.reduce_only
+            and notional >= self.limits.require_stop_loss_above_usd
+            and order.stop_price is None
+        ):
             return RiskCheckResult(
                 False,
                 f"Stop-loss required for orders > {self.limits.require_stop_loss_above_usd} USD",
@@ -188,16 +261,61 @@ class RiskManager:
                 self.limits.require_stop_loss_above_usd,
             )
 
-        strat_state = self.strategy_tracker.get(order.strategy)
-        if strat_state.daily_pnl < -self.limits.max_daily_loss_pct * state.total_equity:
+        # Daily-loss limit applies in backtest too (#33): identical risk posture
+        # between simulation and production. Uses the portfolio aggregate daily
+        # P&L (the per-strategy tracker is not wired to live P&L events, so the
+        # portfolio-level figure is the authoritative source here).
+        if state.daily_pnl < -self.limits.max_daily_loss_pct * state.total_equity:
             return RiskCheckResult(
                 False,
                 f"Strategy {order.strategy} daily loss limit exceeded",
-                strat_state.daily_pnl,
+                state.daily_pnl,
                 -self.limits.max_daily_loss_pct * state.total_equity,
             )
 
         return RiskCheckResult(True, "OK")
+
+    def _max_correlation_for(self, symbol: str) -> Decimal:
+        """Max absolute correlation of ``symbol`` against all other tracked symbols.
+
+        Used when no explicit ``correlation_matrix`` is supplied to ``check_order``.
+        Correlations are derived from the rolling price history the risk manager
+        already records per symbol (see ``_record_price``). Returns 0 when there is
+        insufficient history or no other symbol to compare against.
+        """
+        target = self._price_history.get(symbol)
+        if target is None or len(target) < 2:
+            return Decimal("0")
+        target_rets = _price_returns(target)
+        best = Decimal("0")
+        for other, hist in self._price_history.items():
+            if other == symbol or len(hist) < 2:
+                continue
+            other_rets = _price_returns(hist)
+            n = min(len(target_rets), len(other_rets))
+            if n < 2:
+                continue
+            c = _pearson(target_rets[-n:], other_rets[-n:])
+            if c is not None:
+                best = max(best, Decimal(str(abs(c))))
+        return best
+
+    def report_risk_metrics(self) -> None:
+        """Emit current portfolio risk gauges (Prometheus). Safe to call on a timer."""
+        state = self.portfolio.get_state()
+        equity = state.total_equity
+        if equity <= 0:
+            return
+        exposure = (state.used_margin + Decimal("0")) / equity
+        daily_loss = abs(state.daily_pnl) / equity if state.daily_pnl < 0 else Decimal("0")
+        active, _reason = self.kill_switch.evaluate(self.portfolio)
+        record_risk(
+            exposure_pct=float(exposure),
+            daily_loss_pct=float(daily_loss),
+            drawdown_pct=float(state.max_drawdown) * 100,
+            kill_switch=bool(active),
+            concentration_pct=0.0,
+        )
 
     def _drawdown_scale(self) -> Decimal:
         dd = self.portfolio.get_state().max_drawdown

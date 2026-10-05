@@ -144,6 +144,8 @@ class HealthMonitor:
         self._running = False
         self._monitor_task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
+        # Per-check next-due timestamps (monotonic seconds); empty until first loop.
+        self._next_due: dict[str, float] = {}
 
         # Callbacks
         self._status_change_callbacks: list[Callable[[ComponentType, HealthStatus, HealthStatus], Any]] = []
@@ -207,17 +209,38 @@ class HealthMonitor:
         """Main monitoring loop."""
         while self._running:
             try:
-                await self.run_all_checks()
+                await self.run_all_checks(due_only=True)
             except Exception as e:
                 logger.error("Health monitor error: %s", e)
-            await asyncio.sleep(self.check_interval)
+            # Sleep until the next per-check is due (or the global interval).
+            sleep_for = self.check_interval
+            if self._next_due:
+                now = time.monotonic()
+                soonest = min(self._next_due.values())
+                sleep_for = max(0.0, min(self.check_interval, soonest - now))
+            await asyncio.sleep(sleep_for)
 
-    async def run_all_checks(self) -> dict[ComponentType, ComponentHealth]:
-        """Run all registered health checks."""
+    async def run_all_checks(
+        self, due_only: bool = False
+    ) -> dict[ComponentType, ComponentHealth]:
+        """Run registered health checks.
+
+        When ``due_only`` is True (used by the monitor loop), checks whose
+        per-check ``interval_seconds`` has not elapsed since their last run are
+        skipped; component checkers always run. This honors per-check intervals
+        set via :meth:`update_check_interval` instead of running everything at
+        the global ``check_interval``.
+        """
+        now = time.monotonic()
         async with self._lock:
-            # Run check functions
+            # Run check functions (respecting per-check intervals when due_only)
             for check in self._checks.values():
+                if due_only:
+                    due_at = self._next_due.get(check.name)
+                    if due_at is not None and now < due_at:
+                        continue
                 await self._run_check(check)
+                self._next_due[check.name] = now + max(0.0, check.interval_seconds)
 
             # Run checkers
             for checker in self._checkers.values():
@@ -326,22 +349,27 @@ class HealthMonitor:
                     if check.check_name not in latest_checks or check.timestamp > latest_checks[check.check_name].timestamp:
                         latest_checks[check.check_name] = check
 
-                # Determine status
+                # Determine status. `latest_checks` holds the most recent result
+                # for every check name, including results produced by HealthChecker
+                # instances (e.g. RiskEngineHealthChecker, DataFeedHealthChecker)
+                # which are NOT registered in self._checks. A result with no
+                # matching registered HealthCheck is treated as critical so that
+                # e.g. a risk kill-switch surfaces as UNHEALTHY on its component.
+                registered = {
+                    c.name: c for c in self._checks.values() if c.component == component
+                }
                 critical_failed = False
                 any_failed = False
                 any_degraded = False
 
-                for check in self._checks.values():
-                    if check.component != component:
-                        continue
-                    latest = latest_checks.get(check.name)
-                    if latest:
-                        if latest.status == HealthStatus.UNHEALTHY:
-                            any_failed = True
-                            if check.critical:
-                                critical_failed = True
-                        elif latest.status == HealthStatus.DEGRADED:
-                            any_degraded = True
+                for name, latest in latest_checks.items():
+                    if latest.status == HealthStatus.UNHEALTHY:
+                        any_failed = True
+                        reg = registered.get(name)
+                        if reg is None or reg.critical:
+                            critical_failed = True
+                    elif latest.status == HealthStatus.DEGRADED:
+                        any_degraded = True
 
                 if critical_failed:
                     health.status = HealthStatus.UNHEALTHY
@@ -483,8 +511,19 @@ class DataFeedHealthChecker(HealthChecker):
                     age = (_utcnow() - ticker.timestamp).total_seconds()
                     staleness[symbol] = age
 
-            max_staleness = max(staleness.values()) if staleness else 0
-            if max_staleness > 60:
+            if not staleness:
+                # No ticker data at all: the feed is down, not "fresh".
+                return HealthResult(
+                    check_name="data_freshness",
+                    component=ComponentType.DATA_FEED,
+                    status=HealthStatus.UNHEALTHY,
+                    message="No market data received from feed",
+                    details={"staleness": staleness},
+                )
+            max_staleness = max(staleness.values())
+            stale = settings.monitoring.data_stale_threshold_seconds
+            degraded = settings.monitoring.data_degraded_threshold_seconds
+            if max_staleness > stale:
                 return HealthResult(
                     check_name="data_freshness",
                     component=ComponentType.DATA_FEED,
@@ -492,7 +531,7 @@ class DataFeedHealthChecker(HealthChecker):
                     message=f"Stale data: max age {max_staleness:.0f}s",
                     details={"staleness": staleness},
                 )
-            elif max_staleness > 10:
+            elif max_staleness > degraded:
                 return HealthResult(
                     check_name="data_freshness",
                     component=ComponentType.DATA_FEED,
@@ -771,13 +810,19 @@ async def _check_data_freshness(manager: Any):
     """Check data feed freshness."""
     symbols = settings.exchange.symbols or [settings.exchange.default_symbol]
     max_age = 0
+    saw_ticker = False
     for symbol in symbols:
         ticker = manager.get_ticker(symbol)
         if ticker:
+            saw_ticker = True
             age = (_utcnow() - ticker.timestamp).total_seconds()
             max_age = max(max_age, age)
 
-    if max_age > 60:
+    if not saw_ticker:
+        # No ticker data at all: the feed is down, not "fresh".
+        raise Exception("No market data received from feed")
+
+    if max_age > settings.monitoring.data_stale_threshold_seconds:
         raise Exception(f"Data stale: max age {max_age:.0f}s")
 
 

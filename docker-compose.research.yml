@@ -1,0 +1,28 @@
+# Research / analysis stack — isolated from the production crypto compose.
+# Usage:  docker compose -f docker-compose.research.yml build
+#         docker compose -f docker-compose.research.yml run --rm research python research/audit_data.py
+
+services:
+  research:
+    build:
+      context: .
+      dockerfile: Dockerfile.research
+    image: trade-research:latest
+    container_name: trade-research
+    working_dir: /app
+    environment:
+      NSE_DATA: /app/data/nse
+      PYTHONPATH: /app/src
+      MPLBACKEND: Agg
+    volumes:
+      - ./data:/app/data:ro
+      - ./research:/app/research
+      - ./state-nse:/app/state-nse
+      - ./reports:/app/reports
+    command: ["python", "research/audit_data.py"]
+    networks:
+      - research-net
+
+networks:
+  research-net:
+    driver: bridge

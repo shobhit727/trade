@@ -24,7 +24,7 @@
 
 12. How does `cryptobot` service's `8080/health` HTTP endpoint get built? `cli serve` starts `utils.health_server.HealthServer` (stdlib `ThreadingHTTPServer`); Dockerfile `HEALTHCHECK` hits it.
 13. Does live mode actually connect to Binance? `execution/venue/binance.py` (`BinanceVenue`) supports it via `ccxt.async_support` with sandbox/credentials configured via env. Needs real or testnet keys to actually run.
-14. Does `cargo build` work? No — workspace declares 7 members; only 1 has a `Cargo.toml`. Either trim `Cargo.toml [workspace] members` to `["crates/cryptobot-core"]`, or add a manifest to each empty crate.
+14. Does `cargo build` work? ✅ Yes — resolved 2026-08-04: workspace fleshed out to 7 real crates (core/features/risk/stats/orderbook/backtest/py) with PyO3 0.29. `cargo build` + `cargo test` green; fmt/clippy clean in CI. (Supersedes the earlier trim-to-1-crate workaround.)
 
 ## Confidence
 

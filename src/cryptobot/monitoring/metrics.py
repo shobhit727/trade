@@ -595,6 +595,7 @@ def record_position_update(
     else:
         positions_open.labels(strategy=strategy, symbol=symbol, side=side).set(0)
         position_size.labels(strategy=strategy, symbol=symbol, side=side).set(0)
+        position_pnl_unrealized.labels(strategy=strategy, symbol=symbol).set(0.0)
 
     if realized_pnl != 0:
         key = (strategy, symbol)
@@ -669,7 +670,7 @@ def record_routing_decision(venue: str, symbol: str, action: str) -> None:
     `action` is one of: ``selected``, ``fallback``, ``split``, ``failed``.
     """
     try:
-        execution_retry_count.labels(venue=venue, symbol=symbol).inc()
+        execution_retry_count.labels(venue=venue, symbol=symbol, reason=action).inc()
         execution_fill_rate.labels(venue=venue, symbol=symbol).set(1.0 if action in {"selected", "split"} else 0.0)
     except Exception:
         pass

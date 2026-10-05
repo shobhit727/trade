@@ -3,6 +3,9 @@
 //! Risk math: Kelly criterion, CVaR, HRP portfolio optimization, correlation analysis.
 
 pub mod correlation;
+pub mod kill_switch;
+pub mod limits;
+pub mod portfolio_optimization;
 pub mod sizing;
 
 #[cfg(feature = "python")]

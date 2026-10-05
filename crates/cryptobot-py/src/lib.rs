@@ -1,10 +1,10 @@
 //! Cryptobot Python Bindings (PyO3)
 //!
 //! Top-level Python module that exposes Rust crates as submodules:
-//! - cryptobot_py.features: feature engineering (returns, volatility, RSI, MACD, etc.)
-//! - cryptobot_py.risk: risk math (Kelly, position sizing, correlation)
-//! - cryptobot_py.orderbook: order book operations, VPIN
-//! - cryptobot_py.backtest: performance metrics, fill simulator
+//! - cryptobot_rs.features: feature engineering (returns, volatility, RSI, MACD, etc.)
+//! - cryptobot_rs.risk: risk math (Kelly, position sizing, correlation)
+//! - cryptobot_rs.orderbook: order book operations, VPIN
+//! - cryptobot_rs.backtest: performance metrics, fill simulator
 //!
 //! Build with: maturin develop --release
 
@@ -17,7 +17,7 @@ mod orderbook;
 mod risk;
 
 #[pymodule]
-fn cryptobot_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn cryptobot_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add("__all__", vec!["features", "risk", "orderbook", "backtest"])?;
 

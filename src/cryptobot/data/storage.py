@@ -382,6 +382,13 @@ class ParquetStorage(StorageBackend):
             return
 
         df = pd.DataFrame(buffer)
+        # Normalize columns before deriving the partition date so records are
+        # bucketed under their actual timestamp, not the write time.
+        if data_type == "klines" and "interval" in df.columns and "timeframe" not in df.columns:
+            df = df.rename(columns={"interval": "timeframe"})
+        if data_type in ("tickers", "trades") and "timestamp" in df.columns and "time" not in df.columns:
+            df = df.rename(columns={"timestamp": "time"})
+
         df["date"] = pd.to_datetime(df.get("open_time", df.get("time", _utcnow())))
         df["year"] = df["date"].dt.year
         df["month"] = df["date"].dt.month
@@ -390,11 +397,13 @@ class ParquetStorage(StorageBackend):
         for (symbol, year, month), group in df.groupby(["symbol", "year", "month"]):
             path = self._get_table_path(data_type, symbol, datetime(year, month, 1))
 
-            # Append or create
+            # Append or create (with dedup to avoid duplicate rows on re-append)
             if path.exists():
                 existing = pq.read_table(path)
                 new_table = pa.Table.from_pandas(group.drop(columns=["date", "year", "month"]))
                 combined = pa.concat_tables([existing, new_table])
+                # Deduplicate on all columns to prevent duplicate rows
+                combined = pa.Table.from_pandas(combined.to_pandas().drop_duplicates())
                 pq.write_table(combined, path, compression=self.config.parquet_compression)
             else:
                 table = pa.Table.from_pandas(group.drop(columns=["date", "year", "month"]))

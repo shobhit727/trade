@@ -1,5 +1,3 @@
-[target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "target-cpu=native"]
-
-[target.aarch64-unknown-linux-gnu]
-rustflags = ["-C", "target-cpu=native"]
+# NOTE: target-cpu=native breaks cached builds across heterogeneous runners
+# (proc-macro .so artifacts built for AVX512 crash with SIGILL on older CPUs).
+# For local builds, opt in via env: CARGO_RUSTFLAGS="-C target-cpu=native"

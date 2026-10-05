@@ -5,7 +5,7 @@
 
 ## What it is
 
-Crypto trading bot framework: Python 3.14, Rust workspace (7 crates declared; only `cryptobot-core` has a manifest), TimescaleDB + Redis, Binance live/testnet. Targets multi-asset, multi-strategy, statistical rigor.
+Crypto trading bot framework: Python 3.14, Rust workspace (7 fleshed-out crates with PyO3 0.29), TimescaleDB + Redis, Binance live/testnet. Targets multi-asset, multi-strategy, statistical rigor.
 
 ## Why it exists
 
@@ -13,8 +13,8 @@ Repo documents the goal of an institutional-grade retail-trading bot. Source-of-
 
 ## High-level architecture
 
-- Python orchestration: `src/cryptobot/` (22 unit test files, 30+ modules)
-- Rust: `Cargo.toml` workspace with 1 member (`cryptobot-core`) + `lib.rs` stub; `cargo build` + `cargo test` clean. Sibling crates deleted until each gets a manifest.
+- Python orchestration: `src/cryptobot/` (44 unit test files, 30+ modules)
+- Rust: `Cargo.toml` workspace with 7 crates (`core`, `features`, `risk`, `stats`, `orderbook`, `backtest`, `py`) with PyO3 0.29; fmt/clippy/test green on stable 1.97+
 - Storage: TimescaleDB (prod), SQLite (in-process), Parquet (local)
 - Cache/Bus: Redis (intended), asyncio EventBus (in-process)
 - Observability: Prometheus + Grafana, Loki/Promtail, Alertmanager (all dirs scaffolded)
@@ -57,12 +57,10 @@ Repo documents the goal of an institutional-grade retail-trading bot. Source-of-
 
 ## Remaining real gaps
 
-## Remaining real gaps
-
-- ~~`Cargo.toml [workspace] members` lists 7; only 1 has a manifest. `cargo build` fails until trimmed or per-crate manifests added.~~ → **resolved 2026-07-31** (trimmed to `["crates/cryptobot-core"]`, deleted 6 empty sibling dirs, `lib.rs` stub + unit test).
-- 6 dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/`.
+- ~~`Cargo.toml [workspace] members` lists 7; only 1 has a manifest. `cargo build` fails until trimmed or per-crate manifests added.~~ → **resolved 2026-08-04** (workspace re-expanded to 7 real crates — core/features/risk/stats/orderbook/backtest/py — with PyO3 0.29; fmt/clippy/test green). Note: `.cargo/config.toml` deliberately has no `target-cpu=native` (proc-macro SIGILL across runner CPUs).
+- ~~6 dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/`.~~ → **resolved 2026-07-31** (dirs removed).
 - ~~`monitoring/__init__.py` eager-imports metrics~~ → resolved 2026-07-31 (B051: no-op `_NoOpMetric` stub + lazy aiohttp; `monitoring/__init__.py` lazy via `__getattr__`).
-- ML models `volatility.py`, `regime.py`, `ensemble.py` still missing.
+- ~~ML models `volatility.py`, `regime.py`, `ensemble.py` still missing.~~ → **resolved** (all implemented; volatility/regime disabled in YAML until validated).
 
 ## Confidence per subject
 

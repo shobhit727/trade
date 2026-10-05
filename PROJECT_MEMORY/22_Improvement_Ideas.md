@@ -22,8 +22,8 @@ The following were listed previously and are now resolved or shipped:
 
 ## Quick wins (1-2 hours each, post-fix)
 
-- Re-add Rust sibling crates (`cryptobot-{backtest,features,orderbook,py,risk,stats}`) when each has a real `Cargo.toml` + `lib.rs`. Workspace `members` trimmed to `["crates/cryptobot-core"]` 2026-07-31; `cargo build` + `cargo test` clean.
-- Remove dead empty dirs `src/cryptobot/{allocator,altdata,api,exchanges,funding,xmr}/`.
+- ~~Re-add Rust sibling crates (`cryptobot-{backtest,features,orderbook,py,risk,stats}`)~~ — **done 2026-08-04**: all 7 crates fleshed out with PyO3 0.29; fmt/clippy/test green.
+- ~~Remove dead empty dirs `src/cryptobot/{allocator,altdata,api,exchanges,funding,xmr}/`.~~ — **done 2026-07-31** (dirs removed).
 - Add `USER` directive in `Dockerfile` for non-root runtime.
 - Add blank-env defaults in `docker-compose.yml` to silence warnings.
 - ~~Remove duplicate `B026/B042/B043/B053` rows in `13_Bug_Tracker.md`~~ — done in audit v2.

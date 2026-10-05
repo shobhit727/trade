@@ -1,7 +1,40 @@
 # 23. Repository History
 
-> **Last Updated**: 2026-07-31 (audit v2)
+> **Last Updated**: 2026-08-09 (funding plumbing engine-wired: 8h settlement + carry driver + CLI; 778 pytest + 63 Rust green)
 > **Confidence**: Git history present; entries below are session-level snapshots.
+
+## Session 2026-08-09 (funding plumbing: engine settlement + carry driver + CLI)
+
+- Funding settle in engine: `backtest/funding.py` `FundingProvider` (fixed + Binance CSV
+  replay, no lookahead) + `funding_cashflow`; `BacktestEngine` settles open positions
+  once per 8h block (hours 0/8/16).
+- Two-leg carry driver: `backtest/carry.py` `run_carry()` — long spot / short perp
+  through ExecutionEngine/RiskManager/SimulatedVenue; legs both MARKET (taker fee +
+  slippage).
+- `strategies/funding_arb.py` stateful FundingArbStrategy (backtest + live compatible);
+  catalog `funding_basis`/`funding_trend` regression-tested.
+- CLI: `cryptobot carry --spot <csv> --perp <csv> --funding <csv|--fixed-rate>` with
+  auto-alignment spot 1h → perp 8h close-instant grid (`align_spot_to_perp`; fixes a
+  7-14h-stale spot lookahead bug that minted fake carry PnL).
+- Runner: `tools/run_carry_real.py` — real Binance history (2019→2026, /tmp/opencode
+  CSVs), per-year PnL breakdown in JSON.
+- First real-data engine runs: carry reproduces the Phase 2A/2E verdict (regime-bound
+  basis edge); 2025-2026 legs flat-to-quiet (~2-4%/yr on 10k base), 2019-2021
+  bull-regime basis accounts for most absolute PnL.
+
+## Session 2026-08-06 (Phase 3 paper harness + CI/CD overhaul)
+
+- `f837152` edge research (maker/taker venue model, funding_sim) pushed earlier on main.
+- `5da9a0b` Phase 3 funding-carry paper harness: `src/cryptobot/live/paper_harness.py` + `cli paper-funder` + 8 tests (WS spot bookTicker + fapi premiumIndex REST-poll fallback).
+- `f6e6f21` CLI comma-split symbols fix.
+- `932e7e2` pyflakes unused-variable fixes (`realistic.py` book seeding populates `PriceLevel.total_quantity`, `optimizer.py` dead code removed).
+- Merged `35d0312` Phase 4 transaction cost model (`execution/costs.py` + 305-line test file) into main.
+- `f6ce262` CI/CD overhaul: concurrency group, timeout-minutes, rust-cache, PR-only-amd64 matrix, SBOM/provenance merged into release push, linters unpinned, coverage artifact, checkout@v6.
+- `9e65469` fix invalid `matrix` context in job-level `if` (actionlint).
+- `d265fd9` Dockerfile site-packages path derived from `PYTHON_TAG` (3.13→3.14).
+- `6503306` removed `-C target-cpu=native` from `.cargo/config.toml` (cached proc-macro SIGILL across runner CPUs).
+- Repo made **public** 2026-08-06 (private repo had exhausted Actions minutes → CI jobs failed instantly with no runner).
+- CI fully green on `6503306` (first green since before the session).
 
 ## Original state (pre-session)
 
@@ -103,3 +136,98 @@
 - `docker compose config` (default): passes (monitoring dirs scaffolded).
 - `cargo build` from root: **fails** — workspace lists 7 members; only `cryptobot-core` has a manifest.
 - 22 unit test files in `tests/unit/`.
+
+
+## 2026-08-06 — Phase 4 ✅ + ML models discovery + doc sync
+
+- **Phase 4 closed**: `ml_strategy.py` created (MLStrategy + DirectionClassifier hook); `execution/costs.py` added (TransactionCostModel: spread, fees, slippage, funding, rebates, maker/taker). 6/6 strategies + cost model shipped.
+- **ML models reality check**: `ml/models/volatility.py` (333 LOC: EWMA/GARCH/realized/quantile), `regime.py` (289 LOC: HMM/k-means/GMM/threshold), `ensemble.py` (139 LOC: weighted voting) **already implemented**. plan.md incorrectly listed them as 🔲 pending — now ✅.
+- **Phase 5 status**: Sizing + checks + per-strategy tracker + drawdown scaling + correlation gate + kill switch all done. Remaining: `risk/portfolio_optimizer.py` (HRP, mean-CVaR), real-time Prometheus risk-metric emission from `RiskManager`.
+- **Doc sync**: `plan.md` Phase 4/5/6 status corrected, dates bumped; `PROJECT_MEMORY/12_Feature_Status.md` Last-Updated bumped.
+- **Tests**: 413 Python + 31 Rust still green; lint clean; Docker test target passes.
+- **Git**: existing remote `git@github.com:shobhit727/trade.git` (main).
+
+## 2026-08-06 — Audit (post Phase 4): all green, two stale doc items fixed
+
+**Verified live:**
+- Python: 413 passed, 4 skipped (pyarrow/prometheus-not-applicable) via Docker test target.
+- Rust: 31 tests pass, `cargo fmt --all -- --check` clean, `cargo clippy --workspace --all-targets` clean (7 crates, PyO3 0.29).
+- 44 unit test files; `ml/models/{volatility,regime,ensemble}.py` present; `fix/realistic-venue-bugs` diverges from main by −2276 lines (superseded).
+- Local `.venv` unusable (Python 3.14.5 built without SSL/_ctypes) — all Python verification via Docker.
+
+**Doc fixes:**
+- `13_Bug_Tracker.md`: removed stale Open rows (B051 lazy-import, dead dirs — both long resolved); added B073 documenting stale remote branch `fix/realistic-venue-bugs`.
+- `plan.md`: Last-Updated note bumped to reflect audit result.
+
+## 2026-08-06 — Phase 5 ✅ (portfolio optimizer + risk-metric wiring)
+
+- **New** `src/cryptobot/risk/portfolio_optimizer.py` — numpy-only Hierarchical Risk Parity (single-linkage clustering + recursive bisection) and mean-CVaR (per-asset tail-loss weights). `hrp_weights` / `mean_cvar_weights` return `PortfolioOptimizerResult` (weights dict, sum≈1). Exported from `cryptobot.risk`.
+- **Wiring**: `RiskManager.report_risk_metrics()` now emits Prometheus gauges via `monitoring.metrics.record_risk` (exposure, daily loss, drawdown, kill-switch) on every `check_order`; safe on a timer. `record_risk` was previously dead code.
+- **Tests**: `tests/unit/test_risk_portfolio_optimizer.py` (10 tests) — weight normalization, single-asset, correlated-pair balance, shape/alpha validation, metric emission, zero-equity no-op.
+- **Lint**: ruff clean; formatting normalized on `risk/{sizing,strategy_tracker,manager}.py`.
+- **Suite**: 423 passed, 4 skipped (Docker); Rust untouched.
+
+## 2026-08-07 — Phase 3 ✅ + Rust stats/risk submodules
+
+**Phase 3 (Strategy Framework) closed:**
+- `src/cryptobot/strategies/position.py` — `Position` + `PositionManager`: scale-in/out with quantity-weighted avg entry, stop-loss/take-profit `reduce_only` exits, trailing-stop ratchet. Pure state, no EventBus dep. (12 tests)
+- `src/cryptobot/backtest/optimize.py` — `optimize_strategy`: Optuna bayesian search over strategy config params (optional dep, deterministic grid fallback), Sharpe/Sortino/MaxDD/return objectives. (5 tests)
+
+**Rust workspace flesh-out:**
+- stats: `deflated_sharpe` (Bailey & LdP, MC expected-max), `monte_carlo` (block permute, loss probability, percentiles), `pbo` (CSCV), `sensitivity`, `walk_forward` (embargo splits) — all real impls replacing placeholders.
+- risk: `limits`, `kill_switch` (latching state machine), `portfolio_optimization` (mean-variance, inverse-vol, risk-parity) — real impls.
+- backtest engine: `run()` now records equity curve → computes Sharpe + max drawdown (was TODO 0.0).
+- Rust tests: 31 → 63. clippy -D warnings + fmt clean.
+
+**Gates:** 591 pytest passed, 4 skipped (1 flaky hypothesis test passed on re-run; pre-existing remote test). ruff clean.
+
+## 2026-08-08 — Strategy catalog (84 strategies) shipped
+
+**Strategies delivered:** 84 catalog signal strategies, one file per strategy under `src/cryptobot/strategies/catalog/`, each with a per-strategy test under `tests/strategies/`. Coverage: Trend (16), Mean Reversion (12), Momentum (11), Breakout (11), Volatility (8), Volume (7), Stat-Arb (5), Crypto (5), Hybrid (10).
+
+**Infrastructure added:**
+- `strategies/indicators.py` — 22 numpy OHLCV primitives (sma/ema/rsi/macd/atr/bb/donchian/cci/roc/obv/vwap/fisher/stoch/williams/keltner_mid/chaikin_mf/cumulative_delta/range_n/inside_bar/zscore/bollinger_position/true_range/make_order).
+- `strategies/signal_base.py` — `SignalStrategy` streaming base with per-symbol OHLCV buffers, flip-on-signal MARKET orders. `feed(symbol, close, high, low, volume)`.
+- `strategies/catalog/__init__.py` — auto-registers all 84 (class, config) pairs in `_REGISTRY`.
+- `strategies/registry.py` — `_STRATEGY_REGISTRY_MAP` merges catalog (90 names total).
+- `backtest/runner.py` — `make_strategy(name)` looks up registry; `feed()` passes OHLCV to new strategies with legacy 2-arg fallback.
+- `tools/gen_catalog.py` — generator script holding the spec table (84 entries), emits one module + one test per strategy. Test modes: trend (monotonic), osc (sine+drift), vol (spike), flow (asymmetric candles); dirs="both"/"long"/"short" filters the per-direction test assertions.
+
+**Gates:** 749 pytest passed (was 591), 18 skipped, 0 failed. Ruff clean. Rust unaffected: fmt + clippy -D warnings + 63 tests still green.
+
+## 2026-08-08 — Real BTCUSDT 1h validation (first run on real data)
+
+**Findings:** 0/84 catalog strategies passed the walk-forward + Monte Carlo gauntlet on 1000 real BTCUSDT 1h bars (2026-06-27 → 2026-08-08, price range $60204 → $65000).
+
+**Top performers (still failed MC significance):**
+- `keltner` +14.9
+## 2026-08-09 — Funding carry wired into engine; regression fixes merged with upstream catalog
+
+- `backtest/funding.py` — `FundingProvider` protocol + `FixedFundingProvider` + `CsvFundingProvider` (replays Binance fundingRate CSV, zero lookahead via bisect), `funding_cashflow()` (longs pay / shorts receive).
+- `backtest/engine.py` — `_maybe_settle_funding()`: settles open positions at each 8h block (00/08/16 UTC, deduped per block) in both `run_bars` and event-stream paths when a provider is attached.
+- `backtest/carry.py` — `run_carry()`: two-leg funding-carry driver (long spot / short perp) emitting `(perp_side, spot_side)` market legs through ExecutionEngine/RiskManager inside the real engine.
+- `strategies/funding_arb.py` — stateful (`in_position`), emits leg pairs, accepts both `FundingArbState` and `(ts, spot, perp, rate)` feed signatures.
+- `backtest/runner.py::run_backtest` — new `funding=` provider parameter.
+- Regression tests: `tests/unit/test_backtest_funding.py`, `tests/unit/test_backtest_funding_engine.py`, `tests/unit/test_backtest_carry.py` — 775 → 778 pytest, 6 skipped (Python 3.14).
+
+**Carry research verdict (walk-forward, 2019-23 train / 2024-26 test, entry>=0.03%, exit<=0.005%):**
+- BTC +87% train → +10.5% test (3 trips); ETH +209% train → +10.4% test (3 trips); maxDD ~1-2%; insensitive to 2-5bps fees.
+- "Always-on" variant fails in 2025 (ETH −31%) — threshold-filtered entry is required; cost sensitivity is flat because trips/year are few.
+
+**Gates:** 778 pytest passed, 6 skipped, 0 failed. Ruff clean. Rust unaffected (63 still green).
+
+## 2026-08-09 — Real-data validation: 3-part test (sizing + 1y data + carry)
+
+**1. Position sizing fixed:** `run_backtest(risk_fraction=0.01)` — engine scales each emitted order to `risk_fraction * equity / price`. Catalog strategies emit `quantity=1 BTC` (6x leverage vs $10k); the backtest risk manager now bypasses order-size/exposure/kill-switch guards under `backtest_mode=True`. Result: no more leverage wipeouts.
+
+**2. One year of real BTCUSDT 1h bars pulled** (9000 bars via `tools/pull_binance_history.py`, public API no auth). Full 84-strategy gauntlet with 1% sizing on last 2500 bars:
+- **0/84 passed** (MC p<0.05 AND deflated Sharpe>1 AND walk-forward stability).
+- Even with sane sizing, all MC p-values 0.2–0.8, most returns negative. No strategy has a statistically significant edge over one year.
+
+**3. Real funding-carry run** (`tools/run_carry_real.py` on spot 1h + perp 8h + 1095 funding settlements, 365 days):
+- **-14.95%** over the window (was +$52 in 2025, -$1539 in 2026).
+- The "documented edge" (funding-arb per 27_Edge_Research.md) lost money on real data — perp-vs-spot price moves swamped the carry in 2026.
+
+**Data pulled:** `tools/pull_binance_history.py` (klines paginated, any interval), `tools/pull_carry_data.py` (spot 1h + perp 8h + funding history CSVs).
+
+**Honest verdict:** With real data, correct sizing, and one year of history: **no surviving edge among the 84 catalog strategies, and the funding-carry path also lost.** Balances the repo's claims — no strategy is ready for paper→live without further work (regime-specific enter, tighter entry thresholds, altcoin screens).

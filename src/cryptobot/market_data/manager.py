@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import time
@@ -30,8 +31,9 @@ logger = logging.getLogger(__name__)
 
 
 class BinanceWSClient:
-    def __init__(self):
-        self.ws_url = settings.exchange.ws_url
+    def __init__(self, symbols: list[str] | None = None, timeframes: list[str] | None = None,
+                 ws_url: str | None = None):
+        self.ws_url = ws_url if ws_url is not None else settings.exchange.ws_url
         self.session: aiohttp.ClientSession | None = None
         self.ws: aiohttp.ClientWebSocketResponse | None = None
         self.running = False
@@ -41,11 +43,11 @@ class BinanceWSClient:
         self._max_reconnect_delay = 60
         self._last_ping = 0
         self._ping_interval = 20
-        self._symbols = settings.exchange.symbols or [settings.exchange.default_symbol]
-        if not settings.exchange.symbols:
+        self._symbols = symbols or settings.exchange.symbols or [settings.exchange.default_symbol]
+        if not symbols and not settings.exchange.symbols:
             logger.warning("BinanceWSClient: no symbols configured; falling back to default_symbol=%s", settings.exchange.default_symbol)
-        self._timeframes = settings.exchange.timeframes or ["1m"]
-        if not settings.exchange.timeframes:
+        self._timeframes = timeframes or settings.exchange.timeframes or ["1m"]
+        if not timeframes and not settings.exchange.timeframes:
             logger.warning("BinanceWSClient: no timeframes configured; falling back to ['1m']")
 
     async def start(self):
@@ -223,7 +225,7 @@ class BinanceWSClient:
     async def _emit(self, event_type: EventType, event: Event):
         for callback in self.callbacks.get(event_type.value, []):
             try:
-                if asyncio.iscoroutinefunction(callback):
+                if inspect.iscoroutinefunction(callback):
                     await callback(event)
                 else:
                     callback(event)
@@ -361,7 +363,7 @@ class MarketDataManager:
     async def _emit(self, event_type: EventType, event: Event):
         for callback in self._callbacks.get(event_type, []):
             try:
-                if asyncio.iscoroutinefunction(callback):
+                if inspect.iscoroutinefunction(callback):
                     await callback(event)
                 else:
                     callback(event)
@@ -371,14 +373,35 @@ class MarketDataManager:
     def get_ticker(self, symbol: str) -> TickerEvent | None:
         data = self.cache.local_cache.get(f"ticker:{symbol}")
         if data:
-            return TickerEvent(**data)
+            payload = data.get("payload", data)
+            payload = self._coerce_decimal_fields(
+                payload,
+                {"price", "bid", "ask", "bid_qty", "ask_qty", "high_24h", "low_24h", "volume_24h"},
+            )
+            return TickerEvent(**payload)
         return None
 
     def get_orderbook(self, symbol: str) -> OrderBookEvent | None:
         data = self.cache.local_cache.get(f"orderbook:{symbol}")
         if data:
-            return OrderBookEvent(**data)
+            payload = data.get("payload", data)
+            bids = [(Decimal(p), Decimal(q)) for p, q in payload.get("bids", [])]
+            asks = [(Decimal(p), Decimal(q)) for p, q in payload.get("asks", [])]
+            return OrderBookEvent(
+                symbol=payload.get("symbol", ""),
+                bids=bids,
+                asks=asks,
+                sequence=payload.get("sequence", 0),
+            )
         return None
+
+    @staticmethod
+    def _coerce_decimal_fields(payload: dict, fields: set[str]) -> dict:
+        out = dict(payload)
+        for field in fields:
+            if field in out and not isinstance(out[field], Decimal):
+                out[field] = Decimal(str(out[field]))
+        return out
 
     def get_mid_price(self, symbol: str) -> Decimal:
         ob = self.get_orderbook(symbol)

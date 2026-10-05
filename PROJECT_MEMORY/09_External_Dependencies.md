@@ -69,10 +69,8 @@ Used by `docker compose --profile test run --rm cryptobot-test`.
 
 ## Rust
 
-- `Cargo.toml` (root): workspace with 1 member (`cryptobot-core`) + populated `[workspace.dependencies]`. `cargo build` + `cargo test` verified (rustup stable 1.97.1, 2026-07-31).
-- `crates/cryptobot-core/src/lib.rs`: stub `pub fn placeholder() -> &'static str` + 1 unit test.
-- `crates/cryptobot-core/src/{events,math,time,types}/`: empty subdirs preserved for future surface.
-- `.cargo/config.toml`: per-target `rustflags = ["-C", "target-cpu=native"]` for x86_64 / aarch64 Linux.
+- `Cargo.toml` (root): workspace with **7 members** (`core`, `features`, `risk`, `stats`, `orderbook`, `backtest`, `py`) + populated `[workspace.dependencies]`. `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` verified (rustup stable 1.97+). PyO3 0.29 for Rust 1.97+ compatibility.
+- `.cargo/config.toml`: **no rustflags** — `-C target-cpu=native` was removed (cached artifacts built with it SIGILL across heterogeneous runner CPUs). Opt in per local build: `CARGO_RUSTFLAGS="-C target-cpu=native" cargo build`.
 
 ## Docker base
 
@@ -94,4 +92,4 @@ Used by `docker compose --profile test run --rm cryptobot-test`.
 ## Confidence
 
 - High: `requirements/prod.txt`, `requirements/test.txt`, Dockerfile, compose services + monitoring subdirs.
-- Low: cargo contents buildability (Rust layer not realizable without crate manifests).
+- High: 7-crate Rust workspace builds/lints/tests green on stable 1.97+.

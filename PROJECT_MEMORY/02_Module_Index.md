@@ -1,6 +1,6 @@
 # 02. Module Index
 
-> **Last Updated**: 2026-07-31 (audit v2; re-verified full src/ tree)
+> **Last Updated**: 2026-08-09 (backtest/funding.py + backtest/carry.py added; funding_arb stateful)
 > **Confidence**: High (verified by directory walk + LOC).
 
 ## Actual project tree (Python)
@@ -44,10 +44,14 @@ src/cryptobot/
     algorithms.py                 # TWAP/VWAP/POV/IS/Iceberg/sweep/arrival/vwap_schedule/slicer_for
     router.py                     # SmartOrderRouter (price + latency rank, fallback, split)
     adverse_selection.py          # AdverseSelectionGuard + QueuePosition + TopOfBook + attach_to_engine
+    costs.py                      # Phase 4 transaction cost model (spread/fees/slippage/funding/rebates)
     venue/
       base.py                     # Abstract Venue
       simulated.py                # In-memory with slippage + commission
+      realistic.py                # Realistic: seeded book + QueuePositions, partial fills, adverse selection
       binance.py                  # ccxt.async_support; sandbox; retries; guards
+  live/
+    paper_harness.py              # Phase 3 FundingPaperHarness (spot WS + fapi REST-poll, carry accumulation)
       __init__.py
     __init__.py
   backtest/
@@ -57,6 +61,8 @@ src/cryptobot/
     validation.py                 # Real walk-forward (rolling + embargo) + MC block perm + deflated Sharpe
     reporting.py                  # HTML tearsheet (stdlib)
     runner.py                     # OHLCV → strategy → ExecutionEngine → SimulatedVenue end-to-end
+    funding.py                    # FundingProvider (fixed/CSV no-lookahead) + funding_cashflow (8h settlement)
+    carry.py                      # Two-leg funding-carry driver run_carry (long spot / short perp)
     data.py                       # load_csv + load_parquet + load_timescale + synthetic
   monitoring/
     metrics.py                    # Prometheus (Gauge for PnL) + record_* helpers
@@ -65,7 +71,7 @@ src/cryptobot/
     dashboard.py                  # Grafana JSON builders
     __init__.py
   cli/
-    main.py                       # argparse (validate/paper/bot/serve) with real logic
+    main.py                       # argparse (validate/paper/bot/serve/backtest/paper-funder) with real logic
     __init__.py
   market_data/
     manager.py                    # BinanceWSClient (fallback to default_symbol + ["1m"])
@@ -84,7 +90,6 @@ src/cryptobot/
 
 tests/unit/                        # 22 test files
 crates/                            # Workspace lists 7; only cryptobot-core has Cargo.toml
-src/cryptobot/                     # 6 dead empty dirs: allocator/ altdata/ api/ exchanges/ funding/ xmr/
 ```
 
 ## Verified approximate LOC (recent audit)
@@ -132,10 +137,12 @@ src/cryptobot/                     # 6 dead empty dirs: allocator/ altdata/ api/
 
 ## Highest-impact remaining gaps (post-fix)
 
-- `crates/*` empty member crates — `cargo build` fails (only `cryptobot-core` has manifest).
-- 6 dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/`.
-- `ml/models/{volatility,regime,ensemble}.py` missing.
+- ~~`crates/*` empty member crates — `cargo build` fails~~ → **resolved 2026-08-04** (7 real crates, PyO3 0.29).
+- 6 dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/` → **resolved 2026-07-31** (dirs removed).
+- ~~`ml/models/{volatility,regime,ensemble}.py` missing~~ → **resolved** (all three implemented; disabled in YAML pending validation).
 - Live Binance runtime credentials; integration tests for TimescaleDB/Redis/Prometheus.
+- Live `live/paper_harness.py`, `execution/costs.py`, `ml/optimizer.py`, `execution/venue/realistic.py` are new additions — see `12_Feature_Status.md`.
+- **Phase 3/5 (2026-08-07/08):** `strategies/position.py` (PositionManager — scale in/out, trailing stops), `strategies/indicators.py` (22 numpy OHLCV primitives), `strategies/signal_base.py` (`SignalStrategy` streaming base), `strategies/catalog/` (84 catalog strategies, one file each, auto-registered), `backtest/optimize.py` (Optuna strategy-param search with grid fallback), `risk/portfolio_optimizer.py` (HRP + mean-CVaR), `tools/gen_catalog.py` (catalog emitter).
 
 ## Confidence
 

@@ -183,10 +183,20 @@ class PortfolioManager:
     def get_all_allocations(self) -> list[StrategyAllocation]:
         return list(self._allocations.values())
 
-    async def update_equity(self, equity: Decimal):
-        """Update portfolio equity and recalculate metrics."""
+    async def update_equity(self, equity: Decimal, now: datetime | None = None):
+        """Update portfolio equity and recalculate metrics.
+
+        ``now`` stamps the equity curve; live/paper callers omit it (wall clock).
+        Backtests pass the simulated bar time so annualization factors are derived
+        from the replayed timeline rather than host speed (issue #20).
+        """
         async with self._lock:
-            now = datetime.now(UTC)
+            if now is None:
+                now = datetime.now(UTC)
+            elif now.tzinfo is None:
+                # Naive timestamps are interpreted as UTC so the curve never mixes
+                # offset-naive and offset-aware stamps.
+                now = now.replace(tzinfo=UTC)
             if not self._equity_curve:
                 self._daily_pnl_start = equity
             elif self._equity_curve[-1][0].date() < now.date():

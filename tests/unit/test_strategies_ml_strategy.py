@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-import pytest
-
 from cryptobot.strategies.ml_strategy import (
-    MLStrategyConfig,
     MLStrategy,
+    MLStrategyConfig,
 )
 
 
@@ -74,7 +72,7 @@ def test_ml_strategy_retrain_triggers(monkeypatch):
     # Mock _retrain to set a dummy classifier
     from cryptobot.ml.models.direction import DirectionClassifier, DirectionConfig
     s = MLStrategy(MLStrategyConfig(train_min_samples=3, horizon=1, retrain_every=2))
-    
+
     def mock_retrain(buf):
         clf = DirectionClassifier(DirectionConfig(threshold=0.55, horizon=1))
         # Create minimal training data
@@ -82,10 +80,10 @@ def test_ml_strategy_retrain_triggers(monkeypatch):
         y = np.array([1])
         clf.fit(X, y)
         s._classifier = clf
-    
+
     import numpy as np
     monkeypatch.setattr(s, "_retrain", mock_retrain)
-    
+
     for p in [100, 101, 102, 103]:
         s.feed("BTCUSDT", p)
     assert s._classifier is not None

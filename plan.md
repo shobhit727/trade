@@ -1,10 +1,65 @@
 # Cryptobot - Elite Quantitative Trading System
 ## Master Plan & Architecture Document
 
-> **Status**: Active development | **Last Updated**: 2026-08-02 (CI green; release v0.1.0 published; Docker multi-arch images on GHCR)
-> **Context**: Core, backtester, risk, execution, monitoring (no-op fallback + lazy aiohttp, B051 resolved), ML core, live exchange adapter, smart order router, adverse-selection guard, health server, K8s manifests, multi-arch CI, TimescaleDB migrations, YAML-driven strategy registry, **buildable Rust workspace**, **BinanceWSClient fallback warnings** all implemented. Remaining: ML volatility/regime/ensemble models (deferred); integration test fixtures.
-> **Current Python**: 3.14 (Docker base `python:3.14-slim`).
-> **Repository**: `git@github.com:shobhit727/trade.git` (private).
+> **Status**: Active development | **Last Updated**: 2026-08-22 (full audit: 34 bugs filed as GitHub #20–#53 — 9 critical, 16 high. Headline: production image can't start (#22), backtest Sharpe/drawdown unreliable (#20/#32/#39/#40), catalog effectively long-only (#25), ML labels leak (#21), optimizer non-functional (#27). 769 pytest + 63 Rust tests still green — tests pass but don't catch these.)
+> **Context**: Core, backtester, risk, execution, monitoring (no-op fallback + lazy aiohttp, B051 resolved), ML core (models complete; see #21/#27/#36 for correctness bugs), live exchange adapter, smart order router, adverse-selection guard, health server, K8s manifests (see #28), multi-arch CI, TimescaleDB migrations, YAML-driven strategy registry, **buildable Rust workspace** (see #24/#40/#41/#42/#53 for math/dead-code bugs) all implemented. Remaining: fix audit issues #20–#53; ML volatility/regime/ensemble *production* integration; integration test fixtures.
+> **Current Python**: 3.14 (Docker base `python:3.14-slim` in CI; Dockerfile default ARG is `3.13-slim`, #38).
+> **Repository**: `git@github.com:shobhit727/trade.git` (public).
+
+---
+
+## 0. ACTIVE: Seed Phase Plan (agreed 2026-08-22)
+
+> Full detail: [`PROJECT_MEMORY/28_Seed_Phase_Plan.md`](PROJECT_MEMORY/28_Seed_Phase_Plan.md).
+> This section supersedes conflicting roadmap items until the seed phase completes.
+
+**Mission**: turn a ₹5–10k Binance-only seed into a verified live track record
+that unlocks family capital for the multi-exchange/multi-algo phase.
+
+- **Two profiles raced in paper**: Realistic (beat buy&hold risk-adjusted, MDD <15%)
+  vs Aggressive (dynamic vol-targeted leverage, hard bounds 0–3x, ≥25% from liquidation).
+- **8h harvest**: snapshot P&L → skim 10% of realized profit into the global fund
+  (virtual sub-ledger; draws only to keep valid signals alive, ≤30%/algo/day,
+  frozen while kill-switch is tripped).
+- **Circuit breaker −25% equity**: graceful profit-first close → freeze → manual reset.
+- **India VDA tax engine**: FIFO basis, ~31.2% estimate, TDS tracking,
+  Schedule-VDA CSV export for CA.
+- **60-day paper gate**: net-positive · Sharpe ≥1 · fills match sim · zero breaker trips
+  → live unlocked. Fail → auto-extend 30d (max 2), then data review.
+- **Reporting**: English; monthly PDF + read-only dashboard + daily WhatsApp summary
+  (official Cloud API) + email detail.
+- **Universe**: BTC+ETH until equity grows. Owner keeps full control but commits to
+  no intervention during testing; all owner actions logged.
+
+**Build order**: (1) global-fund ledger + harvest → (2) ccxt adapters → (3) allocator
+tiers → (4) tax engine → (5) gate tracker → (6) dual profiles + breaker → 60 days paper.
+
+---
+
+### HFT pivot — revised gate plan (owner decision 2026-08-23)
+
+Owner direction: production target is **HFT**, not low-frequency. The 1d gate
+bots currently running are a plumbing pilot only; the real gate must validate
+the config that will actually go live.
+
+| phase | what | status |
+|---|---|---|
+| 1 | Matrix sweep: 89 algos × 6 TFs (1m/5m/15m/1h/4h/1d) × BTC+ETH (1,068 backtests) | ⏳ running |
+| 2 | Fee-survival analysis per TF at taker costs; maker-fee scenario for the rest | next |
+| 3 | Walk-forward validate the shortlist on its own timeframe | after |
+| 4 | Restart the gate with prod candidates: top-N algos × short TFs; clock resets to day 0 | then |
+| 5 | Day-60 pass unlocks live mode for that config | end |
+
+Constraints & honesty notes:
+- SimulatedVenue fills at bar close — minute-cadence is honestly simulatable;
+  sub-second order-book HFT (latency, queue position, rebates) is NOT yet.
+  If nothing survives ≥1m at taker fees, build maker-only execution sim next.
+- LiveTrader is single-strategy; step 4 needs the multi-algo portfolio runner
+  (top-N by Sharpe per symbol/TF from the matrix).
+- Current 1d bots stay running until step 4: they exercise tape/gate/tax/
+  breaker plumbing daily so strategy swaps land on proven infrastructure.
+- Data available: 1m(120d)/5m(240d)/15m(400d)/1h/4h/1d CSVs for BTC+ETH;
+  1s klines exist on Binance — evaluate storage/lookback after the matrix.
 
 ---
 
@@ -14,7 +69,7 @@
 
 ### User Requirements
 - **Scope**: "Everything" - multi-asset, multi-strategy, institutional-grade
-- **Capital**: Retail ($10K-$100K), seconds-to-minutes latency acceptable
+- **Capital**: Retail ($10K-$100K), seconds-to-minutes latency acceptable(sub)
 - **Priority**: Backtesting → Strategies → ML Pipeline → Risk Management
 - **Venue**: Primarily crypto perpetuals (Binance testnet → mainnet), extensible to spot, equities, futures
 
@@ -59,17 +114,17 @@
 | Monitoring Alerting | `src/cryptobot/monitoring/alerting.py` | ✅ Telegram/Discord/Email/PagerDuty. |
 | Monitoring Health | `src/cryptobot/monitoring/health.py` | ✅ HealthMonitor + checkers. |
 | Monitoring Dashboard | `src/cryptobot/monitoring/dashboard.py` | ✅ Grafana JSON builders. |
-| CLI Main | `src/cryptobot/cli/main.py` | ✅ argparse (validate + paper + bot subcommands). |
+| CLI Main | `src/cryptobot/cli/main.py` | ✅ argparse: backtest, mm, ml, serve, bot, validate, paper, paper-funder. |
 | Utils Logging | `src/cryptobot/utils/logging.py` | ✅ structlog wrapper. |
 | Utils Decorators | `src/cryptobot/utils/decorators.py` | ✅ retry (clamped jitter), timeout_decorator, circuit_breaker (raises in running loop). |
 | Utils Types | `src/cryptobot/utils/types.py` | ✅ Candle, OrderBook, Trade, etc. |
 | Utils Health Server | `src/cryptobot/utils/health_server.py` | ✅ stdlib ThreadingHTTPServer `/health` + `/metrics`. |
-| Tests | `tests/unit/` | ✅ 22 unit test files. CI: pytest 3.13 + ruff + pyflakes + cargo lint/test. pytest-timeout=60s prevents hangs. |
+| Tests | `tests/unit/` (51 files) + `tests/strategies/` (84 catalog per-strategy) + `tests/integration/` | ✅ **769 passed / 18 skipped** (Docker, Py3.14); hypothesis property tests (risk/sizing/metrics domains); backtest regression suite; funding plumbing + carry driver tests; 84 catalog strategy tests; integration tests behind `integration` marker. CI: pytest 3.13 + ruff + pyflakes + cargo lint/test + docker-test + compose-validate. pytest-timeout=60s. |
 | Dockerfile | `Dockerfile` | ✅ Multi-stage (`base`/`production`/`test`), `python:3.14-slim`. |
 | Compose | `docker-compose.yml` | ✅ Test + default profiles valid (monitoring dirs scaffolded). |
 | `.dockerignore` | `.dockerignore` | ✅ Minimal context. |
 | `.gitignore` | `.gitignore` | ✅ Includes `__pycache__/`. |
-| Cargo workspace | `Cargo.toml` + 1 member crate | ✅ Workspace trimmed to `["crates/cryptobot-core"]`; 6 empty sibling crate dirs deleted. `cryptobot-core` has manifest + `lib.rs` stub + 1 unit test. `cargo build` + `cargo test` clean (rustup stable 1.97.1). Empty `src/{events,math,time,types}/` subdirs preserved for future surface. `.cargo/config.toml` carries per-target rustflags. |
+| Cargo workspace | `Cargo.toml` + 7 crates | ✅ Workspace: `crates/cryptobot-{core,features,risk,stats,orderbook,backtest,py}` all with manifests + source. `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` green (rustup stable 1.97+). `.cargo/config.toml` deliberately does NOT set `target-cpu=native` (breaks cached CI builds across runner CPUs — proc-macro SIGILL); opt in locally via `CARGO_RUSTFLAGS="-C target-cpu=native"`. |
 | `pyproject.toml` | `pyproject.toml` | ✅ setuptools build + CLI entry. |
 | Migrations SQL | `migrations/001_extension.sql`, `002_hypertables.sql` | ✅ TimescaleDB schema. |
 | ML Features | `src/cryptobot/ml/features.py` | ✅ 8 features (returns, RSI, MACD, ATR ratio, BB pos+width, log volume). |
@@ -79,10 +134,17 @@
 | Backtest Runner | `src/cryptobot/backtest/runner.py` | ✅ OHLCV → strategy → exec → venue end-to-end. |
 | Backtest Data | `src/cryptobot/backtest/data.py` | ✅ CSV / Parquet / TimescaleDB / synthetic. |
 | Backtest Reporting | `src/cryptobot/backtest/reporting.py` | ✅ HTML tearsheet. |
-| Backtest Validation | `src/cryptobot/backtest/validation.py` | ✅ Real walk-forward (rolling + embargo) + Monte Carlo block-permutation + deflated Sharpe. |
-| Backtest Simulator | `src/cryptobot/backtest/simulator.py` | ✅ FillSimulator + factory. |
 | Smart Order Router | `src/cryptobot/execution/router.py` | ✅ Best-price + latency rankers, fallback, split. |
-| Adverse Selection | `src/cryptobot/execution/adverse_selection.py` | ✅ Mid-move / spread-widening / toxicity-spike cancel + `attach_to_engine`. |
+| Adverse Selection | `src/cryptobot/execution/adverse_selection.py` | ✅ Mid-move / spread-widening / toxicity-spike cancel logic; ⚠️ `attach_to_engine` is a no-op wrapper — cancel wiring not installed (#45). |
+| Execution Costs | `src/cryptobot/execution/costs.py` | ✅ Phase 4 transaction cost model (spread/fees/slippage/funding). |
+| Realistic Venue | `src/cryptobot/execution/venue/realistic.py` | ✅ Seeded book + QueuePositions, partial fills, adverse selection. |
+| Live Paper Harness | `src/cryptobot/live/paper_harness.py` | ✅ `FundingPaperHarness` — spot bookTicker WS + fapi premiumIndex REST-poll, carry accumulation (Phase 3). |
+| Backtest Funding Sim | `src/cryptobot/backtest/funding_sim.py` | ✅ Funding rate simulator (Phase 2 edge research). |
+| Backtest Funding | `src/cryptobot/backtest/funding.py` | ✅ `FundingProvider` (fixed / CSV no-lookahead) + 8h settlement `funding_cashflow`; wired into `BacktestEngine` (settles open positions per 8h block). |
+| Backtest Carry | `src/cryptobot/backtest/carry.py` | ✅ Two-leg funding-carry driver `run_carry()` — long spot/short perp legs through ExecEngine/RiskManager; real funding history via CSV provider (Phase 2E). |
+| Backtest Parallel | `src/cryptobot/backtest/parallel.py` | ✅ Parallel algorithm sweeps (multi-core). |
+| Risk Rate Limit | `src/cryptobot/risk/rate_limit.py` | ✅ Rate-limit tracking. |
+| Risk Strategy Tracker | `src/cryptobot/risk/strategy_tracker.py` | ✅ Strategy state tracking. |
 | Risk Manager | `src/cryptobot/risk/manager.py` | ✅ Pre-trade (kill switch, notional, exposure); notional skipped when no price. |
 | K8s | `deploy/k8s/` | ✅ Namespace, ConfigMap, Secret, PVC, Deployment, **Service (ClusterIP)**, **HPA (CPU+memory v2)**, kustomization (B053). |
 
@@ -99,11 +161,13 @@ src/cryptobot/
 │   ├── bus.py                # ✅ Pub/sub + history + replay
 │   ├── portfolio.py          # ✅ Multi-strategy portfolio
 │   └── clock.py              # ✅ Realtime / Simulated / Accelerated
+├── market_data/
+│   └── manager.py            # ✅ Binance WS client, REST helpers, Redis cache
 ├── data/
 │   ├── ingestion.py          # ✅ OHLCV + BinanceDataIngestion
 │   ├── storage.py            # ✅ TimescaleDB + Parquet + Hybrid
 │   ├── cleaning.py           # ✅ DataCleaner + helpers
-│   └── features.py           # 🔲 Missing (use ml/features.py)
+│   └── features.py           # ✅ Re-export of ml/features (B056)
 ├── strategies/
 │   ├── base.py               # ✅ BaseStrategy + registry
 │   ├── registry.py           # ✅ Re-export
@@ -112,49 +176,57 @@ src/cryptobot/
 │   ├── stat_arb.py           # ✅ Pairs trading
 │   ├── funding_arb.py        # ✅ Funding / basis arb
 │   ├── market_making.py      # ✅ Avellaneda-Stoikov + AdverseSelectionGuard
-│   └── ml_strategy.py        # 🔲 ML-driven strategy
+│   └── ml_strategy.py        # ✅ ML-driven strategy (B054)
 ├── ml/                       # ✅ Core pipeline
 │   ├── features.py           # ✅ 8 features (returns, RSI, MACD, ATR, BB, log vol)
 │   ├── models/
 │   │   ├── direction.py      # ✅ sklearn logreg + numpy fallback
-│   │   ├── volatility.py     # 🔲 Quantile regression
-│   │   ├── regime.py         # 🔲 HMM / Transformer
-│   │   └── ensemble.py       # 🔲 Stacking
-│   ├── training.py           # 🔲 Purged CV + walk-forward
-│   ├── inference.py          # 🔲 Online inference
-│   └── auto_retrain.py       # 🔲 Drift detection
-│   └── online.py             # ✅ WalkForwardTrainer (purged) + DriftDetector
+│   │   ├── volatility.py     # ✅ EWMA, GARCH, realized, quantile
+│   │   ├── regime.py         # ✅ HMM, k-means, GMM, threshold
+│   │   └── ensemble.py       # ✅ Weighted voting
+│   ├── training.py           # ✅ Purged CV + walk-forward
+│   ├── optimizer.py          # ✅ Phase 3 walk-forward param search (Optuna)
+│   ├── inference.py          # ✅ Online inference
+│   ├── auto_retrain.py       # ✅ Drift detection
+│   ├── online.py             # ✅ WalkForwardTrainer (purged) + DriftDetector
 ├── execution/
 │   ├── engine.py             # ✅ Order lifecycle + risk gate
 │   ├── algorithms.py         # ✅ TWAP / VWAP / POV / IS / Iceberg / sweep / arrival / vwap_schedule
 │   ├── router.py             # ✅ SmartOrderRouter (price + latency, fallback, split)
 │   ├── adverse_selection.py  # ✅ AdverseSelectionGuard + QueuePosition + TopOfBook
+│   ├── costs.py              # ✅ Phase 4 transaction cost model (spread/fees/slippage/funding)
 │   ├── venue/
 │   │   ├── base.py           # ✅ Abstract Venue
 │   │   ├── simulated.py      # ✅ SimulatedVenue (slippage + commission)
+│   │   ├── realistic.py      # ✅ Seeded book + QueuePositions, partial fills, adverse selection
 │   │   └── binance.py        # ✅ BinanceVenue (ccxt.async_support; sandbox, retries, guardrails)
-│   └── simulator.py          # 🔲 Realistic fill simulator (separate from backtest)
 ├── risk/
 │   ├── manager.py            # ✅ Pre-trade (kill switch, notional, exposure)
 │   ├── sizing.py             # ✅ Fixed / vol-target / Kelly
 │   ├── limits.py             # ✅ RiskLimits
 │   ├── correlation.py        # ✅ Helper
-│   └── kill_switch.py        # ✅ Portfolio-driven
+│   ├── kill_switch.py        # ✅ Portfolio-driven
+│   ├── rate_limit.py         # ✅ Rate-limit tracking
+│   └── strategy_tracker.py   # ✅ Strategy state tracking
 ├── backtest/
 │   ├── engine.py             # ✅ Event-driven backtester
+│   ├── funding_sim.py        # ✅ Funding-rate simulation (Phase 2 edge research)
+│   ├── parallel.py           # ✅ Parallel algorithm sweeps (multi-core)
 │   ├── data.py               # ✅ CSV / Parquet / TimescaleDB / synthetic replay
 │   ├── metrics.py            # ✅ Performance metrics (Sharpe, Sortino, DD, PF)
 │   ├── validation.py         # ✅ Real WFA (rolling+embargo) + MC (block perm) + deflated Sharpe
 │   ├── reporting.py          # ✅ HTML tearsheet
 │   ├── simulator.py          # ✅ FillSimulator + factory
 │   └── runner.py             # ✅ OHLCV → strategy → exec → venue end-to-end
+├── live/
+│   └── paper_harness.py      # ✅ Phase 3 FundingPaperHarness (spot WS + fapi REST-poll)
 ├── monitoring/
 │   ├── metrics.py            # ✅ Prometheus (Gauge for PnL, Counter for orders)
 │   ├── dashboard.py          # ✅ Grafana JSON builders
 │   ├── alerting.py           # ✅ Telegram/Discord/Email/PagerDuty (lazy init)
 │   └── health.py             # ✅ HealthMonitor + checkers (async-aware)
 ├── cli/
-│   ├── main.py               # ✅ argparse (validate/paper/bot/serve subcommands)
+│   ├── main.py               # ✅ argparse (backtest/mm/ml/serve/bot/validate/paper/paper-funder)
 │   ├── backtest.py           # 🔲 (folded into main.py)
 │   ├── paper.py              # 🔲 (folded into main.py)
 │   ├── live.py               # 🔲
@@ -193,39 +265,45 @@ src/cryptobot/
 - [x] Tearsheet generation (HTML) (`backtest/reporting.py`)
 - [x] End-to-end runner (`backtest/runner.py` — OHLCV → strategy → exec → venue)
 
-### Phase 3: Strategy Framework (Week 3-4) ⭐ — ⚠️ partial
+### Phase 3: Strategy Framework (Week 3-4) ⭐ — ✅ done
 - [x] Base strategy class with lifecycle hooks (`strategies/base.py`)
 - [x] Signal generation interface (returns `List[OrderEvent]`)
-- [ ] Position management primitives (scaling, stops) — BaseStrategy exposes lifecycle only
+- [x] Position management primitives (`strategies/position.py`) — `Position` + `PositionManager`: scale-in/out with weighted avg entry, stop/take-profit orders, trailing stops (ratchet), `reduce_only` exits
 - [x] Strategy registry (`StrategyRegistry` singleton)
-- [ ] Parameter optimization (Optuna) — no integration yet
+- [x] Parameter optimization — `ml/optimizer.py` (walk-forward, Optuna) ✅; `backtest/optimize.py` (Optuna strategy-param search with deterministic grid fallback) ✅
+- [x] Signal-streaming base (`strategies/signal_base.py`) — `SignalStrategy` with per-symbol OHLCV buffers, flip-on-signal MARKET orders; `strategies/indicators.py` (22 numpy primitives)
+- [x] **Catalog of 84 signal strategies** (`strategies/catalog/`) — one file per strategy + one test per strategy, registered in `_STRATEGY_REGISTRY_MAP`, runnable via `make_strategy(name)`; covers Trend (16), Mean Reversion (12), Momentum (11), Breakout (11), Volatility (8), Volume (7), Stat-Arb (5), Crypto (5), Hybrid (10); emitted via `tools/gen_catalog.py` (spec table → one module + one test)
 
-### Phase 4: Core Strategies (Week 4-6) ⭐ — ⚠️ partial (ml_strategy.py missing)
+### Phase 4: Core Strategies (Week 4-6) ⭐ — ✅ complete
 - [x] Mean Reversion: Z-score + RSI + BB (`strategies/mean_reversion.py`)
 - [x] Trend Following: EMA + ADX + ATR trailing stops (`strategies/trend_following.py`)
 - [x] Statistical Arbitrage: hedge ratio + correlation gate + z-score (`strategies/stat_arb.py`)
 - [x] Funding Arbitrage: basis + carry + funding rate (`strategies/funding_arb.py`)
-- [x] Market Making: Avellaneda-Stoikov + AdverseSelectionGuard (`strategies/market_making.py`)
-- [ ] ML-driven strategy (`strategies/ml_strategy.py`) — file does not exist
+- [x] Market Making: Avellaneda-Stoikov + AdverseSelectionGuard (`strategies/market_making.py`) — ⚠️ quotes computed but never submitted to the venue; `mm` CLI reports fabricated fills (#45)
+- [x] ML-driven strategy (`strategies/ml_strategy.py`) — exists (B054)
+- [x] Transaction Cost Model: spread, fees, slippage, funding, rebates, maker/taker (`execution/costs.py`) — ⚠️ totals corrupted by unit mixing (#26)
 
-### Phase 5: Risk Management (Week 6-7) ⭐ — ⚠️ partial
+### Phase 5: Risk Management (Week 6-7) ⭐ — ✅ done
 - [x] Pre-trade risk checks (exposure, drawdown via kill switch, notional bounds)
 - [x] Notional check skipped when no price available (market order pre-trade) — implemented (B038)
 - [x] Dynamic position sizing helpers (Kelly, vol-target, fixed-fraction)
-- [ ] Portfolio optimization (HRP, mean-CVaR) — not implemented
+- [x] Per-strategy risk tracking (`risk/strategy_tracker.py`) — daily P&L, drawdown per strategy
+- [x] Drawdown-based position scaling (`RiskManager._drawdown_scale`)
+- [x] Correlation gate (pre-trade reject if |corr| > limit)
 - [x] Kill switch (`risk/kill_switch.py` driven by portfolio signal)
-- [ ] Real-time risk dashboard — Grafana panels exist but not wired live
+- [x] Portfolio optimization (`risk/portfolio_optimizer.py`) — Hierarchical Risk Parity (single-linkage + recursive bisection) + mean-CVaR (per-asset tail-loss weights), numpy-only
+- [x] Real-time risk dashboard wiring — `RiskManager.report_risk_metrics()` emits Prometheus gauges (`record_risk`) on every order check + callable on a timer
 
-### Phase 6: ML Pipeline (Week 7-9) ⭐ — ⚠️ partial (core only)
+### Phase 6: ML Pipeline (Week 7-9) ⭐ — ⚠️ partial (models now complete; pipeline integration pending)
 - [x] Feature engineering (`ml/features.py`) — returns, RSI, MACD, ATR ratio, BB pos+width, log volume
 - [x] Direction classifier (`ml/models/direction.py`) — sklearn logreg preferred, numpy fallback
+- [x] Volatility forecasting (`ml/models/volatility.py`) — EWMA, GARCH(1,1), realized, quantile regression
+- [x] Regime detection (`ml/models/regime.py`) — HMM, k-means, GMM, threshold with softmax probs
+- [x] Ensemble stacking / blending (`ml/models/ensemble.py`) — weighted voting across direction/volatility/regime
 - [x] Walk-forward training with purged CV (`ml/online.py` WalkForwardTrainer)
 - [x] Auto-retrain on drift detection (`ml/online.py` DriftDetector)
 - [ ] Feature store with versioning (stretch)
-- [ ] Volatility forecasting (`ml/models/volatility.py` missing)
-- [ ] Regime detection (`ml/models/regime.py` missing)
-- [ ] Ensemble stacking / blending (`ml/models/ensemble.py` missing)
-- [ ] Online inference pipeline — current DirectionClassifier <10ms; production pipeline deferred
+- [ ] Online inference pipeline — DirectionClassifier <10ms; production pipeline deferred
 
 ### Phase 7: Execution Engine (Week 9-10) — ✅ done
 - [x] Order management (`execution/engine.py`) with `build_venue(mode)` factory
@@ -241,7 +319,7 @@ src/cryptobot/
       quote latency + selected/fallback/split/failed; SimulatedVenue + BinanceVenue
       record their own round-trip on submit/cancel.
 
-### Phase 8: Live Trading & Monitoring (Week 10-12) — ⚠️ partial
+### Phase 8: Live Trading & Monitoring (Week 10-12) — ✅ loop implemented (paper default; live gated)
 - [x] Compose stack (`docker-compose.yml`: Timescale, Redis, Prometheus, Grafana, Alertmanager, Loki, Promtail, Nginx)
 - [x] Default profile valid (monitoring dirs scaffolded)
 - [x] Paper trading profile (`cryptobot-paper` service, `EXECUTION_MODE=paper` env)
@@ -262,7 +340,7 @@ src/cryptobot/
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | **Primary Language** | Python 3.14 | ML ecosystem, rapid iteration. `Dockerfile` uses `python:3.14-slim`. |
-| **Performance-Critical** | **Rust (via PyO3/maturin)** — pending | Backtest engine, fill simulator, feature computation, order book math. Currently: workspace trimmed to 1 member (`cryptobot-core`) with manifest + `lib.rs` stub (`pub fn placeholder`) + 1 unit test; `cargo build` + `cargo test` clean. Sibling crates (`backtest`, `features`, `orderbook`, `py`, `risk`, `stats`) deleted until each gets a manifest + `lib.rs`. CI does not yet run cargo. |
+| **Performance-Critical** | **Rust (via PyO3/maturin)** — ✅ 7-crate workspace | Backtest engine, fill simulator, feature computation, order book math. Workspace: `crates/cryptobot-{core,features,risk,stats,orderbook,backtest,py}` with PyO3 0.29 bindings; `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` all green. CI runs cargo-lint + cargo-test with `Swatinem/rust-cache`. `.cargo/config.toml` has no `target-cpu=native` (breaks cached builds across runner CPUs); opt in locally via `CARGO_RUSTFLAGS`. |
 | **Async Framework** | asyncio + aiohttp | Native, high-performance, WebSocket support |
 | **Database** | TimescaleDB + SQLite | Time-series optimized, local dev friendly |
 | **Message Bus** | Redis Streams + local asyncio | Pub/sub, replay, persistence |
@@ -302,18 +380,16 @@ src/cryptobot/
 ### Rust Crate Structure (`crates/`)
 ```
 crates/
-├── cryptobot-core/          # Shared types, events, math  ← implemented (lib.rs stub)
-├── cryptobot-backtest/      # Event-driven backtester, fill simulator  ← pending
-├── cryptobot-features/      # Feature computation (SIMD optimized)  ← pending
-├── cryptobot-risk/          # Risk math: Kelly, CVaR, HRP, correlation  ← pending
-├── cryptobot-stats/         # Statistical validation: PBO, Monte Carlo, deflated Sharpe  ← pending
-├── cryptobot-orderbook/     # Order book operations, VPIN, microstructure  ← pending
-└── cryptobot-py/            # PyO3 bindings for Python integration  ← pending
+├── cryptobot-core/          # Shared types, events, math  ✅ implemented
+├── cryptobot-backtest/      # Event-driven backtester, fill simulator  ✅ (engine metrics computed: sharpe, max drawdown)
+├── cryptobot-features/      # Feature computation (trend, volatility, volume, microstructure...)  ✅
+├── cryptobot-risk/          # Risk math: Kelly, CVaR, HRP, correlation  ✅ (+ limits, kill switch, portfolio optimization)
+├── cryptobot-stats/         # Statistical validation: PBO, Monte Carlo, deflated Sharpe  ✅ (+ sensitivity, walk-forward)
+├── cryptobot-orderbook/     # Order book operations, VPIN, microstructure  ✅
+└── cryptobot-py/            # PyO3 bindings for Python integration  ✅ (submodules wired)
 ```
 
-Only `cryptobot-core` exists on disk today (with `lib.rs` stub + 1 unit test). The other 6 dirs were deleted 2026-07-31 (no manifest, only empty skeleton). Re-add each to `Cargo.toml [workspace] members` when implementing.
-
-**Current state** (post audit v3): workspace trimmed to 1 member (`cryptobot-core`) + `lib.rs` stub (`pub fn placeholder() -> &'static str`) + 1 unit test. `cargo build` + `cargo test` clean (rustup stable 1.97.1). Empty subdirs `crates/cryptobot-core/src/{events,math,time,types}/` preserved for future surface. Per-target `rustflags` live in `.cargo/config.toml`. Sibling crates (`backtest`, `features`, `orderbook`, `py`, `risk`, `stats`) deleted; re-add to `[workspace] members` when each gets a `Cargo.toml` + `lib.rs`. CI does not yet run cargo (no `.github/workflows/cargo.yml` job).
+**Current state** (2026-08-06): workspace has 7 real crates with PyO3 0.29 bindings. Stats crate `deflated_sharpe` / `monte_carlo` / `pbo` / `sensitivity` / `walk_forward` and risk `limits` / `kill_switch` / `portfolio_optimization` submodules implemented (63 workspace tests, up from 31). Backtest engine now computes Sharpe + max drawdown from the equity curve. `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` all green (rustup stable 1.97+). CI runs cargo-lint + cargo-test jobs with `Swatinem/rust-cache@v2`. `.cargo/config.toml` deliberately has NO `target-cpu=native` rustflags — cached artifacts built on one runner CPU would SIGILL on another; opt in locally via `CARGO_RUSTFLAGS="-C target-cpu=native"`.
 
 ### Build & Deploy
 - **Local**: `maturin develop` (auto-compiles Rust, installs Python package)
@@ -421,7 +497,7 @@ mkdir -p docker seccomp compose scripts migrations
 - Direction classifier (`ml/models/direction.py` sklearn logreg + numpy fallback) ✅
 - Walk-forward + drift detection (`ml/online.py`) ✅
 - `ml_strategy.py` concrete strategy ✅
-- Volatility / regime / ensemble models 🔲
+- Volatility / regime / ensemble models ✅ (EWMA/GARCH/realized, HMM/k-means/GMM, weighted voting; disabled in YAML until validated)
 
 ---
 
@@ -454,12 +530,12 @@ mkdir -p docker seccomp compose scripts migrations
 ### To Create Next
 - [x] ✅ `src/cryptobot/strategies/ml_strategy.py` — done (B054)
 - [x] ✅ `src/cryptobot/data/features.py` — done as re-export (B056)
-- [ ] `src/cryptobot/ml/models/volatility.py` — Quantile regression
-- [ ] `src/cryptobot/ml/models/regime.py` — HMM / Transformer
-- [ ] `src/cryptobot/ml/models/ensemble.py` — Stacking
+- [x] ✅ `src/cryptobot/ml/models/volatility.py` — EWMA, GARCH, realized, quantile
+- [x] ✅ `src/cryptobot/ml/models/regime.py` — HMM, k-means, GMM, threshold
+- [x] ✅ `src/cryptobot/ml/models/ensemble.py` — weighted voting
 - [x] ✅ `src/cryptobot/ml/online.py` — WalkForwardTrainer (purged) + DriftDetector
-- [ ] `src/cryptobot/cli/optimize.py` — Parameter optimization (Optuna)
-- [x] ✅ **Rust workspace** — trimmed to `["crates/cryptobot-core"]`; 6 empty sibling dirs deleted; `lib.rs` stub + 1 unit test; `cargo build` + `cargo test` clean. Re-add each sibling when it gets a manifest.
+- [x] ✅ `src/cryptobot/ml/optimizer.py` — Phase 3 walk-forward optimizer with regime-aware parameter search (Optuna)
+- [x] ✅ **Rust workspace** — 7 crates (`core`, `features`, `risk`, `stats`, `orderbook`, `backtest`, `py`) with PyO3 0.29; fmt/clippy/test all green in CI. `.cargo/config.toml` intentionally has no `target-cpu=native` (breaks cached builds across runner CPUs; opt in via `CARGO_RUSTFLAGS`).
 - [x] ✅ **B051 (monitoring optional-deps)** — `metrics.py` no-op `_NoOpMetric`; `alerting.py` lazy `aiohttp`; `monitoring/__init__.py` lazy via `__getattr__`; `tests/unit/test_monitoring_lazy_imports.py`.
 - [x] ✅ **BinanceWSClient fallback warning** — logs warning when `symbols` or `timeframes` missing.
 - [ ] **Remove dead dirs** under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/` (already gone from repo; keep listed for history)
@@ -476,11 +552,66 @@ mkdir -p docker seccomp compose scripts migrations
 - Requirements: `requirements/prod.txt`
 
 ### Current Phase
-**Phase 4/6/8 complete**: Core infrastructure ✅, Backtester ✅, Strategies 6/6 ✅ (ml_strategy.py created), ML core ✅, Execution ✅, Risk ✅, Monitoring ✅, Live/Compose ✅, K8s ✅, **CI/CD green ✅**, **Release v0.1.0 published ✅**. Next: Rust crate implementations, ML volatility/regime/ensemble models.
+**NSE ERA (2026-08-25) — live paper gate on Indian equities.**
+
+> **2026-08-23 PIVOT**: owner directed trading focus to NSE (Nifty50) over crypto.
+> Crypto gate v2 stopped, states archived (`state-archive/gate-v2-*`).
+
+**What is running now**
+- `nse-basket` (:8084): trend_following(5,12) long-only across ALL 50 Nifty50
+  constituents, daily bars, rebalance 15:36 IST post-close, delivery costs
+  (11+1bps/side), affordability guard. **Seed: ₹21,00,000** — first rebalance
+  opened 16 positions, all 50 names affordable at ₹42k slices.
+- `control-room` (:8090): unified dashboard — basket equity/holdings/trades
+  live + research artifacts.
+- Paper gate rules: day counter from first equity point; pass = net positive,
+  Sharpe ≥ 1, zero breaker trips over 60 days.
+
+**Validated edge (what we bet on)**
+- Daily bars are the ONLY timeframe with edge — proven twice (crypto + NSE):
+  ~30k backtests; intraday taker AND maker both dead (adverse selection).
+- trend_following won 46/50 stocks raw; walk-forward honest pass = 8/50
+  (TATACONSUM, BEL, TITAN, APOLLOHOSP, TATASTEEL, ULTRACEMCO, CIPLA, ADANIENT).
+- Capacity sim (PROJECT_MEMORY/40): ₹21L sits in the sweet spot (~8% CAGR
+  character); ₹100cr degrades to 3.3% via participation caps.
+
+**Built this era**
+- NSE data pipeline: official constituents list + yfinance downloader
+  (adjusted OHLC after #58), matrix_sweep CLI generalization.
+- `RealisticSimVenue`: latency, partial fills, impact slippage, queue-aware limits.
+- Session-aware intraday algos (nse_orb, vwap_revert) — tested, negative:
+  confirms bar-data intraday has no edge.
+- `live/nse_basket.py`: scheduled daily rebalancer (Yahoo chart API, stdlib).
+- `execution/venue/kite_venue.py` + `tools/kite_login.py`: Zerodha Kite
+  Connect adapter (dry-run default; awaiting owner's API key for live).
+- Control room dashboard; bankruptcy guard (#55); macd O(n²)→O(n) fix.
+
+**Known data caveats**
+- #58 unadjusted prices fixed (auto_adjust=True); #58b corrupt outlier prints
+  scrubbed in analysis tooling. Pre-fix sweep/WF tables shift slightly on
+  adjusted data; rankings robust.
+
+**Next**
+1. Owner provides Kite API key/secret → daily login flow → `--kite-live`.
+2. Re-run WF shortlist on adjusted data to confirm the 8-stock list.
+3. Equity tax engine (STCG 20%/LTCG 12.5%) before real orders.
+4. Optional: order-book (L2) data exploration for genuine intraday edge.
+
+---
+
+### Prior phase (crypto, archived)
+**Phase 3/4/5/6/8 complete + catalog delivered**: Core infrastructure ✅, Backtester ✅, **Strategy Framework ✅ (PositionManager + Optuna strategy optimizer + grid fallback + 84 catalog signal strategies in src/cryptobot/strategies/catalog/)**, Strategies 6/6 ✅ (ml_strategy.py created), ML core ✅ (features, direction/volatility/regime/ensemble, training/inference/auto_retrain, walk-forward optimizer), Execution ✅ (incl. realistic venue + transaction cost model), **Risk ✅ (incl. HRP/CVaR portfolio optimizer + live risk-metric wiring)**, Monitoring ✅, Live/Compose ✅ (incl. Phase 3 funding-carry paper harness), K8s ✅, **CI/CD green ✅ (public repo, 769 pytest + 63 Rust tests, ruff + clippy -D warnings + fmt clean)**, **Rust workspace fleshed out (stats + risk submodules, backtest metrics)**, **Release v0.1.0 published ✅**, **WalkForwardOptimizer functional (#27 fixed)**, **live trading loop wired (`cryptobot bot`, paper default)**.
+
+> ⚠️ **2026-08-22 audit caveat**: "✅" above means *implemented and tested*, not *correct*. The
+> 2026-08-22 audit found 34 verified bugs (#20–#53) across exactly these areas — including the
+> catalog's long-only flip semantics (#25), which invalidates the 2026-08-09 real-data conclusion
+> of "0/84 profitable" as a long-only-flip result. Priority order before further research:
+> #20/#32/#39 (metrics), #25 (flip semantics), #21/#27 (ML), #22 (image). Active: fixing the audit
+> issues. Next: re-run catalog + carry validation after fixes; feature store; paper→live cutover.
 
 ### Blockers
-- ~~Rust workspace non-buildable — `Cargo.toml [workspace] members` declared 7, only `cryptobot-core` had a manifest; trim or add per-crate manifests~~ → **resolved 2026-07-31** (workspace trimmed; 6 sibling dirs deleted; `lib.rs` stub + 1 unit test; `cargo build` + `cargo test` clean)
-- ~~ML volatility / regime / ensemble models not implemented (disabled in `configs/base.yaml`)~~ → **deferred** (future ML scope)
+- ~~Rust workspace non-buildable — `Cargo.toml [workspace] members` declared 7, only `cryptobot-core` had a manifest~~ → **resolved 2026-08-04** (all 7 crates fleshed out with PyO3 0.29; fmt/clippy/test green)
+- ~~ML volatility / regime / ensemble models not implemented~~ → **resolved** (all three exist; volatility/regime enabled=false in YAML until validated)
 - ~~Dead empty dirs under `src/cryptobot/`: `allocator/`, `altdata/`, `api/`, `exchanges/`, `funding/`, `xmr/` (delete or document)~~ → **resolved 2026-07-31** (dirs already removed)
 - ~~`monitoring/__init__.py` eager-imports `metrics` (B051) — breaks import in no-Prometheus envs~~ → **resolved 2026-07-31** (no-op `_NoOpMetric` stubs in `metrics.py`; `alerting.py` defers `aiohttp` import; `monitoring/__init__.py` lazy via `__getattr__`; `tests/unit/test_monitoring_lazy_imports.py` covers the no-op fallback)
 - ~~`BinanceWSClient` silent fallback to default symbol/timeframes~~ → **resolved 2026-07-31** (warning logged when fallback fires)
@@ -910,9 +1041,9 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [x] Add `Dockerfile` (`python:3.14-slim`)
 - [x] Add `.dockerignore`, `.gitignore`
 - [x] Add `pyproject.toml` + `pytest.ini` + `Settings.from_yaml_safe` (configs/settings mismatch fixed 2026-07-29)
-- [ ] Set up Rust workspace (`Cargo.toml` exists, `crates/cryptobot-core/Cargo.toml` manifest only)
-- [ ] Implement core Rust types (`cryptobot-core`)
-- [ ] Implement feature engine in Rust (`cryptobot-features`)
+- [x] Set up Rust workspace — 7 real crates with PyO3 0.29; fmt/clippy/test green (resolved 2026-08-04)
+- [x] Implement core Rust types (`cryptobot-core`)
+- [x] Implement feature engine in Rust (`cryptobot-features`)
 
 ### Phase 2: Backtesting Engine
 - [x] Event-driven backtester core (`backtest/engine.py`)
@@ -930,17 +1061,17 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [x] Base strategy class with lifecycle hooks (`strategies/base.py`)
 - [x] Signal generation interface (`List[OrderEvent]`)
 - [x] Strategy registry (`StrategyRegistry`)
-- [ ] Position management primitives (scaling, stops)
-- [ ] Parameter optimization with Optuna (`cli/optimize.py`)
+- [x] Position management primitives (scaling, stops) — `strategies/position.py`
+- [x] Parameter optimization with Optuna — `ml/optimizer.py`, `backtest/optimize.py`; ⚠️ WalkForwardOptimizer trials crash (#27); no `cli/optimize.py`
 
 ### Phase 4: Core Strategies
 - [x] Strategy base + registry + placeholder mean-reversion
-- [ ] Mean Reversion concrete (`strategies/mean_reversion.py`)
-- [ ] Trend Following concrete (`strategies/trend_following.py`)
-- [ ] Statistical Arbitrage concrete (`strategies/stat_arb.py`)
-- [ ] Funding Arbitrage concrete (`strategies/funding_arb.py`)
-- [ ] Market Making concrete (`strategies/market_making.py`)
-- [ ] ML-driven strategy (`strategies/ml_strategy.py`)
+- [x] Mean Reversion concrete (`strategies/mean_reversion.py`)
+- [x] Trend Following concrete (`strategies/trend_following.py`)
+- [x] Statistical Arbitrage concrete (`strategies/stat_arb.py`)
+- [x] Funding Arbitrage concrete (`strategies/funding_arb.py`)
+- [x] Market Making concrete (`strategies/market_making.py`)
+- [x] ML-driven strategy (`strategies/ml_strategy.py`)
 
 ### Phase 5: Risk Management
 - [x] Risk engine with pre-trade checks (`risk/manager.py`)
@@ -948,8 +1079,8 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [x] Risk limits (`risk/limits.py`)
 - [x] Correlation helper (`risk/correlation.py`)
 - [x] Kill switch (`risk/kill_switch.py`)
-- [ ] Portfolio optimization (HRP, mean-CVaR)
-- [ ] Replace `print`-based status with structlog
+- [x] Portfolio optimization (HRP, mean-CVaR) — `risk/portfolio_optimizer.py` (audit-verified math; Rust ERC twin fixed in #24)
+- [x] Replace `print`-based status with structlog (zero `print(` in src)
 
 ### Phase 6: ML Pipeline
 - [x] Feature engineering pipeline (`ml/features.py`) M-bM-^@M-^T 8 features
@@ -958,9 +1089,9 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [x] Volatility forecasting (`ml/models/volatility.py`) M-bM-^@M-^T EWMA, GARCH, realized, quantile
 - [x] Regime detection (`ml/models/regime.py`) M-bM-^@M-^T HMM, k-means, GMM, threshold
 - [x] Ensemble stacking (`ml/models/ensemble.py`) M-bM-^@M-^T weighted voting
-- [ ] Walk-forward training with purged CV (`ml/training.py`)
-- [ ] Online inference (`ml/inference.py`)
-- [ ] Auto-retrain on drift (`ml/auto_retrain.py`)
+- [x] Walk-forward training with purged CV (`ml/training.py`)
+- [x] Online inference (`ml/inference.py`)
+- [x] Auto-retrain on drift (`ml/auto_retrain.py`)
 
 ### Phase 7: Execution Engine
 - [x] Order management (`execution/engine.py`) with `build_venue(mode)` factory, optional SOR
@@ -987,18 +1118,18 @@ This section documents ALL algorithmic trading strategies that the system must s
 - [x] GitHub Actions CI (`.github/workflows/ci.yml`) — lint + unit + compose-validate + multi-arch buildx
 
 ### Tests
-- [x] 14 unit test files in `tests/unit/` covering event bus, retry, simulated execution, backtest fill flow, reporting, mean reversion + validation + reporting, smart order router, latency metrics, Binance venue, backtest runner, backtest data, config loading, basic foundation
-- [ ] Property-based tests (hypothesis) for risk/math
-- [ ] Integration tests (TimescaleDB / Redis / Prometheus)
+- [x] 51 unit test files in `tests/unit/` covering event bus, retry, simulated execution, backtest fill flow, reporting, strategies, validation, smart order router, latency metrics, Binance venue, backtest runner/data, config loading, live paper harness, execution costs, realistic venue, hypothesis property tests, backtest regression; **84 per-strategy catalog tests in `tests/strategies/`** (one per strategy: trend/MR/momentum/breakout/volatility/volume/stat-arb/crypto/hybrid); `tests/integration/test_external_services.py` (TimescaleDB/Redis/Prometheus). Total: **749 passed / 18 skipped**.
+- [x] Property-based tests (hypothesis) for risk/math — `tests/unit/test_property_based_risk_math.py` (10 tests)
+- [x] Integration tests (TimescaleDB / Redis / Prometheus) — `tests/integration/test_external_services.py`, `integration` marker, skip without services
 - [x] CI/CD pipeline (GitHub Actions; cross-compile via QEMU + buildx matrix)
-- [ ] Regression tests on backtest metrics
+- [x] Regression tests on backtest metrics — `tests/unit/test_backtest_regression.py`
 - [x] Multi-arch Docker images (x86_64, ARM64)
 
 ### Testing & Quality
-- [ ] Unit tests for all core modules (>90% coverage)
-- [ ] Integration tests for backtester
-- [ ] Property-based tests for risk/math
-- [ ] CI/CD pipeline with cross-compilation
+- [~] Unit tests for core modules — 787 collected; coverage gate is 70% (not 90%)
+- [x] Integration tests for backtester (`tests/integration/`, behind marker)
+- [x] Property-based tests for risk/math (`test_property_based_risk_math.py`)
+- [x] CI/CD pipeline with multi-arch build (cross-compilation via buildx/QEMU)
 
 ---
 

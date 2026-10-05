@@ -56,7 +56,13 @@ class FundingSimResult:
 
 
 def _price_at(sorted_ts: list[datetime], sorted_close: list[float], ts: datetime) -> float | None:
-    idx = bisect.bisect_right(sorted_ts, ts) - 1
+    """Price of the last bar CLOSED at or before ``ts`` (no lookahead, issue #31).
+
+    ``sorted_ts`` holds kline OPEN times; the close at index i is only known at
+    open[i] + interval, so a decision at ts must use index i-1 (the previous
+    bar's close). The old bisect returned the in-progress bar's future close.
+    """
+    idx = bisect.bisect_left(sorted_ts, ts) - 1
     if idx < 0:
         return None
     return sorted_close[idx]
@@ -121,23 +127,30 @@ def run_funding_backtest(
     for ts, rate in zip(funding_ts, funding_rates, strict=True):
         spot_p = _price_at(s_ts, s_cl, ts)
         perp_p = _price_at(p_ts, p_cl, ts)
-        if spot_p is None or perp_p is None or spot_p <= 0:
-            continue
-        basis = (perp_p / spot_p - 1.0) * 10000.0
+        price_ok = spot_p is not None and perp_p is not None and spot_p > 0
 
+        # Funding is settled on notional and does not require a live price
+        # quote, so credit it whenever a position is carried across this 8h
+        # boundary even if the bar grid has no bar at this exact timestamp
+        # (issue #30). The old code `continue`d on a missing price and silently
+        # skipped the settlement.
         if in_pos:
             held += 1
             carry += rate * 10000.0
-            if basis <= basis_exit:
-                basis_gain += entry_basis - basis
-                fees += 2 * (spot_taker_bps + perp_maker_bps)
-                n_rips += 1
-                in_pos = False
-        else:
-            if min_funding <= rate <= max_funding and basis >= basis_entry:
-                in_pos = True
-                entry_basis = basis
-                fees += 2 * (spot_taker_bps + perp_maker_bps)
+
+        if price_ok:
+            basis = (perp_p / spot_p - 1.0) * 10000.0
+            if in_pos:
+                if basis <= basis_exit:
+                    basis_gain += entry_basis - basis
+                    fees += 2 * (spot_taker_bps + perp_maker_bps)
+                    n_rips += 1
+                    in_pos = False
+            else:
+                if min_funding <= rate <= max_funding and basis >= basis_entry:
+                    in_pos = True
+                    entry_basis = basis
+                    fees += 2 * (spot_taker_bps + perp_maker_bps)
         curve.append((ts, Decimal(str(round(carry + basis_gain - fees, 4)))))
 
     res.carry_bps = carry

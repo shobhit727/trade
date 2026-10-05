@@ -65,24 +65,25 @@ class PerformanceMetrics:
         return sharpe
 
     def calculate_sortino_ratio(self, returns: list[float], target_rate: float = 0.02) -> float:
-        """Calculates the annualized Sortino Ratio (focusing only on downside risk)."""
+        """Calculates the annualized Sortino Ratio (focusing only on downside risk).
+
+        Downside deviation is computed over ALL observations as
+        ``sqrt(mean(min(r - MAR, 0)^2))`` with the per-period MAR derived from the
+        annual ``target_rate`` (issue #39 — the previous losses-only std inflated
+        the ratio).
+        """
         if not returns:
             return 0.0
 
-        # Calculate negative returns relative to a minimum acceptable rate
-        downside_returns = [r for r in returns if r < target_rate]
-        if not downside_returns:
-            return float('inf') # Perfect performance regarding downside risk
-
-        np.mean(downside_returns)
-        std_downside = np.std(downside_returns)
-
-        # Annualization
         annualization_factor = 252
-        if std_downside == 0:
-            return float('inf')
+        target_per_period = target_rate / annualization_factor
+        squared_shortfall = [(min(r - target_per_period, 0.0)) ** 2 for r in returns]
+        downside_deviation = sqrt(sum(squared_shortfall) / len(returns))
 
-        sortino = (np.mean(returns) * annualization_factor - target_rate) / (std_downside * sqrt(annualization_factor))
+        if downside_deviation == 0:
+            return float('inf')  # no shortfall observations
+
+        sortino = (np.mean(returns) * annualization_factor - target_rate) / (downside_deviation * sqrt(annualization_factor))
         return sortino
 
 
@@ -158,14 +159,13 @@ class BacktestMetricsRecorder:
     def calculate_sortino_ratio(self, returns: list[float], target_rate: float = 0.02) -> float:
         if not returns:
             return 0.0
-        downside = [r for r in returns if r < target_rate]
-        if not downside:
-            return 0.0
-        downside_std = np.std(downside)
-        if downside_std == 0:
-            return 0.0
         annualization_factor = 252
-        return float((np.mean(returns) * annualization_factor - target_rate) / (downside_std * sqrt(annualization_factor)))
+        target_per_period = target_rate / annualization_factor
+        squared_shortfall = [(min(r - target_per_period, 0.0)) ** 2 for r in returns]
+        downside_deviation = sqrt(sum(squared_shortfall) / len(returns))
+        if downside_deviation == 0:
+            return 0.0
+        return float((np.mean(returns) * annualization_factor - target_rate) / (downside_deviation * sqrt(annualization_factor)))
 
 
 # --- Updated BacktestResults Structure (for better separation of concerns) ---

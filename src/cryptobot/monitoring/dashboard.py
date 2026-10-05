@@ -287,7 +287,7 @@ def create_risk_dashboard() -> dict[str, Any]:
                     "type": "bargauge",
                     "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
                     "targets": [
-                        {"expr": 'cryptobot_position_size_usd / cryptobot_total_equity_usd * 100', "legendFormat": "{{strategy}} - {{symbol}}"},
+                        {"expr": 'cryptobot_position_size_usd / on() group_left() cryptobot_total_equity_usd * 100', "legendFormat": "{{strategy}} - {{symbol}}"},
                     ],
                     "fieldConfig": {
                         "defaults": {"unit": "percent", "max": 20},

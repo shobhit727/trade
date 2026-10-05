@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -82,9 +82,10 @@ def test_filter_range_bounds(tmp_path: Path):
     rows = [(base + timedelta(hours=i), 100, 101, 99, 100, 1) for i in range(0, 24, 4)]
     _write_csv(p, rows)
     ds = load_csv(p)
-    cut = base + timedelta(hours=12)
-    sliced = ds.filter_range(start=cut, end=base + timedelta(hours=20))
-    assert all(cut <= b.timestamp <= base + timedelta(hours=20) for b in sliced)
+    cut = (base + timedelta(hours=12)).replace(tzinfo=UTC)
+    sliced = ds.filter_range(start=cut, end=(base + timedelta(hours=20)).replace(tzinfo=UTC))
+    # Timestamps are normalized to UTC-aware; naive bounds compare consistently.
+    assert all(cut <= b.timestamp <= (base + timedelta(hours=20)).replace(tzinfo=UTC) for b in sliced)
 
 
 def test_load_bars_synthetic_source(tmp_path: Path):
