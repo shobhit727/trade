@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-ARG PYTHON_TAG=3.13-slim
+ARG PYTHON_TAG=3.14-slim
 ARG PYTHON_VER=${PYTHON_TAG%-*}
 
 FROM python:${PYTHON_TAG} AS builder
@@ -22,7 +22,7 @@ RUN pip install --upgrade pip setuptools wheel \
 
 FROM python:${PYTHON_TAG} AS base
 
-ARG PYTHON_TAG=3.13-slim
+ARG PYTHON_TAG=3.14-slim
 ARG PYTHON_VER=${PYTHON_TAG%-*}
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

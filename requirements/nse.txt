@@ -1,0 +1,23 @@
+# nsealgo runtime dependencies — deliberately minimal.
+# This does NOT include requirements/prod.txt: that file is the crypto stack
+# (ccxt, scikit-learn, asyncpg, redis) and nsealgo needs none of it.
+
+# Config
+pydantic>=2.10
+pydantic-settings>=2.7
+pyyaml>=6.0
+
+# Data / numerics
+pandas>=2.2
+numpy>=2.2
+
+# Monitoring (Prometheus metrics + health endpoint)
+prometheus-client>=0.21
+
+# Security: CVE-2025-47273 (path traversal) fixed in setuptools 78.1.1
+setuptools>=78.1.1
+
+# Optional live-trading dependency. NOT installed in the image by default because
+# kiteconnect pulls a large dependency tree and paper mode must run without it.
+# Install it in the image (or a live override) to enable the Kite broker adapter:
+#   pip install kiteconnect==5.0.4
