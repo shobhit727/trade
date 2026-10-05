@@ -75,6 +75,14 @@ def test_record_position_close_zeroes_open_flag():
     assert 'cryptobot_position_size_usd{side="SHORT",strategy="mm",symbol="ETHUSDT"} 0.0' in text
 
 
+def test_record_position_close_zeroes_unrealized_pnl():
+    # Issue #50: a closed position must not leave phantom unrealized PnL behind.
+    m.record_position_update("mm", "ETHUSDT", "LONG", 5000.0, unrealized_pnl=42.0)
+    m.record_position_update("mm", "ETHUSDT", "LONG", 0.0)
+    text = _text()
+    assert 'cryptobot_position_pnl_unrealized_usd{strategy="mm",symbol="ETHUSDT"} 0.0' in text
+
+
 def test_record_pnl():
     m.record_pnl("trend", daily=100.0, total=1000.0, equity=10000.0, available=8000.0, margin=2000.0)
     text = _text()

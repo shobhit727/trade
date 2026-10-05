@@ -1,7 +1,26 @@
 # 23. Repository History
 
-> **Last Updated**: 2026-08-06 (Phase 3 harness, PR #1 venue fixes, CI/CD overhaul, repo public)
+> **Last Updated**: 2026-08-09 (funding plumbing engine-wired: 8h settlement + carry driver + CLI; 778 pytest + 63 Rust green)
 > **Confidence**: Git history present; entries below are session-level snapshots.
+
+## Session 2026-08-09 (funding plumbing: engine settlement + carry driver + CLI)
+
+- Funding settle in engine: `backtest/funding.py` `FundingProvider` (fixed + Binance CSV
+  replay, no lookahead) + `funding_cashflow`; `BacktestEngine` settles open positions
+  once per 8h block (hours 0/8/16).
+- Two-leg carry driver: `backtest/carry.py` `run_carry()` — long spot / short perp
+  through ExecutionEngine/RiskManager/SimulatedVenue; legs both MARKET (taker fee +
+  slippage).
+- `strategies/funding_arb.py` stateful FundingArbStrategy (backtest + live compatible);
+  catalog `funding_basis`/`funding_trend` regression-tested.
+- CLI: `cryptobot carry --spot <csv> --perp <csv> --funding <csv|--fixed-rate>` with
+  auto-alignment spot 1h → perp 8h close-instant grid (`align_spot_to_perp`; fixes a
+  7-14h-stale spot lookahead bug that minted fake carry PnL).
+- Runner: `tools/run_carry_real.py` — real Binance history (2019→2026, /tmp/opencode
+  CSVs), per-year PnL breakdown in JSON.
+- First real-data engine runs: carry reproduces the Phase 2A/2E verdict (regime-bound
+  basis edge); 2025-2026 legs flat-to-quiet (~2-4%/yr on 10k base), 2019-2021
+  bull-regime basis accounts for most absolute PnL.
 
 ## Session 2026-08-06 (Phase 3 paper harness + CI/CD overhaul)
 
@@ -161,3 +180,54 @@
 - Rust tests: 31 → 63. clippy -D warnings + fmt clean.
 
 **Gates:** 591 pytest passed, 4 skipped (1 flaky hypothesis test passed on re-run; pre-existing remote test). ruff clean.
+
+## 2026-08-08 — Strategy catalog (84 strategies) shipped
+
+**Strategies delivered:** 84 catalog signal strategies, one file per strategy under `src/cryptobot/strategies/catalog/`, each with a per-strategy test under `tests/strategies/`. Coverage: Trend (16), Mean Reversion (12), Momentum (11), Breakout (11), Volatility (8), Volume (7), Stat-Arb (5), Crypto (5), Hybrid (10).
+
+**Infrastructure added:**
+- `strategies/indicators.py` — 22 numpy OHLCV primitives (sma/ema/rsi/macd/atr/bb/donchian/cci/roc/obv/vwap/fisher/stoch/williams/keltner_mid/chaikin_mf/cumulative_delta/range_n/inside_bar/zscore/bollinger_position/true_range/make_order).
+- `strategies/signal_base.py` — `SignalStrategy` streaming base with per-symbol OHLCV buffers, flip-on-signal MARKET orders. `feed(symbol, close, high, low, volume)`.
+- `strategies/catalog/__init__.py` — auto-registers all 84 (class, config) pairs in `_REGISTRY`.
+- `strategies/registry.py` — `_STRATEGY_REGISTRY_MAP` merges catalog (90 names total).
+- `backtest/runner.py` — `make_strategy(name)` looks up registry; `feed()` passes OHLCV to new strategies with legacy 2-arg fallback.
+- `tools/gen_catalog.py` — generator script holding the spec table (84 entries), emits one module + one test per strategy. Test modes: trend (monotonic), osc (sine+drift), vol (spike), flow (asymmetric candles); dirs="both"/"long"/"short" filters the per-direction test assertions.
+
+**Gates:** 749 pytest passed (was 591), 18 skipped, 0 failed. Ruff clean. Rust unaffected: fmt + clippy -D warnings + 63 tests still green.
+
+## 2026-08-08 — Real BTCUSDT 1h validation (first run on real data)
+
+**Findings:** 0/84 catalog strategies passed the walk-forward + Monte Carlo gauntlet on 1000 real BTCUSDT 1h bars (2026-06-27 → 2026-08-08, price range $60204 → $65000).
+
+**Top performers (still failed MC significance):**
+- `keltner` +14.9
+## 2026-08-09 — Funding carry wired into engine; regression fixes merged with upstream catalog
+
+- `backtest/funding.py` — `FundingProvider` protocol + `FixedFundingProvider` + `CsvFundingProvider` (replays Binance fundingRate CSV, zero lookahead via bisect), `funding_cashflow()` (longs pay / shorts receive).
+- `backtest/engine.py` — `_maybe_settle_funding()`: settles open positions at each 8h block (00/08/16 UTC, deduped per block) in both `run_bars` and event-stream paths when a provider is attached.
+- `backtest/carry.py` — `run_carry()`: two-leg funding-carry driver (long spot / short perp) emitting `(perp_side, spot_side)` market legs through ExecutionEngine/RiskManager inside the real engine.
+- `strategies/funding_arb.py` — stateful (`in_position`), emits leg pairs, accepts both `FundingArbState` and `(ts, spot, perp, rate)` feed signatures.
+- `backtest/runner.py::run_backtest` — new `funding=` provider parameter.
+- Regression tests: `tests/unit/test_backtest_funding.py`, `tests/unit/test_backtest_funding_engine.py`, `tests/unit/test_backtest_carry.py` — 775 → 778 pytest, 6 skipped (Python 3.14).
+
+**Carry research verdict (walk-forward, 2019-23 train / 2024-26 test, entry>=0.03%, exit<=0.005%):**
+- BTC +87% train → +10.5% test (3 trips); ETH +209% train → +10.4% test (3 trips); maxDD ~1-2%; insensitive to 2-5bps fees.
+- "Always-on" variant fails in 2025 (ETH −31%) — threshold-filtered entry is required; cost sensitivity is flat because trips/year are few.
+
+**Gates:** 778 pytest passed, 6 skipped, 0 failed. Ruff clean. Rust unaffected (63 still green).
+
+## 2026-08-09 — Real-data validation: 3-part test (sizing + 1y data + carry)
+
+**1. Position sizing fixed:** `run_backtest(risk_fraction=0.01)` — engine scales each emitted order to `risk_fraction * equity / price`. Catalog strategies emit `quantity=1 BTC` (6x leverage vs $10k); the backtest risk manager now bypasses order-size/exposure/kill-switch guards under `backtest_mode=True`. Result: no more leverage wipeouts.
+
+**2. One year of real BTCUSDT 1h bars pulled** (9000 bars via `tools/pull_binance_history.py`, public API no auth). Full 84-strategy gauntlet with 1% sizing on last 2500 bars:
+- **0/84 passed** (MC p<0.05 AND deflated Sharpe>1 AND walk-forward stability).
+- Even with sane sizing, all MC p-values 0.2–0.8, most returns negative. No strategy has a statistically significant edge over one year.
+
+**3. Real funding-carry run** (`tools/run_carry_real.py` on spot 1h + perp 8h + 1095 funding settlements, 365 days):
+- **-14.95%** over the window (was +$52 in 2025, -$1539 in 2026).
+- The "documented edge" (funding-arb per 27_Edge_Research.md) lost money on real data — perp-vs-spot price moves swamped the carry in 2026.
+
+**Data pulled:** `tools/pull_binance_history.py` (klines paginated, any interval), `tools/pull_carry_data.py` (spot 1h + perp 8h + funding history CSVs).
+
+**Honest verdict:** With real data, correct sizing, and one year of history: **no surviving edge among the 84 catalog strategies, and the funding-carry path also lost.** Balances the repo's claims — no strategy is ready for paper→live without further work (regime-specific enter, tighter entry thresholds, altcoin screens).

@@ -27,6 +27,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
+from cryptobot.config import get_settings
 from cryptobot.strategies.funding_arb import (
     FundingArbConfig,
     FundingArbState,
@@ -35,6 +36,20 @@ from cryptobot.strategies.funding_arb import (
 
 logger = logging.getLogger(__name__)
 
+
+def _get_binance_futures_url() -> str:
+    return get_settings().external_services.binance_futures_url
+
+def _get_binance_spot_ws_url() -> str:
+    return get_settings().external_services.binance_spot_ws_url
+
+def _get_binance_futures_ws_url() -> str:
+    return get_settings().external_services.binance_futures_ws_url
+
+def _get_http_short_timeout() -> int:
+    return get_settings().timeouts.http_short_timeout
+
+# Kept for backwards-compat; prefer _get_*_ws_url() which is config-driven
 SPOT_WS = "wss://stream.binance.com:9443/stream?streams="
 FUTURES_WS = "wss://fstream.binance.com/stream?streams="
 
@@ -227,7 +242,7 @@ class FundingPaperHarness:
         futures_ws: str | None = None,
         poll_fapi: bool = False,
         poll_interval_s: float = 5.0,
-        rest_base: str = "https://fapi.binance.com",
+        rest_base: str | None = None,
     ) -> None:
         """Run the monitor for ``hours`` (0 = forever).
 
@@ -239,6 +254,7 @@ class FundingPaperHarness:
 
         spot_ws = spot_ws or SPOT_WS + "/".join(f"{s.lower()}@bookTicker" for s in self.symbols)
         futures_ws = futures_ws or FUTURES_WS + "/".join(f"{s.lower()}@markPrice@1m" for s in self.symbols)
+        rest_base = rest_base or _get_binance_futures_url()
         deadline = None if hours <= 0 else time.monotonic() + hours * 3600
 
         async with aiohttp.ClientSession() as session:
@@ -261,7 +277,7 @@ class FundingPaperHarness:
             url = f"{base}/fapi/v1/premiumIndex?symbol={sym}"
             while True:
                 try:
-                    async with session.get(url, timeout=10) as resp:
+                    async with session.get(url, timeout=_get_http_short_timeout()) as resp:
                         if resp.status != 200:
                             raise RuntimeError(f"HTTP {resp.status}")
                         data = await resp.json()

@@ -4,10 +4,19 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
 from decimal import Decimal
 
+from cryptobot.config import get_settings
 from cryptobot.core.events import OrderEvent, OrderSide, OrderStatus, OrderType
+
+
+def _get_server_host() -> str:
+    return get_settings().server.host
+
+def _get_server_port() -> int:
+    return get_settings().server.port
 
 logger = logging.getLogger(__name__)
 
@@ -70,15 +79,28 @@ def build_parser() -> argparse.ArgumentParser:
     predict.add_argument("--json", action="store_true")
 
     serve = sub.add_parser("serve", help="Run the health/metrics HTTP server only")
-    serve.add_argument("--host", default="127.0.0.1")
-    serve.add_argument("--port", type=int, default=8080)
+    serve.add_argument("--host", default=None, help=f"Host to bind (default: {_get_server_host()})")
+    serve.add_argument("--port", type=int, default=None, help=f"Port to bind (default: {_get_server_port()})")
 
     bot = sub.add_parser(
         "bot",
-        help="Long-running bot stub: starts the health server and keeps the process alive",
+        help="Run the live/paper trading loop (market data -> strategy -> execution)",
     )
-    bot.add_argument("--host", default="127.0.0.1")
-    bot.add_argument("--port", type=int, default=8080)
+    bot.add_argument("--host", default=None, help=f"Host to bind (default: {_get_server_host()})")
+    bot.add_argument("--port", type=int, default=None, help=f"Port to bind (default: {_get_server_port()})")
+    bot.add_argument("--strategy", default="trend_following")
+    bot.add_argument("--symbol", default="BTCUSDT")
+    bot.add_argument("--timeframe", default="1m")
+    bot.add_argument("--mode", choices=["paper", "live"], default="paper")
+    bot.add_argument("--warmup", type=int, default=300, help="REST bars used to prime indicators")
+    bot.add_argument("--max-bars", type=int, default=None, help="stop after N closed bars (dry-run)")
+    bot.add_argument("--algos-json", default=None,
+                     help="Multi-algo mode: JSON list "
+                          "'[{\"name\":\"dual_ma\",\"params\":{},\"weight\":0.6}, ...]' "
+                          "(or BOT_ALGOS env)")
+    bot.add_argument("--strategy-params", default=None,
+                     help="JSON dict of strategy config overrides, e.g. '{\"fast\":5,\"slow\":50}'")
+    bot.add_argument("--profile", choices=["realistic", "aggressive"], default="realistic", help="Risk profile preset")
 
     validate_cmd = sub.add_parser("validate", help="Validate backtest statistical significance")
     validate_cmd.add_argument("--source", choices=["synthetic"], default="synthetic")
@@ -86,6 +108,19 @@ def build_parser() -> argparse.ArgumentParser:
     validate_cmd.add_argument("--splits", type=int, default=5)
     validate_cmd.add_argument("--permutations", type=int, default=200)
     validate_cmd.add_argument("--json", action="store_true")
+
+    breaker_cmd = sub.add_parser(
+        "breaker-reset",
+        help="Manually reset the equity circuit breaker after a trip",
+    )
+    breaker_cmd.add_argument("--state", default="state/breaker.json")
+
+    tax_cmd = sub.add_parser(
+        "tax",
+        help="India VDA tax summary + Schedule VDA CSV export (from bot state)",
+    )
+    tax_cmd.add_argument("--state", default="state/tax_engine.json")
+    tax_cmd.add_argument("--export-csv", default=None, help="Write Schedule-VDA CSV to this path")
 
     paper_cmd = sub.add_parser("paper", help="Run paper trading dry-run")
     paper_cmd.add_argument("--symbol", default="BTCUSDT")
@@ -107,6 +142,30 @@ def build_parser() -> argparse.ArgumentParser:
     funder_cmd.add_argument("--poll-interval", type=float, default=5.0)
     funder_cmd.add_argument("--sample-interval", type=float, default=60.0, help="Seconds between basis/funding CSV sample rows (default 60)")
     funder_cmd.add_argument("--json", action="store_true")
+
+    carry = sub.add_parser(
+        "carry",
+        help="Two-leg funding-carry backtest (long spot, short perp) with real funding history",
+    )
+    carry.add_argument("--spot", required=True, help="Spot CSV (Binance klines: open_time,open,high,low,close,volume)")
+    carry.add_argument("--perp", required=True, help="Perp CSV (same format; must be time-aligned to spot)")
+    carry.add_argument("--funding", default=None, help="Binance fundingRate CSV (funding_time,funding_rate); omit for fixed rate")
+    carry.add_argument("--fixed-rate", default=None, help="Fixed funding rate per 8h (e.g. 0.001) when no CSV")
+    carry.add_argument("--symbol", default="BTCUSDT")
+    carry.add_argument("--perp-symbol", default="BTCUSDTPERP")
+    carry.add_argument("--entry", type=float, default=0.0003, help="Enter when funding rate >= this")
+    carry.add_argument("--exit", type=float, default=0.00005, help="Exit when funding rate <= this")
+    carry.add_argument("--qty", type=Decimal, default=Decimal("0"), help="Quantity per leg (default: USD 10k / spot price)")
+    carry.add_argument("--capital", type=Decimal, default=Decimal("10000"))
+    carry.add_argument(
+        "--risk",
+        type=float,
+        default=0.0,
+        help="Equity fraction per pair (0 = fixed qty); sizes legs at entry from current equity",
+    )
+    carry.add_argument("--max-notional", type=Decimal, default=Decimal("0"), help="Cap pair notional in USD (0 = uncapped)")
+    carry.add_argument("--commission-bps", type=int, default=5)
+    carry.add_argument("--json", action="store_true")
     return parser
 
 
@@ -195,6 +254,11 @@ async def _run(args: argparse.Namespace) -> int:
         ds.bars = ds.bars[: args.bars]
         venue = SimulatedVenue()
         engine = ExecutionEngine(venue=venue, risk_manager=RiskManager())
+        # The mm CLI is a simulation: bypass the live kill-switch / rate-limiter
+        # gates (which depend on wall-clock time) while keeping the structural
+        # order-size limits. Without this, the per-minute rate limit rejects
+        # every order after the first 60 in a tight loop.
+        engine.risk_manager.backtest_mode = True
         cfg = MarketMakingConfig(
             symbol=args.symbol,
             gamma=args.gamma,
@@ -204,7 +268,7 @@ async def _run(args: argparse.Namespace) -> int:
         )
         strategy = MarketMakingStrategy(cfg)
         strategy.attach_execution(engine)
-        fills = strategy.run_on_history(ds.bars)
+        fills = await strategy.run_on_history(ds.bars)
         if args.json:
             json.dump(
                 {
@@ -232,17 +296,20 @@ async def _run(args: argparse.Namespace) -> int:
 
     if args.command == "ml":
         from cryptobot.backtest.data import load_bars
-        from cryptobot.ml.features import build_features
-        from cryptobot.ml.models.direction import DirectionClassifier
+        from cryptobot.ml.models.direction import (
+            DirectionClassifier,
+            DirectionConfig,
+            features_and_labels,
+        )
 
         ds = load_bars(source=args.source, symbol="BTCUSDT", timeframe="1h")
-        bars = ds.bars[: args.bars]
-        features = build_features(bars)
-        clf = DirectionClassifier(horizon=args.horizon)
-        score = clf.walk_forward_score(features, n_splits=4)
+        ds.bars = ds.bars[: args.bars]
+        clf = DirectionClassifier(DirectionConfig(horizon=args.horizon))
+        X, y = features_and_labels(ds, horizon=args.horizon)
+        score = clf.walk_forward_score(X, labels=y, n_splits=4)
         out = {
-            "n_samples": len(features),
-            "n_features": features.shape[1] if hasattr(features, "shape") else len(features[0]),
+            "n_samples": int(len(X)),
+            "n_features": int(X.shape[1]),
             "walk_forward_score": score,
             "model": clf.summary(),
         }
@@ -254,6 +321,41 @@ async def _run(args: argparse.Namespace) -> int:
                 logger.info("%s: %s", k, v)
         return 0
 
+    if args.command == "breaker-reset":
+        from cryptobot.core.breaker import BreakerConfig, CircuitBreaker
+
+        br = CircuitBreaker(BreakerConfig(state_path=args.state))
+        if not br.tripped:
+            print("breaker is not tripped; nothing to do")
+            return 0
+        br.reset()
+        from cryptobot.utils.audit import ActionAudit
+
+        ActionAudit().log("owner", "breaker-reset", {"state": args.state})
+        print("circuit breaker reset; trading may resume (action logged)")
+        return 0
+
+    if args.command == "tax":
+        import json as _json
+        from pathlib import Path as _Path
+
+        from cryptobot.core.tax import TaxEngine
+
+        state_file = _Path(args.state)
+        if not state_file.exists():
+            print(f"no tax state at {args.state}; run the bot first")
+            return 1
+        engine = TaxEngine()
+        engine.restore(_json.loads(state_file.read_text(encoding="utf-8")))
+        if args.export_csv:
+            out = engine.export_schedule_vda(args.export_csv)
+            print(f"Schedule VDA CSV written: {out}")
+        summary = engine.summary()
+        print("India VDA tax estimate (Section 115BBH, strict no-loss-offset):")
+        for key, value in summary.items():
+            print(f"  {key:>20}: {value}")
+        return 0
+
     if args.command == "serve":
         from cryptobot.utils.health_server import serve_health
 
@@ -261,16 +363,60 @@ async def _run(args: argparse.Namespace) -> int:
         return 0
 
     if args.command == "bot":
-        from cryptobot.utils.health_server import HealthServer
+        from cryptobot.live.trader import LiveTrader, LiveTraderConfig
 
-        server = HealthServer(host=args.host, port=args.port)
-        server.start()
-        logger.info("bot stub running; health at http://%s:%d/health", args.host, args.port)
-        try:
-            while True:
-                await asyncio.sleep(60)
-        finally:
-            server.stop()
+        if args.mode == "live":
+            from cryptobot.core.gate import GateConfig, PaperGateTracker
+
+            _gate = PaperGateTracker(GateConfig())
+            _ok, _why = _gate.allows_live()
+            if not _ok:
+                logger.error("LIVE mode refused by paper gate: %s", _why)
+                return 1
+            logger.warning(
+                "LIVE mode: orders will be sent to the exchange with real funds. "
+                "Ctrl+C to abort within 5s..."
+            )
+            await asyncio.sleep(5)
+
+        host = args.host if args.host is not None else _get_server_host()
+        port = args.port if args.port is not None else _get_server_port()
+        base_cfg = LiveTraderConfig(
+            risk_profile=args.profile,
+            strategy_params=json.loads(
+                getattr(args, "strategy_params", None)
+                or os.getenv("BOT_PARAMS") or "{}"),
+            strategy=args.strategy,
+            symbol=args.symbol,
+            timeframe=args.timeframe,
+            mode=args.mode,
+            host=host,
+            port=port,
+            warmup_bars=args.warmup,
+            max_bars=args.max_bars,
+        )
+        if getattr(args, "algos_json", None) or os.getenv("BOT_ALGOS"):
+            from cryptobot.live.multi_trader import load_multi_config
+
+            trader = load_multi_config(base_cfg, args.algos_json,
+                                       os.getenv("BOT_ALGOS"))
+        else:
+            trader = LiveTrader(base_cfg)
+        loop = asyncio.get_running_loop()
+        import signal
+
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, trader.request_stop)
+            except NotImplementedError:  # pragma: no cover - windows
+                pass
+        _label = (f"multi[{len(trader.slots)}]" if hasattr(trader, "slots")
+                  else args.strategy)
+        log_host = host
+        log_port = port
+        logger.info("bot running: %s %s %s mode=%s health=http://%s:%d/health",
+                    _label, args.symbol, args.timeframe, args.mode, log_host, log_port)
+        await trader.run()
         return 0
 
     if args.command == "validate":
@@ -329,6 +475,78 @@ async def _run(args: argparse.Namespace) -> int:
                 default=str,
             )
             sys.stdout.write("\n")
+        return 0
+
+    if args.command == "carry":
+        from cryptobot.backtest.carry import align_spot_to_perp, run_carry
+        from cryptobot.backtest.data import load_csv
+        from cryptobot.backtest.funding import (
+            CsvFundingProvider,
+            FixedFundingProvider,
+        )
+        from cryptobot.strategies.funding_arb import FundingArbConfig, FundingArbStrategy
+
+        spot = load_csv(args.spot, symbol=args.symbol)
+        perp = load_csv(args.perp, symbol=args.perp_symbol)
+        if len(spot.bars) != len(perp.bars):
+            aligned = align_spot_to_perp(spot.bars, perp.bars)
+            if not aligned:
+                logger.error(
+                    "spot (%d) and perp (%d) bars not time-aligned; no overlap on the 8h grid",
+                    len(spot.bars),
+                    len(perp.bars),
+                )
+                return 1
+            aligned_ts = {b.timestamp for b in aligned}
+            spot.bars = aligned
+            perp.bars = [b for b in perp.bars if b.timestamp in aligned_ts]
+            logger.info(
+                "auto-aligned spot to perp 8h grid: %d bars (U+7h spot close == perp close instant)",
+                len(aligned),
+            )
+        elif not perp.bars or not spot.bars:
+            logger.error("empty bars")
+            return 1
+        provider = CsvFundingProvider(args.funding) if args.funding else FixedFundingProvider(
+            Decimal(args.fixed_rate) if args.fixed_rate else Decimal("0.0001")
+        )
+        first_spot = Decimal(str(spot.bars[0].close))
+        qty = args.qty if args.qty > 0 else (args.capital / first_spot).quantize(Decimal("0.000001"))
+        strategy = FundingArbStrategy(
+            FundingArbConfig(
+                symbol=args.symbol,
+                perp_symbol=args.perp_symbol,
+                min_funding_rate=args.entry,
+                max_funding_rate=0.0,  # no cap in backtest
+                quantity=qty,
+                risk_fraction=Decimal(str(args.risk)),
+                max_notional=args.max_notional,
+            )
+        )
+        engine = await run_carry(
+            spot.bars,
+            perp.bars,
+            strategy,
+            provider,
+            symbol=args.symbol,
+            perp_symbol=args.perp_symbol,
+            initial_capital=float(args.capital),
+            commission_bps=args.commission_bps,
+        )
+        result = {
+            "symbol": args.symbol,
+            "perp_symbol": args.perp_symbol,
+            "initial_capital": str(args.capital),
+            "final_equity": str(engine._portfolio.get_state().total_equity),
+            "n_trades": len(engine.get_trades()),
+            "n_bars": len(spot.bars),
+            "funding_provider": "csv" if args.funding else "fixed",
+        }
+        if args.json:
+            json.dump(result, sys.stdout, default=str)
+            sys.stdout.write("\n")
+        else:
+            logger.info("carry %s: %s", args.symbol, result)
         return 0
 
     if args.command == "paper":

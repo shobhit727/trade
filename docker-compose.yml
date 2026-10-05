@@ -6,6 +6,7 @@ services:
       target: test
       args:
         REQUIREMENTS: requirements/test.txt
+        PYTHON_TAG: 3.14-slim
     container_name: cryptobot-test
     environment:
       - APP_ENV=test
@@ -225,13 +226,39 @@ services:
       context: .
       dockerfile: Dockerfile
       target: production
+      args:
+        PYTHON_TAG: 3.14-slim
     container_name: cryptobot-app
+    # ENTRYPOINT is `python -m cryptobot.cli.main`; these tokens are arguments.
+    # Override via env: BOT_STRATEGY / BOT_SYMBOL / BOT_TIMEFRAME /
+    # BOT_PROFILE / BOT_PARAMS (JSON) / BOT_MODE.
+    command:
+      - "bot"
+      - "--host=0.0.0.0"
+      - "--strategy=${BOT_STRATEGY:-dual_ma}"
+      - "--symbol=${BOT_SYMBOL:-BTCUSDT}"
+      - "--timeframe=${BOT_TIMEFRAME:-1d}"
+      - "--warmup=120"
+      - "--profile=${BOT_PROFILE:-realistic}"
+      - "--strategy-params=${BOT_PARAMS:-}"
+      - "--mode=${BOT_MODE:-paper}"
     environment:
       - APP_ENV=production
       - APP_LOG_LEVEL=INFO
       - BINANCE_TESTNET=true
       - BINANCE_API_KEY=${BINANCE_API_KEY:-}
       - BINANCE_API_SECRET=${BINANCE_API_SECRET:-}
+      # Seed-phase parity with validated backtests: full-equity trend
+      # positions. Override via env when going conservative/live.
+      - RISK_MAX_SINGLE_POSITION_PCT=${RISK_SINGLE:-1.0}
+      - RISK_MAX_TOTAL_EXPOSURE_PCT=${RISK_TOTAL:-1.0}
+      - RISK_MAX_DAILY_LOSS_PCT=${RISK_DAILY_LOSS:-0.25}
+      - RISK_KILL_SWITCH_DAILY_LOSS_PCT=${RISK_KS_DAILY:-0.25}
+      # Protective stops are placed exchange-side right after each fill
+      # (trader._place_protective_stop), so the pre-trade stop requirement
+      # is satisfied differently than a static per-order stop price.
+      - RISK_REQUIRE_STOP_LOSS_ABOVE_USD=${RISK_STOP_REQ:-100000000}
+      - RISK_MAX_ORDER_SIZE_USD=${RISK_MAX_ORDER:-100000}
       - DB_HOST=timescaledb
       - DB_PORT=5432
       - DB_NAME=${DB_NAME:-cryptobot}
@@ -257,15 +284,13 @@ services:
       - ./configs:/app/configs:ro
       - ./logs:/app/logs
       - ./data:/app/data
+      - ./state-btc:/app/state
     ports:
-      - "8080:8080"  # Health/Metrics endpoint
-    depends_on:
-      timescaledb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - "${BOT_PORT:-8081}:8080"  # Health/Metrics endpoint (host:container)
+    # Paper-gate mode needs no TSDB/redis; host ports 5432/6379 are occupied
+    # by another stack, and depending on them deadlocks startup.
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -283,6 +308,186 @@ services:
     restart: unless-stopped
 
   # =============================================================================
+  # Gate process 2: ETH time-series momentum (WF PASS 1d + PASS on 2026 window)
+  # =============================================================================
+  cryptobot-eth:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+      args:
+        PYTHON_TAG: 3.14-slim
+    container_name: cryptobot-eth
+    command:
+      - "bot"
+      - "--host=0.0.0.0"
+      - "--strategy=time_series"
+      - "--symbol=ETHUSDT"
+      - "--timeframe=1d"
+      - "--profile=realistic"
+      - "--mode=paper"
+      - "--warmup=120"
+      - "--port=8080"
+    environment:
+      - APP_ENV=paper
+      - APP_LOG_LEVEL=INFO
+      - BINANCE_TESTNET=true
+      - BOT_PARAMS={"period":60,"threshold":0.05}
+      - RISK_MAX_SINGLE_POSITION_PCT=${RISK_SINGLE:-1.0}
+      - RISK_MAX_TOTAL_EXPOSURE_PCT=${RISK_TOTAL:-1.0}
+      - RISK_MAX_DAILY_LOSS_PCT=${RISK_DAILY_LOSS:-0.25}
+      - RISK_KILL_SWITCH_DAILY_LOSS_PCT=${RISK_KS_DAILY:-0.25}
+      - RISK_REQUIRE_STOP_LOSS_ABOVE_USD=${RISK_STOP_REQ:-100000000}
+      - RISK_MAX_ORDER_SIZE_USD=${RISK_MAX_ORDER:-100000}
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./state-eth-ts:/app/state
+    ports:
+      - "${ETH_PORT:-8082}:8080"
+    restart: unless-stopped
+    networks:
+      - cryptobot-network
+
+  # =============================================================================
+  # Gate process 3: ETH open-range breakout on 4h (WF PASS, OOS sharpe 0.63)
+  # =============================================================================
+  cryptobot-eth-or:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+      args:
+        PYTHON_TAG: 3.14-slim
+    container_name: cryptobot-eth-or
+    command:
+      - "bot"
+      - "--host=0.0.0.0"
+      - "--strategy=open_range"
+      - "--symbol=ETHUSDT"
+      - "--timeframe=4h"
+      - "--profile=realistic"
+      - "--mode=paper"
+      - "--warmup=120"
+      - "--port=8080"
+    environment:
+      - APP_ENV=paper
+      - APP_LOG_LEVEL=INFO
+      - BINANCE_TESTNET=true
+      - BOT_PARAMS={"period":24}
+      - RISK_MAX_SINGLE_POSITION_PCT=${RISK_SINGLE:-1.0}
+      - RISK_MAX_TOTAL_EXPOSURE_PCT=${RISK_TOTAL:-1.0}
+      - RISK_MAX_DAILY_LOSS_PCT=${RISK_DAILY_LOSS:-0.25}
+      - RISK_KILL_SWITCH_DAILY_LOSS_PCT=${RISK_KS_DAILY:-0.25}
+      - RISK_REQUIRE_STOP_LOSS_ABOVE_USD=${RISK_STOP_REQ:-100000000}
+      - RISK_MAX_ORDER_SIZE_USD=${RISK_MAX_ORDER:-100000}
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./state-eth-or:/app/state
+    ports:
+      - "${OR_PORT:-8083}:8080"
+    restart: unless-stopped
+    networks:
+      - cryptobot-network
+
+  # =============================================================================
+  # NSE basket - daily-bar paper gate, all 50 Nifty50 (trend_following)
+  # =============================================================================
+  nse-basket:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+      args:
+        PYTHON_TAG: 3.14-slim
+    container_name: cryptobot-nse-basket
+    entrypoint: ["python", "-m", "cryptobot.live.nse_basket"]
+    command:
+      - "--symbols-file=/app/tmp/nifty50.csv"
+      - "--capital=${NSE_CAPITAL:-2100000}"
+      - "--port=8084"
+      - "--run-now"
+    environment:
+      - APP_ENV=production
+    volumes:
+      - ./state-nse:/app/state-nse
+      - ./tmp/nifty50.csv:/app/tmp/nifty50.csv:ro
+    ports:
+      - "8084:8084"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8084/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  # =============================================================================
+  # NSE power hour - intraday 14:00->15:15, flat by close, paper gate
+  # =============================================================================
+  nse-powerhour:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+      args:
+        PYTHON_TAG: 3.14-slim
+    container_name: cryptobot-nse-powerhour
+    entrypoint: ["python", "-m", "cryptobot.live.nse_powerhour"]
+    command:
+      - "--symbols-file=/app/tmp/nifty50.csv"
+      - "--capital=${PH_CAPITAL:-100000}"
+      - "--port=8085"
+    environment:
+      - APP_ENV=production
+    volumes:
+      - ./state-nse:/app/state-nse
+      - ./tmp/nifty50.csv:/app/tmp/nifty50.csv:ro
+    ports:
+      - "8085:8085"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8085/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  # =============================================================================
+  # Control room - unified live dashboard (bots + research) on :8090
+  # =============================================================================
+  control-room:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+      args:
+        PYTHON_TAG: 3.14-slim
+    container_name: cryptobot-control-room
+    entrypoint: ["python"]
+    environment:
+      - APP_ENV=production
+      - ROOM_TARGETS=nse-basket:8084,nse-powerhour:8085
+    command:
+      - "-m"
+      - "tools.control_room"
+    volumes:
+      - ./tools:/app/tools:ro
+      - ./PROJECT_MEMORY:/app/PROJECT_MEMORY:ro
+    ports:
+      - "8090:8090"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8090/api/bots"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  # =============================================================================
   # Cryptobot Paper Trading - Paper trading mode
   # =============================================================================
   cryptobot-paper:
@@ -290,7 +495,16 @@ services:
       context: .
       dockerfile: Dockerfile
       target: production
+      args:
+        PYTHON_TAG: 3.14-slim
     container_name: cryptobot-paper
+    command:
+      - "bot"
+      - "--host=0.0.0.0"
+      - "--strategy=${BOT_STRATEGY:-dual_ma}"
+      - "--symbol=${BOT_SYMBOL:-BTCUSDT}"
+      - "--timeframe=${BOT_TIMEFRAME:-1m}"
+      - "--mode=paper"
     environment:
       - APP_ENV=paper
       - APP_LOG_LEVEL=DEBUG
@@ -314,7 +528,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -340,6 +554,8 @@ services:
       context: .
       dockerfile: Dockerfile
       target: production
+      args:
+        PYTHON_TAG: 3.14-slim
     container_name: cryptobot-backtest
     environment:
       - APP_ENV=backtest

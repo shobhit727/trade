@@ -38,11 +38,14 @@ class DriftDetector:
             return 0.0
         baseline = np.asarray(self._baseline, dtype=float)
         recent = np.asarray(self._recent[-cfg.recent_size :], dtype=float)
-        denom = max(abs(baseline.mean()), 1e-9)
+        baseline_std = baseline.std(ddof=0)
+        # Mean shift: relative change of mean, normalized by baseline std so
+        # near-zero-mean series (e.g. returns) don't saturate the score (#48)
+        denom = max(baseline_std, 1e-9)
         mean_shift = abs(recent.mean() - baseline.mean()) / denom
         std_shift = (
-            abs(recent.std(ddof=0) - baseline.std(ddof=0)) / max(abs(baseline.std(ddof=0)), 1e-9)
-            if baseline.std(ddof=0) > 0 else 0
+            abs(recent.std(ddof=0) - baseline_std) / max(baseline_std, 1e-9)
+            if baseline_std > 0 else 0
         )
         score = 0.5 * mean_shift + 0.5 * std_shift
         return min(1.0, float(score))

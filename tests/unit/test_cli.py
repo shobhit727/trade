@@ -56,6 +56,15 @@ async def test_paper_returns_zero():
     assert code == 0
 
 
+@pytest.mark.asyncio
+async def test_ml_command_runs_without_crash():
+    # Regression for #44: the ml command previously crashed because it passed
+    # a bar list to build_features and a `horizon=` kwarg to DirectionClassifier
+    # (constructor expects DirectionConfig), and scored against random labels.
+    code = await _run_async(build_parser().parse_args(["ml", "--bars", "200", "--horizon", "5"]))
+    assert code == 0
+
+
 # --- async helpers ------------------------------------------------------
 
 

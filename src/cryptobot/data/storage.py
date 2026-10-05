@@ -397,11 +397,13 @@ class ParquetStorage(StorageBackend):
         for (symbol, year, month), group in df.groupby(["symbol", "year", "month"]):
             path = self._get_table_path(data_type, symbol, datetime(year, month, 1))
 
-            # Append or create
+            # Append or create (with dedup to avoid duplicate rows on re-append)
             if path.exists():
                 existing = pq.read_table(path)
                 new_table = pa.Table.from_pandas(group.drop(columns=["date", "year", "month"]))
                 combined = pa.concat_tables([existing, new_table])
+                # Deduplicate on all columns to prevent duplicate rows
+                combined = pa.Table.from_pandas(combined.to_pandas().drop_duplicates())
                 pq.write_table(combined, path, compression=self.config.parquet_compression)
             else:
                 table = pa.Table.from_pandas(group.drop(columns=["date", "year", "month"]))

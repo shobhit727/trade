@@ -2,7 +2,7 @@
 
 Elite Quantitative Trading System — Python + Rust
 
-**Latest Release**: v0.1.0 (multi-arch Docker images on GHCR)
+**Latest Release**: v0.1.0 (multi-arch Docker images on GHCR) · package version 0.2.0
 
 ## Quick Start
 
@@ -81,15 +81,19 @@ docker compose --profile test run --rm --build cryptobot-test
 
 | Job | Runs |
 |-----|------|
-| `lint` | ruff + pyflakes |
-| `unit` | pytest + coverage (Python 3.13) |
-| `cargo-lint` | cargo fmt + clippy |
-| `cargo-test` | cargo test |
-| `docker-test` | build test image + run tests |
-| `docker-build` | multi-arch buildx (amd64 + arm64) |
+| `lint` | ruff (pinned) |
+| `unit` | pytest + coverage gate 70% (matrix: Python 3.13 + 3.14) |
+| `cargo-lint` | cargo fmt + clippy `-D warnings` |
+| `cargo-test` | cargo test --workspace |
+| `docker-test` | build test image + run tests inside + trivy scan |
+| `docker-build` | buildx (amd64 on PRs; amd64+arm64 on push) |
 | `compose-validate` | compose config validation |
 
-**Release** (`.github/workflows/release.yml`): Tag-driven `v*` → multi-arch build + SBOM + provenance + GHCR push (`latest`, `vX.Y.Z`, `vX.Y.Z-multiarch`).
+Independent jobs: `security-review` (gitleaks), `security-audit` (pip-audit), `pyo3` (maturin import smoke test, on core changes).
+
+> ⚠️ CI never *runs* the production image target (only builds/scans it) — a known gap; see #22.
+
+**Release** (`.github/workflows/release.yml`): Tag-driven `v*` → multi-arch build + SBOM + provenance + GHCR push (`latest`, `vX.Y.Z`, `vX.Y.Z-multiarch`). Note: release images currently build on the Dockerfile default Python 3.13-slim (#38).
 
 ## Project Structure
 
@@ -138,8 +142,16 @@ mypy src
 
 ## Known Issues
 
+Tracked on GitHub (2026-08-22 audit, issues #20–#53). Headline items:
+
+- **Production Docker image cannot start** — CMD duplicates `-m` under ENTRYPOINT (#22)
+- **Backtest Sharpe/drawdown unreliable** — wall-clock equity stamps (#20), no per-bar mark-to-market (#32), Sortino formula (#39/#40)
+- **Catalog strategies are effectively long-only** — flip signals close instead of reversing (#25)
+- **ML training labels leak features** — `future_returns` is backward-looking (#21); optimizer layer non-functional (#27)
 - In-memory SQLite fallback when `_sqlite3` missing (`B024`)
 - Prometheus metrics optional dependency handled via lazy imports (`B051`)
+
+Full index: [`PROJECT_MEMORY/13_Bug_Tracker.md`](PROJECT_MEMORY/13_Bug_Tracker.md)
 
 ## License
 

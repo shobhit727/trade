@@ -1,7 +1,7 @@
 # 11. Testing
 
-> **Last Updated**: 2026-08-06 (audit)
-> **Confidence**: High — `434 passed, 4 skipped` locally (Python 3.14, ~11s), 31 Rust tests green, CI green.
+> **Last Updated**: 2026-08-09 (funding plumbing + carry driver; 778 pytest + 6 skipped local, 63 Rust tests green)
+> **Confidence**: High — `778 passed, 6 skipped` locally (Python 3.14, ~70s), 63 Rust tests green, CI green.
 
 ## What exists
 
@@ -77,13 +77,14 @@ test_utils_types.py
 
 - `docker compose --profile test run --rm cryptobot-test` runs the unit suite inside a `python:3.14-slim` image.
 - Dockerfile test target: `pytest -q tests/unit/`.
-- CI `unit` job: `pytest -q --tb=short --cov=cryptobot --cov-report=term-missing --timeout=60` (434 passed, 4 skipped). CI runs `-m not integration` (integration tests need the compose stack).
+- CI `unit` job: `pytest -q --tb=short --cov=cryptobot --cov-report=term-missing --timeout=60` (749 passed, 18 skipped across `tests/unit/` + `tests/strategies/` + integration). CI runs `-m not integration` (integration tests need the compose stack).
 
 ## Coverage gaps
 
 - Integration tests exist in `tests/integration/` (TimescaleDB write/read, Redis cache, Prometheus export) — skipped locally without services, run in the compose/CI Docker target.
 - Property-based tests (hypothesis) added 2026-08-06: sizing invariants, correlation bounds, drawdown/sharpe domains (`test_property_based_risk_math.py`, 10 tests).
 - Regression tests on backtest metrics added 2026-08-06 (`test_backtest_regression.py`: determinism, sensitivity, headline metrics).
+- Funding plumbing added 2026-08-09: `test_backtest_funding.py` (provider semantics, no-lookahead CSV), `test_backtest_funding_engine.py` (8h settlement accrual: long pays / short receives / rate-0 noop), `test_backtest_carry.py` (two-leg driver: legs fill+exit, funding raises equity, pair direction).
 
 ## Strategy for new tests
 

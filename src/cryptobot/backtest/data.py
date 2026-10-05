@@ -76,13 +76,34 @@ class OhlcvDataset:
 def _row_to_bar(row: dict[str, Any], default_symbol: str) -> OhlcvBar:
     ts_raw = row.get("timestamp") or row.get("open_time") or row.get("time") or row.get("datetime")
     if isinstance(ts_raw, str):
-        ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+        stripped = ts_raw.strip()
+        if stripped.replace("-", "", 1).replace(".", "", 1).isdigit() or (
+            stripped.startswith(("-", "+")) and stripped[1:].replace(".", "", 1).isdigit()
+        ):
+            # Numeric epoch strings (e.g. Binance CSV exports). Parsing these
+            # as ISO dates would produce garbage (e.g. year 1723 from
+            # "1723100400000"), so handle them before fromisoformat.
+            epoch = float(stripped)
+            if abs(epoch) > 10**11:
+                epoch /= 1000.0
+            ts = datetime.fromtimestamp(epoch, tz=UTC)
+        else:
+            ts = datetime.fromisoformat(stripped.replace("Z", "+00:00"))
     elif isinstance(ts_raw, int | float):
-        ts = datetime.utcfromtimestamp(float(ts_raw))
+        # Binance-style exports are milliseconds since epoch; auto-detect and
+        # scale down to seconds so `fromtimestamp` stays in range.
+        epoch = float(ts_raw)
+        if abs(epoch) > 10**11:
+            epoch /= 1000.0
+        ts = datetime.fromtimestamp(epoch, tz=UTC)
     elif isinstance(ts_raw, datetime):
         ts = ts_raw
     else:
         raise ValueError(f"unsupported timestamp value: {ts_raw!r}")
+    if ts.tzinfo is None:
+        # Bare ISO timestamps parse naive; treat them as UTC so settlement
+        # hour checks and .timestamp() lookups are tz-independent.
+        ts = ts.replace(tzinfo=UTC)
     o = row.get("open", row.get("open_price"))
     h = row.get("high", row.get("high_price"))
     low_val = row.get("low", row.get("low_price"))

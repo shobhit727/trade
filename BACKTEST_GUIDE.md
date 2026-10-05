@@ -4,6 +4,18 @@
 
 The Cryptobot backtesting engine provides a comprehensive event-driven backtesting framework for testing trading strategies against historical or synthetic market data.
 
+> ⚠️ **Known-metric caveats (2026-08-22 audit — read before trusting results)**
+>
+> Until GitHub issues #20/#32/#39 are fixed:
+> - **Sharpe/Sortino annualization is unreliable** on the fast `run_bars` path (equity curve stamped with wall-clock time; #20).
+> - **Max drawdown understates risk** — positions aren't marked to market between fills (#32).
+> - **Sortino is inflated** (losses-only std instead of downside deviation; #39).
+> - **Catalog strategies behave long-only** — a `-1` flip closes the long but never opens a short (#25); the strategy's internal position state diverges from the engine after flips.
+> - **Funding settlement** fires only when a bar's open hour is exactly 00/08/16 UTC (#30).
+> - `backtest` mode skips most live risk limits, so results won't reflect live rejections (#33).
+>
+> Treat absolute metric values as directional; compare strategies relative to each other only.
+
 ## Quick Start
 
 ### CLI Usage
@@ -574,3 +586,17 @@ A: At least 200 bars for statistical significance. 500+ recommended for walk-for
 - GitHub Issues: https://github.com/shobhit727/trade/issues
 - Documentation: See `docs/` folder
 - Architecture: See `PROJECT_MEMORY/` for design decisions
+## Real-Data Results (2026-08-22, post-audit engine)
+
+Sweeps on 2y of real Binance klines (see `tools/sweep_real.py`, `tools/sweep_freq.py`,
+`tools/grid_1d.py`, `tools/gauntlet.py`):
+
+| Finding | Detail |
+|---------|--------|
+| 1h catalog | ~82/84 strategies lose at realistic costs; gross edge ≈ 0 |
+| Frequency lever | same strategies turn positive at 4h–1d (fee drag collapses) |
+| **Daily EMA cross** | `dual_ma(fast=10, slow=50)` on 1d bars: BTC **+126%** / ETH **+191%** over 2y vs buy&hold +31%/−6%, with lower max drawdown; positive in all 6 asset×year splits incl. the −32% bear year |
+| Robustness | 18/25 neighboring parameter pairs positive on both assets; edge unchanged at 2.4× costs |
+
+Caveats: MC significance is weak (few trades/day-frequency); validate any change with
+`tools/gauntlet.py` before trusting it.

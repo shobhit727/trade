@@ -1,0 +1,75 @@
+# nsealgo — NSE NIFTY-50 systematic trading. The APP runs here (Docker only).
+# Tests and lint run on the host venv — see AGENTS.md "Run policy".
+#
+#   docker compose -f docker-compose.nse.yml up -d --build
+#   docker compose -f docker-compose.nse.yml run --rm nsealgo validate
+#   docker compose -f docker-compose.nse.yml run --rm nsealgo paper --cycles 5
+
+services:
+  nsealgo:
+    build:
+      context: .
+      dockerfile: Dockerfile.nse
+      args:
+        PYTHON_TAG: "3.14-slim"
+    image: trade-nsealgo:latest
+    container_name: nsealgo
+    working_dir: /app
+    environment:
+      NSE_DATA: /app/data/nse
+      PYTHONPATH: /app/src
+      # Live broker credentials. Absent => paper mode only, and the system refuses
+      # to pretend it is trading (see KiteBroker.configured).
+      KITE_API_KEY: "${KITE_API_KEY:-}"
+      KITE_API_SECRET: "${KITE_API_SECRET:-}"
+      KITE_ACCESS_TOKEN: "${KITE_ACCESS_TOKEN:-}"
+    volumes:
+      - ./data/nse:/app/data/nse:ro      # market data: large, changes independently
+      - ./state-nse:/app/state-nse        # audit log / state, must be writable
+      - ./reports:/app/reports            # generated validation evidence
+    command: ["--help"]
+    restart: unless-stopped
+    networks:
+      - nse-net
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # One-shot research/validation runner. Shares the image; separate lifecycle so a
+  # long backtest never blocks the live/paper loop.
+  research:
+    build:
+      context: .
+      dockerfile: Dockerfile.research
+      args:
+        PYTHON_TAG: "3.14-slim"
+    image: trade-research:latest
+    container_name: nsealgo-research
+    working_dir: /app
+    environment:
+      NSE_DATA: /app/data/nse
+      PYTHONPATH: /app/src
+    volumes:
+      - ./data:/app/data:ro
+      - ./research:/app/research
+      - ./reports:/app/reports
+    command: ["python", "research/validate.py"]
+    profiles:
+      - research
+    networks:
+      - nse-net
+
+networks:
+  nse-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.0.0/16

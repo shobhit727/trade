@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from cryptobot.core.events import Event, OrderEvent, OrderSide, OrderType
-from cryptobot.ml.features import build_features, future_returns
+from cryptobot.ml.features import build_features, future_returns, label_valid_mask
 from cryptobot.ml.models.direction import DirectionClassifier, DirectionConfig
 
 if TYPE_CHECKING:
@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 @dataclass
 class MLStrategyConfig:
     """Configuration for ML-driven trading strategy."""
+
     symbols: list[str] = field(default_factory=lambda: ["BTCUSDT"])
     lookback: int = 100
     horizon: int = 5
@@ -66,10 +67,7 @@ class MLStrategy:
             return None
 
         # Periodically retrain the classifier
-        if (
-            self._classifier is None
-            or self._bars_seen % self.config.retrain_every == 0
-        ):
+        if self._classifier is None or self._bars_seen % self.config.retrain_every == 0:
             self._retrain(buf)
 
         if self._classifier is None or not self._classifier._fitted:
@@ -140,10 +138,13 @@ class MLStrategy:
             labels_arr = future_returns(dataset.close, horizons=[self.config.horizon])
             if features.features.shape[0] == 0 or labels_arr.size == 0:
                 return
-            # Align features and labels
-            n_common = min(features.features.shape[0], labels_arr.shape[0])
-            X = features.features[-n_common:]
-            y = (labels_arr[-n_common:, 0] > 0).astype(int)
+            # Keep only rows whose forward label used a complete window; the tail
+            # rows are placeholder zeros and must never be trained on.
+            valid = label_valid_mask(len(dataset.close), [self.config.horizon])
+            X = features.features[valid]
+            y = (labels_arr[valid, 0] > 0).astype(int)
+            if len(X) < 10:
+                return
 
             clf_config = DirectionConfig(
                 threshold=self.config.threshold,

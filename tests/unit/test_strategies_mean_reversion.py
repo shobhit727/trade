@@ -45,17 +45,13 @@ def test_strategy_buy_signal_requires_all_conditions():
     s = MeanReversionStrategy(
         MeanReversionConfig(lookback=10, z_entry=1.5, rsi_oversold=40.0, bb_period=10, rsi_period=5)
     )
-    # RSI bug: for monotonic sequences losses=0 => RSI=100, so condition rsi <= rsi_oversold fails
-    # This test documents the actual behavior - signal is None due to RSI condition
-    s = MeanReversionStrategy(
-        MeanReversionConfig(lookback=10, z_entry=1.5, rsi_oversold=40.0, bb_period=10, rsi_period=5)
-    )
     prices = [100, 100, 100, 100, 100, 99, 98, 97, 96, 95, 60.0]
     last = None
     for p in prices:
         last = s.feed("BTCUSDT", p)
-    # With current RSI bug, signal is None (RSI=100 > 40)
-    assert last is None
+    # Crash: z <= -z_entry, RSI ~ 0 (gains=0, losses>0), price below bb_lower -> BUY
+    assert last is not None
+    assert last.side.value == "BUY"
 
 
 def test_strategy_sell_signal_requires_all_conditions():
@@ -66,9 +62,9 @@ def test_strategy_sell_signal_requires_all_conditions():
     last = None
     for p in prices:
         last = s.feed("BTCUSDT", p)
-    # RSI bug: for rising sequence, gains>0, losses=0 => RSI=100 >= 60, but z might not trigger
-    # This documents actual behavior
-    assert last is None
+    # Spike: z >= 1.5, RSI ~ 100 (gains>0, losses=0), price above BB upper -> SELL
+    assert last is not None
+    assert last.side.value == "SELL"
 
 
 def test_strategy_exit_signal_on_z_reversion():
@@ -115,6 +111,65 @@ def test_strategy_multi_symbol_state_isolation():
         s.feed("ETHUSDT", 50.0)
     assert "BTCUSDT" in s._prices
     assert "ETHUSDT" in s._prices
+
+
+def _entry_long_entry(s: MeanReversionStrategy, symbol: str = "BTCUSDT") -> float:
+    """Drive price down hard enough to force a long entry; returns entry price."""
+    prices = [100.0] * 16 + [50.0]
+    entry_price = prices[-1]
+    for p in prices:
+        s.feed(symbol, p)
+    assert symbol in s._positions, "expected a long entry to fire"
+    return entry_price
+
+
+def test_take_profit_exits_full_position_at_market():
+    s = MeanReversionStrategy(MeanReversionConfig(lookback=14, z_entry=2.0, bb_period=10, rsi_period=5, take_profit=0.02, stop_loss=0, max_hold_bars=0, quantity=Decimal("2"), z_exit=0.0))
+    entry = _entry_long_entry(s)
+    exit_order = s.feed("BTCUSDT", entry * 1.05)
+    assert exit_order is not None
+    assert exit_order.side.value == "SELL"
+    assert exit_order.type.value == "MARKET"
+    assert exit_order.quantity == Decimal("2")
+    assert "BTCUSDT" not in s._positions
+
+
+def test_stop_loss_exits_full_position_at_market():
+    s = MeanReversionStrategy(MeanReversionConfig(lookback=14, z_entry=2.0, bb_period=10, rsi_period=5, take_profit=0, stop_loss=0.02, max_hold_bars=0, z_exit=0.0))
+    entry_price = _entry_long_entry(s)
+    exit_order = s.feed("BTCUSDT", entry_price * 0.97)
+    assert exit_order is not None
+    assert exit_order.side.value == "SELL"
+    assert exit_order.type.value == "MARKET"
+
+
+def test_max_hold_bars_force_exit():
+    s = MeanReversionStrategy(MeanReversionConfig(lookback=14, z_entry=2.0, bb_period=10, rsi_period=5, take_profit=0, stop_loss=0, max_hold_bars=10, z_exit=0.0))
+    entry_price = _entry_long_entry(s)
+    exited = None
+    for _i in range(12):
+        exited = s.feed("BTCUSDT", entry_price)  # flat price: no TP/SL, no z-reversion
+        if exited is not None:
+            break
+    assert exited is not None
+    assert exited.side.value == "SELL"
+    assert "BTCUSDT" not in s._positions
+
+
+def test_no_pyramiding_while_in_position():
+    s = MeanReversionStrategy(MeanReversionConfig(lookback=14, z_entry=2.0, bb_period=10, rsi_period=5, take_profit=0.02, stop_loss=0.02, max_hold_bars=48, z_exit=0.0))
+    entry_price = _entry_long_entry(s)
+    for _ in range(5):
+        order = s.feed("BTCUSDT", entry_price)  # flat at entry: no exit rule fires; must not add
+        assert order is None
+
+
+def test_quantity_closes_full_position():
+    s = MeanReversionStrategy(MeanReversionConfig(lookback=14, z_entry=2.0, bb_period=10, rsi_period=5, take_profit=0, stop_loss=0.02, max_hold_bars=0, quantity=Decimal("2.5"), z_exit=0.0))
+    _entry_long_entry(s)
+    exit_order = s.feed("BTCUSDT", 40.0)
+    assert exit_order is not None
+    assert exit_order.quantity == Decimal("2.5")
 
 
 __all__ = []

@@ -31,8 +31,9 @@ logger = logging.getLogger(__name__)
 
 
 class BinanceWSClient:
-    def __init__(self):
-        self.ws_url = settings.exchange.ws_url
+    def __init__(self, symbols: list[str] | None = None, timeframes: list[str] | None = None,
+                 ws_url: str | None = None):
+        self.ws_url = ws_url if ws_url is not None else settings.exchange.ws_url
         self.session: aiohttp.ClientSession | None = None
         self.ws: aiohttp.ClientWebSocketResponse | None = None
         self.running = False
@@ -42,11 +43,11 @@ class BinanceWSClient:
         self._max_reconnect_delay = 60
         self._last_ping = 0
         self._ping_interval = 20
-        self._symbols = settings.exchange.symbols or [settings.exchange.default_symbol]
-        if not settings.exchange.symbols:
+        self._symbols = symbols or settings.exchange.symbols or [settings.exchange.default_symbol]
+        if not symbols and not settings.exchange.symbols:
             logger.warning("BinanceWSClient: no symbols configured; falling back to default_symbol=%s", settings.exchange.default_symbol)
-        self._timeframes = settings.exchange.timeframes or ["1m"]
-        if not settings.exchange.timeframes:
+        self._timeframes = timeframes or settings.exchange.timeframes or ["1m"]
+        if not timeframes and not settings.exchange.timeframes:
             logger.warning("BinanceWSClient: no timeframes configured; falling back to ['1m']")
 
     async def start(self):
