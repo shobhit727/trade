@@ -190,7 +190,15 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements/nse.txt
-          pip install pytest pytest-timeout
+          # tests/conftest.py imports pytest-asyncio at module scope, so it is
+          # required even for the nsealgo-only subset.
+          pip install pytest pytest-asyncio pytest-timeout
+      - name: Lint nsealgo + research
+        run: |
+          python -m pip install ruff==0.16.1
+          ruff check src/nsealgo research tests/unit/test_nsealgo_costs.py \
+            tests/unit/test_nsealgo_backtest.py tests/unit/test_nsealgo_risk.py \
+            tests/unit/test_nsealgo_data.py
       - name: nsealgo unit tests
         run: python -m pytest tests/unit -q -k "nsealgo" --timeout=120
       - name: Cost model must match published Indian itemisation
