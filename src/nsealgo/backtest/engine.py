@@ -37,6 +37,26 @@ TRADING_DAYS = 244
 #: deployed / 22 positions ~ Rs 86,000. We round to 1,00,000 for stability.
 REF_POSITION_NOTIONAL = 100_000
 
+#: Numerical slack for the weight constraints. The projected weights must satisfy
+#: every cap to within this; the acceptance tolerance on the result is far wider.
+CONSTRAINT_TOL = 1e-12
+
+#: Bounded sweeps of the alternating projection in `_project_constraints`.
+#: Convergence is asserted, never assumed, so this only bounds pathological input.
+PROJECT_ITERS = 200
+
+#: Bounded water-filling passes used to place spilled weight. Each pass either lands
+#: the whole remainder or exhausts at least one recipient, so this converges in 1-2.
+SPILL_ITERS = 8
+
+#: Weight below which a position is treated as dead. 1e-4 of a Rs 21,00,000 book
+#: is Rs 210 — under one share at NIFTY-50 prices — so carrying it costs real
+#: turnover (which `GOAL.md` §5 makes the dominant drag) and buys nothing.
+DEAD_WEIGHT_EPS = 1e-4
+
+#: Bounded attempts to re-fit the turnover budget after dead weights are dropped.
+TURNOV_ITERS = 60
+
 
 # --------------------------------------------------------------------------- #
 # Sector map. Static approximation — a diversification guard, not an alpha input.
@@ -103,33 +123,114 @@ class BacktestResult:
 # --------------------------------------------------------------------------- #
 
 
-def _cap_columns(
-    w: np.ndarray, cap: float, member: np.ndarray | None = None, iters: int = 30
+def _rooms(
+    w: np.ndarray,
+    sector_id: np.ndarray,
+    n_sectors: int,
+    max_weight: float,
+    max_sector_weight: float,
 ) -> np.ndarray:
-    """Clip weights to ``cap`` and redistribute the excess to uncapped columns.
+    """How much each name may still take, without breaking *either* cap.
 
-    ``member`` optionally restricts which columns are in the capped group (used for
-    sector caps); the excess goes to all columns not in that group.
+    A name's room is the smaller of its own headroom and whatever is left in its
+    sector, and the room inside a sector is shared across that sector's names rather
+    than granted to each of them. That sharing is what stops a spill from satisfying
+    one cap by breaking the other.
     """
-    w = w.copy()
-    for _ in range(iters):
-        if member is None:
-            over = w > cap
-        else:
-            over = (w > cap) & member
-        if not over.any():
+    r = np.maximum(0.0, max_weight - w)
+    room_by_sector = np.bincount(sector_id, weights=r, minlength=n_sectors)
+    left = np.maximum(0.0, max_sector_weight - np.bincount(
+        sector_id, weights=w, minlength=n_sectors))
+    shrink = np.where(
+        room_by_sector > left, left / np.maximum(room_by_sector, CONSTRAINT_TOL), 1.0
+    )
+    return r * shrink[sector_id]
+
+
+def _spill(w: np.ndarray, room: np.ndarray, amount: float) -> None:
+    """Move ``amount`` of weight into ``room``, in place.
+
+    The book is spread across the names it *already* holds, in proportion to what each
+    of them already has, so concentration is preserved — mass is never sprinkled across
+    the whole universe to make a total look invested. Every recipient is clamped to its
+    own room, and whatever exhausted recipients cannot absorb is offered to the rest,
+    so a spill that has somewhere legal to go still lands in full. What nobody can
+    legally take is left as cash rather than forced onto a capped name.
+    """
+    claim = np.maximum(w, 0.0)
+    placed = np.zeros_like(w)
+    todo = amount
+    for _ in range(SPILL_ITERS):
+        offered = np.where(room - placed > CONSTRAINT_TOL, claim, 0.0)
+        total = float(offered.sum())
+        if total <= CONSTRAINT_TOL or todo <= CONSTRAINT_TOL:
             break
-        excess = float((w - cap)[over].sum())
-        w[over] = cap
-        if member is None:
-            free = ~over
-        else:
-            free = ~member
-        total_room = float((cap - w[free]).sum())
-        if total_room <= 1e-12:
-            break
-        w[free] += excess * (cap - w[free]) / total_room
-    return w
+        share = np.minimum(room - placed, todo * offered / total)
+        placed += share
+        todo -= float(share.sum())
+    w += placed
+
+
+def _constraints_hold(
+    w: np.ndarray,
+    sector_id: np.ndarray,
+    n_sectors: int,
+    max_weight: float,
+    max_sector_weight: float,
+) -> bool:
+    """True when the single-name cap and every sector cap hold at once."""
+    if float(w.max(initial=0.0)) > max_weight + CONSTRAINT_TOL:
+        return False
+    sector_totals = np.bincount(sector_id, weights=w, minlength=n_sectors)
+    return bool(np.all(sector_totals <= max_sector_weight + CONSTRAINT_TOL))
+
+
+def _project_constraints(
+    w: np.ndarray,
+    sector_id: np.ndarray,
+    n_sectors: int,
+    max_weight: float,
+    max_sector_weight: float,
+) -> np.ndarray:
+    """Bring single-name and sector caps into force *simultaneously*.
+
+    Neither cap can simply be applied last. Capping a sector has to move its excess
+    somewhere, and that spill can land on a name already at the single-name cap;
+    capping a name does the same into sectors that are already full. So the two are
+    re-imposed on each other until both hold.
+
+    Each sweep is monotone — spilling is bounded by the room in `_rooms`, so a sweep
+    cannot create the violation the next sweep would have to undo — which is why this
+    settles in a couple of sweeps instead of oscillating. Convergence is asserted, not
+    assumed: mass that has nowhere legal to go is left as cash, never forced onto a
+    name that would break a cap.
+
+    ``w`` is projected in place and returned for convenience.
+    """
+    for _ in range(PROJECT_ITERS):
+        if _constraints_hold(w, sector_id, n_sectors, max_weight, max_sector_weight):
+            return w
+        over = np.maximum(0.0, w - max_weight)
+        if over.any():
+            excess = float(over.sum())
+            np.minimum(w, max_weight, out=w)
+            _spill(w, _rooms(w, sector_id, n_sectors, max_weight, max_sector_weight),
+                   excess)
+        for si in range(n_sectors):
+            member = sector_id == si
+            tot = float(w[member].sum())
+            if tot <= max_sector_weight + CONSTRAINT_TOL:
+                continue
+            excess = tot - max_sector_weight
+            w[member] *= max_sector_weight / tot
+            _spill(w, _rooms(w, sector_id, n_sectors, max_weight, max_sector_weight),
+                   excess)
+    raise RuntimeError(
+        f"weight constraints did not converge in {PROJECT_ITERS} sweeps "
+        f"(max single {float(w.max(initial=0.0)):.6f} vs cap {max_weight}, "
+        f"max sector {float(np.bincount(sector_id, weights=w, minlength=n_sectors).max()):.6f}"
+        f" vs cap {max_sector_weight})"
+    )
 
 
 def build_rebalance_weights(
@@ -142,13 +243,11 @@ def build_rebalance_weights(
     cols = list(score.columns)
     n = len(cols)
 
-    # Precompute sector membership as a boolean matrix (n_sectors, n_names).
+    # Precompute sector membership: sector_id per name (names in no known sector are
+    # all "other", which is itself a cap-relevant group).
     sectors = sorted({sector_of(c) for c in cols})
-    sector_mask = np.zeros((len(sectors), n), dtype=bool)
-    for si, sec in enumerate(sectors):
-        for j, c in enumerate(cols):
-            if sector_of(c) == sec:
-                sector_mask[si, j] = True
+    sector_id = np.array([sectors.index(sector_of(c)) for c in cols])
+    n_sectors = len(sectors)
 
     S = score.to_numpy(dtype=float)
     V = vol.to_numpy(dtype=float)
@@ -178,21 +277,10 @@ def build_rebalance_weights(
         w_full = np.zeros(n)
         w_full[order] = ivol / ivol.sum()
 
-        # ---- single-name cap
-        w_full = _cap_columns(w_full, config.max_weight)
-
-        # ---- sector cap: cap each sector's total, push excess to other sectors
-        for si in range(len(sectors)):
-            member = sector_mask[si]
-            tot = float(w_full[member].sum())
-            if tot > config.max_sector_weight + 1e-12:
-                excess = tot - config.max_sector_weight
-                w_full[member] *= config.max_sector_weight / tot
-                free = ~member
-                fw = w_full[free]
-                fs = float(fw.sum())
-                if fs > 0:
-                    w_full[free] = fw + excess * fw / fs
+        # ---- single-name AND sector caps, enforced simultaneously to convergence
+        w_full = _project_constraints(
+            w_full, sector_id, n_sectors, config.max_weight, config.max_sector_weight
+        )
 
         # ---- cash buffer
         w_full *= (1.0 - config.cash_buffer)
@@ -201,27 +289,64 @@ def build_rebalance_weights(
     return pd.DataFrame(out, index=pd.DatetimeIndex(dates), columns=cols)
 
 
+def _thin(w: pd.Series, max_names: int) -> pd.Series:
+    """Drop dead residuals; keep at most ``max_names`` material positions.
+
+    Blending toward a new target shrinks a dropped name's weight but never reaches
+    zero, so without this the book accretes a tail of one- or two-paise positions
+    every rebalance and ends up holding far more names than it is allowed to.
+    Weights at or below `DEAD_WEIGHT_EPS` are not tradable positions, so they are
+    zeroed rather than carried; the survivors are the `max_names` largest.
+    """
+    out = w.where(w > DEAD_WEIGHT_EPS, 0.0)
+    if int((out > DEAD_WEIGHT_EPS).sum()) <= max_names:
+        return out
+    return out.where(out.index.isin(out.nlargest(max_names).index), 0.0)
+
+
+def _one_way_turnover(tgt: pd.Series, cur: pd.Series) -> float:
+    """One-way turnover: half the sum of absolute weight changes."""
+    return float((tgt - cur).abs().sum() / 2.0)
+
+
 def apply_turnover_budget(
-    weights: pd.Series, prev: pd.Series | None, budget: float
+    weights: pd.Series,
+    prev: pd.Series | None,
+    budget: float,
+    max_names: int,
 ) -> pd.Series:
     """Cap how much of the book may change at one rebalance.
 
     The evidence is unambiguous that turnover is the main drag (SEBI's own monotone
     loss gradient: 25 -> 742 trades/yr maps to a 65% -> 80% loss rate). Holding most
     of the book between rebalances is the cheapest way to respect that.
+
+    ``max_names`` is required rather than optional: the blended weights must always be
+    thinned to that many material positions, or the book accretes dead residuals and
+    drifts past its position limit. Thinning is re-checked against the budget, because
+    dropping a name is itself a trade.
     """
     if prev is None:
-        return weights
+        return _thin(weights, max_names)
     universe = weights.index.union(prev.index)
     tgt = weights.reindex(universe).fillna(0.0)
     cur = prev.reindex(universe).fillna(0.0)
-    changed = (tgt - cur).abs().sum() / 2.0  # one-way turnover fraction
-    if changed <= budget or changed <= 0:
-        return tgt
-    # Move only a fraction of the way toward the target so turnover hits the budget.
-    lam = budget / changed
-    blended = cur + lam * (tgt - cur)
-    return blended
+    changed = _one_way_turnover(tgt, cur)
+    lam = min(1.0, budget / changed) if changed > 0 else 1.0
+    for _ in range(TURNOV_ITERS):
+        out = _thin(cur + lam * (tgt - cur), max_names)
+        if _one_way_turnover(out, cur) <= budget + CONSTRAINT_TOL:
+            return out
+        # Thinning broke the budget: zeroing a name is itself a trade. Re-fit lam so
+        # the *kept* book spends exactly the budget — drift is linear in lam, and the
+        # dropped names are frozen at their current weight, so this is closed-form.
+        kept = out > 0
+        drift = float((tgt - cur).abs()[kept].sum())
+        room = 2.0 * budget - float(cur[~kept].sum())
+        lam = room / drift if drift > 0 and room > 0 else 0.0
+    raise RuntimeError(
+        f"turnover budget {budget} unreachable while holding {max_names} names"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -269,9 +394,11 @@ def run_backtest(
     # --- target weights on rebalance dates, with turnover budget applied
     tgt_raw = build_rebalance_weights(sc.loc[rb], rb, vol.loc[rb], config)
     tgt = tgt_raw.copy()
-    for i in range(1, len(tgt)):
-        prev = tgt.iloc[i - 1]
-        tgt.iloc[i] = apply_turnover_budget(tgt_raw.iloc[i], prev, config.turnover_budget)
+    for i in range(len(tgt)):
+        prev = tgt.iloc[i - 1] if i else None
+        tgt.iloc[i] = apply_turnover_budget(
+            tgt_raw.iloc[i], prev, config.turnover_budget, config.max_names
+        )
 
     # --- hold weights between rebalances (reindex + ffill)
     held = tgt.reindex(px.index).ffill().fillna(0.0)

@@ -68,14 +68,20 @@ handling, Pydantic Settings config, Prometheus monitoring, health checks, Docker
 ### Hard constraints (from data reality, audited)
 | Timeframe | History | Use |
 |-----------|---------|-----|
-| **1d** | ~6,000 bars, ~24y (2002→2026-08) | ✅ primary research substrate |
+| **1d** | ~6,000 bars, ~24y (2002→2026-10) | ✅ primary research substrate |
 | 1h / 4h | ~1–2y | ⚠️ corroboration only |
 | 5m/15m/30m | weeks–months | ⚠️ sanity only |
 | **1m** | **~1,800 bars, ~30 days** | ❌ **unusable — intraday is BANNED** |
 
 - **Daily bars only.** Holding period 5–60 days. Weekly/biweekly rebalance.
 - **Survivorship bias is present** (today's NIFTY-50 backfilled) — disclose it in every report.
-- Data ends **2026-08-25** (~6wk stale) → Kite historical fetch required before live.
+- Data ends **2026-10-01** (panel re-fetched 2026-10-06 via `tools/recover_nse_data.py`,
+  verified 49/50 vs `research/_audit_1d.csv`) → staleness resolved, but the refresh is a
+  one-off script: a Kite historical feed is still required before live.
+- **Always quote an nsealgo result with its end date.** Moving the end date 27 sessions
+  (2026-08-25 → 2026-10-01) moved walk-forward Sharpe 0.66 → 0.44 and the band C → D.
+  Current authoritative result: **10.97% OOS, Sharpe 0.44, MaxDD −12.91%, Band D, four gates
+  failing** — see `reports/VALIDATION_v1.md` §0.
 
 ### Rules that code must obey
 1. **`Decimal` for all money. Never `float`.**

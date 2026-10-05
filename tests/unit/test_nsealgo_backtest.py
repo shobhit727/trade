@@ -11,7 +11,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from nsealgo.backtest.engine import PortfolioConfig, run_backtest, sector_of
+from nsealgo.backtest.engine import (
+    DEAD_WEIGHT_EPS,
+    PortfolioConfig,
+    apply_turnover_budget,
+    build_rebalance_weights,
+    run_backtest,
+    sector_of,
+)
 from nsealgo.backtest.metrics import (
     compute_metrics,
     drawdown_series,
@@ -148,6 +155,145 @@ class TestConstraints:
 
     def test_sector_map_is_total(self) -> None:
         assert all(isinstance(sector_of(s), str) for s in ["tcs", "hdfcbank", "zzz"])
+
+
+# --------------------------------------------------------------------------- #
+# Regression tests for the two portfolio-construction bugs.
+# --------------------------------------------------------------------------- #
+
+#: Symbols spanning three sectors, so a concentrated score can load one sector past
+#: its cap *and* push the excess onto names that are already at the single-name cap.
+SECTOR_SPAN = [
+    "hdfcbank", "icicibank", "kotakbank", "axisbank", "sbin",   # bank
+    "tcs", "infy", "hcltech", "techm", "lt", "wipro",           # it
+    "maruti", "titan", "sunpharma",                             # auto / cons / pharma
+]
+ONE_DATE = pd.DatetimeIndex([pd.Timestamp("2013-04-01", tz="Asia/Kolkata")])
+
+
+def concentrated_weights(
+    config: PortfolioConfig, score_skew: float = 1e6, vol_skew: float = 1.0
+) -> pd.DataFrame:
+    """Weights from a score panel with one name 10^6x everything else.
+
+    This is the shape that broke: the bank sector over-fills, so the sector cap has to
+    spill onto names already sitting at the single-name cap.
+    """
+    score = pd.DataFrame(1.0, index=ONE_DATE, columns=SECTOR_SPAN)
+    score.loc[:, "tcs"] = score_skew
+    vol = pd.DataFrame(0.02, index=ONE_DATE, columns=SECTOR_SPAN)
+    vol.loc[:, "tcs"] = 0.02 * vol_skew
+    return build_rebalance_weights(score, ONE_DATE, vol, config)
+
+
+def sector_sums(w: pd.DataFrame) -> pd.Series:
+    """Per-sector weight totals."""
+    out: dict[str, float] = {}
+    for col in w.columns:
+        out[sector_of(col)] = out.get(sector_of(col), 0.0) + float(w[col].iloc[0])
+    return pd.Series(out)
+
+
+class TestCapsHoldSimultaneously:
+    """Regression: the sector cap ran last and never re-capped what it spilled.
+
+    A concentrated score produced a 20.25% position against a 12.00% cap, and pushed
+    the bank sector to 42.86% against a 25.00% cap. Both caps must hold at once.
+    """
+
+    @pytest.mark.parametrize("n_positions", [5, 8, 10, 12, 15, 22, 30])
+    def test_single_name_cap_holds_under_concentration(self, n_positions: int) -> None:
+        cfg = PortfolioConfig(n_positions=n_positions)
+        w = concentrated_weights(cfg)
+        assert w.max(axis=1).max() <= cfg.max_weight + 1e-9
+
+    def test_sector_cap_holds_under_concentration(self) -> None:
+        cfg = PortfolioConfig(n_positions=12)
+        w = concentrated_weights(cfg)
+        assert sector_sums(w).max() <= cfg.max_sector_weight + 1e-9
+
+    def test_all_invariants_hold_under_concentration(self) -> None:
+        cfg = PortfolioConfig(n_positions=12)
+        w = concentrated_weights(cfg)
+        assert w.max(axis=1).max() <= cfg.max_weight + 1e-9
+        assert sector_sums(w).max() <= cfg.max_sector_weight + 1e-9
+        assert w.sum(axis=1).max() <= (1 - cfg.cash_buffer) + 1e-9
+        assert w.min().min() >= 0.0
+
+    @pytest.mark.parametrize("vol_skew", [1.0, 0.1, 0.01, 0.001])
+    def test_single_name_cap_holds_when_inverse_vol_dominates(self, vol_skew: float) -> None:
+        """A low-vol name takes most of the book, forcing the cap to bind, then the
+        sector spill has to land on other capped names."""
+        cfg = PortfolioConfig(n_positions=12)
+        w = concentrated_weights(cfg, vol_skew=vol_skew)
+        assert w.max(axis=1).max() <= cfg.max_weight + 1e-9
+        assert sector_sums(w).max() <= cfg.max_sector_weight + 1e-9
+
+    def test_infeasible_sector_panel_holds_rather_than_breaking(self) -> None:
+        """One sector cannot absorb a full book under a 25% cap. The honest answer is
+        to hold less than a full book, not to breach the cap."""
+        cfg = PortfolioConfig()
+        one_sector = ["hdfcbank", "icicibank", "kotakbank", "axisbank", "sbin"]
+        score = pd.DataFrame(1.0, index=ONE_DATE, columns=one_sector)
+        vol = pd.DataFrame(0.02, index=ONE_DATE, columns=one_sector)
+        w = build_rebalance_weights(score, ONE_DATE, vol, cfg)
+        assert sector_sums(w).max() <= cfg.max_sector_weight + 1e-9
+        assert w.max(axis=1).max() <= cfg.max_weight + 1e-9
+        assert w.sum(axis=1).max() <= (1 - cfg.cash_buffer) + 1e-9
+
+
+class TestPositionCountDoesNotAccumulate:
+    """Regression: turnover blending left a residual on every dropped name, so dead
+    weights accreted until 48 names held a non-zero position against a limit of 30."""
+
+    def test_blend_drops_dead_weights(self) -> None:
+        cur = pd.Series({"a": 0.10, "b": 0.09, "c": 0.08})
+        tgt = pd.Series({"a": 0.10, "b": 0.09, "d": 0.08})
+        out = apply_turnover_budget(tgt, cur, budget=0.35, max_names=30)
+        assert float(out["c"]) == 0.0, "dead residual must be dropped, not carried"
+        assert (out > DEAD_WEIGHT_EPS).sum() <= 30
+
+    def test_blend_never_exceeds_max_names(self) -> None:
+        """Rotate the target across 40 disjoint names; a residual book must not grow."""
+        cfg = PortfolioConfig()
+        names = [f"n{i}" for i in range(40)]
+        prev = None
+        for step in range(20):
+            tgt = pd.Series(0.0, index=names)
+            for j in range(12):  # a fresh dozen names each rebalance
+                tgt[names[(step * 12 + j) % 40]] = 0.05
+            prev = apply_turnover_budget(tgt, prev, cfg.turnover_budget, cfg.max_names)
+            assert int((prev > DEAD_WEIGHT_EPS).sum()) <= cfg.max_names
+
+    def test_turnover_budget_still_respected_after_thinning(self) -> None:
+        """Dropping a name is itself a trade, so it must come out of the same budget."""
+        cfg = PortfolioConfig()
+        names = [f"n{i}" for i in range(40)]
+        prev = None
+        for step in range(20):
+            tgt = pd.Series(0.0, index=names)
+            for j in range(12):
+                tgt[names[(step * 12 + j) % 40]] = 0.05
+            out = apply_turnover_budget(tgt, prev, cfg.turnover_budget, cfg.max_names)
+            if prev is not None:
+                # one-way turnover between consecutive *delivered* books
+                one_way = float((out - prev).abs().sum() / 2.0)
+                assert one_way <= cfg.turnover_budget + 1e-9, one_way
+            prev = out
+
+    def test_backtest_held_weights_respect_max_names(self) -> None:
+        p = make_panel(n_sym=40)
+        sc = build_composite_score(p)
+        res = run_backtest(p, sc, CM, PortfolioConfig(n_positions=40), "M")
+        assert int((res.weights > DEAD_WEIGHT_EPS).sum(axis=1).max()) <= 30
+
+    def test_backtest_held_weights_respect_max_names_default(self) -> None:
+        """n_positions above max_names must not leak extra positions into the book."""
+        p = make_panel(seed=3, n_sym=40)
+        sc = build_composite_score(p)
+        cfg = PortfolioConfig(n_positions=40, max_names=22)
+        res = run_backtest(p, sc, CM, cfg, "M")
+        assert int((res.weights > DEAD_WEIGHT_EPS).sum(axis=1).max()) <= 22
 
 
 class TestMetrics:

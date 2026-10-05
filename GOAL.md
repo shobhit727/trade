@@ -73,27 +73,107 @@ Reporting < 12% annualised honestly is required by §6, not optional.
 > that is the number I report. I will not widen the definition of "3%", backfill the
 > in-sample number, or quietly reduce costs to make the target appear met.
 
-### 2.4 MEASURED RESULT — v1 (2026-10-05)
+**Current measured band: D.** See §2.4. The band table above is unchanged by that result —
+the definition was written before the measurement and is not being edited to fit it.
 
-> Evidence: `reports/VALIDATION_v1.md`. Reproduce: `research/validate.py`.
+### 2.4 MEASURED RESULT — v2 (2026-10-06)
 
-**Walk-forward out-of-sample, 2008→2026 (18.9y), 48 symbols, full Indian cost stack:**
+> Evidence: `reports/VALIDATION_v1.md` §0 (addendum) — the v1 measurement is retained
+> there unchanged as the historical record. Reproduce: `research/validate.py`.
 
-| Metric | Achieved | Target | |
-|--------|----------|--------|---|
-| Annualised net | **13.40%** | 42.6% | ❌ 3.2× short |
-| **Monthly net** | **+1.054%** | 3.000% | ❌ |
-| Sharpe | 0.66 | ≥ 0.7 | ❌ (missed by 0.04) |
-| Max drawdown | **−15.41%** | < 35% | ✅ |
-| Calmar | 0.87 | — | ✅ |
-| Positive years | 92% | ≥ 60% | ✅ |
-| All-in cost drag | 3.03%/yr | — | measured |
+#### ⚠️ THE HEADLINE IS A FRAGILITY FINDING, NOT A NUMBER
 
-**Band C.** Three gates fail ⇒ **`GOAL.md` §5 default verdict: NO DEPLOY.**
-Not deployed. Not capital-ready. See `reports/VALIDATION_v1.md` §9 for what must change.
+**Twenty-seven extra trading days — about six weeks of data — moved OOS Sharpe from
+0.66 to 0.44 and the band from C to D.** Nothing about the strategy changed between the
+two measurements: same code, same costs, same parameters, same walk-forward design. Only
+the end date moved.
 
-**Against the benchmark it does beat on risk, and loses on return:**
-13.40% vs 18.77% CAGR (−5.36pp/yr) but −15.41% vs −37.97% max drawdown (+22.6pp).
+That is a statement about the **strategy**, not about the data. A result whose band
+depends on which six-week window you happen to stop on is not a result that gets capital.
+Per §6.7 this is the bad news and therefore leads. It is recorded as the single most
+important thing this project has learned about itself:
+
+- A third of the measured risk-adjusted return was **sensitive to the last 6 weeks**.
+- The v1 "Band C, one Sharpe point away from passing" reading was **not a stable
+  property** — it was one draw of a noisy estimator.
+- Any future number from this system must be quoted with the end date attached. A CAGR
+  without a window is not a measurement.
+
+**Walk-forward out-of-sample, 2008-01-01 → 2026-10-01 (19.0y), 48 symbols,
+4,629 trading days, full Indian cost stack:**
+
+| Metric | v1 (to 2026-08-25) | +27 days, pre-fix engine | **CURRENT (authoritative)** | Target | |
+|--------|-------------------|------------------------|----------------------------|--------|---|
+| Annualised net | 13.40% | 11.05% | **10.97%** | 42.6% | ❌ 3.9× short |
+| **Monthly net** | +1.054% | +0.877% | **+0.871%** | 3.000% | ❌ |
+| Sharpe | 0.66 | 0.45 | **0.44** | ≥ 0.7 | ❌ |
+| Max drawdown | −15.41% | −12.90% | **−12.91%** | < 35% | ✅ |
+| Calmar | 0.87 | 0.86 | **0.85** | — | ✅ |
+| Positive years | 12/13 (92%) | 11/13 (85%) | **11/13 (85%)** | ≥ 60% | ✅ |
+| All-in cost drag | 3.03%/yr | — | **3.11%/yr** | — | measured |
+| **Band (§2.3)** | **C** | D | **D** | C or better | ❌ |
+
+The third column isolates the data extension; the fourth is what the code on disk
+produces today. **The fourth column is the only one that is a valid result.** The third
+column is quoted because the gap between columns 2 and 3 is the fragility finding, and
+because column 3 was briefly published as the headline before the engine bugs below were
+found.
+
+**Band D. FOUR gates fail ⇒ `GOAL.md` §5 default verdict: NO DEPLOY.** Not deployed, not
+paper-promoted, not capital-ready.
+
+| Gate | Requirement | Result | |
+|------|-------------|--------|---|
+| G3 | OOS CAGR ≥ 12% | 10.97% | ❌ |
+| G3 | OOS Sharpe ≥ 0.7 | 0.44 | ❌ |
+| G3 | OOS MaxDD < 35% | −12.91% | ✅ |
+| G3 | Positive years ≥ 60% | 11/13 = 85% | ✅ |
+| G4 | Beat benchmark CAGR | 10.97% vs 16.96% | ❌ |
+| G4 | Beat benchmark Sharpe | 0.44 vs 0.67 | ❌ |
+
+**Four failed.** The band itself is also now below the Band C that Gate 3 requires.
+
+**Against the benchmark it beats on risk and loses on return:**
+10.97% vs 16.96% CAGR (−6.00pp/yr), but −12.91% vs −37.97% max drawdown (+25.06pp) and
+Calmar 0.85 vs 0.45.
+
+#### ⚠️ The v1 numbers were partly earned by breaching our own risk limits
+
+Two bugs in `src/nsealgo/backtest/engine.py` (fixed on disk, uncommitted) had been
+letting the portfolio exceed §3.2:
+
+1. **The 12% single-name cap was breached — worst observed weight 25.66%.** The sector cap
+   redistributed weight without re-capping the names it spilled onto, so the single-name
+   cap was applied first and then invalidated.
+2. **Dead residual weights accumulated** — 48 names held against `max_positions` 30,
+   because positions that fell below the material threshold were never removed.
+
+After the fix: worst single weight **10.80%**, worst sector **22.50%**, max names **30**.
+The fix cost 11.05% → 10.97% CAGR and 0.45 → 0.44 Sharpe.
+
+**Stated plainly: part of the v1 result was not available under the portfolio rules this
+constitution mandates.** A backtest that quietly holds 25% in one name is not the strategy
+§3.2 describes, whatever it prints. Any return achieved by breaching a limit is not a
+result — it is an artifact, and it is reported here as one.
+
+#### What is already in this repo beats none of it
+
+The ~85 existing crypto strategies in `src/cryptobot/strategies/catalog/` were ported to
+NSE daily bars through a `SignalStrategy` adapter and run through **the same engine, the
+same cost stack and the same constraints**. **84 discovered, 80 evaluated** (2 never
+signalled, 2 crypto-only, 0 errors). **None beat the nsealgo composite** — best catalog
+Sharpe 0.76 vs composite 0.88; best Calmar 0.91 vs 0.95.
+
+**The comparison is mostly measuring momentum, not strategy skill.** The adapter gives each
+catalog strategy the benefit of momentum ranking, and the top of the sweep is not a set of
+distinct strategies at all: the leading rows produce numerically identical books. For
+scale, pure 6-month momentum through the same harness returns Sharpe **0.80**, and a
+**random 50/50 mask** returns **0.77**. The best catalog strategy sits *below* pure
+momentum.
+
+The honest finding: **no existing catalog strategy adds anything over momentum, and none
+beats the composite.** The composite's own advantage over this field is 0.12 Sharpe — of
+the same order as the 0.22 the 27-day data extension destroyed.
 
 #### Is 3%/month achievable at all? No — and this is now evidence, not opinion.
 
@@ -102,7 +182,7 @@ relevant reference:
 
 | Reference | Annualised |
 |-----------|-----------|
-| **This system, OOS** | **13.4%** |
+| **This system, OOS** | **11.0%** |
 | NIFTY-50 TRI since 1999 (NSE official) | 14.2% |
 | Best documented Indian long-only multi-factor (QED Conservative Formula) | ~12.6% *over* BSE-100 |
 | Indian active fund managers net of fees (425 funds, 2013–24) | **≈0 alpha** |
@@ -114,10 +194,10 @@ peer-reviewed Indian factor result *even with short access*. Nothing in the acad
 regulator, index-vendor or credible-practitioner literature supports >20% for a
 long-only Indian strategy.
 
-**§2.3's "realistic" band of 10–14% p.a. net was the correct target. 13.4% is a good
-result and I am reporting it as such. It is 1.05%/month, not 3%.** The §1 ambition
-stands as a stated long-term goal; it is not a quarterly expectation, and it is not
-what this system is currently on track to deliver.
+**At 11.0% net the system is now *below* the index it trades, on a bias-corrected basis
+below §2.2's own "good cross-sectional swing strategy" range of 15–25%.** It is
+0.87%/month, not 3%. The §1 ambition stands as a stated long-term goal; on the evidence
+in hand, nothing in this repo is on track to deliver it.
 
 ---
 
@@ -167,7 +247,7 @@ strategy we are allowed to build.**
 
 | Timeframe | Bars/symbol | History | Verdict |
 |-----------|-------------|---------|---------|
-| **1d** | ~6,000 | ~24 years (2002→2026-08) | ✅ **Primary research substrate** |
+| **1d** | ~6,000 | ~24 years (2002→2026-10) | ✅ **Primary research substrate** |
 | 1h / 4h | ~700–1,000 | ~1–2 years | ⚠️ Corroboration only |
 | 30m / 15m / 5m | ~40–1,000 | weeks–months | ⚠️ Sanity checks only |
 | **1m** | **~1,800** | **~30 days** | ❌ **Unusable for validation** |
@@ -179,8 +259,10 @@ strategy we are allowed to build.**
    no matter how good the in-sample backtest looks.
 2. **~30 days of 1m data means no intraday edge can ever be verified here.** If we want
    intraday later, we must first acquire ≥2 years of 1m/5m data.
-3. **Data ends 2026-08-25** (~6 weeks stale). Live trading needs a fresh-data path
-   (Kite historical API) before any capital goes live.
+3. **Data ends 2026-10-01** (re-fetched 2026-10-06, see `reports/DATA_AUDIT.md` §0).
+   The ~6-week staleness that blocked this section is gone, but a **repeatable** fresh-data
+   path (Kite historical API) is still required before any capital goes live — the current
+   panel was recovered by a one-off recovery script, not by an automated feed.
 4. **Survivorship bias is a live risk.** These 50 names are today's NIFTY-50 members
    pulled back through history. Delisted / removed constituents are absent. All
    results are therefore **optimistic**, and the walk-forward gate (§5) must be
@@ -246,6 +328,12 @@ No gate may be waived to "get live faster".
 
 **Default verdict if any gate fails: NO DEPLOY.** The correct action is to keep
 researching, not to loosen the gate.
+
+> **Current state (2026-10-06): the gates below are the requirements; the pass/fail record
+> lives in §2.4 and `reports/VALIDATION_v1.md` §0.** As measured today, Gate 3's return,
+> Sharpe and Band C requirements fail, both Gate 4 benchmark comparisons fail, and Gate 3's
+> drawdown and positive-year requirements pass. **Four gate checks fail. Verdict: NO DEPLOY.**
+> The `[x]` marks in this section record that each check was *performed*, not that it passed.
 
 ---
 
@@ -361,18 +449,30 @@ drawdown was 45%. That is the exact failure mode §6 exists to prevent.
 
 | Item | State |
 |------|-------|
-| Data audit | ✅ Complete — 48 symbols, 18.9y daily, 1m unusable for validation |
+| Data audit | ✅ Complete — 48 symbols, 19.0y daily (to 2026-10-01), 1m unusable for validation |
+| Data recovery | ✅ Re-fetched 2026-10-06 via `tools/recover_nse_data.py`, verified faithful (49/50 symbols vs the audit summary; truncation to the old end date reproduces the v1 result) |
 | Cost model | ✅ Complete — calibrated to 11.66 bps vs published itemisation |
 | Factor research | ✅ v1 — trend + low-vol + regime overlay, reversal removed on evidence |
-| Walk-forward validation | ✅ v1 — **13.40% OOS, Sharpe 0.66, MaxDD −15.41% (Band C)** |
+| Portfolio constraints | ✅ **Fixed** — single-name and sector caps now enforced simultaneously; residuals dropped. Pre-fix books breached §3.2 (25.66% single name, 48 names vs 30) |
+| Catalog benchmark | ✅ Done — 80 catalog strategies evaluated, **none beats the composite**; best is below pure momentum |
+| Walk-forward validation | ⚠️ v2 — **10.97% OOS, Sharpe 0.44, MaxDD −12.91%, Band D** |
 | Negative control | ✅ PASS — reversal underperforms, harness discriminates |
 | Live system | 🔜 Pending |
-| **Real capital** | ⛔ **BLOCKED — 3 gates fail (§2.4, `reports/VALIDATION_v1.md` §4)** |
+| **Real capital** | ⛔ **BLOCKED — FOUR gates fail, Band D (§2.4, `reports/VALIDATION_v1.md` §0)** |
+
+**Two things are worse than they were, and both are recorded here rather than smoothed
+over:**
+
+1. **Four gates fail, not three.** The return gate now fails too (10.97% < 12%), on top of
+   Sharpe and both benchmark comparisons. The band fell C → D.
+2. **The result is fragile.** 27 trading days moved Sharpe 0.66 → 0.44. Until the system
+   demonstrates that its band is stable as the window is extended, no number from it is
+   worth quoting without its end date. See §2.4.
 
 ### 11.1 ⚠️ Data bias: ~7.3%/yr (survivorship + missing dividends)
 
 The universe is **today's NIFTY-50 backfilled to 2008**, and the panel is **price return
-only — dividends are absent entirely**.
+only — dividends are absent entirely**. The 2026-10-06 recovery did not change either fact.
 
 **Diagnostic:** a correct 2008→2026 NIFTY-50 panel should contain Satyam, IL&FS, DHFL,
 Yes Bank and Vodafone Idea. This panel contains **none of them**. It is a survivor set.
@@ -386,17 +486,24 @@ Yes Bank and Vodafone Idea. This panel contains **none of them**. It is a surviv
 | Official NSE TRI, 20y to Feb 2026 | 12.44% |
 | **Implied bias** | **≈ 7.3%/yr** |
 
+**The ~7.3%/yr estimate was measured on the v1 window and is carried forward unchanged** —
+it is a property of the universe construction, not of the end date. It applies in full to
+the v2 numbers below. It has **not** been recomputed or re-argued for the shorter window.
+
 | Figure | Reported | Bias-corrected |
 |---|---|---|
-| Strategy | 13.40% | **≈ 6.1%** |
-| Benchmark | 18.77% | **≈ 11.5%** |
+| Strategy (v1, to 2026-08-25) | 13.40% | **≈ 6.1%** |
+| Strategy (v2, to 2026-10-01) | 10.97% | **≈ 3.7%** *(same ~7.3pp bias discount carried forward)* |
+| Benchmark (v2) | 16.96% | **≈ 9.7%** |
 
-**This invalidates any claim that the strategy "beats the official index TRI."** Corrected,
-it roughly *matches* the index on return while halving the drawdown (−15.4% vs −38.0%).
-Real, but far more modest than the headline number.
+**This invalidates any claim that the strategy "beats the official index TRI."** That claim
+was already wrong at v1 and is further wrong at v2. Bias-corrected, the strategy is
+*below* the index on return (−12.91% vs −38.0% drawdown is the only thing it still wins).
+Real but far more modest than any headline number.
 
 The **relative** comparison (same windows, same cost treatment) is unaffected and remains
-the trustworthy figure: the strategy trails the benchmark by ~5.4pp/yr.
+the trustworthy figure: the strategy trails the benchmark by **6.00pp/yr** in v2 (was
+5.36pp/yr in v1).
 
 ### 11.1b ✅ Corporate actions ARE adjusted post-2008 (verified)
 
@@ -427,7 +534,7 @@ Documented in `reports/FACTOR_EVIDENCE.md`. Summary of what changed and why:
 | **Mean-reversal REMOVED** (was 25% of composite weight) | Indian evidence shows short-term *continuation*. The only multiple-testing-corrected Indian study found 7/8 survivors were trend rules; RSI/Bollinger mean-reversion all failed. |
 | **Weekly → monthly rebalance + 35% turnover budget** | No Indian study supports weekly. SEBI's own data: 25 → 742 trades/yr maps to 65% → 80% loss rate. Turnover is the enemy. |
 | **Value factor excluded** | Indian value premium "nearly ceased to exist" post-2008; 0 of 9 NSE factor indices showed significant OOS alpha. |
-| **Regime overlay added** | Without it MaxDD is −40.9%, failing Band C. Overlay cut it to −15.4% (Sharpe 0.72 → 0.91 in-sample). |
+| **Regime overlay added** | Without it MaxDD is −40.7%, failing Band C. Overlay cut it to −14.9% (Sharpe 0.70 → 0.90 in-sample, current window). |
 | **Intraday permanently banned** | 1m data is 6 days. Independently: a 240-variant intraday sweep cleared **0** variants even against a perfect-maker cost floor. |
 
 ---
