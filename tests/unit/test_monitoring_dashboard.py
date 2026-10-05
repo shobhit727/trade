@@ -44,3 +44,22 @@ def test_save_dashboards(tmp_path, monkeypatch):
         path = Path(path_str)
         assert path.exists()
         json.loads(path.read_text())
+
+
+def test_risk_dashboard_exposure_ratio_uses_unlabeled_equity():
+    """Issue #50: exposure % must divide by the unlabeled total_equity gauge."""
+
+    def _collect_exprs(panels):
+        exprs = []
+        for p in panels:
+            for t in p.get("targets", []):
+                exprs.append(t.get("expr", ""))
+            exprs.extend(_collect_exprs(p.get("panels", [])))
+        return exprs
+
+    dash = create_risk_dashboard()
+    exprs = _collect_exprs(dash["dashboard"]["panels"])
+    assert any(
+        "cryptobot_position_size_usd / on() group_left() cryptobot_total_equity_usd * 100" in e
+        for e in exprs
+    )

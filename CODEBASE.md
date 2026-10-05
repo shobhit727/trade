@@ -54,6 +54,12 @@ Cryptobot is an elite quantitative trading system built with Python 3.14+ (async
 | `clock.py` | `Clock`, `SimulatedClock`, `WallClock` | Time abstraction. SimulatedClock for backtests, WallClock for live. |
 | `portfolio.py` | `PortfolioState`, `Position` | Real-time PnL, equity curve, position tracking. |
 | `state.py` | `StateManager`, `AccountState`, `Position` | SQLite/PostgreSQL persistence for orders, fills, positions. |
+| `fund.py` | `GlobalFundLedger`, `FundConfig` | Cross-algo profit reserve: 10% skim of realized PnL per 8h harvest, guarded draws (<=30%/algo/day), kill-switch freeze, atomic JSON state. |
+| `allocator.py` | `CapitalAllocator`, `AllocationTier` | Equity-tiered strategy activation (seed/growth/scale); YAML-configurable; over-allocation rejected. |
+| `tax.py` | `TaxEngine` | India VDA: FIFO basis, strict §115BBH no-loss-offset, TDS credits, Schedule-VDA CSV export. |
+| `gate.py` | `PaperGateTracker` | 60-day paper gate: daily snapshots, net-positive/Sharpe/reject-rate/breaker criteria, auto-extend x2; refuses live mode until pass. |
+| `profiles.py` | `RiskProfile`, `vol_targeted_leverage` | realistic (1x) vs aggressive (vol-targeted 0-3x) presets with liquidation-distance clamp. |
+| `breaker.py` | `CircuitBreaker` | -25%-from-peak trip; profit-first graceful close ordering; persisted until manual reset. |
 
 **Key Patterns:**
 - All events inherit `Event` with `type: EventType`, `timestamp: datetime`, `payload: dict`

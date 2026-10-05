@@ -1,14 +1,103 @@
-# AGENTS.md — Cryptobot Repository Guide
+# AGENTS.md — Trading Repository Guide
+
+## ⚠️ READ THIS FIRST: the mission lives in `GOAL.md`
+
+**`GOAL.md` is the binding constitution for this project.** It defines the capital
+(₹21,00,000), the return target (3%/month net), the hard risk limits, the anti-fraud
+rules, and the 7 go/no-go gates that must ALL pass before real capital is deployed.
+
+**Read `GOAL.md` before writing any strategy code.** If code and `GOAL.md` disagree,
+`GOAL.md` wins — fix the code. In particular:
+- §3.3 risk limits are **hard-coded and not configurable upward**
+- §6 anti-fraud rules are binding (no in-sample numbers as results, no cost reductions
+  to rescue a result, no survivorship-bias concealment)
+- §5 gates are **not waivable** to ship faster
+
+## 🐍 Run policy: tests on host, app in Docker
+
+| What | Where it runs | Why |
+|------|---------------|-----|
+| **Unit / integration tests (`pytest`)** | **Host venv** (`.venv/bin/python`) | Fast iteration; no rebuild per test cycle |
+| **Research & analysis scripts (`research/*.py`)** | **Host venv**, or research container | Same speed reasoning; container for reproducibility |
+| **The application** (`nsealgo` live/paper engine) | **Docker only** | Matches deployment; proves the image works |
+| **Lint** | Host venv | Speed |
+
+```bash
+# TESTS + LINT -> host venv (never rebuild a container to test)
+.venv/bin/python -m pytest tests/unit -q
+.venv/bin/ruff check src tests
+
+# APP -> Docker
+docker compose -f docker-compose.nse.yml up -d --build
+docker compose -f docker-compose.nse.yml logs -f nsealgo
+
+# RESEARCH -> host by default; container for reproducibility
+.venv/bin/python research/audit_data.py
+docker compose -f docker-compose.research.yml run --rm research python research/audit_data.py
+```
+
+**Never edit a file inside a container.** Edit on the host, rebuild the image.
+
+---
 
 ## Project Overview
-Cryptobot is an elite quantitative trading system written in Python 3.14+ with a Rust workspace (`cryptobot-core`). It's a production-grade trading bot with backtesting, live trading, risk management, monitoring, and multi-arch Docker deployments.
+
+This repo hosts **two trading systems** sharing one backbone:
+
+1. **`src/cryptobot/`** — the crypto quantitative system (Python + Rust workspace),
+   with backtesting, live trading, risk, monitoring, multi-arch Docker deploys.
+2. **`src/nsealgo/`** — the **NSE NIFTY-50 equity system** (the active mission,
+   see `GOAL.md`). Swing-horizon, daily-bar, cost-aware, walk-forward validated.
+
+**Shared backbone reused by `nsealgo`:** `EventBus`, `Clock`, `Decimal` money
+handling, Pydantic Settings config, Prometheus monitoring, health checks, Docker/CI.
 
 **Key Stack:**
-- Python 3.14+ (src/cryptobot/)
-- Rust workspace (crates/) — 7 crates (core, features, risk, stats, orderbook, backtest, py) with PyO3 0.29 bindings, executable locally via `rustup`
+- Python 3.13+ (`src/cryptobot/`, `src/nsealgo/`)
+- Rust workspace (`crates/`) — 7 crates, PyO3 0.29 bindings (crypto hot paths)
+- NSE data: 50 NIFTY-50 symbols, ~24y daily OHLCV in `data/nse/`
+- Broker: Zerodha KiteConnect
 - Docker multi-arch (amd64/arm64) via buildx
-- TimescaleDB + Redis for state
+- TimescaleDB + Redis (crypto); SQLite state (nsealgo)
 - Prometheus/Grafana monitoring stack
+
+---
+
+## NSE System (`src/nsealgo`) — the active mission
+
+### Hard constraints (from data reality, audited)
+| Timeframe | History | Use |
+|-----------|---------|-----|
+| **1d** | ~6,000 bars, ~24y (2002→2026-08) | ✅ primary research substrate |
+| 1h / 4h | ~1–2y | ⚠️ corroboration only |
+| 5m/15m/30m | weeks–months | ⚠️ sanity only |
+| **1m** | **~1,800 bars, ~30 days** | ❌ **unusable — intraday is BANNED** |
+
+- **Daily bars only.** Holding period 5–60 days. Weekly/biweekly rebalance.
+- **Survivorship bias is present** (today's NIFTY-50 backfilled) — disclose it in every report.
+- Data ends **2026-08-25** (~6wk stale) → Kite historical fetch required before live.
+
+### Rules that code must obey
+1. **`Decimal` for all money. Never `float`.**
+2. **No lookahead.** Event-driven engine + explicit `Clock`. No `datetime.now()` in logic.
+3. **Walk-forward is the only accepted performance evidence.**
+4. **Full Indian cost stack on every fill**: STT, exchange txn, SEBI, stamp duty,
+   DP charges, brokerage, **18% GST**. Never skip.
+5. **Live and paper share one code path** — only the broker adapter differs.
+6. **Risk limits from `GOAL.md` §3.3 are hard-coded** in `nsealgo/risk/limits.py`.
+
+### Commands
+```bash
+# Validate a strategy (the only result that counts)
+.venv/bin/python -m nsealgo.cli validate --strategy momentum --walk-forward
+
+# Paper trade (no capital)
+docker compose -f docker-compose.nse.yml run --rm nsealgo paper --duration 1w
+
+# Research
+.venv/bin/python research/audit_data.py
+.venv/bin/python research/sweep.py --factor momentum
+```
 
 ---
 
@@ -20,13 +109,13 @@ Cryptobot is an elite quantitative trading system written in Python 3.14+ with a
 make install          # production deps only
 make install-test     # test + dev deps (includes numpy/pandas)
 
-# Run tests
-make test             # pytest -q (all tests)
-pytest tests/unit/test_core_foundation.py -v  # single test file
+# Run tests  (HOST venv)
+.venv/bin/python -m pytest tests -q
+.venv/bin/python -m pytest tests/unit/test_nsealgo_costs.py -v  # single file
 
-# Lint
+# Lint  (HOST venv)
 make lint             # ruff check + pyflakes
-ruff check --fix src tests  # auto-fix
+.venv/bin/ruff check --fix src tests
 
 # Docker
 make compose-test     # run test container

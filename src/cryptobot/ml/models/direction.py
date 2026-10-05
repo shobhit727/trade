@@ -101,7 +101,10 @@ class DirectionClassifier:
         if n <= n_splits + 1:
             return 0.0
         if labels is None:
-            labels = (np.random.default_rng(7).uniform(size=n) > 0.5).astype(int)
+            raise ValueError(
+                "walk_forward_score requires true labels; none were provided "
+                "(labels must not be fabricated, issue #48)"
+            )
         scores: list[float] = []
         fold = (n - n_splits - 1) // n_splits
         for k in range(n_splits):

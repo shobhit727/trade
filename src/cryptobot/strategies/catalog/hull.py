@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-from cryptobot.strategies.indicators import ema
+from cryptobot.strategies.indicators import hull
 from cryptobot.strategies.signal_base import SignalStrategy
 
 
@@ -25,7 +25,7 @@ class HullStrategy(SignalStrategy):
         return self.config.period
 
     def signal(self, closes, highs, lows, volumes):
-        h = ema(closes, self.config.period)
+        h = hull(closes, self.config.period)
         if h != h:
             return 0
         return 1 if closes[-1] > h else -1

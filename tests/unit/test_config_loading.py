@@ -33,6 +33,18 @@ def test_flatten_yaml_picks_up_exchange_settings(tmp_path: Path):
     assert flat["risk"]["max_total_exposure_pct"] == 0.42
 
 
+def test_monitoring_settings_has_email_fields():
+    # Issue #29: alerting.py reads email_smtp_host/port/username/password/from/to;
+    # missing fields raised AttributeError when email alerts were enabled.
+    m = Settings().monitoring
+    assert m.email_smtp_host == ""
+    assert m.email_smtp_port == 587
+    assert m.email_username == ""
+    assert m.email_password == ""
+    assert m.email_from == ""
+    assert m.email_to == []
+
+
 def test_flatten_yaml_handles_missing_sections(tmp_path: Path):
     flat = _flatten_yaml({})
     assert flat["exchange"]["symbols"] == []

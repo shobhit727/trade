@@ -23,6 +23,7 @@ class SignalConfig:
     position_pct: float = 1.0  # fraction of signal captured per flip
     quick_enter: bool = True
     quick_exit: bool = False
+    stop_pct: float = 0.05  # protective stop distance for the risk-manager stop-loss requirement
 
 
 class SignalStrategy:
@@ -70,6 +71,10 @@ class SignalStrategy:
             self._volumes[symbol],
         )
 
+    def _last_ts(self, symbol: str):
+        """Timestamp of the most recent bar (epoch ms int or None)."""
+        return getattr(self, "_ts_map", {}).get(symbol)
+
     def as_lists(self, symbol: str) -> tuple[list[float], list[float], list[float], list[float]]:
         c, h, lo, v = self._bufs(symbol)
         return list(c), list(h), list(lo), list(v)
@@ -81,7 +86,12 @@ class SignalStrategy:
         high: float | None = None,
         low: float | None = None,
         volume: float | None = None,
+        ts: int | None = None,
     ) -> OrderEvent | None:
+        if not hasattr(self, "_ts_map"):
+            self._ts_map = {}
+        if ts is not None:
+            self._ts_map[symbol] = ts
         c, h, lo, v = self._bufs(symbol)
         c.append(float(close))
         h.append(float(high if high is not None else close))
@@ -109,6 +119,17 @@ class SignalStrategy:
                 strategy=self.name,
             )
             o.reduce_only = reduce_only
+            if not reduce_only:
+                # Emit a protective stop so the order satisfies the risk manager's
+                # stop-loss requirement (enforced in backtest too, #33). The backtest
+                # engine does not simulate stop fills, so this is metadata only.
+                stop_pct = Decimal(str(getattr(self.config, "stop_pct", 0.05)))
+                price = Decimal(str(close))
+                o.stop_price = (
+                    price * (Decimal(1) - stop_pct)
+                    if side is OrderSide.BUY
+                    else price * (Decimal(1) + stop_pct)
+                )
             return o
 
         qty = self.config.quantity

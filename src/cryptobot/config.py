@@ -127,7 +127,19 @@ class MonitoringSettings(BaseSettings):
     telegram_chat_id: str = ""
     discord_webhook: str = ""
     email_enabled: bool = False
+    email_smtp_host: str = ""
+    email_smtp_port: int = 587
+    email_username: str = ""
+    email_password: str = ""
+    email_from: str = ""
+    email_to: list[str] = []
+    whatsapp_enabled: bool = False
+    whatsapp_token: str = ""
+    whatsapp_phone_id: str = ""
+    whatsapp_to: list[str] = []
     health_check_interval: int = 30
+    data_stale_threshold_seconds: int = 60
+    data_degraded_threshold_seconds: int = 10
 
     model_config = SettingsConfigDict(env_prefix="MONITORING_", extra="ignore")
 
@@ -157,6 +169,42 @@ class BacktestSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="BACKTEST_", extra="ignore")
 
 
+class ExternalServicesSettings(BaseSettings):
+    kite_base_url: str = "https://api.kite.trade"
+    kite_login_url: str = "https://kite.zerodha.com/connect/login"
+    yahoo_finance_chart_url: str = "https://query1.finance.yahoo.com/v8/finance/chart/"
+    binance_production_url: str = "https://api.binance.com"
+    binance_futures_url: str = "https://fapi.binance.com"
+    binance_spot_ws_url: str = "wss://stream.binance.com:9443/stream?streams="
+    binance_futures_ws_url: str = "wss://fstream.binance.com/stream?streams="
+    binance_data_ws_url: str = "wss://stream.binance.com:9443"
+    telegram_api_url: str = "https://api.telegram.org"
+    pagerduty_events_url: str = "https://events.pagerduty.com/v2/enqueue"
+    whatsapp_api_url: str = "https://graph.facebook.com/v21.0"
+
+    model_config = SettingsConfigDict(env_prefix="EXTERNAL_", extra="ignore")
+
+
+class TimeoutSettings(BaseSettings):
+    http_default_timeout: int = 20
+    http_long_timeout: int = 30
+    http_short_timeout: int = 10
+    strategy_feed_timeout: float = 0.5
+    stop_wait_timeout: int = 30
+    smtp_timeout: int = 30
+
+    model_config = SettingsConfigDict(env_prefix="TIMEOUT_", extra="ignore")
+
+
+class ServerSettings(BaseSettings):
+    host: str = "127.0.0.1"
+    port: int = 8080
+    nse_basket_port: int = 8084
+    nse_powerhour_port: int = 8085
+
+    model_config = SettingsConfigDict(env_prefix="SERVER_", extra="ignore")
+
+
 class Settings(BaseSettings):
     app: AppSettings = Field(default_factory=AppSettings)
     exchange: ExchangeSettings = Field(default_factory=ExchangeSettings)
@@ -168,6 +216,9 @@ class Settings(BaseSettings):
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     backtest: BacktestSettings = Field(default_factory=BacktestSettings)
+    external_services: ExternalServicesSettings = Field(default_factory=ExternalServicesSettings)
+    timeouts: TimeoutSettings = Field(default_factory=TimeoutSettings)
+    server: ServerSettings = Field(default_factory=ServerSettings)
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -178,10 +229,31 @@ class Settings(BaseSettings):
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Settings":
-        """Load settings from a YAML file (yaml.safe_load is used internally)."""
+        """Load settings from a YAML file, then let env vars override.
+
+        Priority (12-factor): environment > yaml file. Without this, mounted
+        configs/base.yaml silently defeated RISK_* / EXCHANGE_* env vars in
+        containers even though the docs promise env-overridable settings.
+        """
         with open(path) as f:
             data = yaml.safe_load(f) or {}
-        return cls(**_flatten_yaml(data))
+        flat = _flatten_yaml(data)
+
+        import os
+
+        for name, field_info in cls.model_fields.items():
+            sub = field_info.default_factory
+            if not callable(sub) or not hasattr(sub, "model_fields"):
+                continue
+            prefix = (sub.model_config.get("env_prefix") or "").upper()
+            if not prefix:
+                continue
+            section = flat.setdefault(name, {})
+            for fname in sub.model_fields:
+                ev = os.getenv(prefix + fname.upper())
+                if ev is not None:
+                    section[fname] = ev
+        return cls(**flat)
 
 
 def _flatten_yaml(data: dict[str, Any]) -> dict[str, Any]:
@@ -196,6 +268,9 @@ def _flatten_yaml(data: dict[str, Any]) -> dict[str, Any]:
     xmr_daemon = xmr.get("daemon", {})
     xmr_wallet = xmr.get("wallet_rpc", {})
     xmr_funding = xmr.get("funding", {})
+    external_services = data.get("external_services", {})
+    timeouts_cfg = data.get("timeouts", {})
+    server_cfg = data.get("server", {})
 
     flattened: dict[str, Any] = {
         "app": data.get("app", {}),
@@ -256,10 +331,43 @@ def _flatten_yaml(data: dict[str, Any]) -> dict[str, Any]:
             "telegram_chat_id": alerts_cfg.get("telegram_chat_id", ""),
             "discord_webhook": alerts_cfg.get("discord_webhook", ""),
             "email_enabled": alerts_cfg.get("email_enabled", False),
+            "whatsapp_enabled": alerts_cfg.get("whatsapp_enabled", False),
+            "whatsapp_token": alerts_cfg.get("whatsapp_token", ""),
+            "whatsapp_phone_id": alerts_cfg.get("whatsapp_phone_id", ""),
+            "whatsapp_to": alerts_cfg.get("whatsapp_to", []),
             "health_check_interval": monitoring.get("health_check_interval", 30),
+            "data_stale_threshold_seconds": monitoring.get("data_stale_threshold_seconds", 60),
+            "data_degraded_threshold_seconds": monitoring.get("data_degraded_threshold_seconds", 10),
         },
         "database": data.get("database", {}),
         "backtest": data.get("backtest", {}),
+        "external_services": {
+            "kite_base_url": external_services.get("kite_base_url", "https://api.kite.trade"),
+            "kite_login_url": external_services.get("kite_login_url", "https://kite.zerodha.com/connect/login"),
+            "yahoo_finance_chart_url": external_services.get("yahoo_finance_chart_url", "https://query1.finance.yahoo.com/v8/finance/chart/"),
+            "binance_production_url": external_services.get("binance_production_url", "https://api.binance.com"),
+            "binance_futures_url": external_services.get("binance_futures_url", "https://fapi.binance.com"),
+            "binance_spot_ws_url": external_services.get("binance_spot_ws_url", "wss://stream.binance.com:9443/stream?streams="),
+            "binance_futures_ws_url": external_services.get("binance_futures_ws_url", "wss://fstream.binance.com/stream?streams="),
+            "binance_data_ws_url": external_services.get("binance_data_ws_url", "wss://stream.binance.com:9443"),
+            "telegram_api_url": external_services.get("telegram_api_url", "https://api.telegram.org"),
+            "pagerduty_events_url": external_services.get("pagerduty_events_url", "https://events.pagerduty.com/v2/enqueue"),
+            "whatsapp_api_url": external_services.get("whatsapp_api_url", "https://graph.facebook.com/v21.0"),
+        },
+        "timeouts": {
+            "http_default_timeout": timeouts_cfg.get("http_default_timeout", 20),
+            "http_long_timeout": timeouts_cfg.get("http_long_timeout", 30),
+            "http_short_timeout": timeouts_cfg.get("http_short_timeout", 10),
+            "strategy_feed_timeout": timeouts_cfg.get("strategy_feed_timeout", 0.5),
+            "stop_wait_timeout": timeouts_cfg.get("stop_wait_timeout", 30),
+            "smtp_timeout": timeouts_cfg.get("smtp_timeout", 30),
+        },
+        "server": {
+            "host": server_cfg.get("host", "127.0.0.1"),
+            "port": server_cfg.get("port", 8080),
+            "nse_basket_port": server_cfg.get("nse_basket_port", 8084),
+            "nse_powerhour_port": server_cfg.get("nse_powerhour_port", 8085),
+        },
     }
     return flattened
 

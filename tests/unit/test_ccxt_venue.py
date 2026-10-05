@@ -16,6 +16,16 @@ from cryptobot.execution.venue.binance import BinanceVenue
 from cryptobot.execution.venue.ccxt_venue import CcxtVenue
 
 
+class FakeCcxt:
+    """Minimal stand-in for the ccxt.async_support module in tests."""
+
+    class NetworkError(Exception):
+        """Base class for retryable transport/network failures."""
+
+    class ExchangeError(Exception):
+        """Base class for non-retryable exchange-reported rejections."""
+
+
 def make_order(**overrides) -> OrderEvent:
     defaults: dict[str, Any] = {
         "symbol": "BTCUSDT",
@@ -31,7 +41,7 @@ def make_order(**overrides) -> OrderEvent:
 @pytest.fixture(autouse=True)
 def _fake_ccxt_module(monkeypatch):
     """Pretend ccxt is installed so venue methods reach our fakes."""
-    monkeypatch.setattr("cryptobot.execution.venue.ccxt_venue.ccxt_async", object())
+    monkeypatch.setattr("cryptobot.execution.venue.ccxt_venue.ccxt_async", FakeCcxt())
 
 
 class FakeExchange:
@@ -148,7 +158,7 @@ async def test_submit_limit_with_price_sends_price():
 @pytest.mark.asyncio
 async def test_submit_retries_then_rejects(monkeypatch):
     v = CcxtVenue(exchange_id="bybit", api_key="k", api_secret="s", max_retries=3)
-    fake = FakeExchange(error=RuntimeError("network down"))
+    fake = FakeExchange(error=FakeCcxt.NetworkError("network down"))
     v._exchange = fake
     sleeps: list[float] = []
     monkeypatch.setattr(
@@ -160,6 +170,37 @@ async def test_submit_retries_then_rejects(monkeypatch):
     assert "network down" in result.payload["error"]
     assert len(fake.calls) == 3  # max_retries attempts
     assert sleeps[0] == 0.5 and sleeps[1] == 1.0 and len(sleeps) == 3  # backoff after each attempt
+
+
+@pytest.mark.asyncio
+async def test_submit_non_retryable_rejected_without_retry(monkeypatch):
+    v = CcxtVenue(exchange_id="bybit", api_key="k", api_secret="s", max_retries=3)
+    fake = FakeExchange(error=FakeCcxt.ExchangeError("insufficient funds"))
+    v._exchange = fake
+    sleeps: list[float] = []
+    monkeypatch.setattr(
+        "cryptobot.execution.venue.ccxt_venue.asyncio.sleep",
+        lambda s: sleeps.append(s) or _noop(),
+    )
+    result = await v.submit_order(make_order())
+    assert result.status == OrderStatus.REJECTED
+    assert "insufficient funds" in result.payload["error"].lower()
+    assert len(fake.calls) == 1  # rejected immediately, no retry
+    assert sleeps == []  # no backoff scheduled
+
+
+@pytest.mark.asyncio
+async def test_submit_generates_client_order_id_when_missing():
+    v = CcxtVenue(exchange_id="binance", api_key="k", api_secret="s")
+    fake = FakeExchange()
+    v._exchange = fake
+    order = make_order()  # no client_order_id supplied
+    result = await v.submit_order(order)
+    assert result.status == OrderStatus.FILLED
+    assert order.client_order_id  # generated
+    assert fake.calls[0][5].get("newClientOrderId") == order.client_order_id
+    # Binance-compatible 32-char hex id
+    assert len(order.client_order_id) == 32
 
 
 async def _noop():
@@ -265,3 +306,60 @@ def test_factory_paper_mode_ignores_exchange_id():
     from cryptobot.execution.venue.simulated import SimulatedVenue
 
     assert isinstance(build_venue("paper", exchange_id="bybit"), SimulatedVenue)
+
+
+# ------------------------------------------------------- protective stops
+
+
+@pytest.mark.asyncio
+async def test_place_protective_stop_success():
+    v = CcxtVenue(exchange_id="bybit", api_key="k", api_secret="s")
+    fake = FakeExchange()
+    v._exchange = fake
+
+    class StopResp(dict):
+        pass
+
+    async def create_order(symbol, type_, side, amount, price, params):
+        fake.calls.append((symbol, type_, side, amount, price, dict(params)))
+        return {"id": "stop-1"}
+
+    fake.create_order = create_order
+    oid = await v.place_protective_stop("BTCUSDT", "sell", 0.01, 45000.0)
+    assert oid == "stop-1"
+    symbol, type_, side, qty, price, params = fake.calls[0]
+    assert (symbol, side) == ("BTC/USDT", "sell")
+    assert params["reduceOnly"] is True and params["stopPrice"] == 45000.0
+
+
+@pytest.mark.asyncio
+async def test_place_protective_stop_binance_type():
+    v = CcxtVenue(exchange_id="binance", api_key="k", api_secret="s")
+    fake = FakeExchange()
+
+    async def create_order(symbol, type_, side, amount, price, params):
+        fake.calls.append((symbol, type_, side))
+        return {"id": "s2"}
+
+    fake.create_order = create_order
+    v._exchange = fake
+    await v.place_protective_stop("ETHUSDT", "buy", 1.0, 3000.0)
+    assert fake.calls[0][1] == "stop_market"  # binance-specific type name
+
+
+@pytest.mark.asyncio
+async def test_place_protective_stop_failure_returns_none():
+    v = CcxtVenue(exchange_id="bybit", api_key="k", api_secret="s")
+
+    class Boom(FakeExchange):
+        async def create_order(self, *a):
+            raise RuntimeError("rejected")
+
+    v._exchange = Boom()
+    assert await v.place_protective_stop("BTCUSDT", "sell", 1.0, 1.0) is None
+
+
+@pytest.mark.asyncio
+async def test_place_protective_stop_no_creds_returns_none():
+    v = CcxtVenue(exchange_id="bybit", api_key="", api_secret="")
+    assert await v.place_protective_stop("BTCUSDT", "sell", 1.0, 1.0) is None

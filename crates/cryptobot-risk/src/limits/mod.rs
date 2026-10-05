@@ -41,9 +41,7 @@ pub fn check_order(
 ) -> LimitCheck {
     // NaN fails closed (issue #41): `NaN > x` is always false, so a poisoned
     // upstream computation used to sail through every gate.
-    if !current_exposure_pct.is_finite()
-        || !order_exposure_pct.is_finite()
-        || !leverage.is_finite()
+    if !current_exposure_pct.is_finite() || !order_exposure_pct.is_finite() || !leverage.is_finite()
     {
         return LimitCheck::Fail {
             reason: "non-finite input",
@@ -127,5 +125,24 @@ mod tests {
         let mid = drawdown_scale(0.55, 0.10, 0.2);
         assert!(mid < 1.0 && mid > 0.2);
         assert_eq!(drawdown_scale(1.0, 0.10, 0.2), 0.2);
+    }
+
+    #[test]
+    fn non_finite_inputs_fail_closed() {
+        // Issue #41: NaN/inf inputs must fail closed, not pass every gate
+        // (NaN > x is always false, so the raw comparisons would pass).
+        let l = RiskLimits::default();
+        assert!(matches!(
+            check_order(&l, f64::NAN, 0.1, 1.0),
+            LimitCheck::Fail { .. }
+        ));
+        assert!(matches!(
+            check_order(&l, 0.1, f64::NAN, 1.0),
+            LimitCheck::Fail { .. }
+        ));
+        assert!(matches!(
+            check_order(&l, 0.1, 0.1, f64::INFINITY),
+            LimitCheck::Fail { .. }
+        ));
     }
 }

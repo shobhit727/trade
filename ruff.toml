@@ -8,6 +8,13 @@ ignore = ["E501"]
 [lint.per-file-ignores]
 "tests/*" = ["B"]
 
+[lint.isort]
+# Pin first-party explicitly. Without this, ruff's package detection differs between
+# a working tree (which has .venv/) and a clean CI checkout: it classified
+# `nsealgo.data.*` as a separate section from the rest of `nsealgo`, producing
+# order-dependent I001 failures that passed locally and failed in CI.
+known-first-party = ["nsealgo", "cryptobot"]
+
 [format]
 quote-style = "double"
 indent-style = "space"

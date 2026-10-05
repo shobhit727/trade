@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-from cryptobot.strategies.indicators import ema
+from cryptobot.strategies.indicators import dema
 from cryptobot.strategies.signal_base import SignalStrategy
 
 
@@ -25,7 +25,7 @@ class DemaStrategy(SignalStrategy):
         return self.config.period
 
     def signal(self, closes, highs, lows, volumes):
-        d = ema(closes, self.config.period)
+        d = dema(closes, self.config.period)
         if d != d:
             return 0
         return 1 if closes[-1] > d else -1

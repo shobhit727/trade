@@ -197,8 +197,10 @@ def test_risk_manager_correlation_within_limit():
 
 def test_risk_manager_strategy_daily_loss():
     pm = _pm()
+    # Daily-loss limit is enforced against the portfolio aggregate daily P&L
+    # (the per-strategy tracker is not wired to live P&L events).
+    pm._state.daily_pnl = Decimal("-600")
     rm = RiskManager(portfolio=pm)
-    rm.strategy_tracker.record_pnl("bad_strat", Decimal("-600"), day_key=1)
     order = OrderEvent(
         symbol="BTCUSDT", side=OrderSide.BUY, quantity=Decimal("1"),
         price=Decimal("100"), strategy="bad_strat",

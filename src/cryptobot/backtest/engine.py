@@ -9,7 +9,15 @@ from typing import Any
 
 from cryptobot.backtest.funding import SETTLEMENT_HOURS, FundingProvider, funding_cashflow
 from cryptobot.core.clock import ClockFactory, SimulatedClock
-from cryptobot.core.events import Event, EventType, OrderEvent, OrderStatus, PositionSide
+from cryptobot.core.events import (
+    Event,
+    EventType,
+    OrderEvent,
+    OrderSide,
+    OrderStatus,
+    OrderType,
+    PositionSide,
+)
 from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
 from cryptobot.core.state import Position
 
@@ -65,6 +73,7 @@ class BacktestResult:
     avg_win: Decimal
     avg_loss: Decimal
     equity_curve: list[tuple[datetime, Decimal]]
+    bankrupt: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -101,6 +110,35 @@ class TradeRecord:
     fees: Decimal
     strategy: str
 
+
+
+def _feed_with_ts(strategy_or_feed, symbol: str, *args, ts: int | None = None):
+    """Call a strategy feed with the OHLCV args it actually accepts.
+
+    ``args`` is the full (close, high, low, volume) tail; legacy feeds that
+    only take (symbol, close) get truncated to what their signature allows.
+    Session-aware strategies (ts kwarg or **kwargs) also receive ts.
+    Accepts either a strategy object or an already-bound ``strategy.feed``.
+    """
+    import inspect
+    feed = getattr(strategy_or_feed, "feed", strategy_or_feed)
+    try:
+        sig = inspect.signature(feed)
+    except (TypeError, ValueError):
+        return feed(symbol, *args)
+    params = [p for p in sig.parameters.values()
+              if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
+    if params and params[0].name == "self":
+        params = params[1:]
+    var_kw = any(p.kind is p.VAR_KEYWORD for p in sig.parameters.values())
+    names = [p.name for p in params]
+
+    # Feeds are positional by convention: (symbol, close[, high[, low[, volume]]]).
+    n_ohlcv = max(0, min(len(params) - 1, len(args)))
+    if var_kw:
+        n_ohlcv = len(args)
+    kw = {"ts": ts} if (ts is not None and ("ts" in names or var_kw)) else {}
+    return feed(symbol, *args[:n_ohlcv], **kw)
 
 class BacktestEngine:
     """
@@ -140,6 +178,7 @@ class BacktestEngine:
         self._cash: Decimal = Decimal("0")
         self._initialized = False
         self._last_bar_utc: datetime | None = None
+        self._bankrupt = False
 
     async def initialize(self):
         """Initialize the backtest engine."""
@@ -175,7 +214,10 @@ class BacktestEngine:
 
         return self._compute_result()
 
-    async def run_bars(self, bars, strategy, symbol: str, execution_engine, risk_fraction: float = 0.0) -> BacktestResult:
+    async def run_bars(self, bars, strategy, symbol: str, execution_engine,
+                       risk_fraction: float = 0.0,
+                       max_leverage: Decimal | None = None,
+                       bankruptcy_floor: Decimal | None = None) -> BacktestResult:
         """Run the backtest simulation directly over bars.
 
         Fast path: the strategy is fed synchronously bar-by-bar and only dips
@@ -195,11 +237,24 @@ class BacktestEngine:
         logger.info("Initial capital: %s", self.initial_capital)
 
         feed = strategy.feed
+        self._bankrupt = False
+        # Default floor mirrors a maintenance-margin liquidation buffer: fire
+        # slightly ABOVE zero so the flatten lands in positive cash. A floor
+        # of exactly 0 cannot prevent crossing zero between bars.
+        floor = (
+            bankruptcy_floor
+            if bankruptcy_floor is not None
+            else self.initial_capital * Decimal("0.02")
+        )
         if getattr(strategy, "name", "") == "trend_following":
             for bar in bars:
                 await self._maybe_settle_funding(bar.timestamp)
                 await self._mark_to_market(symbol, Decimal(str(bar.close)), bar.timestamp)
-                order = feed(symbol, bar.high, bar.low, bar.close)
+                if await self._check_bankruptcy(symbol, execution_engine, bar,
+                                                str(bar.close), floor):
+                    break
+                order = _feed_with_ts(feed, symbol, bar.high, bar.low, bar.close,
+                                      ts=int(bar.timestamp.timestamp() * 1000))
                 if order is None:
                     continue
                 await self._run_orders(order, execution_engine, bar, str(bar.close), strategy, risk_fraction)
@@ -207,7 +262,16 @@ class BacktestEngine:
             for bar in bars:
                 await self._maybe_settle_funding(bar.timestamp)
                 await self._mark_to_market(symbol, Decimal(str(bar.close)), bar.timestamp)
-                order = feed(symbol, bar.close)
+                if await self._check_bankruptcy(symbol, execution_engine, bar,
+                                                str(bar.close), floor):
+                    break
+                if max_leverage is not None and max_leverage > 1:
+                    await self._check_liquidation(symbol, execution_engine, bar,
+                                                  str(bar.close), max_leverage)
+                order = _feed_with_ts(feed, symbol, float(bar.close),
+                                      float(bar.high), float(bar.low),
+                                      float(getattr(bar, "volume", 0.0) or 0.0),
+                                      ts=int(bar.timestamp.timestamp() * 1000))
                 if order is None:
                     continue
                 await self._run_orders(order, execution_engine, bar, str(bar.close), strategy, risk_fraction)
@@ -222,16 +286,84 @@ class BacktestEngine:
         segments plus jumps. Also keeps funding accrual off stale entry prices.
         """
         pos = self._positions.get(symbol)
+        if self._clock and ts >= self._clock.current_time:
+            await self._clock.step(ts - self._clock.current_time)
         if pos is None or price <= 0:
+            # Flat periods must still land on the curve: skipping them made
+            # trade-to-trade jumps look adjacent and inflated Sharpe (#32).
+            await self._update_equity()
             return
         pos.mark_price = price
         if pos.side == PositionSide.LONG:
             pos.unrealized_pnl = (price - pos.entry_price) * pos.quantity
         else:
             pos.unrealized_pnl = (pos.entry_price - price) * pos.quantity
-        if self._clock and ts > self._clock.current_time:
-            await self._clock.step(ts - self._clock.current_time)
         await self._update_equity()
+
+    async def _check_bankruptcy(self, symbol: str, execution_engine, bar,
+                                close_str: str, floor: Decimal) -> bool:
+        """Halt trading when equity hits the bankruptcy floor (issue #55).
+
+        Flattens every position at the current mark so equity lands as pure
+        cash, records the liquidation trades, and stops the run. Without this
+        the engine happily compounded to negative equity on losing configs.
+        """
+        state = self._portfolio.get_state()
+        if state.total_equity > floor:
+            return False
+
+        logger.error(
+            "BANKRUPTCY FLOOR HIT: equity %s <= %s at %s; flattening and halting",
+            state.total_equity.quantize(Decimal("0.01")),
+            floor.quantize(Decimal("0.01")), close_str,
+        )
+        for pos_sym, pos in list(self._positions.items()):
+            close_side = OrderSide.SELL if pos.side == PositionSide.LONG else OrderSide.BUY
+            liq = OrderEvent(
+                symbol=pos_sym,
+                side=close_side,
+                type=OrderType.MARKET,
+                quantity=abs(pos.quantity),
+                reduce_only=True,
+                strategy="bankruptcy",
+            )
+            await self._run_orders(liq, execution_engine, bar, close_str, None, 0.0)
+        self._bankrupt = True
+        return True
+
+    async def _check_liquidation(self, symbol: str, execution_engine, bar,
+                                 close_str: str, leverage: Decimal) -> None:
+        """Approximate isolated-margin liquidation for leveraged backtests.
+
+        Margin for the position is notional / leverage; when unrealized loss
+        eats 95% of that margin the position is force-closed at the mark.
+        Daily bars make this coarse but it keeps leveraged races honest -
+        without it a 3x run silently survives moves that would have wiped it.
+        """
+        pos = self._positions.get(symbol)
+        if pos is None or pos.quantity <= 0:
+            return
+        notional = pos.quantity * pos.mark_price
+        if notional <= 0:
+            return
+        margin = notional / leverage
+        loss = -pos.unrealized_pnl
+        if loss >= margin * Decimal("0.95"):
+            logger.warning(
+                "LIQUIDATION %s: loss %s >= 95%% of margin %s at %s",
+                symbol, loss.quantize(Decimal("0.01")),
+                margin.quantize(Decimal("0.01")), close_str,
+            )
+            liq_order = OrderEvent(
+                symbol=symbol,
+                side=OrderSide.SELL if pos.side == PositionSide.LONG else OrderSide.BUY,
+                type=OrderType.MARKET,
+                quantity=pos.quantity,
+                reduce_only=True,
+                strategy="liquidation",
+            )
+            await self._run_orders(liq_order, execution_engine, bar, close_str,
+                                   None, 0.0)
 
     async def _run_orders(
         self,
@@ -396,6 +528,7 @@ class BacktestEngine:
         )
 
         return BacktestResult(
+            bankrupt=self._bankrupt,
             start_time=self.start_time,
             end_time=self.end_time,
             initial_capital=self.initial_capital,

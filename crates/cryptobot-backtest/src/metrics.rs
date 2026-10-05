@@ -29,9 +29,8 @@ impl PerformanceMetrics {
 
         // Downside deviation over ALL observations vs zero MAR (issue #40):
         // sqrt(mean(min(r, 0)^2)) — the previous losses-only std inflated Sortino ~2-4x.
-        let downside_dev = (returns.iter().map(|r| r.min(0.0).powi(2)).sum::<f64>()
-            / returns.len() as f64)
-            .sqrt();
+        let downside_dev =
+            (returns.iter().map(|r| r.min(0.0).powi(2)).sum::<f64>() / returns.len() as f64).sqrt();
 
         let sharpe = if std_dev > 0.0 { mean / std_dev } else { 0.0 };
         let sortino = if downside_dev > 0.0 {
@@ -114,7 +113,11 @@ mod tests {
         assert!((m.sortino_ratio - expected).abs() < 1e-9);
         // The old losses-only formula reported ~7.9 for this series; the correct
         // value is ~3.55.
-        assert!(m.sortino_ratio < 5.0, "sortino inflated: {}", m.sortino_ratio);
+        assert!(
+            m.sortino_ratio < 5.0,
+            "sortino inflated: {}",
+            m.sortino_ratio
+        );
     }
 
     #[test]
@@ -123,6 +126,10 @@ mod tests {
         // 0.15/0.30 = 0.5. The old max(peak,1.0) divisor reported 0.15 here.
         let returns = vec![0.3, -0.15];
         let m = PerformanceMetrics::calculate(&returns);
-        assert!((m.max_drawdown - 0.5).abs() < 1e-9, "got {}", m.max_drawdown);
+        assert!(
+            (m.max_drawdown - 0.5).abs() < 1e-9,
+            "got {}",
+            m.max_drawdown
+        );
     }
 }

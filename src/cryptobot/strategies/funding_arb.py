@@ -76,6 +76,11 @@ class FundingArbStrategy:
         if len(args) == 1 and isinstance(args[0], FundingArbState):
             st = args[0]
             return self.decide(st.spot_price, st.perp_price, Decimal(str(st.funding_rate)))
+        if len(args) == 2:
+            # Single-bar OHLCV feed (backtest engine / sweeps): this strategy
+            # is a two-leg spot+perp trade and cannot act on one price.
+            self.last_action = "needs_spot_perp_funding_feed"
+            return None
         ts, s, p, rate = args
         return self.decide(s, p, Decimal(str(rate)))
 

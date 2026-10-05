@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-from cryptobot.strategies.indicators import ema
+from cryptobot.strategies.indicators import kama
 from cryptobot.strategies.signal_base import SignalStrategy
 
 
@@ -22,10 +22,10 @@ class KamaStrategy(SignalStrategy):
         super().__init__(config or KamaConfig())
 
     def warmup(self, closes) -> int:
-        return self.config.period
+        return self.config.period + 1
 
     def signal(self, closes, highs, lows, volumes):
-        e = ema(closes, self.config.period)
+        e = kama(closes, self.config.period)
         if e != e:
             return 0
         return 1 if closes[-1] > e else -1

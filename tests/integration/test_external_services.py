@@ -184,15 +184,15 @@ def test_sqlite_state_manager_roundtrip(tmp_path):
     if sqlite3 is None:  # pragma: no cover - graceful fallback path
         pytest.skip("sqlite3 unavailable in this interpreter")
 
-    from cryptobot.core.events import OrderEvent, OrderSide, OrderStatus, OrderType
-    from cryptobot.core.state import StateManager
+    from cryptobot.core.events import OrderSide, OrderStatus, OrderType
+    from cryptobot.core.state import Order, StateManager
 
     db_file = tmp_path / "cryptobot.db"
     mgr = StateManager()
     mgr._db_path = str(db_file)
     mgr._init_db()
 
-    order = OrderEvent(
+    order = Order(
         order_id="o-int-1", symbol="BTCUSDT", side=OrderSide.BUY, type=OrderType.LIMIT,
         quantity=Decimal("1"), price=Decimal("100"), status=OrderStatus.NEW,
     )

@@ -41,4 +41,14 @@ mod tests {
         let vol = realized_volatility(&returns, 3);
         assert_eq!(vol.len(), 4);
     }
+
+    #[test]
+    fn ewma_rejects_invalid_lambda() {
+        // λ outside [0, 1] makes the recursion negative -> sqrt(NaN) poisons the
+        // stream (issue #53). Guard returns an empty series instead.
+        let returns = vec![0.01, -0.005, 0.02, -0.01];
+        assert!(ewma_volatility(&returns, 1.5).is_empty());
+        assert!(ewma_volatility(&returns, -0.1).is_empty());
+        assert!(ewma_volatility(&[], 0.94).is_empty());
+    }
 }

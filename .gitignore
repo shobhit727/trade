@@ -27,9 +27,15 @@ data/parquet/
 data/cache/
 data/*.db
 *.db
-logs/
 *.log
 
 
-# local market data downloads
-data/
+# Local market data downloads and scratch dirs.
+# NOTE: these MUST be root-anchored. A bare `data/` matches ANY directory named
+# `data` at any depth, which silently ignored src/nsealgo/data/ -- the entire
+# data-cleaning layer was missing from the repo while existing in the working
+# tree, so CI failed with "No module named 'nsealgo.data'".
+/data/
+/tmp/
+/logs/
+/state-nse/

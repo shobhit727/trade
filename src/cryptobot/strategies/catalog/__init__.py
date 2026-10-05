@@ -54,6 +54,12 @@ from cryptobot.strategies.catalog.momentum_factor import MomentumFactorConfig, M
 from cryptobot.strategies.catalog.momentum_vol import MomentumVolConfig, MomentumVolStrategy
 from cryptobot.strategies.catalog.multi_factor import MultiFactorConfig, MultiFactorStrategy
 from cryptobot.strategies.catalog.nr4 import Nr4Config, Nr4Strategy
+from cryptobot.strategies.catalog.nse_intraday import (
+    NseOrbConfig,
+    NseOrbStrategy,
+    VwapRevertConfig,
+    VwapRevertStrategy,
+)
 from cryptobot.strategies.catalog.obv import ObvConfig, ObvStrategy
 from cryptobot.strategies.catalog.open_range import OpenRangeConfig, OpenRangeStrategy
 from cryptobot.strategies.catalog.price_channel import PriceChannelConfig, PriceChannelStrategy
@@ -171,6 +177,8 @@ _SPECS: list[tuple[str, type, type]] = [
     ("volume_momentum", VolumeMomentumStrategy, VolumeMomentumConfig),
     ("volume_profile", VolumeProfileStrategy, VolumeProfileConfig),
     ("volume_spike", VolumeSpikeStrategy, VolumeSpikeConfig),
+    ("nse_orb", NseOrbStrategy, NseOrbConfig),
+    ("vwap_revert", VwapRevertStrategy, VwapRevertConfig),
     ("vw_momentum", VwMomentumStrategy, VwMomentumConfig),
     ("vwap", VwapStrategy, VwapConfig),
     ("williams_r", WilliamsRStrategy, WilliamsRConfig),

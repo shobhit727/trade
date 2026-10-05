@@ -4,10 +4,19 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
 from decimal import Decimal
 
+from cryptobot.config import get_settings
 from cryptobot.core.events import OrderEvent, OrderSide, OrderStatus, OrderType
+
+
+def _get_server_host() -> str:
+    return get_settings().server.host
+
+def _get_server_port() -> int:
+    return get_settings().server.port
 
 logger = logging.getLogger(__name__)
 
@@ -70,21 +79,27 @@ def build_parser() -> argparse.ArgumentParser:
     predict.add_argument("--json", action="store_true")
 
     serve = sub.add_parser("serve", help="Run the health/metrics HTTP server only")
-    serve.add_argument("--host", default="127.0.0.1")
-    serve.add_argument("--port", type=int, default=8080)
+    serve.add_argument("--host", default=None, help=f"Host to bind (default: {_get_server_host()})")
+    serve.add_argument("--port", type=int, default=None, help=f"Port to bind (default: {_get_server_port()})")
 
     bot = sub.add_parser(
         "bot",
         help="Run the live/paper trading loop (market data -> strategy -> execution)",
     )
-    bot.add_argument("--host", default="127.0.0.1")
-    bot.add_argument("--port", type=int, default=8080)
+    bot.add_argument("--host", default=None, help=f"Host to bind (default: {_get_server_host()})")
+    bot.add_argument("--port", type=int, default=None, help=f"Port to bind (default: {_get_server_port()})")
     bot.add_argument("--strategy", default="trend_following")
     bot.add_argument("--symbol", default="BTCUSDT")
     bot.add_argument("--timeframe", default="1m")
     bot.add_argument("--mode", choices=["paper", "live"], default="paper")
     bot.add_argument("--warmup", type=int, default=300, help="REST bars used to prime indicators")
     bot.add_argument("--max-bars", type=int, default=None, help="stop after N closed bars (dry-run)")
+    bot.add_argument("--algos-json", default=None,
+                     help="Multi-algo mode: JSON list "
+                          "'[{\"name\":\"dual_ma\",\"params\":{},\"weight\":0.6}, ...]' "
+                          "(or BOT_ALGOS env)")
+    bot.add_argument("--strategy-params", default=None,
+                     help="JSON dict of strategy config overrides, e.g. '{\"fast\":5,\"slow\":50}'")
     bot.add_argument("--profile", choices=["realistic", "aggressive"], default="realistic", help="Risk profile preset")
 
     validate_cmd = sub.add_parser("validate", help="Validate backtest statistical significance")
@@ -239,6 +254,11 @@ async def _run(args: argparse.Namespace) -> int:
         ds.bars = ds.bars[: args.bars]
         venue = SimulatedVenue()
         engine = ExecutionEngine(venue=venue, risk_manager=RiskManager())
+        # The mm CLI is a simulation: bypass the live kill-switch / rate-limiter
+        # gates (which depend on wall-clock time) while keeping the structural
+        # order-size limits. Without this, the per-minute rate limit rejects
+        # every order after the first 60 in a tight loop.
+        engine.risk_manager.backtest_mode = True
         cfg = MarketMakingConfig(
             symbol=args.symbol,
             gamma=args.gamma,
@@ -248,7 +268,7 @@ async def _run(args: argparse.Namespace) -> int:
         )
         strategy = MarketMakingStrategy(cfg)
         strategy.attach_execution(engine)
-        fills = strategy.run_on_history(ds.bars)
+        fills = await strategy.run_on_history(ds.bars)
         if args.json:
             json.dump(
                 {
@@ -276,17 +296,20 @@ async def _run(args: argparse.Namespace) -> int:
 
     if args.command == "ml":
         from cryptobot.backtest.data import load_bars
-        from cryptobot.ml.features import build_features
-        from cryptobot.ml.models.direction import DirectionClassifier
+        from cryptobot.ml.models.direction import (
+            DirectionClassifier,
+            DirectionConfig,
+            features_and_labels,
+        )
 
         ds = load_bars(source=args.source, symbol="BTCUSDT", timeframe="1h")
-        bars = ds.bars[: args.bars]
-        features = build_features(bars)
-        clf = DirectionClassifier(horizon=args.horizon)
-        score = clf.walk_forward_score(features, n_splits=4)
+        ds.bars = ds.bars[: args.bars]
+        clf = DirectionClassifier(DirectionConfig(horizon=args.horizon))
+        X, y = features_and_labels(ds, horizon=args.horizon)
+        score = clf.walk_forward_score(X, labels=y, n_splits=4)
         out = {
-            "n_samples": len(features),
-            "n_features": features.shape[1] if hasattr(features, "shape") else len(features[0]),
+            "n_samples": int(len(X)),
+            "n_features": int(X.shape[1]),
             "walk_forward_score": score,
             "model": clf.summary(),
         }
@@ -356,17 +379,29 @@ async def _run(args: argparse.Namespace) -> int:
             )
             await asyncio.sleep(5)
 
-        trader = LiveTrader(LiveTraderConfig(
+        host = args.host if args.host is not None else _get_server_host()
+        port = args.port if args.port is not None else _get_server_port()
+        base_cfg = LiveTraderConfig(
             risk_profile=args.profile,
+            strategy_params=json.loads(
+                getattr(args, "strategy_params", None)
+                or os.getenv("BOT_PARAMS") or "{}"),
             strategy=args.strategy,
             symbol=args.symbol,
             timeframe=args.timeframe,
             mode=args.mode,
-            host=args.host,
-            port=args.port,
+            host=host,
+            port=port,
             warmup_bars=args.warmup,
             max_bars=args.max_bars,
-        ))
+        )
+        if getattr(args, "algos_json", None) or os.getenv("BOT_ALGOS"):
+            from cryptobot.live.multi_trader import load_multi_config
+
+            trader = load_multi_config(base_cfg, args.algos_json,
+                                       os.getenv("BOT_ALGOS"))
+        else:
+            trader = LiveTrader(base_cfg)
         loop = asyncio.get_running_loop()
         import signal
 
@@ -375,8 +410,12 @@ async def _run(args: argparse.Namespace) -> int:
                 loop.add_signal_handler(sig, trader.request_stop)
             except NotImplementedError:  # pragma: no cover - windows
                 pass
+        _label = (f"multi[{len(trader.slots)}]" if hasattr(trader, "slots")
+                  else args.strategy)
+        log_host = host
+        log_port = port
         logger.info("bot running: %s %s %s mode=%s health=http://%s:%d/health",
-                    args.strategy, args.symbol, args.timeframe, args.mode, args.host, args.port)
+                    _label, args.symbol, args.timeframe, args.mode, log_host, log_port)
         await trader.run()
         return 0
 

@@ -15,6 +15,7 @@ from cryptobot.core.events import Event, EventType, OrderStatus
 from cryptobot.core.portfolio import PortfolioManager, PortfolioMode
 from cryptobot.execution.engine import ExecutionEngine
 from cryptobot.execution.venue.simulated import SimulatedVenue
+from cryptobot.risk.limits import RiskLimits
 from cryptobot.risk.manager import RiskManager
 from cryptobot.strategies.mean_reversion import MeanReversionConfig, MeanReversionStrategy
 from cryptobot.strategies.trend_following import TrendFollowingConfig, TrendFollowingStrategy
@@ -202,16 +203,19 @@ async def _stream_filled_events(
         order = None
         if hasattr(strategy, "feed") and hasattr(strategy, "name"):
             if strategy.name == "trend_following":
-                order = strategy.feed(symbol, bar.high, bar.low, bar.close)
+                order = _feed_with_ts(strategy, symbol, bar.high, bar.low, bar.close,
+                                      ts=int(bar.timestamp.timestamp() * 1000))
             else:
                 # New signal strategies (catalog) accept (symbol, close, high, low, volume);
                 # legacy 2-arg feed takes (symbol, close) — try both.
                 try:
                     order = strategy.feed(
                         symbol, bar.close, bar.high, bar.low, bar.volume,
+                        ts=int(bar.timestamp.timestamp() * 1000),
                     )
                 except TypeError:
-                    order = strategy.feed(symbol, bar.close)
+                    order = _feed_with_ts(strategy, symbol, bar.close,
+                                          ts=int(bar.timestamp.timestamp() * 1000))
         if order is None:
             continue
         if not isinstance(order, list):
@@ -238,6 +242,34 @@ async def _stream_filled_events(
                 )
 
 
+def _feed_with_ts(strategy_or_feed, symbol: str, *args, ts: int | None = None):
+    """Call a strategy feed with the OHLCV args it actually accepts.
+
+    ``args`` is the full (close, high, low, volume) tail; legacy feeds that
+    only take (symbol, close) get truncated to what their signature allows.
+    Session-aware strategies (ts kwarg or **kwargs) also receive ts.
+    Accepts either a strategy object or an already-bound ``strategy.feed``.
+    """
+    import inspect
+    feed = getattr(strategy_or_feed, "feed", strategy_or_feed)
+    try:
+        sig = inspect.signature(feed)
+    except (TypeError, ValueError):
+        return feed(symbol, *args)
+    params = [p for p in sig.parameters.values()
+              if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
+    if params and params[0].name == "self":
+        params = params[1:]
+    var_kw = any(p.kind is p.VAR_KEYWORD for p in sig.parameters.values())
+    names = [p.name for p in params]
+
+    # Feeds are positional by convention: (symbol, close[, high[, low[, volume]]]).
+    n_ohlcv = max(0, min(len(params) - 1, len(args)))
+    if var_kw:
+        n_ohlcv = len(args)
+    kw = {"ts": ts} if (ts is not None and ("ts" in names or var_kw)) else {}
+    return feed(symbol, *args[:n_ohlcv], **kw)
+
 async def run_backtest(
     bars: Sequence[OhlcvBar],
     strategy,
@@ -249,6 +281,8 @@ async def run_backtest(
     collect_trades: bool = False,
     funding: FundingProvider | None = None,
     risk_fraction: float = 0.0,
+    max_leverage: Decimal | None = None,
+    risk_limits: RiskLimits | None = None,
 ) -> BacktestRunResult:
     """Run a backtest with optional equity-fractional order sizing.
 
@@ -267,7 +301,11 @@ async def run_backtest(
         )
         execution_engine = ExecutionEngine(
             venue=venue,
-            risk_manager=RiskManager(portfolio=portfolio, backtest_mode=True),
+            risk_manager=RiskManager(
+                portfolio=portfolio,
+                backtest_mode=True,
+                limits=risk_limits or RiskLimits(),
+            ),
         )
     else:
         portfolio = execution_engine.risk_manager.portfolio
@@ -281,7 +319,8 @@ async def run_backtest(
         portfolio=portfolio,
         funding=funding,
     )
-    bt_result = await bt_engine.run_bars(bars, strategy, symbol, execution_engine, risk_fraction)
+    bt_result = await bt_engine.run_bars(bars, strategy, symbol, execution_engine,
+                                         risk_fraction, max_leverage=max_leverage)
 
     initial = Decimal(str(initial_capital))
     total_return = float((bt_result.final_equity - initial) / initial) if initial else 0.0

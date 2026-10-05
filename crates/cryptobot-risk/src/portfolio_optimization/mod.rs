@@ -151,6 +151,17 @@ mod tests {
     }
 
     #[test]
+    fn mean_variance_preserves_negative_weights() {
+        // Mixed-sign expected returns yield a short (negative) weight. The old
+        // implementation truncated negatives to 0.0, distorting the portfolio
+        // (issue #53). With no short-sale constraint the raw weight must survive.
+        let cov = diag_cov(&[4.0, 9.0]);
+        let w = mean_variance_weights(&[0.1, -0.05], &cov).unwrap();
+        assert!((w.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+        assert!(w[1] < 0.0, "negative weight was truncated: {:?}", w);
+    }
+
+    #[test]
     fn mean_variance_singular_returns_none() {
         let cov = vec![vec![1.0, 1.0], vec![1.0, 1.0]];
         assert!(mean_variance_weights(&[0.1, 0.1], &cov).is_none());
