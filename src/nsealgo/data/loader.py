@@ -18,7 +18,6 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
-import numpy as np
 import pandas as pd
 
 # --------------------------------------------------------------------------- #
@@ -60,7 +59,7 @@ class CleaningReport:
     excluded_symbols: list[str] = field(default_factory=list)
     extreme_log: list[tuple[str, str, float]] = field(default_factory=list)
 
-    def merge(self, other: "CleaningReport") -> None:
+    def merge(self, other: CleaningReport) -> None:
         self.rows_in += other.rows_in
         self.rows_out += other.rows_out
         self.dropped_pre_2008 += other.dropped_pre_2008
