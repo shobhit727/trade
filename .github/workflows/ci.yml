@@ -190,9 +190,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements/nse.txt
-          # tests/conftest.py imports pytest-asyncio at module scope, so it is
-          # required even for the nsealgo-only subset.
-          pip install pytest pytest-asyncio pytest-timeout
+          # Tests inherit the repo-wide tests/conftest.py, which imports
+          # pytest-asyncio and cryptobot.utils.logging (which needs structlog).
+          # Both are installed here rather than in requirements/nse.txt, because
+          # that file is the lean RUNTIME image dependency set.
+          pip install pytest pytest-asyncio pytest-timeout structlog
       - name: Lint nsealgo + research
         run: |
           python -m pip install ruff==0.16.1
