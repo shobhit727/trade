@@ -42,7 +42,7 @@ class PriceLevel:
         self.total_quantity += order.quantity
 
     def remove_order(self, order_id: str) -> Decimal:
-        for _, order in enumerate(self.orders):
+        for order in list(self.orders):
             if order.order_id == order_id:
                 qty = order.quantity
                 self.orders.remove(order)
@@ -100,6 +100,7 @@ class RealisticVenueConfig:
     """Complete configuration for realistic venue."""
     # Market data
     initial_prices: dict[str, Decimal] = field(default_factory=dict)
+    spreads: dict[str, Decimal] = field(default_factory=dict)
 
     # Fee structure
     maker_fee_bps: Decimal = Decimal("1")
@@ -162,16 +163,16 @@ class OrderBookSimulator:
             bid_price = (bid_start - i_dec * tick).quantize(Decimal("0.01"))
             ask_price = (ask_start + i_dec * tick).quantize(Decimal("0.01"))
 
-            # Add liquidity - more at better prices (quantities kept for future use)
+            # Add liquidity - more at better prices
             bid_qty = Decimal(str(random.uniform(10, 100))) * (Decimal("20") - i_dec) / Decimal("20")
             ask_qty = Decimal(str(random.uniform(10, 100))) * (Decimal("20") - i_dec) / Decimal("20")
 
-            self.books[symbol][OrderBookSide.BID][bid_price] = PriceLevel(
-                price=bid_price, side=OrderBookSide.BID, total_quantity=bid_qty
-            )
-            self.books[symbol][OrderBookSide.ASK][ask_price] = PriceLevel(
-                price=ask_price, side=OrderBookSide.ASK, total_quantity=ask_qty
-            )
+            bid_level = PriceLevel(price=bid_price, side=OrderBookSide.BID)
+            bid_level.add_order(QueuePosition(order_id="syb", quantity=bid_qty, timestamp=time.time()))
+            self.books[symbol][OrderBookSide.BID][bid_price] = bid_level
+            ask_level = PriceLevel(price=ask_price, side=OrderBookSide.ASK)
+            ask_level.add_order(QueuePosition(order_id="sya", quantity=ask_qty, timestamp=time.time()))
+            self.books[symbol][OrderBookSide.ASK][ask_price] = ask_level
 
     def get_best_bid(self, symbol: str) -> Decimal | None:
         bids = self.books.get(symbol, {}).get(OrderBookSide.BID, {})
@@ -277,7 +278,11 @@ class OrderBookSimulator:
         return fills
 
     def update_mid_price(self, symbol: str, new_mid: Decimal, volatility: Decimal | None = None) -> None:
-        """Update mid price and shift the book."""
+        """Update mid price and shift the book.
+
+        Resting limit orders are moved to the new shifted price level instead
+        of being wiped (a full rebuild would silently drop open orders).
+        """
         if symbol not in self.books:
             return
 
@@ -291,29 +296,17 @@ class OrderBookSimulator:
         if volatility is not None:
             self.volatilities[symbol] = volatility
 
-        # Rebuild book around new mid
-        spread = self.get_spread(symbol)
-        half_spread = spread / Decimal("2")
-        bid_start = new_mid - half_spread
-        ask_start = new_mid + half_spread
-
-        # Recreate book with new center
-        self.books[symbol] = {OrderBookSide.BID: {}, OrderBookSide.ASK: {}}
+        # Shift existing price levels instead of rebuilding the book
         tick = Decimal(str(self.config.tick_sizes.get(symbol, Decimal("0.01"))))
-
-        for i in range(20):
-            bid_price = (bid_start - Decimal(str(i)) * tick).quantize(Decimal("0.01"))
-            ask_price = (ask_start + Decimal(str(i)) * tick).quantize(Decimal("0.01"))
-
-            bid_qty = Decimal(str(random.uniform(10, 100))) * (Decimal("20") - Decimal(str(i))) / Decimal("20")
-            ask_qty = Decimal(str(random.uniform(10, 100))) * (Decimal("20") - Decimal(str(i))) / Decimal("20")
-
-            self.books[symbol][OrderBookSide.BID][bid_price] = PriceLevel(
-                price=bid_price, side=OrderBookSide.BID, total_quantity=bid_qty
-            )
-            self.books[symbol][OrderBookSide.ASK][ask_price] = PriceLevel(
-                price=ask_price, side=OrderBookSide.ASK, total_quantity=ask_qty
-            )
+        for side in (OrderBookSide.BID, OrderBookSide.ASK):
+            shifted: dict[Decimal, PriceLevel] = {}
+            for price, level in self.books[symbol][side].items():
+                new_price = (price + shift).quantize(tick)
+                if new_price <= 0:
+                    continue
+                level.price = new_price
+                shifted[new_price] = level
+            self.books[symbol][side] = shifted
 
 
 class RealisticVenue(Venue):
@@ -339,7 +332,7 @@ class RealisticVenue(Venue):
         # Initialize symbols
         for symbol, price in self.config.initial_prices.items():
             tick = Decimal(str(self.config.tick_sizes.get(symbol, Decimal("0.01"))))
-            spread = self.config.spreads.get(symbol, Decimal("1")) if hasattr(self.config, 'spreads') else Decimal("1")
+            spread = self.config.spreads.get(symbol, Decimal("1"))
             self.book_sim.initialize_symbol(symbol, price, spread, tick)
             self._last_funding[symbol] = time.time()
 
@@ -415,19 +408,6 @@ class RealisticVenue(Venue):
             self.orders[order.order_id] = order
             return order
 
-        # Determine slippage
-        slippage = self.config.base_slippage_bps
-        if order.type == OrderType.MARKET:
-            slippage = self.config.base_slippage_bps * Decimal("2")  # Market orders pay more
-
-        # Calculate fill price with slippage and market impact
-        fill_price = self._apply_slippage(mark_price, order.side, slippage, order.quantity, symbol)
-
-        # Calculate fees (taker fee for market orders, maker for limit)
-        is_maker = order.type == OrderType.LIMIT
-        fee_bps = self.config.maker_fee_bps if is_maker else self.config.taker_fee_bps
-        fees = (order.quantity * fill_price * fee_bps / Decimal("10000")).quantize(Decimal("0.0001"))
-
         # For limit orders, add to book and wait for match
         if order.type == OrderType.LIMIT and order.price:
             success, queue_pos = self.book_sim.place_order(symbol, order.side, order.price, order.quantity, order.order_id)
@@ -451,11 +431,12 @@ class RealisticVenue(Venue):
             # In reality, this would be async - here we simulate based on probability
             fill_probability = self._calculate_fill_probability(order, symbol)
             if random.random() < fill_probability:
-                fill_qty = min(order.quantity, self._calculate_partial_fill_qty(queue_pos))
+                fill_ratio = self._calculate_fill_ratio(order.quantity, queue_pos)
+                fill_qty = (order.quantity * fill_ratio).quantize(Decimal("0.0001"))
 
                 order.filled_quantity = fill_qty
-                order.avg_fill_price = fill_price
-                order.commission = fees
+                order.avg_fill_price = order.price  # limit fills at the limit price, no slippage
+                order.commission = self._calculate_fee(order, order.avg_fill_price)
                 order.status = OrderStatus.FILLED if fill_qty == order.quantity else OrderStatus.PARTIALLY_FILLED
             else:
                 order.status = OrderStatus.NEW
@@ -476,7 +457,7 @@ class RealisticVenue(Venue):
 
             order.filled_quantity = total_qty
             order.avg_fill_price = fill_price
-            order.commission = fees
+            order.commission = self._calculate_fee(order, fill_price)
             order.status = OrderStatus.FILLED if total_qty == order.quantity else OrderStatus.PARTIALLY_FILLED
 
         order.__post_init__()
@@ -489,8 +470,35 @@ class RealisticVenue(Venue):
         else:
             self._position_qty[symbol] = pos - order.filled_quantity
 
+        # Apply adverse selection after a market (taker) fill
+        if order.status in (OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED) and order.type == OrderType.MARKET:
+            self._apply_adverse_selection(order, mark_price)
+
         self._record_round_trip("realistic", symbol, order.type.value, start)
         return order
+
+    def _calculate_fee(self, order: OrderEvent, fill_price: Decimal) -> Decimal:
+        """Commission on the *filled* quantity (not the requested quantity)."""
+        is_maker = order.type == OrderType.LIMIT
+        fee_bps = self.config.maker_fee_bps if is_maker else self.config.taker_fee_bps
+        return (order.filled_quantity * fill_price * fee_bps / Decimal("10000")).quantize(Decimal("0.0001"))
+
+    def _apply_adverse_selection(self, order: OrderEvent, mark_price: Decimal) -> None:
+        """Move the best bid/ask against a taker fill to reflect toxic flow."""
+        if not self.config.adverse_selection.enabled:
+            return
+        if order.avg_fill_price is None or mark_price <= 0:
+            return
+        adverse = self._calculate_adverse_selection(order.symbol, order.side, order.avg_fill_price, mark_price)
+        if adverse <= 0:
+            return
+        # Toxic flow moves price against the taker's position
+        if order.side == OrderSide.BUY:
+            shifted_mid = self.book_sim.get_mid_price(order.symbol) - adverse
+        else:
+            shifted_mid = self.book_sim.get_mid_price(order.symbol) + adverse
+        if shifted_mid > 0:
+            self.book_sim.update_mid_price(order.symbol, shifted_mid)
 
     def _calculate_fill_probability(self, order: OrderEvent, symbol: str) -> float:
         """Calculate probability of limit order fill based on queue position and market conditions."""
@@ -518,15 +526,19 @@ class RealisticVenue(Venue):
 
         return base_prob * spread_factor * vol_factor
 
-    def _calculate_partial_fill_qty(self, queue_position: Decimal) -> Decimal:
-        """Calculate partial fill quantity based on queue position."""
+    def _calculate_fill_ratio(self, quantity: Decimal, queue_position: Decimal) -> Decimal:
+        """Calculate the *fraction* of an order that fills, based on queue position.
+
+        Returns a value in (0, 1]; apply against ``quantity`` to get the filled
+        quantity. Deep-in-queue orders fill a smaller fraction.
+        """
         if not self.config.queue_model.enabled:
             return Decimal("1")
 
-        # More likely to get partial fill if deep in queue
         max_pos = self.config.queue_model.max_queue_position
         fill_ratio = max(self.config.queue_model.min_fill_ratio, 1.0 - float(queue_position / max(max_pos, 1)))
 
+        _ = quantity  # retained for API symmetry
         return Decimal(str(fill_ratio))
 
     async def cancel_order(self, order_id: str) -> bool:
