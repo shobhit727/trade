@@ -16,7 +16,7 @@ ccxt>=4.4
 pandas>=2.2
 numpy>=2.2
 # Database / storage (lazy imports in data/storage.py: asyncpg for TimescaleDB, pyarrow for Parquet)
-asyncpg>=0.29
+asyncpg>=0.31.0
 pyarrow>=17.0
 
 # Reporting (monthly PDF)
