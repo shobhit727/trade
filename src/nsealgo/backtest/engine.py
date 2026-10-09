@@ -413,10 +413,15 @@ def run_backtest(
     rate = rt_bps / 10_000.0
 
     gross = (held.shift(1).fillna(0.0) * rets).sum(axis=1)
+    # `all_in_round_trip_bps` is quoted per unit of TOTAL turnover. A full rotation of
+    # the book (sell 100%, buy 100%) is sum|dW| = 2.0, so the cost charged must be
+    # sum|dW| * rate -- i.e. twice the one-way turnover. Charging `turnover * rate`
+    # where turnover is already sum|dW|/2 under-charges by exactly 2x, which flatters
+    # every CAGR in the project. Found by the agent_cointegration audit.
     turnover_by_date = pd.Series(0.0, index=px.index)
     turnover_by_date.loc[tgt.index] = (
         (tgt - tgt.shift(1).fillna(0.0)).abs().sum(axis=1) / 2.0
-    ).values
+    ).values  # one-way convention, for reporting
 
     daily = pd.Series(0.0, index=px.index)
     eq = 1.0
@@ -426,7 +431,8 @@ def run_backtest(
         eq *= (1.0 + float(gross.loc[dt]))
         turn_t = float(turnover_by_date.loc[dt])
         if turn_t > 0:
-            cost_amt = turn_t * eq * rate
+            # x2 converts the one-way turnover back to total turnover.
+            cost_amt = 2.0 * turn_t * eq * rate
             eq -= cost_amt
             costs_total += cost_amt
         daily.loc[dt] = eq / prev_eq - 1.0

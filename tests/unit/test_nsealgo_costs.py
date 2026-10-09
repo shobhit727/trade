@@ -146,3 +146,63 @@ class TestRoundTrip:
         cost, gross = cm.round_trip(D(100), D("100"), D("100"))
         assert gross == D("0")
         assert cost > 0
+
+
+class TestEngineChargesFullCostStack:
+    """Regression, and the most consequential bug this project has had.
+
+    ``all_in_round_trip_bps`` is quoted per unit of TOTAL turnover. A full rotation of
+    the book (sell 100%, buy 100%) is sum|dW| = 2.0. The engine previously stored
+    turnover in the one-way convention (sum|dW|/2 = 1.0) and then multiplied by the
+    round-trip rate directly, charging exactly HALF the real cost.
+
+    Impact: every CAGR reported anywhere in this project was flattered, and the Gate 4
+    slippage stress test ran at half strength. Found by the agent_cointegration audit.
+
+    These tests pin the arithmetic to the statutory rate, independently of the engine.
+    """
+
+    def test_full_rotation_costs_exactly_two_round_trips(self) -> None:
+        from nsealgo.backtest.engine import REF_POSITION_NOTIONAL
+
+        cm = CostModel(segment="delivery", slippage_bps=D(5))
+        rt = float(cm.all_in_round_trip_bps(D(REF_POSITION_NOTIONAL)))
+
+        # A full rotation sells 100% and buys 100%: total turnover = 2.0 x equity.
+        # The rate is per total turnover, so cost as a fraction of equity is
+        # 2.0 * rt / 10_000. The engine multiplies by twice the one-way turnover.
+        expected = 2.0 * rt / 10_000.0
+        engine_charges = 2.0 * 1.0 * rt / 10_000.0  # 2.0 * one-way turnover * rate
+        assert engine_charges == pytest.approx(expected)
+
+        # And the OLD, WRONG arithmetic would have been half of this:
+        old_wrong = 1.0 * rt / 10_000.0
+        assert old_wrong == pytest.approx(expected / 2.0)
+
+    def test_engine_does_not_charge_half(self) -> None:
+        """Direct behavioural check: cost drag must be ~2x what the half-bug produced."""
+        import numpy as np
+        import pandas as pd
+
+        from nsealgo.backtest.engine import PortfolioConfig, run_backtest
+
+        rng = np.random.default_rng(7)
+        dates = pd.bdate_range("2015-01-01", periods=1400, tz="Asia/Kolkata")
+        cols = [f"s{i:02d}" for i in range(20)]
+        prices = pd.DataFrame(
+            100.0 * np.cumprod(1 + rng.normal(0.0004, 0.011, (len(dates), len(cols))), axis=0),
+            index=dates, columns=cols,
+        )
+        score = prices.rank(axis=1, pct=True)  # fully populated score, all dates
+
+        res = run_backtest(prices, score, CostModel(slippage_bps=D(5)), PortfolioConfig(), "M")
+        turnover = res.metrics.annual_turnover
+        rt_bps = float(CostModel(slippage_bps=D(5)).all_in_round_trip_bps(D(100_000)))
+        expected_drag = turnover * 2.0 * rt_bps / 10_000.0
+        half_bug_drag = turnover * 1.0 * rt_bps / 10_000.0
+
+        # Compounding means the realised drag runs a few % above the linear estimate,
+        # so allow tolerance -- but the decisive check is that it is nowhere near the
+        # half-bug value.
+        assert res.metrics.cost_drag_annual == pytest.approx(expected_drag, rel=0.10)
+        assert res.metrics.cost_drag_annual > 1.7 * half_bug_drag

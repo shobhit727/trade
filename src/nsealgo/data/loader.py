@@ -250,6 +250,26 @@ def load_universe(
     panel = pd.DataFrame(series).sort_index()
     # C4 again at panel level: a symbol can be NaN on dates others are not.
     panel = panel.dropna(how="all")
+
+    # ---- C8: drop non-trading days.
+    #
+    # A handful of raw CSVs carry a stray weekend bar (e.g. 2010-02-06, a Saturday).
+    # Each one lands as an interior NaN in every other symbol's column, so every
+    # rolling/ewm indicator is wrong for `period` bars after that hole -- silently,
+    # because the loader's C6 check only validates *within* each symbol.
+    #
+    # The NSE does not trade Saturday or Sunday, so any such index entry is a vendor
+    # artefact. Drop them outright rather than carrying interior holes into factors.
+    weekend = panel.index.dayofweek >= 5
+    if weekend.any():
+        panel = panel.loc[~weekend]
+
+    # Belt-and-braces: drop any remaining date with implausibly thin coverage.
+    coverage = panel.notna().mean(axis=1)
+    sparse = coverage < 0.05
+    if sparse.any():
+        panel = panel.loc[~sparse]
+
     return panel, list(panel.columns), report
 
 
