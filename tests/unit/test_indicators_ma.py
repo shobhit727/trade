@@ -61,7 +61,11 @@ def test_hull_matches_reference_implementation():
     period = 20
     half = period // 2
     sqrt_p = int(round(period ** 0.5))
-    raw = [2 * wma(closes[: i + 1], period) - wma(closes[: i + 1], half) for i in range(len(closes) - sqrt_p, len(closes))]
+    # Textbook Hull: the FAST WMA is doubled, the SLOW one subtracted. This line
+    # previously read 2*wma(..., period) - wma(..., half), which encoded the very
+    # term-swap bug this file was meant to guard against. See
+    # tests/unit/test_indicators_hull_definition.py.
+    raw = [2 * wma(closes[: i + 1], half) - wma(closes[: i + 1], period) for i in range(len(closes) - sqrt_p, len(closes))]
     ref = wma(raw, sqrt_p)
 
     assert hull(closes, period) == pytest.approx(ref, rel=1e-9)

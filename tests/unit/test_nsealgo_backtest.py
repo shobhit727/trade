@@ -13,7 +13,10 @@ import pytest
 
 from nsealgo.backtest.engine import (
     DEAD_WEIGHT_EPS,
+    SECTORS,
     PortfolioConfig,
+    _one_way_turnover,
+    _rebalance_dates,
     apply_turnover_budget,
     build_rebalance_weights,
     run_backtest,
@@ -294,6 +297,211 @@ class TestPositionCountDoesNotAccumulate:
         cfg = PortfolioConfig(n_positions=40, max_names=22)
         res = run_backtest(p, sc, CM, cfg, "M")
         assert int((res.weights > DEAD_WEIGHT_EPS).sum(axis=1).max()) <= 22
+
+
+# --------------------------------------------------------------------------- #
+# Regression: the turnover budget was diluting the book with stale residue.
+#
+# `apply_turnover_budget` blended the whole book toward the new target, so a name that
+# dropped OUT of the target (`tgt[s] == 0`) only decayed by `1 - lam` per rebalance and
+# was carried for months: `_thin` kills a weight only below DEAD_WEIGHT_EPS. With a
+# sparse signal (13 of 48 names eligible) that left 32% of the book -- up to 47% on a
+# single date -- sitting in names the signal did not want, and 29.6 names against a
+# 22-name target. The headline Sharpe was measuring the dilution, not the signal.
+#
+# These tests run the real engine end to end over the real 48-symbol universe, because
+# the failure is in the interaction of the blend, `_thin` and the caps: a synthetic
+# panel of unknown symbols collapses into one "other" sector and never gets there.
+# --------------------------------------------------------------------------- #
+
+UNIVERSE = list(SECTORS)
+N_ELIGIBLE = 13
+N_DAYS = 1200
+
+
+@pytest.fixture(scope="module")
+def sector_panel() -> pd.DataFrame:
+    """Real symbols, real sectors, deterministic prices."""
+    rng = np.random.default_rng(7)
+    dates = pd.bdate_range("2010-01-01", periods=N_DAYS, tz="Asia/Kolkata")
+    n = len(UNIVERSE)
+    drifts = rng.normal(0.0005, 0.0008, n)
+    shocks = rng.normal(0, 0.011, (N_DAYS, n))
+    prices = np.empty((N_DAYS, n))
+    p0 = rng.uniform(100, 3000, n)
+    for t in range(N_DAYS):
+        p0 = p0 * (1.0 + drifts + shocks[t])
+        prices[t] = p0
+    return pd.DataFrame(prices, index=dates, columns=UNIVERSE)
+
+
+@pytest.fixture(scope="module")
+def dense_score(sector_panel: pd.DataFrame) -> pd.DataFrame:
+    return pd.DataFrame(1.0, index=sector_panel.index, columns=UNIVERSE)
+
+
+@pytest.fixture(scope="module")
+def sparse(sector_panel: pd.DataFrame) -> pd.DataFrame:
+    """NaN everywhere except `n_elig` names a month, chosen by a sticky AR(1) ranking.
+
+    Sticky so consecutive months overlap -- the shape a real sparse factor has, and
+    the shape in which the turnover budget can actually afford the exits.
+    """
+    panel = sector_panel
+    rng = np.random.default_rng(11)
+    dates = panel.index
+    eps = rng.normal(0, 0.9, (len(UNIVERSE), len(dates)))
+    x = np.zeros_like(eps)
+    x[:, 0] = eps[:, 0]
+    for t in range(1, len(dates)):
+        x[:, t] = 0.97 * x[:, t - 1] + eps[:, t]
+    latent = pd.DataFrame(x.T, index=dates, columns=UNIVERSE).rolling(
+        30, min_periods=1
+    ).mean()
+
+    months = dates.tz_localize(None).to_period("M")
+    score = pd.DataFrame(np.nan, index=dates, columns=UNIVERSE)
+    for _, idx in pd.Series(dates, index=dates).groupby(months).groups.items():
+        idx = pd.DatetimeIndex(idx)
+        picks = latent.loc[idx].mean().nlargest(N_ELIGIBLE).index
+        score.loc[idx, picks] = rng.uniform(0.1, 1.0, N_ELIGIBLE)
+    return score
+
+
+def rebalance_books(panel: pd.DataFrame, weights: pd.DataFrame) -> pd.DataFrame:
+    return weights.loc[
+        [d for d in _rebalance_dates(panel.index, "M") if d in weights.index][1:]
+    ]
+
+
+def unsignalled_share(books: pd.DataFrame, score: pd.DataFrame) -> pd.Series:
+    """Share of gross weight in names the signal does not carry that date."""
+    signalled = score.reindex(books.index).notna()
+    gross = books.sum(axis=1)
+    stale = books.where(~signalled).sum(axis=1)
+    return (stale / gross).where(gross > 0, 0.0)
+
+
+class TestSparseSignalIsNotDiluted:
+    """A book that cannot be rebuilt must not be held, stale names and all."""
+
+    def test_dense_score_reaches_full_investment_and_position_count(
+        self, sector_panel: pd.DataFrame, dense_score: pd.DataFrame
+    ) -> None:
+        """(a) A signal on every name must produce the configured book, undiluted."""
+        cfg = PortfolioConfig()
+        res = run_backtest(sector_panel, dense_score, CM, cfg, "M")
+        books = rebalance_books(sector_panel, res.weights)
+
+        assert books.sum(axis=1).mean() == pytest.approx(
+            1.0 - cfg.cash_buffer, abs=1e-6
+        )
+        counts = (books > DEAD_WEIGHT_EPS).sum(axis=1)
+        assert counts.mean() == pytest.approx(cfg.n_positions, abs=1)
+        assert counts.max() <= cfg.max_names
+
+    def test_sparse_score_does_not_hold_unsignalled_weight(
+        self, sector_panel: pd.DataFrame, sparse: pd.DataFrame
+    ) -> None:
+        """(b) The regression. Before the fix this averaged 2.5% and peaked at 18.3%
+        on a sticky signal (32.4% mean / 47.4% peak on a fully-rotating one)."""
+        res = run_backtest(sector_panel, sparse, CM, PortfolioConfig(), "M")
+        books = rebalance_books(sector_panel, res.weights)
+
+        share = unsignalled_share(books, sparse)
+        assert share.max() <= 0.10, share[share > 0.10].to_dict()
+        assert share.mean() <= 0.02, share.mean()
+
+    def test_sparse_book_holds_only_signalled_names(
+        self, sector_panel: pd.DataFrame, sparse: pd.DataFrame
+    ) -> None:
+        """The book must not accret a tail of names past its position limit."""
+        res = run_backtest(sector_panel, sparse, CM, PortfolioConfig(), "M")
+        books = rebalance_books(sector_panel, res.weights)
+
+        signalled = sparse.reindex(books.index).notna()
+        held = books > DEAD_WEIGHT_EPS
+        assert int((held & ~signalled).to_numpy().sum()) == 0
+        counts = held.sum(axis=1)
+        assert counts.max() <= N_ELIGIBLE, counts.max()
+
+    def test_sparse_book_respects_every_cap(
+        self, sector_panel: pd.DataFrame, sparse: pd.DataFrame
+    ) -> None:
+        """Unwinding the residue must not break the caps it was diluting."""
+        cfg = PortfolioConfig()
+        books = rebalance_books(
+            sector_panel, run_backtest(sector_panel, sparse, CM, cfg, "M").weights
+        )
+
+        assert books.max().max() <= cfg.max_weight + 1e-9
+        assert books.min().min() >= 0.0
+        assert books.sum(axis=1).max() <= (1.0 - cfg.cash_buffer) + 1e-9
+        sectors = books.T.groupby([sector_of(c) for c in books.columns]).sum().T
+        assert sectors.max(axis=1).max() <= cfg.max_sector_weight + 1e-9
+
+    def test_one_way_turnover_stays_within_budget_every_rebalance(
+        self, sector_panel: pd.DataFrame, sparse: pd.DataFrame
+    ) -> None:
+        """(c) Unwinding is a trade like any other and must come out of the budget."""
+        cfg = PortfolioConfig()
+        books = rebalance_books(
+            sector_panel, run_backtest(sector_panel, sparse, CM, cfg, "M").weights
+        )
+
+        turn = (books.diff().abs().sum(axis=1) / 2.0).iloc[1:]
+        assert len(turn) > 40
+        assert turn.max() <= cfg.turnover_budget + 1e-9, turn.max()
+
+    def test_budget_is_bidirectionally_bounded_on_a_rotating_target(self) -> None:
+        """The worst case for the budget: a fully disjoint 13-of-48 target every
+        rebalance. It cannot be rebuilt inside the allowance, but the book must still
+        leave the stale names -- and must still respect the budget doing it."""
+        cfg = PortfolioConfig()
+        rng = np.random.default_rng(3)
+        prev = None
+        for _ in range(40):
+            picks = rng.choice(len(UNIVERSE), size=N_ELIGIBLE, replace=False)
+            tgt = pd.Series(0.0, index=UNIVERSE)
+            tgt.iloc[picks] = 1.0 / N_ELIGIBLE * 0.9
+            out = apply_turnover_budget(
+                tgt, prev, cfg.turnover_budget, cfg.max_names
+            )
+            if prev is not None:
+                assert _one_way_turnover(out, prev) <= cfg.turnover_budget + 1e-9
+            assert int((out > DEAD_WEIGHT_EPS).sum()) <= cfg.max_names
+            prev = out
+
+    def test_a_dropped_name_exits_in_one_rebalance(self) -> None:
+        """The unit of the bug: `tgt[s] == 0` must mean zero, not `cur[s] * (1-lam)`.
+
+        The weights here are chosen so the budget actually binds (`lam < 1`), which is
+        the regime the bug lived in. Under the old blend `d` came out at 0.088 against
+        a 0.20 position; it is now sold.
+        """
+        cur = pd.Series({"a": 0.20, "b": 0.20, "c": 0.20, "d": 0.20})
+        tgt = pd.Series(
+            {"a": 0.05, "b": 0.05, "c": 0.05, "e": 0.20, "f": 0.20, "g": 0.20}
+        )
+        out = apply_turnover_budget(tgt, cur, budget=0.35, max_names=30)
+
+        assert _one_way_turnover(out, cur) <= 0.35 + 1e-9
+        assert float(out["d"]) == 0.0
+        assert float(out["a"]) == pytest.approx(0.1286, abs=1e-3)  # blended, not sold
+
+    def test_sale_is_all_or_nothing_when_the_budget_binds(self) -> None:
+        """A half-sold position leaves a sliver that is untradable, still costs its
+        former weight to clear, and still holds a `max_names` slot until it does — the
+        dust the old blend accreted. What cannot be sold must stay whole or not move."""
+        cur = pd.Series({f"n{i}": 0.12 for i in range(10)})       # 1.2 gross, cap 0.70
+        tgt = pd.Series({f"m{i}": 0.12 for i in range(10)})       # wholly disjoint
+        out = apply_turnover_budget(tgt, cur, budget=0.35, max_names=30)
+
+        assert _one_way_turnover(out, cur) <= 0.35 + 1e-9
+        survivors = out[out > DEAD_WEIGHT_EPS]
+        assert len(survivors) > 0
+        assert bool((survivors == cur.reindex(survivors.index)).all())   # whole or absent
+        assert int(len(survivors)) <= 30
 
 
 class TestMetrics:

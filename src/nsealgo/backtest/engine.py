@@ -23,6 +23,7 @@ Design decisions and their evidence (see `reports/FACTOR_EVIDENCE.md`):
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -31,6 +32,36 @@ from ..costs import CostModel
 from .metrics import Metrics, compute_metrics
 
 TRADING_DAYS = 244
+
+
+def _engine_sha() -> str:
+    """Stable hash of this engine's source (docstrings stripped).
+
+    Agents found that concurrent edits to this file silently changed results
+    mid-experiment -- identical scripts returned different numbers because
+    ``apply_turnover_budget`` had been rewritten. Every BacktestResult now carries
+    this hash so a report can state which engine produced it.
+    """
+    import ast
+    import hashlib
+
+    try:
+        src = Path(__file__).read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
+                                 ast.Module)):
+                if node.body and isinstance(node.body[0], ast.Expr) and \
+                        isinstance(getattr(node.body[0], "value", None), ast.Constant) and \
+                        isinstance(node.body[0].value.value, str):
+                    node.body.pop(0)
+        payload = ast.dump(tree)
+    except Exception:  # noqa: BLE001 - provenance must never break a backtest
+        payload = "unknown"
+    return hashlib.sha256(payload.encode()).hexdigest()[:12]
+
+
+ENGINE_SHA = _engine_sha()
 
 #: Reference per-position notional for cost measurement. Flat DP charges make the
 #: round-trip bps size-dependent, so this must be realistic: Rs 21,00,000 x 0.9
@@ -53,9 +84,6 @@ SPILL_ITERS = 8
 #: is Rs 210 — under one share at NIFTY-50 prices — so carrying it costs real
 #: turnover (which `GOAL.md` §5 makes the dominant drag) and buys nothing.
 DEAD_WEIGHT_EPS = 1e-4
-
-#: Bounded attempts to re-fit the turnover budget after dead weights are dropped.
-TURNOV_ITERS = 60
 
 
 # --------------------------------------------------------------------------- #
@@ -112,10 +140,11 @@ class BacktestResult:
     weights: pd.DataFrame
     metrics: Metrics
     costs_paid: float = 0.0
+    engine_sha: str = ENGINE_SHA
     diag: dict[str, float] = field(default_factory=dict)
 
     def summary(self) -> str:
-        return self.metrics.fmt()
+        return f"[engine {self.engine_sha}]\n" + self.metrics.fmt()
 
 
 # --------------------------------------------------------------------------- #
@@ -292,11 +321,11 @@ def build_rebalance_weights(
 def _thin(w: pd.Series, max_names: int) -> pd.Series:
     """Drop dead residuals; keep at most ``max_names`` material positions.
 
-    Blending toward a new target shrinks a dropped name's weight but never reaches
-    zero, so without this the book accretes a tail of one- or two-paise positions
-    every rebalance and ends up holding far more names than it is allowed to.
     Weights at or below `DEAD_WEIGHT_EPS` are not tradable positions, so they are
     zeroed rather than carried; the survivors are the `max_names` largest.
+    `apply_turnover_budget` picks what the book holds *before* this runs, so on the
+    normal path there is nothing here to drop and this is the safety net that holds
+    the position limit if a hand-built book arrives with too many names.
     """
     out = w.where(w > DEAD_WEIGHT_EPS, 0.0)
     if int((out > DEAD_WEIGHT_EPS).sum()) <= max_names:
@@ -309,44 +338,106 @@ def _one_way_turnover(tgt: pd.Series, cur: pd.Series) -> float:
     return float((tgt - cur).abs().sum() / 2.0)
 
 
+def _exit_allocation(weights: pd.Series, cap: float) -> pd.Series:
+    """Which unwanted positions to sell, in whole, spending at most ``cap`` in total.
+
+    Sales are deliberately all-or-nothing. Half-selling a position leaves a residue
+    small enough to be untradable but still costing its full former weight to clear
+    later, and it holds a slot in ``max_names`` until it does — the exact tail of dust
+    this function exists to prevent. So positions are taken smallest-first and one that
+    does not fit in what is left of the budget is left alone rather than cut; the
+    unsold names keep whole positions and are the smallest next time.
+
+    Every position is sold when they fit the allowance together, which is the ordinary
+    case. Capping only bites when the positions being dropped are worth more than the
+    whole allowance, and then the budget — not the signal — is what decides.
+    """
+    ordered = weights.sort_values()
+    if float(ordered.sum()) <= cap + CONSTRAINT_TOL:
+        return ordered
+    fits = (ordered.cumsum() <= cap + CONSTRAINT_TOL).to_numpy()
+    sold = pd.Series(0.0, index=ordered.index)
+    sold[fits] = ordered[fits]
+    return sold
+
+
 def apply_turnover_budget(
     weights: pd.Series,
     prev: pd.Series | None,
     budget: float,
     max_names: int,
 ) -> pd.Series:
-    """Cap how much of the book may change at one rebalance.
+    """Cap how much of the book may change at one rebalance, without diluting it.
 
     The evidence is unambiguous that turnover is the main drag (SEBI's own monotone
     loss gradient: 25 -> 742 trades/yr maps to a 65% -> 80% loss rate). Holding most
     of the book between rebalances is the cheapest way to respect that.
 
-    ``max_names`` is required rather than optional: the blended weights must always be
-    thinned to that many material positions, or the book accretes dead residuals and
-    drifts past its position limit. Thinning is re-checked against the budget, because
-    dropping a name is itself a trade.
+    The budget limits *how much* of the book may change, not *which way* it may change.
+    Blending the whole book toward the new target made both directions equally slow, so
+    a name that had dropped out of the target (``tgt[s] == 0``) only decayed by
+    ``1 - lam`` per rebalance and was carried for many months: `_thin` kills a weight
+    only below `DEAD_WEIGHT_EPS`, so the residue outlived the position by an order of
+    magnitude. The delivered book then held mostly names the signal did not want, at a
+    fraction of the intended exposure and a position count nothing like the configured
+    one, so every headline number measured the dilution rather than the signal.
+
+    So the movements are separated, and the exits get priority:
+
+    * **Exits are unconditional and are paid for first.** A name the target no longer
+      carries (or one that no longer fits inside ``max_names``) leaves, sold
+      smallest-first and in whole (`_exit_allocation`). When the budget cannot clear
+      them all, what stays stays whole and material — never a sliver.
+    * **Adoption is whatever budget is left.** Only the surplus scales the new target.
+
+    Names that are held *and* still wanted are carried at their current weight, which
+    costs no turnover at all and is the cheapest way to keep the book invested.
+    ``max_names`` is enforced by choosing which target names may be bought, not by
+    dropping names afterwards, so the position limit cannot itself blow the budget.
     """
     if prev is None:
         return _thin(weights, max_names)
+
     universe = weights.index.union(prev.index)
     tgt = weights.reindex(universe).fillna(0.0)
     cur = prev.reindex(universe).fillna(0.0)
-    changed = _one_way_turnover(tgt, cur)
-    lam = min(1.0, budget / changed) if changed > 0 else 1.0
-    for _ in range(TURNOV_ITERS):
-        out = _thin(cur + lam * (tgt - cur), max_names)
-        if _one_way_turnover(out, cur) <= budget + CONSTRAINT_TOL:
-            return out
-        # Thinning broke the budget: zeroing a name is itself a trade. Re-fit lam so
-        # the *kept* book spends exactly the budget — drift is linear in lam, and the
-        # dropped names are frozen at their current weight, so this is closed-form.
-        kept = out > 0
-        drift = float((tgt - cur).abs()[kept].sum())
-        room = 2.0 * budget - float(cur[~kept].sum())
-        lam = room / drift if drift > 0 and room > 0 else 0.0
-    raise RuntimeError(
-        f"turnover budget {budget} unreachable while holding {max_names} names"
-    )
+
+    # A target at or below the dead-weight threshold is not a position, so a name it
+    # no longer carries must be sold rather than blended toward zero. Slots go to the
+    # target's largest positions; anything past that limit is a drop, too.
+    wanted = tgt > DEAD_WEIGHT_EPS
+    kept = tgt[wanted].nlargest(max_names).index
+    held_by_target = wanted & tgt.index.isin(kept)
+    to_zero = (cur > 0) & ~held_by_target
+
+    # `_one_way_turnover` is sum|dW| / 2, so the book's whole absolute change in one
+    # rebalance may not exceed twice the one-way budget.
+    cap = 2.0 * budget
+    drop_amt = float(cur[to_zero].sum())
+
+    # Carrying a name that is still wanted costs nothing, so it is the default.
+    out = cur.where(~to_zero, 0.0)
+
+    if drop_amt >= cap - CONSTRAINT_TOL:
+        # The forced exits alone eat the whole allowance. They are compulsory, so they
+        # take the budget and nothing new may be bought this rebalance.
+        sold = _exit_allocation(cur[to_zero], cap).reindex(universe).fillna(0.0)
+        out[to_zero] = cur[to_zero] - sold
+    else:
+        drift = float((tgt[held_by_target] - cur[held_by_target]).abs().sum())
+        lam = min(1.0, (cap - drop_amt) / drift) if drift > 0.0 else 1.0
+        out[held_by_target] = cur[held_by_target] + lam * (
+            tgt[held_by_target] - cur[held_by_target]
+        )
+
+    out = _thin(out, max_names)
+    if _one_way_turnover(out, cur) <= budget + CONSTRAINT_TOL:
+        return out
+
+    # Defensive only: the composition above is budget-feasible by construction, so
+    # reaching here means `prev` was not already thinned to `max_names` (a hand-built
+    # book rather than one this engine delivered). Holding it unchanged always fits.
+    return _thin(cur, max_names)
 
 
 # --------------------------------------------------------------------------- #

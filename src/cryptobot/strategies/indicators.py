@@ -69,7 +69,18 @@ def _wma_last(values, period: int) -> float:
 
 
 def hull(values, period: int) -> float:
-    """Hull moving average: WMA(2*WMA(n/2) - WMA(n), sqrt(n))."""
+    """Hull moving average: WMA(2*WMA(n/2) - WMA(n), sqrt(n)).
+
+    Textbook Hull: the *fast* WMA (n/2) is doubled and the *slow* WMA (n)
+    subtracted, then the raws are smoothed over sqrt(n). Doubling the fast
+    average is what cancels the lag of the slow one.
+
+    History: this previously computed `2*WMA(n) - WMA(n/2)` -- the two terms
+    swapped, i.e. the code contradicted the definition in its own docstring.
+    That spelling is not the negation of this one (it would require
+    `WMA(n) + WMA(n/2) == 0`); it is a blunter, roughly 2x laggier line with no
+    low-lag property. See tests/unit/test_indicators_hull_definition.py.
+    """
     if len(values) < period:
         return float("nan")
     half = max(1, period // 2)
@@ -81,7 +92,7 @@ def hull(values, period: int) -> float:
         wh = _wma_last(sub, half)
         if wf != wf or wh != wh:
             return float("nan")
-        raws.append(2.0 * wf - wh)
+        raws.append(2.0 * wh - wf)
     w = np.arange(1, sqrt_p + 1, dtype=float)
     return float(np.sum(np.asarray(raws) * w) / w.sum())
 

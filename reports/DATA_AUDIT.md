@@ -51,6 +51,140 @@ stands**, with its end date moved to 2026-10-01.
 
 ---
 
+## 0.1 2026-10-09/10 — data-quality re-audit: the `open` column is corrupt, and 3 more defects
+
+**Reproduce:** `research/data_quality/FINDINGS.md` (full write-up, 281,342 bars across all
+50 `*_1d.csv` files, with per-symbol and intraday cross-checks).
+**What changed:** four defects were found. Three are now fixed in the loader. One was
+**mis-attributed in this report and is corrected below.**
+
+### 0.1.1 ⚠️ CORRECTION — `high` and `low` are sound. The defect is in `open`.
+
+§3 of this report previously carried the claim:
+
+> `high == open` on **6.68%** of bars — every breakout-level strategy reads a column that
+> is wrong precisely on the moves it exists to catch.
+
+**That conclusion was wrong, and the wrong half was the dangerous half.** Corrected:
+
+| | Then (§3) | **Now (measured)** |
+|---|---|---|
+| Pooled `high == open` rate | 6.68% | **10.06%** (8.70% on live, non-dead bars) |
+| Which column is corrupt | implied `high` | **`open`** |
+| Effect on breakout strategies | claimed impaired | **−0.08% of Donchian events — not impaired** |
+
+**Why `high` is exonerated.** Aggregating the 5m file to daily and comparing against the 1d
+files over 1,600 overlapping days:
+
+| Check | Result | Verdict |
+|---|---|---|
+| daily `low` **above** the true intraday low | **0.00%** | `low` is sound |
+| daily `low` == intraday min | 36.31% exact, median gap **0.10 rupees** | `low` is sound |
+| daily `high` == intraday max | 32.12% exact, median gap **0.15 rupees** | `high` is sound |
+| daily `high >= max(open, close)` | 99.977% | no integrity violation |
+| 20-day Donchian events, supplied vs reconstructed `high` | 18,495 vs 18,480 | **delta −15 (−0.08%)**, 1 symbol of 50 |
+
+**Why `open` is convicted.**
+
+| Check over 1,600 overlapping days | Result |
+|---|---|
+| daily `open` differs from the true first 5m print | **90.81% of days** |
+| daily `open` **above the entire intraday range** | **13.06%** |
+| daily `open` **below the entire intraday range** | **7.06%** |
+| **daily `open` outside the true range, either side** | **20.12%** (322 days) |
+| median error | ₹1.400 (0.134% of close) |
+| p95 / max error | ₹19.525 (0.596%) / ₹93.00 (2.006%) |
+
+Worked example — `reliance`, 2026-09-25: 5m trades the whole day between **1215.0 and
+1227.3**; the daily file reports `open = 1210.5`, **a price that never traded**, then
+stretches `low` down to 1210.5 to accommodate it.
+
+**Causal chain, confirmed:** of 208 days where `open > true_high`, **60.58%** show the
+`high == open` artifact; of 113 days where `open < true_low`, **52.21%** show
+`low == open`. Conversely only **8 of 134** `high == open` bars lack the phantom-open
+explanation. **The `high == open` artifact is a downstream symptom of the corrupt `open`,
+not a defect in `high`.**
+
+**`close` is clean:** daily close == intraday last close on **97.12%** of days, with
+median close-to-close return 1.05%, p99 7.84%, and only 0.0405% of bars exceeding the NSE
+20% circuit limit. **The return series — the thing every result here is built on — is
+trustworthy.**
+
+**Consequences, stated plainly:**
+
+- **Do NOT exclude the eight breakout strategies** (donchian, atr_breakout, squeeze, nr4,
+  price_channel, triangle, rectangle, flag). A sub-0.05% median per-bar perturbation is
+  invisible to a 20-day rolling maximum. Excluding them would discard ~0.1% of signal over a
+  defect that does not touch them.
+- **Do NOT "reconstruct" `high = max(open, close)`.** That repair is backwards — it would
+  discard the true intraday high on 90% of bars and manufacture the very artifact it aims
+  to fix, while changing nothing measurable (−15 events).
+- **`open_range_breakout` is the genuine exposure** and was *not* on the original list. It
+  reads `open` directly; its trigger levels are unreliable. Gate it, or any other
+  `open`-keyed logic (gap filters, overnight fills), behind a data-quality assertion.
+- **Three ingest assertions are now mandatory and none existed:** `open ∈ [low, high]`
+  (fires on ~20% of days and would have caught this at ingest), `|return| < 20%`,
+  `open > 0`.
+- **Do not treat 15m as independent corroboration of 5m.** The 15m file is a bit-exact
+  resample of the 5m file — **100.00% exact OHLC match on all four price columns**
+  (846/846 buckets). Validating 5m against 15m is validating one source against itself.
+
+### 0.1.2 ✅ FIXED — 4 stray weekend bars (interior data hole)
+
+Four bogus Saturday/Sunday dates sat inside the panel: **2010-02-06 (Sat), 2019-10-27
+(Sun), 2020-11-14 (Sat), 2025-02-01 (Sat)**. The NSE does not trade Saturday or Sunday, so
+these are vendor artefacts.
+
+**The damage was not the four bars — it was the hole they punched.** The panel is a union
+index across symbols, so each weekend date became an **interior NaN in 42 symbols**. Every
+rolling and `ewm` indicator is then wrong for `period` bars after the hole. Because the
+loader's C6 check only validated *within* each symbol, nothing raised: the NaNs were
+between symbols, not inside one.
+
+**Fixed as new cleaning rule C8** — drop any index entry with `dayofweek >= 5`, plus a
+belt-and-braces coverage filter. Panel is now **4,625 trading days** (was 4,629).
+
+> **This class of bug is now on the standing checklist:** an *interior* hole in an aligned
+> panel is invisible to per-symbol validation. Any new cleaning rule must be checked against
+> **panel-level** coverage, not just per-symbol integrity.
+
+### 0.1.3 ⚠️ 114 unadjusted-split bars (surviving cleaning)
+
+**114 bars (0.0405%) show >20% single-bar moves** that are un-applied split/demerger factors
+in the **close** series. Example: `bajfinance` 2005-07-27 jumps **2.31 → 252.95 (+469.6%)**
+and **reverses the next day** (252.95 → 2.31). Same pattern in `bel`, `bajajfinsv`, `cipla`.
+
+These are spurious *returns* — worse than a price defect, because they enter the return
+series directly rather than through a level.
+
+**Covered by C1** (the 2008+ window restriction), since every instance is pre-2008. **Not
+additionally excluded by C5**, which fires at >45%; an 114-bar population that includes
+moves in the 20–45% band passes C5 and still corrupts momentum features. The `|return| <
+20%` assertion recommended in §0.1.1 is what closes that gap.
+
+### 0.1.4 ⚠️ 47 negative-price bars (all `adanient`)
+
+**47 bars, all in `adanient`, all in 2002-07**, with values around **−0.0122 and real
+volume**. This is broken back-adjustment. Any log-return or percentage calculation on that
+window returns `NaN`/`inf`.
+
+**Covered by C3** (exclude `adanient`). Already counted in §3 and §0 above; recorded here
+because a dedicated re-audit found it independently and confirmed the count.
+
+### 0.1.5 Summary — what the re-audit changed
+
+| # | Finding | Status | Rule |
+|---|---|---|---|
+| 1 | `open` corrupt (90.81% of days wrong; 20.12% outside the true range) | **Open** — no repair possible from OHLCV alone; needs a Kite/session feed | `open`-keyed logic must be gated |
+| 2 | `high == open` rate understated (6.68% → 10.06%) | Corrected above | — |
+| 3 | 8 breakout strategies wrongly implicated | **Retracted** | — |
+| 4 | 4 stray weekend bars → interior NaN in 42 symbols | ✅ **Fixed** | **C8** |
+| 5 | 114 unadjusted-split bars | Covered (pre-2008); `\|return\| < 20%` assertion recommended | C1 |
+| 6 | 47 negative-price bars (`adanient`) | Covered | C3 |
+| 7 | 15m is a resample of 5m, not independent | **Disclosure added** | — |
+
+---
+
 ## 1. Universe
 
 **50 NIFTY-50 symbols**, OHLCV daily + intraday.
@@ -109,6 +243,13 @@ series is discontinuous, not a continuous minute tape. Do not treat it as a tape
 
 **The dataset is structurally clean apart from `adanient` and the split artifacts below.**
 
+> ⚠️ **This verdict was later partly overturned. Read §0.1 before relying on it.**
+> A dedicated re-audit on 2026-10-09 found that **structural consistency is not the same as
+> correctness**: the daily `open` column is corrupt on **90.81%** of days and sits outside
+> the true intraday range on **20.12%** of them, while passing every check in this table —
+> because a file can be internally consistent and still be wrong. The `close` and
+> `high`/`low` columns **survive** cross-checks against intraday data; `open` does not.
+
 ---
 
 ## 4. THE CRITICAL PROBLEM: unadjusted corporate actions
@@ -160,6 +301,8 @@ Applied in `nsealgo/data/cleaning.py`. No backtest may run on unclean data.
 | **C5** | Sanity-halt: if a single-day \|return\| > 45% survives C1–C4, **log + drop**, and report it | Belt-and-braces |
 | **C6** | Assert **no duplicates**, **no NaN close**, **monotonic ts** in every load | Fail loudly |
 | **C7** | Record `cleaning_report` per run: rows dropped by rule | Auditable, per `GOAL.md` §6.6 |
+| **C8** | **Drop every index entry with `dayofweek >= 5`, plus any date with panel coverage < 5%** | Added 2026-10-10 after §0.1.2. Four stray weekend dates each punched an **interior NaN into 42 symbols**, corrupting every rolling/ewm indicator for `period` bars — invisibly, because C6 validated *within* each symbol. **Validate the panel, not just the symbols.** |
+| **C9** | *Recommended, not yet implemented:* assert `open ∈ [low, high]`, `\|return\| < 20%`, `open > 0` at ingest | §0.1.1 / §0.1.3. The first would have caught the corrupt `open` (fires ~20% of days); the second closes the 20–45% gap C5 misses; the third catches the `adanient` rows. **All three currently pass silently.** |
 
 ### 5.1 What we lose by starting in 2008
 
@@ -222,8 +365,9 @@ constituents are absent. Consequences:
   point-in-time constituent history exists locally, so the bias cannot be *removed*.
 - **Quantified at ≈ 7.3%/yr** in aggregate (survivorship + selection + missing dividends) —
   see `reports/VALIDATION_v1.md` §6.1 for the derivation and §0.7 for how it carries into
-  the current numbers. Bias-corrected, the strategy is ≈3.7%/yr on the current window, not
-  the 10.97% headline.
+  the current numbers. Bias-corrected, the strategy is **≈3.6%/yr (provisional — the
+  derivation does not currently reconcile, see `reports/VALIDATION_v1.md` §0.7) on the
+  current window, not the 9.71% headline.**
 - Per `GOAL.md` §6.5, this is disclosed in **every** result. Treat all numbers as
   **optimistic by ≈7.3pp/yr** until proven otherwise on live data.
 
@@ -248,17 +392,34 @@ must still provide a repeatable Kite historical backfill before Gate 6, for two 
 
 | Question | Answer |
 |----------|--------|
-| Can we backtest daily NIFTY-50 strategies? | ✅ **Yes**, 2008-01-01 → 2026-10-01, 19.0y, 4,629 days, 48 symbols |
+| Can we backtest daily NIFTY-50 strategies? | ✅ **Yes**, 2008-01-01 → 2026-10-01, 19.0y, **4,625** days, 48 symbols |
+| Is the daily `close` series trustworthy? | ✅ **Yes** — 97.12% exact match against intraday aggregation; return distribution respects the NSE circuit limit |
+| Is `high`/`low` trustworthy for breakout strategies? | ✅ **Yes** — Donchian impact is −0.08%. **The earlier claim that they were broken is retracted** (§0.1.1) |
+| Is the daily `open` column trustworthy? | ❌ **No** — wrong on 90.81% of days, outside the true range on 20.12%. `open`-keyed logic must be gated (§0.1.1) |
 | Is the recovered panel trustworthy? | ✅ **Yes** — 49/50 verified vs the audit; truncation to 2026-08-25 reproduces the v1 result (§0) |
 | Can we backtest intraday? | ❌ **No.** 6 days of 1m. Banned. Not re-fetched. |
 | Can we claim the result is bias-free? | ❌ **No.** ~7.3%/yr quantified — survivorship plus dividends absent entirely |
 | Can we go live today? | ❌ **No.** Fresh-data path is still a one-off script; Gate 6 unbuilt. |
 
 **Bottom line:** this dataset supports a genuine, honest, cost-aware **daily-bar swing**
-research programme over ~19 years. It does **not** support intraday work, and it does
-not support bias-free claims. Build accordingly.
+research programme over ~19 years, built on a **`close` series that is trustworthy** and a
+**`high`/`low` pair that survives cross-checks against intraday data**. It does **not**
+support intraday work, it does **not** support bias-free claims, and it does **not** support
+any logic keyed to the `open` column. Build accordingly.
 
-**And a warning that belongs in a data audit:** extending this panel by 27 sessions moved
-the walk-forward Sharpe from 0.66 to 0.44 and the band from C to D. The data did its job.
-The lesson is that the *strategy* result was fragile at the sample boundary, and every
-figure produced from this panel must be published with its end date attached.
+**Two warnings that belong in a data audit:**
+
+1. **Extending this panel by 27 sessions moved the walk-forward Sharpe from 0.66 to 0.44 and
+   the band from C to D.** The data did its job. The lesson is that the *strategy* result was
+   fragile at the sample boundary, and every figure produced from this panel must be
+   published with its end date attached.
+
+2. **The most important defect this audit ever found was invisible to the audit that was
+   supposed to find it.** Four weekend bars, each punching an interior NaN into 42 symbols,
+   corrupted every rolling indicator downstream and passed every existing check, because
+   the existing checks looked *within* each symbol and the hole was *between* them. The
+   `open`-column defect was likewise found by cross-checking against an **independent
+   source** (intraday bars), not by inspecting the daily file for internal consistency.
+   **Corollary for any future data work: a dataset validated only against itself will
+   happily confirm its own defects.** The same corollary explains why the backtest engine's
+   bugs survived the validation pipeline — see `reports/VALIDATION_v1.md` §0.3.

@@ -10,17 +10,17 @@ from cryptobot.strategies.signal_base import SignalStrategy
 
 
 @dataclass
-class DualMaConfig:
+class DualMovingAverageConfig:
     fast: int = 20
     slow: int = 50
     quantity: Decimal = Decimal("1")
 
 
-class DualMaStrategy(SignalStrategy):
-    name = "dual_ma"
+class DualMovingAverageStrategy(SignalStrategy):
+    name = "dual_moving_average"
 
-    def __init__(self, config: DualMaConfig | None = None):
-        super().__init__(config or DualMaConfig())
+    def __init__(self, config: DualMovingAverageConfig | None = None):
+        super().__init__(config or DualMovingAverageConfig())
 
     def warmup(self, closes) -> int:
         return self.config.slow

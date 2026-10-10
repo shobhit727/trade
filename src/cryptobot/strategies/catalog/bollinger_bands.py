@@ -10,18 +10,18 @@ from cryptobot.strategies.signal_base import SignalStrategy
 
 
 @dataclass
-class BollingerConfig:
+class BollingerBandsConfig:
     period: int = 20
     n_std: float = 2.0
     entry: float = 1.0
     quantity: Decimal = Decimal("1")
 
 
-class BollingerStrategy(SignalStrategy):
-    name = "bollinger"
+class BollingerBandsStrategy(SignalStrategy):
+    name = "bollinger_bands"
 
-    def __init__(self, config: BollingerConfig | None = None):
-        super().__init__(config or BollingerConfig())
+    def __init__(self, config: BollingerBandsConfig | None = None):
+        super().__init__(config or BollingerBandsConfig())
 
     def warmup(self, closes) -> int:
         return self.config.period
