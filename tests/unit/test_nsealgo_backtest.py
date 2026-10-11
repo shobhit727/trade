@@ -7,6 +7,8 @@ exists to prevent.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -592,3 +594,95 @@ class TestWalkForwardSafety:
 
         with pytest.raises(ValueError, match="W.*M.*Q"):
             _rebalance_dates(make_panel().index, "Y")
+
+
+class TestProvenance:
+    """Provenance exists because parallel agents twice published irreproducible numbers.
+
+    Case 1: ``engine.py`` was rewritten mid-experiment.
+    Case 2: ``loader.py`` gained a cleaning rule mid-experiment and ``engine_sha`` did
+    not move, so a changed panel left no marker at all.
+    """
+
+    def test_result_carries_all_four_fingerprints(self) -> None:
+        from nsealgo.backtest.engine import run_backtest
+        from nsealgo.provenance import provenance
+
+        panel = make_panel()
+        score = pd.DataFrame(1.0, index=panel.index, columns=panel.columns)
+        r = run_backtest(panel, score, CostModel(segment="delivery"), PortfolioConfig())
+        assert set(r.provenance) == {"engine", "loader", "costs", "panel"}
+        assert r.provenance == provenance()
+
+    def test_loader_is_covered_not_just_the_engine(self) -> None:
+        """The bug that motivated loader coverage: panel changed, engine_sha did not."""
+        from nsealgo.provenance import ENGINE_SHA, LOADER_SHA
+
+        assert LOADER_SHA != "unknown"
+        assert ENGINE_SHA != "unknown"
+        assert LOADER_SHA != ENGINE_SHA, "loader must be fingerprinted separately"
+
+    def test_legacy_engine_sha_attribute_still_works(self) -> None:
+        """~40 research scripts and every agent report read ``engine_sha``."""
+        from nsealgo.backtest.engine import BacktestResult
+        from nsealgo.provenance import ENGINE_SHA
+
+        r = BacktestResult(
+            returns=pd.Series([0.0]),
+            equity=pd.Series([1.0]),
+            weights=pd.DataFrame(),
+            metrics=compute_metrics(pd.Series([0.0, 0.0, 0.0])),
+        )
+        assert r.engine_sha == ENGINE_SHA
+        assert "engine=" in r.summary()
+
+    def test_summary_reports_loader_and_panel(self) -> None:
+        from nsealgo.backtest.engine import BacktestResult
+        from nsealgo.provenance import PANEL_SHA
+
+        r = BacktestResult(
+            returns=pd.Series([0.0]),
+            equity=pd.Series([1.0]),
+            weights=pd.DataFrame(),
+            metrics=compute_metrics(pd.Series([0.0, 0.0, 0.0])),
+        )
+        assert f"panel={PANEL_SHA}" in r.summary()
+
+    def test_docstring_edits_do_not_invalidate_the_fingerprint(self) -> None:
+        """Prose changes are noise; code changes are signal.
+
+        Otherwise every documentation fix would orphan all existing agent reports.
+        """
+        from nsealgo.provenance import _sha
+
+        src = Path(__file__).resolve().parents[2] / "src" / "nsealgo" / "costs.py"
+        original = src.read_text(encoding="utf-8")
+        before = _sha(src)
+        try:
+            src.write_text(
+                original.replace(
+                    '"""Cost model for one account configuration.',
+                    '"""CHANGED PROSE. Cost model.',
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            assert _sha(src) == before, "docstring edit must not change the hash"
+        finally:
+            src.write_text(original, encoding="utf-8")
+
+        assert _sha(src) == before, "restoring the file restores the hash"
+
+    def test_code_edits_do_invalidate_the_fingerprint(self) -> None:
+        from nsealgo.provenance import _sha
+
+        src = Path(__file__).resolve().parents[2] / "src" / "nsealgo" / "costs.py"
+        original = src.read_text(encoding="utf-8")
+        before = _sha(src)
+        try:
+            src.write_text(original.replace("adj = self.slippage_bps / D(\"10000\")",
+                                            "adj = self.slippage_bps / D(\"10001\")",
+                                            1), encoding="utf-8")
+            assert _sha(src) != before, "a real code change must change the hash"
+        finally:
+            src.write_text(original, encoding="utf-8")

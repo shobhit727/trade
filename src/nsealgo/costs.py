@@ -129,6 +129,18 @@ class CostModel:
     def __post_init__(self) -> None:
         if self.segment not in ("delivery", "intraday"):
             raise ValueError(f"unknown segment: {self.segment!r}")
+        # Coerce at the boundary. The dataclass is annotated ``Decimal``, but the
+        # annotation is not enforced: research scripts and stress harnesses
+        # naturally write ``CostModel(slippage_bps=0.0)``. Python silently stores the
+        # float, and the failure then surfaces far away at ``Decimal + float`` inside
+        # ``all_in_round_trip_bps`` — which made every *zero-cost* baseline run
+        # impossible to measure through the engine. Coercing here turns a deferred,
+        # misleading TypeError into correct behaviour at construction. ``str()``
+        # first so 0.1 stays the literal "0.1" rather than its binary expansion.
+        for name in ("slippage_bps", "brokerage_per_order"):
+            raw = getattr(self, name)
+            if not isinstance(raw, Decimal):
+                object.__setattr__(self, name, D(str(raw)))
         if self.slippage_bps < 0:
             raise ValueError(f"slippage_bps must be >= 0, got {self.slippage_bps}")
         if self.brokerage_per_order < 0:

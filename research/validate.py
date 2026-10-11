@@ -124,14 +124,45 @@ def main() -> None:
 
     # ------------------------------------------------------------------ 5
     hr("5. NEGATIVE CONTROL — reversal must LOSE (proves no noise-mining)")
-    nc = build_composite_score(panel, weights=NEGATIVE_CONTROL_WEIGHTS)
-    rnc = run_backtest(panel, nc, BASE, PortfolioConfig(), "M")
-    print(f"reversal composite : CAGR {rnc.metrics.cagr * 100:>7.2f}%  "
-          f"Sharpe {rnc.metrics.sharpe:>6.2f}  MaxDD {rnc.metrics.max_drawdown * 100:>7.2f}%")
-    print(f"trend+overlay    : CAGR {m_overlay.cagr * 100:>7.2f}%  "
-          f"Sharpe {m_overlay.sharpe:>6.2f}  MaxDD {m_overlay.max_drawdown * 100:>7.2f}%")
-    ok = rnc.metrics.sharpe < m_overlay.sharpe
-    print(f"\ncontrol behaves as evidence predicts: {'PASS' if ok else 'FAIL'}")
+    # This MUST be run through the same walk-forward harness as the production
+    # composite. An earlier version of this script ran both composites over the full
+    # 2008-2026 panel and printed "PASS" -- but that is an IN-SAMPLE comparison, and
+    # in-sample the reversal control loses (14.02% / 0.57 vs 17.07% / 0.87).
+    # Out-of-sample it WINS: +10.04% / 0.37 vs +9.71% / 0.34
+    # (reports/STRESS_v3.md section 6). The OOS number is the decision-relevant one,
+    # and it fails. An in-sample control cannot certify anything about noise-mining.
+    def nc_fn(pnl: pd.DataFrame, params: dict):
+        sc = build_composite_score(pnl, weights=NEGATIVE_CONTROL_WEIGHTS)
+        cfg = PortfolioConfig(n_positions=params["n_positions"])
+        res = run_backtest(pnl, sc, BASE, cfg, "M")
+        ov = exposure_series(pnl, lookback=params["lookback"],
+                             threshold=params["threshold"])
+        comb = pd.Series(blend_with_cash(res.returns, ov), index=res.returns.index)
+        res.returns = comb
+        res.metrics = compute_metrics(comb)
+        return res
+
+    wf_nc = walk_forward(panel, grid, nc_fn, n_folds=6, train_years=6, test_years=2)
+    nc_oos = wf_nc.oos_returns
+    m_nc = compute_metrics(nc_oos)
+    print(f"reversal composite (OOS): CAGR {m_nc.cagr * 100:>7.2f}%  "
+          f"Sharpe {m_nc.sharpe:>6.2f}  MaxDD {m_nc.max_drawdown * 100:>7.2f}%")
+    print(f"trend composite   (OOS): CAGR {om.cagr * 100:>7.2f}%  "
+          f"Sharpe {om.sharpe:>6.2f}  MaxDD {om.max_drawdown * 100:>7.2f}%")
+    ok = m_nc.sharpe < om.sharpe
+    if ok:
+        print("\ncontrol behaves as evidence predicts: PASS")
+    else:
+        print(f"\n*** NEGATIVE CONTROL FAILED (OOS) ***\n"
+              f"    A composite built only from reversal factors -- which "
+              f"src/nsealgo/factors/core.py\n    rules OUT on Indian evidence -- beat the "
+              f"production trend composite out-of-sample.\n"
+              f"    Sharpe {m_nc.sharpe:.2f} vs {om.sharpe:.2f} is well inside the noise of a "
+              f"Sharpe from ~2,900 daily observations,\n    so this does not prove an edge "
+              f"exists. It proves this evidence CANNOT demonstrate one,\n    which is what "
+              f"GOAL.md section 5 exists to catch. See reports/STRESS_v3.md section 6.\n"
+              f"    In-sample the control loses (0.57 vs 0.87), which is why it must never "
+              f"be run in-sample.")
 
     # ------------------------------------------------------------------ 6
     hr("6. GATE CHECKS (GOAL.md §5)")

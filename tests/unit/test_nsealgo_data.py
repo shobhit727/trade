@@ -1,4 +1,4 @@
-"""Data-cleaning tests — `reports/DATA_AUDIT.md` §5 rules C1-C7.
+"""Data-cleaning tests — `reports/DATA_AUDIT.md` §5 rules C1-C9.
 
 The dataset shipped with 58 unadjusted split artifacts concentrated in 2002-2007. If
 these rules regress, the backtest silently becomes meaningless, so each rule gets a
@@ -15,7 +15,9 @@ import pytest
 
 from nsealgo.data.loader import (
     CLEAN_START,
+    FROZEN_RUN_MIN,
     MAX_ABS_RETURN,
+    CleaningReport,
     DataIntegrityError,
     load_symbol,
     load_universe,
@@ -169,6 +171,169 @@ class TestC6Integrity:
         assert out.index.is_monotonic_increasing
 
 
+class TestC9FrozenCloses:
+    """C9 — a vendor feed that stops updating repeats its last close verbatim.
+
+    C5 only catches moves that are too LARGE, so a run of exactly zero returns
+    survived every previous rule and poisoned each 200d/252d window that overlapped
+    it. Measured on the real panel: nestleind had 214 + 279 consecutive frozen
+    closes (2008-01-01 -> 2010-01-07 at Rs 433) and bajajauto 46.
+    """
+
+    @staticmethod
+    def _series(closes: list[float]) -> list[tuple]:
+        rows = []
+        for i, px in enumerate(closes):
+            d = pd.Timestamp("2010-01-01", tz="Asia/Kolkata") + pd.Timedelta(days=i)
+            rows.append((int(d.tz_convert("UTC").timestamp() * 1000), px, px, px, px, 1000))
+        return rows
+
+    def test_frozen_run_is_cleaned_at_known_length(self, tmp_path) -> None:
+        """10 repeated bars in a 40-bar series must go, and only they.
+
+        The frozen level is 109.0 and it appears nowhere else in the series, so the
+        assertion that 109.0 is *absent* from the output is exact: not one frozen
+        print survives.
+        """
+        closes = [100.0 + i for i in range(10)]           # 100..109
+        closes += [109.0] * 10                             # the freeze (10 repeats)
+        closes += [110.0 + i for i in range(20)]           # 110..129
+        p = write_csv(tmp_path, "FRZ_1d.csv", self._series(closes))
+
+        rep = CleaningReport()
+        out = load_symbol(p, "FRZ", rep)
+
+        assert 109.0 not in set(out["close"].tolist()), "no frozen print may survive"
+        # The run is 11 bars wide: the 10 repeats PLUS the last genuine bar, whose
+        # close the freeze started from. C9 drops the whole run, anchor included,
+        # so that no bar at the frozen level remains.
+        assert rep.dropped_frozen == 11
+        assert len(out) == len(closes) - 11
+        assert rep.frozen_log[0][3] == 11, "logged run length must be the full run"
+
+    def test_frozen_rows_are_dropped_never_interpolated(self, tmp_path) -> None:
+        """C4 holds for C9: the void stays a void, it is never back-filled."""
+        closes = [100.0 + i for i in range(10)]
+        closes += [109.0] * 10
+        closes += [110.0 + i for i in range(20)]
+        p = write_csv(tmp_path, "FRZ2_1d.csv", self._series(closes))
+        out = load_symbol(p, "FRZ2")
+
+        gap = out.loc["2010-01-10":"2010-01-20", "close"]
+        assert gap.isna().all() or gap.empty, "no synthetic price may fill the freeze"
+
+    def test_legitimate_flat_bars_are_not_over_cleaned(self, tmp_path) -> None:
+        """A limit-lock day, an illiquid flat day and a 4-bar chain are REAL data.
+
+        The measured run-length distribution has nothing between 4 and 46 bars, so
+        a 4-bar chain is the longest genuine cluster in the dataset and must survive
+        intact. Over-cleaning here would destroy real market data to catch a defect.
+        """
+        closes = [
+            100.0, 101.0,
+            101.0,                      # single flat bar (run of 2)
+            102.0, 103.0,
+            103.0,                      # another single flat bar
+            104.0,
+            105.0, 105.0, 105.0, 105.0,  # 4-bar limit-lock chain (run of 4)
+            106.0, 107.0, 107.0,        # flat again
+            108.0, 109.0,
+        ]
+        p = write_csv(tmp_path, "FLAT_1d.csv", self._series(closes))
+        rep = CleaningReport()
+        out = load_symbol(p, "FLAT", rep)
+
+        assert len(out) == len(closes), "genuine flat bars must survive"
+        assert rep.dropped_frozen == 0
+        assert rep.frozen_log == []
+        assert out["close"].tolist() == closes
+
+    @pytest.mark.parametrize(
+        ("run_len", "expect_dropped"),
+        [
+            (FROZEN_RUN_MIN - 1, 0),      # 4 — the longest legitimate cluster seen
+            (FROZEN_RUN_MIN, FROZEN_RUN_MIN),
+            (FROZEN_RUN_MIN + 1, FROZEN_RUN_MIN + 1),
+        ],
+    )
+    def test_threshold_boundary(self, tmp_path, run_len, expect_dropped) -> None:
+        """C9 fires at exactly FROZEN_RUN_MIN and not one bar below it.
+
+        The bar before the run carries a different close, so the run of identical
+        closes is exactly ``run_len`` bars wide.
+        """
+        closes = [100.0, 101.0] + [102.0] * run_len + [103.0, 104.0, 105.0]
+        p = write_csv(tmp_path, f"THR{run_len}_1d.csv", self._series(closes))
+
+        rep = CleaningReport()
+        out = load_symbol(p, f"THR{run_len}", rep)
+
+        assert rep.dropped_frozen == expect_dropped
+        assert len(out) == len(closes) - expect_dropped
+
+    def test_freeze_does_not_cascade_into_c5(self, tmp_path) -> None:
+        """Removing a freeze must not turn into deleting the real crash behind it.
+
+        This is the C5 single-pass failure mode all over again: drop an artifact and
+        a genuine move can look impossible. C9 runs after C5 and never re-triggers
+        it, so a real 30% collapse that happens to sit after a freeze must survive.
+        """
+        closes = [100.0, 101.0, 102.0]
+        closes += [102.0] * 8                       # freeze
+        closes += [71.4, 70.0, 68.5]                # genuine -30% collapse
+        p = write_csv(tmp_path, "CASC_1d.csv", self._series(closes))
+
+        rep = CleaningReport()
+        out = load_symbol(p, "CASC", rep)
+
+        assert rep.dropped_frozen == 9              # 8 repeats + the 102.0 anchor
+        assert rep.dropped_extreme == 0, "C5 must not fire on the survivors"
+        assert 71.4 in set(out["close"].tolist()), "the real collapse must survive"
+
+    def test_report_counter_and_log_increment(self, tmp_path) -> None:
+        closes = [100.0, 101.0, 102.0]
+        closes += [102.0] * 8
+        closes += [103.0, 104.0]
+        p = write_csv(tmp_path, "RPT_1d.csv", self._series(closes))
+
+        rep = CleaningReport()
+        load_symbol(p, "RPT", rep)
+
+        assert rep.dropped_frozen == 9
+        assert len(rep.frozen_log) == 1
+        sym, first, last, length, level = rep.frozen_log[0]
+        assert (sym, length, level) == ("RPT", 9, 102.0)
+        assert (first, last) == ("2010-01-03", "2010-01-11")
+
+        s = rep.summary()
+        assert s["dropped_frozen"] == 9
+        assert s["n_frozen_runs"] == 1
+        assert s["frozen_symbols"] == ["RPT"]
+        assert "dropped frozen" in rep.describe()
+
+    def test_counter_accumulates_across_symbols(self, tmp_path) -> None:
+        """`load_universe` merges per-symbol reports; the counter must add up."""
+        closes = [100.0, 101.0, 102.0] + [102.0] * 8 + [103.0, 104.0]
+        for name in ("AAA", "BBB"):
+            write_csv(tmp_path, f"{name}_1d.csv", self._series(closes))
+
+        _, _, rep = load_universe(str(tmp_path), min_bars=1)
+
+        assert rep.dropped_frozen == 18
+        assert rep.frozen_symbols == ["AAA", "BBB"]
+        assert rep.summary()["n_frozen_runs"] == 2
+
+    def test_clean_series_reports_nothing(self, tmp_path) -> None:
+        """No false positives on a series with no freeze at all."""
+        closes = [100.0 + i for i in range(30)]
+        p = write_csv(tmp_path, "CLEAN_1d.csv", self._series(closes))
+        rep = CleaningReport()
+        out = load_symbol(p, "CLEAN", rep)
+        assert len(out) == 30
+        assert rep.dropped_frozen == 0
+        assert rep.frozen_symbols == []
+
+
 class TestUniverseLoading:
     def _make_universe(self, tmp_path, n: int = 3, days: int = 2000) -> None:
         start = pd.Timestamp("2010-01-01", tz="Asia/Kolkata")
@@ -245,3 +410,27 @@ class TestRealDataset:
     def test_no_artifact_survives(self) -> None:
         _, _, rep = load_universe("data/nse")
         assert rep.dropped_artifact == 0, "artifacts should already be pre-2008"
+
+    def test_no_frozen_run_survives(self) -> None:
+        """C9 regression net against the real panel.
+
+        A vendor re-fetch that reintroduces a freeze must fail here rather than
+        silently reach a rolling window.
+        """
+        panel, _, rep = load_universe("data/nse")
+        assert rep.dropped_frozen > 0, "the shipped dataset is known to contain freezes"
+
+        worst = 0
+        for sym in panel.columns:
+            closes = panel[sym].dropna().to_numpy()
+            if closes.size < 2:
+                continue
+            new_run = np.empty(closes.size, dtype=bool)
+            new_run[0] = True
+            np.not_equal(closes[1:], closes[:-1], out=new_run[1:])
+            run_len = np.bincount(np.cumsum(new_run) - 1)
+            worst = max(worst, int(run_len.max()))
+        assert worst < FROZEN_RUN_MIN, (
+            f"a run of {worst} identical closes survived cleaning; "
+            f"C9 must cap every run below {FROZEN_RUN_MIN}"
+        )

@@ -75,11 +75,15 @@ removed an artifact that had been *adding* return.
 **The v3 column is the only valid result in this document.** Every other column is quoted
 only to size the corrections.
 
-> ⚠️ **Cost drag is deliberately not quoted for v3.** It has not been re-measured on the
-> final window: **5.93%/yr** at 1.99x/yr turnover. The earlier figures (3.03%/yr and
-3.11%/yr) were both taken while the
-> half-cost bug was live — so both are understated by ~2× in the cost term. A number is
-> left out rather than guessed.
+> **Cost drag on the final window: 6.17%/yr** at 2.00x/yr turnover. This was previously
+> left unmeasured at 5.93%/yr / 1.99x, and was then re-measured to 6.17% / 2.00x when
+> cleaning rule **C9** (frozen-price dropping, §5 of `DATA_AUDIT.md`) removed 539
+> vendor-freeze bars from 2008–2010. **The OOS result did not move** — those bars fall
+> entirely in the training half of fold 6, and every OOS test window starts 2014-11-26
+> or later. The direction of the change is *more* conservative: a higher measured cost
+> drag on an unchanged OOS number. Full attribution in `reports/STRESS_v3.md` §1.
+> See [`reports/STRESS_v3.md`](STRESS_v3.md) for the full Gate 4 re-run, which
+> **fails** two of its checks.
 
 **Against the benchmark** (equal-weight buy & hold of the same 48 symbols, identical test
 windows):

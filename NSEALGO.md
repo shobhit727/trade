@@ -130,11 +130,17 @@ turnover (`sum|dW|/2`) and therefore charging **exactly half** the real cost. Se
 [Four engine bugs](#four-engine-bugs-that-were-inflating-every-number-in-this-repo) and
 [`reports/VALIDATION_v1.md`](reports/VALIDATION_v1.md) §0.3.
 
-**Cost drag has not yet been re-measured on the final (v3) window.** The last recorded
-**Measured on the final v3 window: 5.93%/yr** at 1.99x/yr turnover. The earlier figures
-(3.11%/yr and 3.03%/yr) were both taken while the
-half-cost bug was live, so both are **understated by ~2× in the cost term**. The correct
-figure will be higher. It is left unstated here rather than guessed.
+**Cost drag on the final window: 6.17%/yr** at 2.00x/yr turnover. It was first re-measured
+to 5.93%/yr / 1.99x, then moved to 6.17% / 2.00x when cleaning rule **C9**
+(frozen-price dropping) removed 539 vendor-freeze bars from 2008–2010. The earlier
+figures (3.11%/yr and 3.03%/yr) were taken while the half-cost bug was live, so both are
+**understated by ~2× in the cost term**. The OOS headline did **not** move — the frozen
+bars lie entirely in fold-6 *training*, and all six OOS windows start 2014-11-26 or
+later — so the change is strictly more conservative. Full attribution in
+[`reports/STRESS_v3.md`](reports/STRESS_v3.md) §1.
+
+> **Gate 4 does not pass.** The re-run stress suite fails two of its checks, including the
+> negative control. See [`reports/STRESS_v3.md`](reports/STRESS_v3.md).
 
 ## Hard risk limits
 

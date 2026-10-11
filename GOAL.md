@@ -172,6 +172,34 @@ Nothing in §5 has been changed to accommodate this.
 **Against the benchmark it beats on risk and loses badly on return:** 9.71% vs 17.12%
 CAGR (**−7.41pp/yr**), for −14.92% vs −37.97% max drawdown (+23.05pp).
 
+#### ⚠️ Gate 4 was re-run at full strength and **fails**
+
+The stress suite was last executed while the half-cost bug was live, so the slippage
+stress ran at half strength and was not evidence either way. Re-run
+(`reports/STRESS_v3.md`): **five of seven checks pass, two fail.**
+
+| Check | Result | Evidence |
+|---|---|---|
+| 2× / 3× slippage | ✅ | +9.25% / 0.30 and +8.79% / 0.26 |
+| ±20% parameter perturbation | ✅ | 14/14 profitable, **0 sign flips** |
+| No year > 35% of P&L | ❌ | **2024 = 35.80%** |
+| No stock > 20% of P&L | ✅ | max 8.01% (`trent`) |
+| ≥4/6 neighbours profitable | ✅ | 6/6 |
+| Turnover / cost-drag sanity | ✅ | 2.00x/yr, 6.17%/yr |
+| **Negative control must lose** | ❌ | **reversal +10.04% / 0.37 beat trend +9.71% / 0.34** |
+
+**The negative-control failure is the most important line in this document.** A composite
+built *entirely* from reversal factors — which this project's own literature review says
+does not work in Indian equities — outperformed the trend composite out-of-sample. With a
+supplementary fixed-grid sweep showing 18/18 cells profitable, the honest reading is that
+**a 22-name, monthly-rebalanced, quality-tilted book returns a positive OOS result almost
+regardless of its signal.** The 0.34-vs-0.37 Sharpe gap is well inside the noise of a
+Sharpe estimated from ~2,900 daily observations.
+
+This does not prove the strategy has no edge. It proves *this evidence cannot demonstrate
+one* — which is precisely what §5 exists to catch. Per §6.7: keep researching, do not
+loosen the gate.
+
 #### ⚠️ The fragility finding stands, and the corrections made it worse
 
 Separately from the bugs, **27 trading days — about six weeks — moved OOS Sharpe from

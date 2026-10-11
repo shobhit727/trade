@@ -98,6 +98,30 @@ class TestSlippage:
         with pytest.raises(ValueError, match="slippage_bps"):
             CostModel(slippage_bps=D(-1))
 
+    def test_float_slippage_is_coerced_not_deferred_to_a_typeerror(self) -> None:
+        """Regression: research scripts write ``slippage_bps=0.0``.
+
+        The dataclass annotation is not enforced, so the float used to be stored
+        as-is and the failure surfaced later as ``Decimal + float`` inside
+        ``all_in_round_trip_bps`` -- which made every *zero-cost* baseline run
+        impossible to measure through the engine. Two separate agents reported it.
+        """
+        cm = CostModel(slippage_bps=0.0)
+        assert isinstance(cm.slippage_bps, D)
+        assert cm.all_in_round_trip_bps(D("100000")) == D("11.92")
+
+        cm5 = CostModel(slippage_bps=5.0)
+        assert cm5.all_in_round_trip_bps(D("100000")) == D("21.92")
+        # Coerced value must equal the Decimal-literal path exactly.
+        assert cm5.slippage_bps == CostModel(slippage_bps=D("5")).slippage_bps
+
+    def test_float_coercion_does_not_inherit_binary_float_error(self) -> None:
+        """``str()``-first coercion: 0.1 must stay the literal 0.1, not 0.1000..5."""
+        assert CostModel(slippage_bps=0.1).slippage_bps == D("0.1")
+
+    def test_int_slippage_is_coerced(self) -> None:
+        assert CostModel(slippage_bps=0).all_in_round_trip_bps(D("100000")) == D("11.92")
+
     def test_bad_side_rejected(self) -> None:
         with pytest.raises(ValueError, match="BUY or SELL"):
             CostModel().fill_price(D("100"), "HOLD")

@@ -23,45 +23,29 @@ Design decisions and their evidence (see `reports/FACTOR_EVIDENCE.md`):
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from ..costs import CostModel
+from ..provenance import ENGINE_SHA, provenance
 from .metrics import Metrics, compute_metrics
 
 TRADING_DAYS = 244
 
 
 def _engine_sha() -> str:
-    """Stable hash of this engine's source (docstrings stripped).
+    """Deprecated shim. Use :mod:`nsealgo.provenance` instead.
 
-    Agents found that concurrent edits to this file silently changed results
-    mid-experiment -- identical scripts returned different numbers because
-    ``apply_turnover_budget`` had been rewritten. Every BacktestResult now carries
-    this hash so a report can state which engine produced it.
+    Kept because ~40 research scripts and every agent report reference
+    ``backtest.engine.ENGINE_SHA``. The real implementation moved to
+    ``nsealgo.provenance``, which also hashes the loader, the cost model and the
+    data panel -- a loader edit had been changing results with no marker at all.
     """
-    import ast
-    import hashlib
+    from ..provenance import ENGINE_SHA
 
-    try:
-        src = Path(__file__).read_text(encoding="utf-8")
-        tree = ast.parse(src)
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
-                                 ast.Module)):
-                if node.body and isinstance(node.body[0], ast.Expr) and \
-                        isinstance(getattr(node.body[0], "value", None), ast.Constant) and \
-                        isinstance(node.body[0].value.value, str):
-                    node.body.pop(0)
-        payload = ast.dump(tree)
-    except Exception:  # noqa: BLE001 - provenance must never break a backtest
-        payload = "unknown"
-    return hashlib.sha256(payload.encode()).hexdigest()[:12]
+    return ENGINE_SHA
 
-
-ENGINE_SHA = _engine_sha()
 
 #: Reference per-position notional for cost measurement. Flat DP charges make the
 #: round-trip bps size-dependent, so this must be realistic: Rs 21,00,000 x 0.9
@@ -142,9 +126,15 @@ class BacktestResult:
     costs_paid: float = 0.0
     engine_sha: str = ENGINE_SHA
     diag: dict[str, float] = field(default_factory=dict)
+    #: engine / loader / costs / data-panel fingerprints. Loader and panel are
+    #: included because both were found changing results with no marker: a loader
+    #: cleaning rule landed mid-study in one case, a data re-fetch in another.
+    #: See :mod:`nsealgo.provenance`.
+    provenance: dict[str, str] = field(default_factory=provenance)
 
     def summary(self) -> str:
-        return f"[engine {self.engine_sha}]\n" + self.metrics.fmt()
+        tags = " ".join(f"{k}={v}" for k, v in sorted(self.provenance.items()))
+        return f"[{tags}]\n" + self.metrics.fmt()
 
 
 # --------------------------------------------------------------------------- #
