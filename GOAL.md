@@ -155,6 +155,67 @@ complete rotation), `research/validate.py`:**
 are quoted only to show the size of the corrections.
 
 **Band D. Six gate checks run, FOUR fail ⇒ `GOAL.md` §5 default verdict: NO DEPLOY.**
+
+### 🚨 §0.0 THE HEADLINE RESULT IS NOT EVIDENCE OF SKILL
+
+**Read this before any other number in this document.**
+
+The production composite's out-of-sample return is **what a null produces**. Full
+diagnostic in [`reports/CONTROL_DIAGNOSTIC.md`](reports/CONTROL_DIAGNOSTIC.md)
+(`research/control_diagnostic.py`).
+
+| Test | Result |
+|---|---|
+| **100 random 22-name books**, monthly rebalance, identical costs, identical OOS windows | **100 of 100 profitable.** Mean CAGR **+8.59%**, median **+8.65%**, **worst +7.03%** |
+| Production composite, **gross** of costs and overlay | **+11.82% — the 47th percentile.** The median random book. |
+| Production vs **signal-scrambled** null (score permuted across symbols within each rebalance date, turnover matched to ~3%) | **58th percentile** |
+
+The exact additive decomposition of production's +1.12pp/yr advantage over a random book:
+
+```
+selection  −0.02pp      ← the factors themselves contribute NOTHING
+cost       +0.59pp      ← production simply turns over less (2.51x/y vs 3.75x/y)
+overlay    +0.54pp      ← regime de-risking, not stock selection
+          -------
+          +1.12pp
+```
+
+**Every component of the apparent edge is book construction, not signal.** Turnover
+discipline and the regime overlay are worth having; they are not alpha, and they are
+already inside the benchmark's behaviour.
+
+Hypotheses tested and their verdicts: beta-not-skill **SUPPORTED**; wrong null
+**SUPPORTED**; overlay drives the production/control gap **SUPPORTED** (the gap *flips
+sign* when the overlay is removed: +0.029 on, −0.037 off); 0.34 vs 0.37 is noise
+**SUPPORTED** (bootstrap CI on the CAGR difference **[−4.07, +3.38]pp**, paired p = 0.86);
+low-volatility carries the control **REFUTED** (dropping it *widens* the control's lead to
++10.45%/0.40); selection artifact **REFUTED** — the one survivor.
+
+**The surviving hypothesis is the important one.** With *fixed* parameters, production beats
+the reversal control by a genuine gross selection margin (+2.17 / +3.50pp on the two fixed
+cells). It is the **train-window parameter selection that destroys it** (−1.30pp/yr to
+production, +2.03pp/yr to the control). So there may be a real signal underneath a
+**broken selection layer** — and that is a fixable, testable problem, not a dead end.
+
+**Consequences, which are binding:**
+
+1. **The 9.71% / 0.34 OOS figure is not evidence of a working strategy.** It is a
+   passable number produced by a book construction that any random selection reproduces.
+   It must never be quoted without this section.
+2. **Any future candidate must beat a signal-scrambled version of *itself*** — not merely
+   beat buy-and-hold, and not merely beat a random-weight book. Random-weight controls are
+   far too weak a bar: they all pass.
+3. **Trialling 84 catalog strategies and keeping the best is multiple testing.** With this
+   harness, ~84 attempts against a null that yields +8.6% on average will *manufacture* an
+   apparently excellent winner by chance. **A high result from the catalog sweep is
+   evidence of overfitting, not of discovery**, unless it survives the scrambled null and a
+   walk-forward selection fix.
+4. The target is **alpha-limited, not beta-limited**: zero alpha would require beta 3.40
+   against the 0.49 actually run. More leverage cannot manufacture an edge.
+
+Per §6.7: this is a finding, not a failure of process. It is recorded here precisely so
+that no later reader mistakes a comfortable number for a validated one.
+
 Not deployed, not paper-promoted, not capital-ready.
 
 | # | Gate check | Requirement | Measured | |
