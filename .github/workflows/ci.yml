@@ -182,7 +182,7 @@ jobs:
         with:
           lfs: true
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "${{ env.CI_PYTHON }}"
           cache: "pip"
