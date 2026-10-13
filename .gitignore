@@ -42,3 +42,7 @@ data/*.db
 
 # research run caches (regenerable, large)
 research/**/_cache/
+
+# scratch working dir (local only, never committed)
+tem/
+research/optimize/out/
