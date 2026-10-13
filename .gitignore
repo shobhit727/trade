@@ -39,3 +39,6 @@ data/*.db
 /tmp/
 /logs/
 /state-nse/
+
+# research run caches (regenerable, large)
+research/**/_cache/

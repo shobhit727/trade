@@ -228,13 +228,15 @@ its margin did.
 |---|---|
 | **100 random 22-name books**, monthly rebalance, identical costs, identical OOS windows | **100 of 100 profitable.** Mean CAGR **+8.59%**, median **+8.65%**, **worst +7.03%** |
 | Production composite, **gross** of costs and overlay | **+11.43% — the 29th percentile.** Below the median random book. *(was +11.82% / 47th on the superseded v3 engine)* |
-| Production vs **signal-scrambled** null (score permuted across symbols within each rebalance date, turnover matched to ~3%) | **58th percentile** *(v3 engine; needs re-measuring)* |
+| Production vs **signal-scrambled** null (score permuted across symbols within each rebalance date) | **re-measured in `CONTROL_DIAGNOSTIC_v2.md`** — turnover matches to **11.8%**, not the ~3% v1 claimed; that residual cuts *against* production |
 
 **The null is unaffected by the tie-break fix, and this was checked rather than assumed.**
 Random books draw i.i.d. `Uniform(0,1)` scores, which in float64 produce **0 exact ties in
-225 draws** — the tie-break rule is a no-op on them. Three cached null books re-ran
-bit-identical. So the null's mean (+11.83%), median (+8.65% net) and the **H1/H6 percentile
-conclusions carry forward unchanged**; only the production side of every comparison moved.
+225 draws**. This was verified end-to-end, not just argued: an adversarial alphabetical
+counterfactual was instrumented into the real code path and **all 100 null books re-ran
+bit-identical** (max |ΔCAGR| = 0.0). The same census shows the production composite ties on
+**177 of 225** rebalances and the null on **0 of 225**. So the null's mean and the H1/H6
+percentile conclusions carry forward; only the production side of every comparison moved.
 
 The exact additive decomposition of production's net advantage over a random book was
 measured on the v3 engine and **is now superseded** (the +1.12pp figure below is retained to
@@ -253,25 +255,66 @@ discipline and the regime overlay are worth having; they are not alpha, and they
 already inside the benchmark's behaviour. With production now 0.40pp/yr **below** the null's
 gross mean, the selection term is still the one that matters, and it is still not positive.
 
-Hypotheses tested and their verdicts *(measured on the v3 engine; H1 and H6 carry forward,
-the per-book numbers need re-measuring)*: beta-not-skill **SUPPORTED**; wrong null
-**SUPPORTED**; overlay drives the production/control gap **SUPPORTED** (the gap *flips
-sign* when the overlay is removed: +0.029 on, −0.037 off); 0.32 vs 0.37 is noise
-**SUPPORTED** (bootstrap CI on the CAGR difference **[−4.07, +3.38]pp**, paired p = 0.86);
-low-volatility carries the control **REFUTED** (dropping it *widens* the control's lead to
-+10.45%/0.40); selection artifact **REFUTED** — the one survivor.
+Hypotheses tested and their verdicts, **as re-measured on the current engine**
+(`reports/CONTROL_DIAGNOSTIC_v2.md`): beta-not-skill **SUPPORTED** and *stronger* — the
+selection term moved **−0.02pp → −0.40pp/yr**, and production's gross OOS CAGR fell
++11.82% → **+11.43%**, dropping it from the 47th to the **29th percentile**; wrong null
+**SUPPORTED**; **overlay drives the production/control gap — REFUTED** (v1 read this as
+SUPPORTED from a sign flip; on the current engine the control leads both with the overlay
+and without, +0.046 / +0.004 — this is the one verdict that flipped); 0.32 vs 0.37 is noise
+**SUPPORTED** (p = 0.78 over 2,928 days — the control *ties* production rather than
+demonstrably beating it); low-volatility carries the control **REFUTED**; selection artifact
+**REFUTED**.
+
+Tie-invariance was **verified, not assumed**: all 100 null books re-ran bit-identical
+(max |ΔCAGR| = 0.0) against an adversarial alphabetical counterfactual. The production
+composite ties on **177 of 225** rebalances; the null ties on **0 of 225**.
 
 **The surviving hypothesis is the important one.** With *fixed* parameters, production beats
-the reversal control by a genuine gross selection margin (+2.17 / +3.50pp on the two fixed
-cells). It is the **train-window parameter selection that destroys it** (−1.30pp/yr to
-production, +2.03pp/yr to the control). So there may be a real signal underneath a
-**broken selection layer** — and that is a fixable, testable problem, not a dead end.
+the reversal control by a genuine gross selection margin. It is the **train-window parameter
+selection that destroys it** (−0.38pp/yr to production, **+2.56pp/yr to the control** —
+searching actively *helps* the control, which is what a noise-mining search looks like).
+
+> ### ⚠️ CORRECTION — v1's "+11.36% by removing selection" was an artefact of v1's own method
+>
+> `reports/SELECTION_STUDY.md` (v1) claimed that deleting the train-window search takes
+> production **+9.71% → +11.36%/yr** and its scrambled-null percentile **65th → 90th**. That
+> was the most hopeful number in the repository. It does not survive re-measurement.
+>
+> **v1's "no selection" baseline was never search-free.** It fixed the cell at the *modal*
+> pick of the very search it was replacing. On the old engine that search converged on
+> `22|126|0.6` in 2 of 6 folds — **the best of the 18 cells**. So the "benchmark" was the
+> search, laundered. On the current engine the modal pick is a **6-way tie broken
+> alphabetically**, which lands on `15|126|0` — the **14th** of 18.
+>
+> Re-measured on `29764f562cd5`: removing selection gives **+9.52% → +9.23%/yr (−0.29pp)**,
+> CI **[−2.36pp, +1.83pp]**. See `reports/SELECTION_STUDY_v2.md`.
+>
+> Two v1 methods are withdrawn as artefacts, not refinements: its "0 of 6 folds reproduced"
+> was a fold-ordering bug in the comparison (v2 reproduces `walk_forward` **6/6
+> bit-identical**), and its scramble null shared the alphabetical tilt with the real book, so
+> v1's percentile is not comparable to v2's.
+>
+> **What survives v2 unchanged is the part that matters:** production still beats the reversal
+> control in **18 of 18** fixed cells, and **15 of 18** clear the 75th percentile of a matched
+> signal-scrambled null (binomial p < 0.001). The tie-break fix moved no production cell by
+> more than **0.12pp**. The fixed-parameter evidence is untouched.
+>
+> **But 0 of 11 ΔCAGR confidence intervals exclude zero.** Rank evidence is powerful
+> (18 cells × 48 nulls); magnitude evidence is not (2,928 daily bars, ±2.5pp half-width).
+> Both are true; they support different decisions.
 
 **The v4 tie-break result is independent evidence that the selection layer is broken**, and
 it is the strongest evidence yet. A change that alters the delivered book on only **6 of 225
 rebalances** — 2.7% — moved the walk-forward headline by **0.19pp/yr** purely by flipping
 the train-window argmax in **1 fold out of 6**. A selection rule that can be moved by a
 2.7% perturbation of its own book is not selecting a parameter set; it is picking up noise.
+
+**Gate 4 re-run on the current engine (`reports/STRESS_v4.md`): still fails, 5 of 7.** 2024
+carries **36.03%** of P&L against a 35% gate (v3: 35.80%). The negative control still leads
+(+10.05%/0.37 vs +9.52%/0.32) — though `CONTROL_DIAGNOSTIC_v2` measures that gap as
+statistically indistinguishable (p = 0.78 over 2,928 days), so the control **ties** production
+rather than demonstrably beating it. **Either way Gate 4 fails.**
 
 **Consequences, which are binding:**
 
