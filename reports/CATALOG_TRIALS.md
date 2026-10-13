@@ -33,12 +33,42 @@
 > summary file. What this file does is list who is affected. Nothing below should be read as
 > the agent's finding having been overturned — only as its engine having moved.
 >
-> ### Agents needing re-validation (binary / hard-threshold / discrete signal)
+> ### Re-validation COMPLETE — all 55 verdicts survive. See `reports/TIEBREAK_REVALIDATION.md`
 >
-> Selected by scanning agent sources for hard threshold, `np.sign`, integer/bool casts and
-> similar rules that force exact score ties. **13 of 55 agent directories** matched:
+> A full re-run of **all 55 agents** on engine `29764f562cd5` was performed after the
+> tie-break fix. **No verdict flips.** Not one of the 55 variants beats buy-and-hold
+> (+8.26% CAGR / Sharpe +0.19), and not one has a positive TEST Sharpe.
 >
-> | agent | why it is exposed |
+> | class | count |
+> |---|---:|
+> | INVALIDATED — figure moved ≥0.5pp, **verdict still stands** | 9 |
+> | SUSPECT — book touched, move immaterial | 14 |
+> | UNAFFECTED — bit-identical book | 32 |
+>
+> **The original exposure list below was wrong in 9 of 13 cases.** It was built by scanning
+> agent *sources* for hard thresholds and binary signals — but that finds the **signal**,
+> not the **score the engine receives**. Nearly every agent implements brief §5 as
+> `mom.where(sig > 0).rank(axis=1, pct=True)`: the signal is binary, but the engine is
+> handed a *continuous cross-sectional rank*. Eight of the thirteen flagged agents moved
+> **0.0%** with **+0.00pp**.
+>
+> The agents that actually moved — `ma_cross`, `bollinger_bands`, `cointegration`,
+> `distance_ma` — were mostly **not** on the list.
+>
+> The original "0.0% turnover" heuristic was also wrong: minimum turnover across all 110
+> old-engine probes was **2.01x/yr**, not 0.00. A static 0/1 mask does yield *one distinct
+> name set* across 33 rebalances (that part was right), but inverse-vol scaling re-weights
+> a frozen name set daily, so turnover still reads 0.64x/yr. "One distinct book" is the
+> correct observation; turnover is the wrong instrument for detecting it.
+>
+> Three harness defects surfaced and are **not** fixed here (those agents' files were out of
+> scope): `agent_donchian` and `agent_flag_pattern` can no longer rebuild their inputs
+> (`load_all()` raises "OHLC rebuild diverged"); `agent_inapplicable` bypasses
+> `load_universe` and now trips `EmptyScorePanelError` on 2 of its 10 variants.
+>
+> ### Original (superseded) heuristic — binary / hard-threshold / discrete signal
+>
+> | agent | why it was flagged |
 > |---|---|
 > | `agent_adx_trend` | signal is `sign(close[t]−close[t−1])` — a **binary** ±1 score by construction |
 > | `agent_breakout_momentum` | hard breakout threshold |

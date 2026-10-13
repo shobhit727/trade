@@ -1,4 +1,4 @@
-"""Regression tests for the six catalog "dead knob" defects.
+"""Regression tests for the seven catalog "dead knob" defects.
 
 Each test perturbs one config knob and asserts the emitted signal series
 **changes**. Before the fix, every perturbation here produced byte-identical
@@ -15,6 +15,10 @@ from dataclasses import replace
 
 import pytest
 
+from cryptobot.strategies.catalog.linear_regression_channel import (
+    LinearRegChannelConfig,
+    LinearRegChannelStrategy,
+)
 from cryptobot.strategies.catalog.regression_strategy import RegressionConfig, RegressionStrategy
 from cryptobot.strategies.catalog.spot_futures_arbitrage import SpotFuturesConfig, SpotFuturesStrategy
 from cryptobot.strategies.catalog.stablecoin_peg_strategy import (
@@ -299,3 +303,137 @@ def test_trend_continuation_registry_has_both_keys():
 
     assert _REGISTRY["trend_continuation"] == _REGISTRY["trend_mean_reversion"]
     assert _REGISTRY["trend_continuation"][0] is TrendContinuationStrategy
+
+
+# --- 7. Linear regression channel: was `sma()` + a level comparison ---------
+#
+# Same defect as #5 but worse: `linear_regression_channel.py` held no
+# regression and no channel, and it had **no channel-width knob at all** — a
+# "channel" strategy with a single line. On real NSE daily bars it emitted
+# +/-1 on 99.6% of bars (never flat, so it never entered or exited anything)
+# and its forward 21-session return was significantly negative out of sample
+# (t = -5.2 / -15.3 / -10.2 for period 20 / 50 / 200): a buy-high rule.
+
+#: A window that ends sharply ABOVE its fitted line and its upper band, but
+#: whose fitted slope is slightly NEGATIVE. The old `close > sma` rule bought
+#: it (+1); the channel rule must refuse it because the slope does not agree.
+_SLOPE_VETO = [100.0 - 0.5 * i for i in range(19)] + [125.0]
+
+
+def test_linear_reg_channel_period_is_live():
+    _assert_knob_live(LinearRegChannelStrategy, LinearRegChannelConfig, "period", [10, 40, 80, 200])
+
+
+def test_linear_reg_channel_multiplier_is_live():
+    """The band width is the strategy's namesake; it must move the output.
+
+    This is the test that fails hardest against the old code: `multiplier` did
+    not exist, so the field could not be set at all.
+    """
+    _assert_knob_live(
+        LinearRegChannelStrategy, LinearRegChannelConfig, "multiplier", [0.5, 1.0, 1.5, 3.0]
+    )
+
+
+def test_linear_reg_channel_is_not_a_plain_sma_comparison():
+    """The old rule was `close > sma(period)`; the new one must differ from it."""
+    from cryptobot.strategies.indicators import sma
+
+    new = _signal_series(LinearRegChannelStrategy, LinearRegChannelConfig(period=20))
+    old = []
+    for i in range(len(CLOSES)):
+        m = sma(CLOSES[: i + 1], 20)
+        old.append(0 if m != m else (1 if CLOSES[i] > m else -1))
+    assert new != old
+
+
+def test_linear_reg_channel_fit_is_a_real_ols():
+    """`_channel` must return a genuine OLS fit, not a moving average.
+
+    y = 3 + 2i over i = 0..4: slope 2, fitted value at the newest bar 3 + 2*4
+    = 11, and zero residual scatter because the fit is exact.
+    """
+    from cryptobot.strategies.catalog.linear_regression_channel import _channel
+
+    slope, level, half = _channel([3.0 + 2.0 * i for i in range(5)], 5, 2.0)
+    assert slope == pytest.approx(2.0)
+    assert level == pytest.approx(11.0)
+    assert half == pytest.approx(0.0)
+
+
+def test_linear_reg_channel_slope_gate_vetoes_the_old_buy_high_rule():
+    """The fitted slope must veto a channel break the level alone would take.
+
+    Mirror of `test_regression_slope_gate_flips_the_old_buy_high_rule`: the
+    close is above the fitted level *and* above the upper band, so only the
+    negative slope can keep the position flat.
+    """
+    from cryptobot.strategies.catalog.linear_regression_channel import _channel
+    from cryptobot.strategies.indicators import sma
+
+    bars = list(_SLOPE_VETO)
+    slope, level, half = _channel(bars, 20, 2.0)
+    assert slope < 0, "fixture no longer has a negative fitted slope"
+    assert bars[-1] > level + half, "fixture no longer breaks the upper channel"
+
+    m = sma(bars, 20)
+    assert (1 if bars[-1] > m else -1) == 1  # the old rule would have gone long
+    s = LinearRegChannelStrategy(config=LinearRegChannelConfig(period=20))
+    assert s.signal(bars, bars, bars, [1000.0] * len(bars)) == 0
+
+
+def test_linear_reg_channel_opens_on_an_upper_channel_break():
+    """Same break, but with the slope agreeing -> long."""
+    from cryptobot.strategies.catalog.linear_regression_channel import _channel
+
+    bars = [100.0 + 0.5 * i for i in range(19)] + [140.0]
+    slope, level, half = _channel(bars, 20, 2.0)
+    assert slope > 0
+    assert bars[-1] > level + half
+    s = LinearRegChannelStrategy(config=LinearRegChannelConfig(period=20))
+    assert s.signal(bars, bars, bars, [1000.0] * len(bars)) == 1
+
+
+def test_linear_reg_channel_is_flat_inside_the_channel():
+    """Inside the band is the exit: a well-behaved trend that never breaks out."""
+    from cryptobot.strategies.catalog.linear_regression_channel import _channel
+
+    bars = [100.0 + 0.5 * i + 0.3 * ((i % 3) - 1) for i in range(20)]
+    slope, level, half = _channel(bars, 20, 2.0)
+    assert slope > 0
+    assert level - half <= bars[-1] <= level + half, "fixture is not inside the channel"
+    s = LinearRegChannelStrategy(config=LinearRegChannelConfig(period=20))
+    assert s.signal(bars, bars, bars, [1000.0] * len(bars)) == 0
+
+
+def test_linear_reg_channel_wider_channel_signals_less():
+    """More break-throughs of the close must survive a narrower band.
+
+    Mirrors `test_supertrend_multiplier_widens_the_band`: the band is a
+    threshold, so widening it can only shrink the traded set.
+    """
+
+    def non_flat(multiplier: float) -> int:
+        return sum(
+            1
+            for v in _signal_series(
+                LinearRegChannelStrategy,
+                LinearRegChannelConfig(period=20, multiplier=multiplier),
+            )
+            if v != 0
+        )
+
+    assert non_flat(0.5) > non_flat(1.0) > non_flat(2.0)
+
+
+def test_linear_reg_channel_emits_entries_and_exits():
+    """A channel trades *on breaks*; the old rule was never flat, so it could
+    never exit — it emitted no reduce-only order at all across the fixture."""
+    s = LinearRegChannelStrategy(config=LinearRegChannelConfig(period=20, multiplier=1.0))
+    orders = []
+    for c, h, lo, v in zip(CLOSES, HIGHS, LOWS, VOLUMES, strict=False):
+        o = s.feed("SYM", c, h, lo, v)
+        if o is not None:
+            orders.append(o)
+    assert any(not o.reduce_only for o in orders), "never opened a position"
+    assert any(o.reduce_only for o in orders), "never exited one"
