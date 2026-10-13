@@ -1,6 +1,26 @@
 # Gate 4 Robustness Stress Tests — v3 (re-run against the cost-fixed engine)
 
-- **`engine_sha`: `970713f3eecf`** (`nsealgo.backtest.engine`)
+> ## 🚨 STALENESS BANNER (2026-10-12) — engine has moved; these numbers are stale
+>
+> This sweep was produced against engine **`d93815344bd3`**. The working tree now reads
+> **`29764f562cd5`**, after `build_rebalance_weights` stopped resolving score ties
+> **alphabetically** (`argsort(kind="stable")` over alphabetically-ordered columns) in favour
+> of a `blake2b(date|symbol)`-keyed `np.lexsort`.
+>
+> - **The walk-forward baseline has moved: +9.71% / 0.34 → +9.52% / 0.32.** Every derived
+>   row below (slippage, perturbation, concentration, neighbours, fold table) is therefore
+>   **stale and needs re-running** on `29764f562cd5`.
+> - **The negative control still fails, and that has been re-measured:** reversal **+10.05%
+>   / Sharpe 0.37** beat production **+9.52% / 0.32**. This is the check that matters and it
+>   is unchanged in substance.
+> - **Nothing here was rescued by the fix.** The two failures (2024 = 35.80% of P&L;
+>   negative control wins) stand.
+> - **The random/control nulls used in §6 are unaffected** — i.i.d. `Uniform(0,1)` scores
+>   contain no exact ties, so the tie-break is a no-op on them.
+> - **Turnover and cost-drag targets (1.99x/5.93%) are loader-derived, not engine-derived,**
+>   so the C9 discussion below is unaffected by the engine change.
+
+- **`engine_sha`: `970713f3eecf`** (`nsealgo.backtest.engine`) — **this is now STALE; the working tree is `29764f562cd5`**
 - Cost charge now in force: `cost = 2.0 * one_way_turnover * eq * rate` (`src/nsealgo/backtest/engine.py:526`) — the half-cost bug is fixed
 - Data: 48 symbols x 4625 daily bars, 2008-01-01 -> 2026-10-01
 - Harness: `nsealgo.backtest.walkforward`, 6 folds, 6y train / 2y test, 18-cell grid (`n_positions` x overlay `lookback` x overlay `threshold`) — identical to `research/validate.py`. The engine, cost model, factors, overlay and loader are untouched by this script.
@@ -19,22 +39,25 @@
 | 4 | G4.4 no single stock > 20% of total P&L | **PASS** | max 8.01% (trent) |
 | 5 | G4.5 >= 4 of 6 neighbouring settings profitable | **PASS** | 6 of 6, CAGR +8.49%..+9.80% |
 | 6 | X   turnover / cost-drag sanity (no engine regression) | **PASS** | 1.9964x/y, 6.1692%/y (targets 1.99x/5.93% moved by loader rule C9, OOS unchanged) |
-| 7 | X   negative control (reversal) underperforms | **FAIL** | reversal Sharpe 0.37 vs trend 0.34 |
+| 7 | X   negative control (reversal) underperforms | **FAIL** | reversal Sharpe 0.37 vs trend 0.34 *(stale engine; re-measured on `29764f562cd5`: 0.37 vs **0.32** — still FAIL)* |
 
 ## 0. Baseline reproduction, turnover and cost-drag sanity check
 
-| Metric | Measured | v3 baseline |
-|--------|----------|-------------|
-| OOS CAGR | **+9.71%** | 9.71% |
-| OOS Sharpe | **0.34** | 0.34 |
-| OOS MaxDD | **-14.92%** | -14.92% |
-| OOS Calmar | **0.65** | 0.65 |
-| Benchmark CAGR / Sharpe / MaxDD | +17.12% / 0.68 / -37.97% | 17.12% / 0.68 / -37.97% |
-| Annual turnover | **1.9964x/yr** | ~1.99x |
-| Cost drag | **6.1692%/yr** | ~5.93% |
-| Average names held | 21.9 | — |
+| Metric | Measured | v3 baseline (engine `970713f3eecf`) | v4 (engine `29764f562cd5`) |
+|--------|----------|------------------------------------|------------------------------|
+| OOS CAGR | **+9.71%** *(stale)* | 9.71% | **9.52%** |
+| OOS Sharpe | **0.34** *(stale)* | 0.34 | **0.32** |
+| OOS MaxDD | **-14.92%** | -14.92% | **-14.92%** |
+| OOS Calmar | **0.65** *(stale)* | 0.65 | **0.64** |
+| Benchmark CAGR / Sharpe / MaxDD | +17.12% / 0.68 / -37.97% | 17.12% / 0.68 / -37.97% | unchanged |
+| Annual turnover | **1.9964x/yr** *(stale)* | ~1.99x | not re-measured |
+| Cost drag | **6.1692%/yr** *(stale)* | ~5.93% | not re-measured |
+| Average names held | 21.9 *(stale)* | — | not re-measured |
 
-The walk-forward baseline reproduces the v3 measurement **exactly** (same CAGR, Sharpe, MaxDD, Calmar and the same parameters selected in all six folds), so the 2x/3x slippage rows below are genuinely at full strength for the first time.
+The walk-forward baseline reproduces the v3 measurement **exactly** (same CAGR, Sharpe,
+MaxDD, Calmar and the same parameters selected in all six folds), so the 2x/3x slippage
+rows below were genuinely at full strength for the first time. **On the current engine it no
+longer reproduces** — the baseline is 9.52% / 0.32 — so those rows must be re-run.
 
 ### The turnover / cost-drag numbers moved, and here is exactly why
 

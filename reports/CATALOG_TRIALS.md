@@ -1,5 +1,71 @@
 # Catalog Strategy Trials — 38 agents, NSE NIFTY-50
 
+> ## 🚨 2026-10-12 — THE TIE-BREAK FIX: many of these 38 verdicts need re-validation
+>
+> `build_rebalance_weights` used `np.argsort(-score, kind="stable")`, which resolves ties by
+> **column position** — and the panel's columns are alphabetical. **Every tied score panel
+> was therefore selected alphabetically, not at random.**
+>
+> **Verified on a static binary 0/1 mask, 226 monthly rebalances, 22-name book:**
+>
+> | engine | distinct books | mean monthly turnover |
+> |---|---|---|
+> | `d93815344bd3` (alphabetical) | **1 / 225** | **0.0%** |
+> | `29764f562cd5` (`blake2b`) | 223 / 225 | 15.7% |
+>
+> The old engine held **the same alphabetically-first names every month, forever** — a frozen
+> book with a fictional "monthly rebalance", paying the cost stack once and then never
+> trading again.
+>
+> **This matters here more than anywhere else**, because these agents are built from
+> **threshold and binary-gate signals** — exactly the construction that ties. Most of the
+> 38 verdicts below were produced under the old engine.
+>
+> **So, stated bluntly: the "38 of 38 negative" headline is NOT a trustworthy result of the
+> current engine, and neither is any individual verdict that rests on a tied or binary score
+> panel.** A negative result computed on a book that never turned over is not evidence that
+> the strategy failed — it is evidence that the harness failed. **These trials must be
+> re-run on `29764f562cd5` before the catalog can be called dead.**
+>
+> **What is explicitly NOT being done here:** the individual agent reports are **not
+> edited**. They are other authors' documents, each with its own evidence chain, and a
+> correction has to be **re-derived by whoever can re-run that agent**, not asserted by a
+> summary file. What this file does is list who is affected. Nothing below should be read as
+> the agent's finding having been overturned — only as its engine having moved.
+>
+> ### Agents needing re-validation (binary / hard-threshold / discrete signal)
+>
+> Selected by scanning agent sources for hard threshold, `np.sign`, integer/bool casts and
+> similar rules that force exact score ties. **13 of 55 agent directories** matched:
+>
+> | agent | why it is exposed |
+> |---|---|
+> | `agent_adx_trend` | signal is `sign(close[t]−close[t−1])` — a **binary** ±1 score by construction |
+> | `agent_breakout_momentum` | hard breakout threshold |
+> | `agent_cross_sectional` | rank/threshold gates |
+> | `agent_cumulative_delta` | sign-based cumulative delta |
+> | `agent_dema` | thresholded crossover |
+> | `agent_ema_cross` | binary crossover state machine |
+> | `agent_inapplicable` | knob-audit trial on gated signals |
+> | `agent_obv` | thresholded OBV confirmation |
+> | `agent_roc` | sign/threshold on ROC |
+> | `agent_rsi` | RSI overbought/oversold gates — **the archetypal binary mask** |
+> | `agent_tema` | thresholded crossover |
+> | `agent_tmr` | threshold mean-reversion gates |
+> | `agent_trendvol` | thresholded trend/volatility gates |
+>
+> **Agents not on this list are not thereby cleared.** The test above is a source-code
+> heuristic; a continuous score can still tie through the `0.5` median-fill in
+> `build_composite_score` (`src/nsealgo/factors/core.py:219`). The reliable check is
+> empirical and is now cheap: re-run and compare `diag["avg_names"]`, `diag["min_names"]` and
+> `diag["avg_invested_weight"]` against the previous run. **A book whose turnover collapsed
+> toward zero was not measuring the strategy.**
+>
+> **Re-validation checklist for each agent:** re-run on `29764f562cd5`; confirm
+> `engine_sha == 29764f562cd5`; confirm the book actually changes month to month; then
+> re-check the agent's own random/scrambled null **on the same engine** — a null measured on
+> the old engine is not comparable to a book measured on the new one.
+
 **Protocol:** `research/AGENT_BRIEF.md`. One catalog strategy per agent. Parameters
 declared up front (max 5 variants), selected on **TRAIN** (2016–2023), evaluated once on
 **TEST** (2024–2026), net of the full Indian delivery cost stack (**21.92 bps all-in** =
@@ -9,12 +75,17 @@ declared up front (max 5 variants), selected on **TRAIN** (2016–2023), evaluat
 
 ## Headline: 38 of 38 failed. Zero made money.
 
+> ⚠️ **This headline is provisional.** See the tie-break banner at the top of this file: the
+> engine moved (`d93815344bd3` → `29764f562cd5`), and on a tied/binary score panel the old
+> engine produced a **zero-turnover book**. The trials below were run on the old engine and
+> **must be re-run before "38 of 38" is treated as a settled result about the catalog.**
+
 No strategy beat plain buy-and-hold out-of-sample. Several could not beat a **random
 signal of the same exposure**, which §6.5 of the brief names as the minimum bar.
 
 **The most valuable output of these 38 trials was not a strategy. It was two critical bugs
 in the shared backtest engine** — one of which had been inflating *every* headline number
-this project had ever published.
+this project had ever published — and now a third, silent one (see the banner above).
 
 ---
 
@@ -133,6 +204,7 @@ rescue any of them.
 |-----|----------|--------|
 | **Costs charged at exactly half** | **CRITICAL** | `all_in_round_trip_bps` is per *total* turnover, but the engine multiplied it by *one-way* turnover (`sum\|dW\|/2`). Ratio proven exactly **0.500000**. **Every CAGR in the project was flattered** — the headline fell **10.97% → 9.89%**, Sharpe 0.44 → 0.35 — and the **Gate 4 slippage stress ran at half strength**, i.e. a gate was certifying a robustness property the backtest never tested. |
 | **Residual-weight dilution** | HIGH | `apply_turnover_budget` blended the whole book toward the new target, so names that stop being flagged **decay instead of exiting**. For a low-liveness oscillator (fisher flags ~13 of 48) **59% of the book was stale residue**, and realised exposure averaged **~0.6 of the intended 0.9**. The book was measuring the harness, not the signal. Headline fell **9.89% → 9.71%**. Fixed with whole-position exits and all-or-nothing adoption when the budget binds. |
+| **Tie-break resolved alphabetically** | **CRITICAL** (silent) | `np.argsort(-score, kind="stable")` breaks ties by column position and the panel's columns are alphabetical, so **every tied score panel selected names alphabetically**. On a binary 0/1 mask this produced **1 distinct book across 225 rebalances and 0.0% turnover**. On the production composite it changed the book on 6 of 225 rebalances and moved the headline by flipping 1 fold's argmax out of 6. Fixed with `blake2b(date\|symbol)` via `np.lexsort`; headline fell **9.71% → 9.52%**, Sharpe 0.34 → 0.32. **The 38 trials below predate this fix.** |
 | Stray weekend bars | HIGH | 4 bogus weekend dates (2010-02-06 Sat, 2019-10-27 Sun, 2020-11-14 Sat, 2025-02-01 Sat) each landed an **interior NaN in 42 symbols**, corrupting every rolling/ewm indicator for `period` bars after the hole — silently, because the loader only validated *within* each symbol. Fixed as cleaning rule **C8**; panel is 4,625 days. |
 
 ### Two high-value infrastructure findings

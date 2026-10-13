@@ -1,5 +1,39 @@
 # Control Diagnostic — does the production composite have a demonstrable edge?
 
+> ## 🚨 STALENESS BANNER (2026-10-12) — engine has moved; production numbers are stale
+>
+> This report was produced against engine **`d93815344bd3`**. The working tree now reads
+> **`29764f562cd5`**. The change replaced `np.argsort(-score, kind="stable")` — which broke
+> score ties by *column position*, and this panel's columns are alphabetical — with a
+> `blake2b(date|symbol)`-keyed `np.lexsort`.
+>
+> **What carries forward, and why:**
+>
+> - **The null is UNAFFECTED, and this was checked rather than assumed.** Random books draw
+>   i.i.d. `Uniform(0,1)` scores, which produce **0 exact ties in 225 draws** — the
+>   tie-break rule is a no-op on them. Three cached null books re-ran bit-identical. The
+>   null's mean/median/percentiles are therefore **still valid**, and the **H1 and H6
+>   percentile conclusions carry forward unchanged.**
+> - **Every production number in this document is stale and needs re-measuring.** Production
+>   OOS is **9.52% / Sharpe 0.32** (was 9.71% / 0.34); the control is **+10.05% / 0.37**
+>   (was +10.04% / 0.37).
+> - **The headline conclusion is STRENGTHENED, not weakened.** Production's gross OOS CAGR
+>   fell **+11.82% → +11.43%**, moving it from the **47th to the 29th percentile** of the
+>   100-book null (gross mean **+11.83%**, median +11.85% — unchanged). On `d93815344bd3`
+>   production *was* the median random book to two decimal places. **It is now materially
+>   below the median.**
+> - **A bias fix made the strategy look worse. That is the correct direction for a bias
+>   fix.** Five corrections in a row, and not one of them improved the number.
+> - **The per-book rows (H2, H4, H5) and the bootstrap CIs are on the old engine** and are
+>   quoted here as the last full run, not as current values.
+>
+> **The most important new fact for this report's subject.** The tie-break changed the
+> delivered production book on only **6 of 225** rebalances (2.7%) — yet it moved the
+> walk-forward headline **0.19pp/yr**, because it flipped the train-window argmax in **1
+> fold out of 6**. **H5's "the selection layer is broken" hypothesis is now corroborated by
+> a direct mechanism**: a selection rule that a 2.7% perturbation of its own book can flip
+> is reading noise, not signal. See `reports/SELECTION_STUDY.md` §2.5.
+
 Triggered by `reports/STRESS_v3.md` §6: the production trend composite returns
 OOS +9.71% / Sharpe 0.34 / MaxDD −14.92%, while the reversal **negative control**
 — built entirely from factors this repo's own factor module rules OUT on published
@@ -12,12 +46,12 @@ This report does not assume what that means. It tests six competing explanations
 
 ## Provenance
 
-| component | SHA |
-|-----------|-----|
-| engine | `d93815344bd3` |
-| loader | `c1badf5f7df8` |
-| costs | `ba350aef75b3` |
-| panel | `389b082b832f` |
+| component | SHA (this report) | SHA in the working tree **now** |
+|-----------|-----|-----|
+| engine | `d93815344bd3` | **`29764f562cd5` — CHANGED, see banner** |
+| loader | `c1badf5f7df8` | `c1badf5f7df8` (same) |
+| costs | `ba350aef75b3` | `ba350aef75b3` (same) |
+| panel | `389b082b832f` | `389b082b832f` (same) |
 
 - **Panel**: 48 symbols × 4625 daily bars, 2008-01-01 → 2026-10-01
 - **Engine**: `nsealgo.backtest.engine`, unmodified. Cost charge `2.0 × one_way_turnover × equity × rate` at `21.92` bps all-in round trip (statutory + 2 × 5 bps slippage).
@@ -59,6 +93,17 @@ This report does not assume what that means. It tests six competing explanations
 |------|---------:|---------:|-------------:|--------------:|-------:|-----:|---------:|----------:|
 | **production (trend)** | +9.71% | 97th | +11.82% | **47th** | +0.34 | 96th | 2.51x/y | 1.23%/y |
 | control (reversal) | +10.04% | 98th | +12.79% | 94th | +0.37 | 98th | 3.34x/y | 1.66%/y |
+
+> 🚨 **STALE — measured on engine `d93815344bd3`; the working tree is `29764f562cd5`.**
+> Production is now **9.52% / Sharpe 0.32**, and its **gross CAGR fell +11.82% → +11.43%,
+> moving it from the 47th to the 29th percentile** of the same 100-book null (gross mean
+> +11.83%, median +11.85% — both **unchanged**, because i.i.d. `Uniform(0,1)` produces no
+> exact ties and the tie-break is a no-op on them). **The production row above is
+> superseded; the null column it is compared against is not.** It should now read
+> `production | 9.52% | ... | +11.43% | **29th** | +0.32 | ...`.
+>
+> **The reading is unchanged in direction and stronger in magnitude:** on v3 production *was*
+> the median random book to two decimal places; it is now materially below it.
 
 > **Read the gross column, not the net one.** The random books turn over 3.75x/yr against production's 2.51x/yr, so on *net* return production is credited for a cost saving that has nothing to do with its factors. The gross column strips both costs and the regime overlay.
 
@@ -279,4 +324,4 @@ Production's beta against that benchmark is **0.491** (corr 0.748, R² 0.559); t
 
 ---
 
-*Produced by `research/control_diagnostic.py` against engine `d93815344bd3`, loader `c1badf5f7df8`, costs `ba350aef75b3`, panel `389b082b832f`. Every figure here is net of the full Indian delivery cost stack and must be quoted with its end date — the OOS window ends 2026-10-01. Survivorship bias is present and disclosed. `GOAL.md` §6 anti-fraud rules apply: no in-sample number is presented as a result, and no cost was reduced to rescue anything.*
+*Produced by `research/control_diagnostic.py` against engine `d93815344bd3`, loader `c1badf5f7df8`, costs `ba350aef75b3`, panel `389b082b832f`. **The working tree engine now reads `29764f562cd5` — see the staleness banner at the top of this file: the null and the H1/H6 percentile conclusions carry forward, every production number needs re-measuring.** Every figure here is net of the full Indian delivery cost stack and must be quoted with its end date — the OOS window ends 2026-10-01. Survivorship bias is present and disclosed. `GOAL.md` §6 anti-fraud rules apply: no in-sample number is presented as a result, and no cost was reduced to rescue anything.*

@@ -78,10 +78,26 @@ handling, Pydantic Settings config, Prometheus monitoring, health checks, Docker
 - Data ends **2026-10-01** (panel re-fetched 2026-10-06 via `tools/recover_nse_data.py`,
   verified 49/50 vs `research/_audit_1d.csv`) → staleness resolved, but the refresh is a
   one-off script: a Kite historical feed is still required before live.
-- **Always quote an nsealgo result with its end date.** Moving the end date 27 sessions
-  (2026-08-25 → 2026-10-01) moved walk-forward Sharpe 0.66 → 0.44 and the band C → D.
-  Current authoritative result: **10.97% OOS, Sharpe 0.44, MaxDD −12.91%, Band D, four gates
-  failing** — see `reports/VALIDATION_v1.md` §0.
+- **Always quote an nsealgo result with its end date AND its engine SHA.** Moving the end
+  date 27 sessions (2026-08-25 → 2026-10-01) moved walk-forward Sharpe 0.66 → 0.44 and the
+  band C → D. Moving only the **tie-break rule** (`d93815344bd3` → `29764f562cd5`) moved
+  CAGR 9.71% → **9.52%** and Sharpe 0.34 → **0.32** with no strategy change at all.
+  Current authoritative result: **9.52% OOS, Sharpe 0.32, Sortino 0.38, MaxDD −12.91→−14.92%,
+  Calmar 0.64, Band D, four gates failing** — see `reports/VALIDATION_v1.md` §0.
+  Correction chain, every step a bug fix that made it worse:
+  **13.40 → 10.97 → 9.89 → 9.71 → 9.52**.
+- **Provenance is fingerprinted** (`nsealgo.provenance`): current
+  `engine 29764f562cd5 · loader c1badf5f7df8 · costs ba350aef75b3 · panel 389b082b832f`.
+  Loader/costs/panel are unchanged from v3; only the engine moved. **A stored result whose
+  `engine_sha` does not match the working tree is stale — re-run it, never quote it.**
+- **Tie-break rule (binding).** Score ties are broken by `blake2b(f"{date}|{symbol}")` via
+  `np.lexsort` — deterministic, reproducible across processes, and **order-independent but
+  NOT alphabetical**. Never reintroduce `argsort(..., kind="stable")` for selection: it
+  resolves ties by column position, and since the panel's columns are alphabetical that is
+  a silent alphabetical bias. `build_composite_score` fills missing factor values with the
+  median **0.5**, so ties are common by construction; a **binary 0/1 mask ties every name
+  exactly and produced a 0.0%-turnover book** under the old rule. See `GOAL.md` §11.5 —
+  any result on a tied/binary panel from `d93815344bd3` or earlier must be re-run.
 
 ### Rules that code must obey
 1. **`Decimal` for all money. Never `float`.**

@@ -103,7 +103,12 @@ from cryptobot.strategies.catalog.supertrend_strategy import SupertrendConfig, S
 from cryptobot.strategies.catalog.support_strategy import SupportConfig, SupportStrategy
 from cryptobot.strategies.catalog.tema_strategy import TemaConfig, TemaStrategy
 from cryptobot.strategies.catalog.time_series_strategy import TimeSeriesConfig, TimeSeriesStrategy
-from cryptobot.strategies.catalog.trend_mean_reversion import TrendMrConfig, TrendMrStrategy
+from cryptobot.strategies.catalog.trend_mean_reversion import (
+    TrendContinuationConfig,
+    TrendContinuationStrategy,
+    TrendMrConfig,
+    TrendMrStrategy,
+)
 from cryptobot.strategies.catalog.trend_momentum_strategy import TrendMomentumConfig, TrendMomentumStrategy
 from cryptobot.strategies.catalog.trend_volume_strategy import TrendVolumeConfig, TrendVolumeStrategy
 from cryptobot.strategies.catalog.triangle_pattern import TriangleConfig, TriangleStrategy
@@ -191,6 +196,10 @@ _SPEC: list[tuple[str, type, type]] = [
     ("tema_strategy", TemaStrategy, TemaConfig),
     ("time_series_strategy", TimeSeriesStrategy, TimeSeriesConfig),
     ("trend_momentum_strategy", TrendMomentumStrategy, TrendMomentumConfig),
+    # `trend_mr` was renamed `TrendContinuationStrategy`: the rule buys strength
+    # (z above its own mean AND above the trend filter), it never mean-reverts.
+    # Both keys resolve to the same classes so existing configs keep loading.
+    ("trend_continuation", TrendContinuationStrategy, TrendContinuationConfig),
     ("trend_mean_reversion", TrendMrStrategy, TrendMrConfig),
     ("trend_volume_strategy", TrendVolumeStrategy, TrendVolumeConfig),
     ("triangle_pattern", TriangleStrategy, TriangleConfig),
@@ -281,6 +290,7 @@ __all__.extend(["SupportConfig", "SupportStrategy"])
 __all__.extend(["TemaConfig", "TemaStrategy"])
 __all__.extend(["TimeSeriesConfig", "TimeSeriesStrategy"])
 __all__.extend(["TrendMomentumConfig", "TrendMomentumStrategy"])
+__all__.extend(["TrendContinuationConfig", "TrendContinuationStrategy"])
 __all__.extend(["TrendMrConfig", "TrendMrStrategy"])
 __all__.extend(["TrendVolumeConfig", "TrendVolumeStrategy"])
 __all__.extend(["TriangleConfig", "TriangleStrategy"])

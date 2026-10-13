@@ -4,21 +4,23 @@
 hard risk limits, anti-fraud rules, and the gates that must all pass before any real
 capital is deployed.
 
-> ## Current status: 9.71% annualised out-of-sample — Band D — not capital-authorised
+> ## Current status: 9.52% annualised out-of-sample — Band D — not capital-authorised
 >
 > | | |
 > |---|---|
-> | **OOS annualised** | **9.71%** (walk-forward, 2008-01-01 → 2026-10-01, 19.0y) |
-> | **OOS monthly** | **+0.775%** |
-> | Requested target | 3.000%/month (42.6% annualised) — **4.4× short** |
-> | **Bias-corrected** | **≈3.6%/yr** (provisional — see "Known limitations" #1) |
-> | OOS Sharpe | **0.34** |
+> | **OOS annualised** | **9.52%** (walk-forward, 2008-01-01 → 2026-10-01, 19.0y) |
+> | **OOS monthly** | **+0.761%** |
+> | Requested target | 3.000%/month (42.6% annualised) — **4.5× short** |
+> | **Bias-corrected** | **≈3.4%/yr** (see "Known limitations" #1) |
+> | OOS Sharpe | **0.32** |
+> | OOS Sortino | **0.38** |
 > | OOS max drawdown | **−14.92%** |
-> | OOS Calmar | **0.65** |
+> | OOS Calmar | **0.64** |
 > | OOS positive years | **10/13 (77%)** |
-> | Benchmark (same windows) | 17.12% CAGR / 0.68 Sharpe → **−7.41pp/yr** |
+> | Benchmark (same windows) | 17.12% CAGR / 0.68 Sharpe → **−7.60pp/yr** |
 > | Band | **D** |
 > | Verdict | ⛔ **NO DEPLOY** — six gate checks run, **four fail** |
+> | Provenance | engine `29764f562cd5` · loader `c1badf5f7df8` · costs `ba350aef75b3` · panel `389b082b832f` |
 >
 > Full evidence: [`reports/VALIDATION_v1.md`](reports/VALIDATION_v1.md) — **read the
 > addendum at the top first**; the body of that file is the superseded v1 measurement,
@@ -26,22 +28,37 @@ capital is deployed.
 
 > ### ⚠️ Read this before quoting any number from this repo
 >
-> **The headline got worse three times, and every step down was a bug fix.**
+> **The headline got worse four times, and every step down was a bug fix.**
 >
 > | Measurement | OOS CAGR | Sharpe | What changed |
 > |---|---|---|---|
-> | v1 | 13.40% | 0.66 | original measurement, data to 2026-08-25 |
-> | v2 | 10.97% | 0.44 | +27 sessions, portfolio-limit fix (25.66% single name → 10.80%) |
-> | v2b | 9.89% | 0.35 | **the engine was charging HALF the real cost stack** |
-> | **v3 — current** | **9.71%** | **0.34** | **residual-weight dilution in `apply_turnover_budget`** |
+> | v1 | 13.40% | 0.66 | original measurement, data to 2026-08-25 — **SUPERSEDED** |
+> | v2 | 10.97% | 0.44 | +27 sessions, portfolio-limit fix (25.66% single name → 10.80%) — **SUPERSEDED** |
+> | v2b | 9.89% | 0.35 | **the engine was charging HALF the real cost stack** — **SUPERSEDED** |
+> | v3 | 9.71% | 0.34 | **residual-weight dilution in `apply_turnover_budget`** — **SUPERSEDED** |
+> | **v4 — current** | **9.52%** | **0.32** | **tied scores resolved *alphabetically*; now `blake2b(date\|symbol)`** |
 >
 > **Not one of the intermediate numbers was valid.** A reader who stopped at v1 was reading
-> a figure **38% too high**.
+> a figure **40% too high**. **There has never been a step in this project where fixing a
+> bug made the strategy look better — five for five.** A correction that had improved the
+> number would have been the thing to investigate.
 >
 > Separately: **27 extra trading days — about six weeks — moved Sharpe 0.66 → 0.44 and the
-> band from C to D**, with no code change at all. A result whose band depends on where you
-> stop measuring is not a result that gets capital. **No number from this system should be
-> quoted without its end date attached.**
+> band from C to D**, with no code change at all. And the tie-break fix moved the headline
+> another **0.19pp/yr** by changing the delivered book on only **6 of 225 rebalances** —
+> it flipped the train-window argmax in 1 fold out of 6. A result whose band depends on
+> where you stop measuring, and whose selection layer can be moved by a 2.7% perturbation
+> of its own book, is not a result that gets capital. **No number from this system should
+> be quoted without its end date and its engine SHA.**
+
+> ### 🚨 And it is now *below* the median random book
+>
+> `GOAL.md` §0.0 remains the controlling statement: **production's OOS return is what a null
+> produces.** The v4 tie-break fix made this **worse, not better** — gross OOS CAGR fell
+> **+11.82% → +11.43%**, moving from the **47th to the 29th percentile** of the 100-book
+> random null (gross mean +11.83%). On v3 it *was* the median random book to two decimals;
+> it is now materially below it. The random null is unaffected by the fix (i.i.d.
+> `Uniform(0,1)` produces no exact ties), so the comparison is like-for-like.
 
 **The 3%/month target is not achievable.** It is 3.0–3.4× the entire long-run return of
 the index (NSE NIFTY-50 TRI: 12.44% over 20 years, 14.2% since 1999), and Indian active
@@ -223,11 +240,11 @@ by vendor artifacts (hence the 2008+ restriction). See Known limitations #6 and
      NSE TRI (~12.44% over 20y) *includes* dividends; ours does not, so our price return
      understates total return by roughly the ~1.15%/yr NSE-50 dividend yield. This makes
      the bias **larger**, not smaller.
-   - Bias-corrected, the strategy is **≈3.6%/yr, not 9.71%** (was ≈3.7% not 10.97%, and
+   - Bias-corrected, the strategy is **≈3.4%/yr, not 9.52%** (was ≈3.7% not 10.97%, and
      ≈6.1% not 13.40%). Benchmark bias-corrected ≈9.7%.
-   - ⚠️ **The ≈3.6% figure is provisional and does not reconcile.** The ~7.3pp discount was
-     measured on the v1 full window; 9.71 − 7.3 is ≈2.4%, not ≈3.6%. The discount has not
-     been re-derived on the current window. **Do not quote ≈3.6%/yr as a measured figure.**
+   - Derivation: `9.52 + 1.15 (absent dividends) − 7.29 (survivorship + selection) = 3.38%`.
+     The ~7.3pp discount was measured on the v1 full window and is carried forward unchanged
+     because it is a property of the universe construction, not of the end date.
    - *Corporate actions post-2008 **are** verified adjusted* (10 documented bonus dates, no
      −50% signature). So the corruption is confined to the pre-2008 slice, which is why the
      window starts in 2008.
@@ -235,8 +252,10 @@ by vendor artifacts (hence the 2008+ restriction). See Known limitations #6 and
    12.5% / STCG 20% is a further real ~2–4%/yr drag that is not modelled at all. Both push
    the same direction: the reported number is not a take-home number.
 3. **The result is fragile.** 27 trading days moved Sharpe 0.66 → 0.44 and the band
-   C → D with no code change. Two subsequent bug fixes took it to 0.35 → 0.34. Until the
-   band is shown to be stable as the window extends, this number is not trustworthy as a
+   C → D with no code change. Subsequent bug fixes took it to 0.35 → 0.34 → 0.32. And the
+   v4 tie-break fix moved the headline **0.19pp/yr** by reshuffling only **6 of 225
+   rebalances**, because it flipped one fold's train-window argmax. Until the band is shown
+   to be stable as the window extends, this number is not trustworthy as a
    forward expectation.
 4. **Four engine bugs were inflating every earlier number** — including one **critical**
    cost-charging bug that charged exactly half the real cost stack, and two portfolio-rule
@@ -257,8 +276,8 @@ by vendor artifacts (hence the 2008+ restriction). See Known limitations #6 and
    (`open_range_breakout`, gap filters, overnight fills) is genuinely exposed. Full
    analysis: [`reports/DATA_AUDIT.md`](reports/DATA_AUDIT.md) §0.1 and
    `research/data_quality/FINDINGS.md`.
-7. **OOS CAGR is below the gate**, not just Sharpe: 9.71% vs 12% required, and
-   7.41pp/yr behind the benchmark.
+7. **OOS CAGR is below the gate**, not just Sharpe: 9.52% vs 12% required, and
+   7.60pp/yr behind the benchmark.
 8. **Data ends 2026-10-01**, re-fetched 2026-10-06. Staleness is resolved, but the refresh
    is a **one-off recovery script, not an automated feed** — a Kite historical backfill
    path is still required before live.
@@ -279,15 +298,21 @@ top of it*, all fixed in `src/nsealgo/backtest/engine.py` (on disk, **uncommitte
 | 2 | **Residual-weight dilution.** `apply_turnover_budget` blended the whole book toward the new target, so a name the target no longer wanted decayed instead of exiting. | HIGH | **59% of a sparse book's weight was stale residue**; realised exposure averaged **~0.6 of the intended 0.9**. The book measured the harness, not the signal. | 9.89% → 9.71% CAGR. Now whole-position exits, all-or-nothing when budget-bound. |
 | 3 | Sector cap redistributed weight **without re-capping** the receiving names, so the 12% single-name cap was applied first and then invalidated | HIGH | worst single weight **25.66%** against a 12% cap | worst single weight **10.80%** |
 | 4 | Dead residual weights accumulated — positions below the material threshold were never dropped | HIGH | **48 names** held against `max_positions` 30 | max names **30**, worst sector **22.50%** |
+| 5 | **Selection tie-break was alphabetical.** `np.argsort(-score, kind="stable")` breaks ties by column position, and the panel's columns are alphabetical — so every tied score was resolved alphabetically. `build_composite_score` fills missing factor values with the median **0.5**, manufacturing ties by design. | **CRITICAL** | On a **binary 0/1 mask** the engine produced **1 distinct book across 225 rebalances and 0.0% turnover** — the same alphabetically-first names every month, a frozen portfolio with a fictional "monthly rebalance" and understated cost drag. On the production composite it changed the book on **6 of 225** rebalances and moved the headline by flipping **1 fold's argmax out of 6**. | Ties now break on `blake2b(f"{date}\|{symbol}")` via `np.lexsort` — deterministic, order-independent, not alphabetical. 9.71% → **9.52%** CAGR, 0.34 → **0.32** Sharpe. Engine `d93815344bd3` → `29764f562cd5` |
 
-**Stated plainly: every number this project published before 2026-10-09 was too high, and
+**Stated plainly: every number this project published before 2026-10-12 was too high, and
 bugs 1 and 3/4 were not subtle — they were breaches of the portfolio rules this repo's own
 constitution mandates.** A backtest that quietly holds 25% in one name, or that pays half
 the real cost, is not the strategy `GOAL.md` describes, whatever it prints. Any return
 produced by breaching a limit is an artifact of the harness, not a return of the strategy.
 
 **The only reason the current number is the current number is that someone went looking
-for it.** Nothing in the routine pipeline caught any of the four.
+for it.** Nothing in the routine pipeline caught any of the five.
+
+**Bug 5 is the worst of the five, because it was invisible.** It produced no warning, no
+NaN, and a perfectly plausible-looking equity curve — it just quietly decided that any
+tied score panel meant "buy the alphabetically-first names." On a binary mask that is a
+frozen book. See `GOAL.md` §11.5.
 
 ### Reproducibility: `engine_sha`
 
@@ -353,7 +378,7 @@ rescue any of them.
 **Two caveats that change what this comparison means:**
 
 1. **It is a full-window in-sample comparison, not walk-forward.** The composite baseline
-   here carries the regime overlay (17.57% / 0.88), not the 0.34 OOS figure above. The two
+   here carries the regime overlay (17.57% / 0.88), not the 0.32 OOS figure above. The two
    numbers are not comparable to each other and are not meant to be.
 2. **It mostly measures momentum, not strategy skill.** The adapter deliberately gives each
    catalog strategy the benefit of momentum ranking, and the top of the sweep is not a set
@@ -380,5 +405,5 @@ too high. See [Four engine bugs](#four-engine-bugs-that-were-inflating-every-num
 |------|----------|
 | [`reports/DATA_AUDIT.md`](reports/DATA_AUDIT.md) | Coverage, data quality, the 2026-10-06 data recovery, the **`open`-column defect**, the 114 split bars and 47 negative-price bars, cleaning plan C1–C8 |
 | [`reports/FACTOR_EVIDENCE.md`](reports/FACTOR_EVIDENCE.md) | Cited evidence survey driving the factor choices |
-| [`reports/CATALOG_TRIALS.md`](reports/CATALOG_TRIALS.md) | **38-agent walk-forward sweep: 38/38 negative.** The catalog-bugs list and the harness findings |
-| [`reports/VALIDATION_v1.md`](reports/VALIDATION_v1.md) | **Addendum §0 = current v3 result (9.71% / 0.34 / Band D).** Body = the superseded v1 measurement, kept as the historical record |
+| [`reports/CATALOG_TRIALS.md`](reports/CATALOG_TRIALS.md) | **38-agent walk-forward sweep: 38/38 negative.** The catalog-bugs list and the harness findings. ⚠️ **Agents built on binary/tied score panels need re-validation** after the v4 tie-break fix |
+| [`reports/VALIDATION_v1.md`](reports/VALIDATION_v1.md) | **Addendum §0 = current v4 result (9.52% / 0.32 / Band D).** Body = the superseded v1 measurement, kept as the historical record |

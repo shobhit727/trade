@@ -368,9 +368,8 @@ constituents are absent. Consequences:
   point-in-time constituent history exists locally, so the bias cannot be *removed*.
 - **Quantified at ≈ 7.3%/yr** in aggregate (survivorship + selection + missing dividends) —
   see `reports/VALIDATION_v1.md` §6.1 for the derivation and §0.7 for how it carries into
-  the current numbers. Bias-corrected, the strategy is **≈3.6%/yr (provisional — the
-  derivation does not currently reconcile, see `reports/VALIDATION_v1.md` §0.7) on the
-  current window, not the 9.71% headline.**
+  the current numbers. Bias-corrected, the strategy is **≈3.4%/yr** on the current window,
+  not the 9.52% headline.
 - Per `GOAL.md` §6.5, this is disclosed in **every** result. Treat all numbers as
   **optimistic by ≈7.3pp/yr** until proven otherwise on live data.
 

@@ -22,7 +22,9 @@ Design decisions and their evidence (see `reports/FACTOR_EVIDENCE.md`):
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 import numpy as np
 import pandas as pd
@@ -32,6 +34,79 @@ from ..provenance import ENGINE_SHA, provenance
 from .metrics import Metrics, compute_metrics
 
 TRADING_DAYS = 244
+
+
+class EmptyScorePanelError(ValueError):
+    """A rebalance date carried no usable score at all.
+
+    Distinct from a legitimately small book. Partial NaN is the *normal* state of a real
+    score panel — a name without enough history has no factor value — and a rebalance
+    that can only build a 3-name book is a real, reportable result. A date with *zero*
+    usable names carries no information at all, and the engine used to swallow it: the
+    target row came back all zeros, the book went flat, and ``run_backtest`` returned a
+    perfectly plausible result with a Sharpe of exactly 0.00. Two research agents
+    reported "beats 100% of random" for an all-NaN panel before noticing.
+
+    This is that failure, so it raises instead of returning.
+    """
+
+
+def _tiebreak_key(date_iso: str, symbol: str) -> int:
+    """A deterministic, order-independent pseudo-random key for one ``(date, symbol)``.
+
+    Why this exists
+    ---------------
+    Ranking used to be ``np.argsort(-score, kind="stable")``, which breaks ties by
+    *column position*. The panel's column order is alphabetical, so **every tied score
+    panel selected names alphabetically**. A binary 0/1 mask control silently became
+    "alphabetically-first live names" and scored 13.3% against a true random 11.2% —
+    which inverted a published verdict.
+
+    The key must be three things at once, and only a hash of the *identity* gives all
+    three:
+
+    * **deterministic** — same inputs, same outputs, always. No global RNG state and no
+      seed to forget; byte-identical across processes, machines and runs because it is
+      ``blake2b``, never Python's per-process-salted ``hash()``;
+    * **unbiased** — names that tie are ordered by a pseudorandom function of the tie
+      itself, not by their position in an alphabetically sorted list of tickers;
+    * **order-independent** — reordering the panel's columns must not change which
+      names win a tie, so the key is built from the date string and the symbol string
+      and never from an index or a position.
+
+    64 bits of ``blake2b`` puts the collision probability for a full 24-year panel
+    (225 rebalances x 48 names ~ 1.1e4 keys) at ~3e-16, so it never decides a book.
+    """
+    digest = hashlib.blake2b(
+        f"{date_iso}|{symbol}".encode(), digest_size=8
+    ).digest()
+    return int.from_bytes(digest, "big")
+
+
+@lru_cache(maxsize=256)
+def _tiebreak_matrix_cached(
+    dates: tuple[str, ...], cols: tuple[str, ...]
+) -> np.ndarray:
+    """``_tiebreak_key`` for every ``(date, symbol)`` pair, memoised.
+
+    A walk-forward sweep hands the same slice to the engine once per grid cell, so the
+    same matrix is rebuilt 18 times per fold without this. The cache hands back the
+    *same* array each time, so it is marked read-only rather than returned for mutation.
+    """
+    out = np.empty((len(dates), len(cols)), dtype=np.uint64)
+    for i, d in enumerate(dates):
+        for j, c in enumerate(cols):
+            out[i, j] = _tiebreak_key(d, c)
+    out.flags.writeable = False
+    return out
+
+
+def _tiebreak_matrix(dates: list, cols: list[str]) -> np.ndarray:
+    """:func:`_tiebreak_matrix_cached` keyed on the date and symbol *strings*."""
+    return _tiebreak_matrix_cached(
+        tuple(pd.Timestamp(d).isoformat() for d in dates),
+        tuple(str(c) for c in cols),
+    )
 
 
 def _engine_sha() -> str:
@@ -272,17 +347,40 @@ def build_rebalance_weights(
     V = vol.to_numpy(dtype=float)
     out = np.zeros((len(dates), n), dtype=float)
     k = min(config.n_positions, n)
+    tiebreak = _tiebreak_matrix(dates, cols)
 
-    for i in range(len(dates)):
+    for i, date in enumerate(dates):
         s = S[i].copy()
         v = V[i].copy()
-        valid = np.isfinite(s) & np.isfinite(v) & (v > 0)
+        # Two different reasons a name is unusable, kept apart on purpose:
+        #   * no score      — almost always too little history for the factor. NORMAL,
+        #                      and must never fail: it leaves the other names eligible.
+        #   * no volatility — the rolling window has not filled yet. Also normal, and
+        #                      handled by the `continue` below exactly as before.
+        # Only a date with no score *anywhere* is a broken panel, and that raises.
+        scored = np.isfinite(s)
+        valid = scored & np.isfinite(v) & (v > 0)
+        if not scored.any():
+            raise EmptyScorePanelError(
+                f"score panel has no usable value on rebalance date "
+                f"{pd.Timestamp(date).date()}: {int((~scored).sum())} of {n} cells are "
+                f"NaN or infinite, so 0 of {n} names are eligible and no book can be "
+                f"built. This is NOT the same as a small book — a name with too little "
+                f"history is normal and leaves the remaining names eligible — but a date "
+                f"with nothing at all means the score never reached the engine. Check "
+                f"that `score` covers this date with the same index as `panel`, that the "
+                f"panel is not empty here, and that the factor lookbacks are shorter "
+                f"than the history available."
+            )
         if not valid.any():
             continue
 
-        # Rank on score; deterministic tie-break via stable sort on (score, index).
+        # Rank on score, ties broken by a hash of (date, symbol): see `_tiebreak_key`.
+        # A stable argsort instead orders ties by column position, and since the panel's
+        # columns are alphabetical that is an alphabetical selection — a silent,
+        # reproducible bias that has already inverted one published verdict.
         s_masked = np.where(valid, s, -np.inf)
-        order = np.argsort(-s_masked, kind="stable")[:k]
+        order = np.lexsort((tiebreak[i], -s_masked))[:k]
         if len(order) == 0:
             continue
 
@@ -308,6 +406,27 @@ def build_rebalance_weights(
     return pd.DataFrame(out, index=pd.DatetimeIndex(dates), columns=cols)
 
 
+def _symbol_tiebreak(index) -> np.ndarray:
+    """:func:`_tiebreak_key` per name, for the weight-space ranking helpers.
+
+    ``_thin`` and ``_exit_allocation`` rank on *weights*, not scores, but the same
+    alphabetical bias applies: ``Series.nlargest`` and ``Series.sort_values`` break ties
+    by position in the index, and the index is the panel's column order — alphabetical.
+    So "keep the largest N" on a book of equal weights kept them alphabetically.
+    """
+    return np.array([_tiebreak_key("", str(c)) for c in index], dtype=np.uint64)
+
+
+def _top_n_weights(w: pd.Series, n: int) -> pd.Index:
+    """The ``n`` largest entries of ``w``, ties broken by :func:`_tiebreak_key`.
+
+    ``Series.nlargest`` would break a tie by index position, i.e. alphabetically.
+    """
+    # lexsort: the LAST key is primary. Primary = weight descending; tiebreak = the key.
+    order = np.lexsort((_symbol_tiebreak(w.index), -w.to_numpy(dtype=float)))[:n]
+    return w.index[order]
+
+
 def _thin(w: pd.Series, max_names: int) -> pd.Series:
     """Drop dead residuals; keep at most ``max_names`` material positions.
 
@@ -316,11 +435,14 @@ def _thin(w: pd.Series, max_names: int) -> pd.Series:
     `apply_turnover_budget` picks what the book holds *before* this runs, so on the
     normal path there is nothing here to drop and this is the safety net that holds
     the position limit if a hand-built book arrives with too many names.
+
+    Ties among equal weights are broken by :func:`_tiebreak_key` rather than by index
+    position, which for this panel is alphabetical order.
     """
     out = w.where(w > DEAD_WEIGHT_EPS, 0.0)
     if int((out > DEAD_WEIGHT_EPS).sum()) <= max_names:
         return out
-    return out.where(out.index.isin(out.nlargest(max_names).index), 0.0)
+    return out.where(out.index.isin(_top_n_weights(out, max_names)), 0.0)
 
 
 def _one_way_turnover(tgt: pd.Series, cur: pd.Series) -> float:
@@ -338,11 +460,16 @@ def _exit_allocation(weights: pd.Series, cap: float) -> pd.Series:
     does not fit in what is left of the budget is left alone rather than cut; the
     unsold names keep whole positions and are the smallest next time.
 
-    Every position is sold when they fit the allowance together, which is the ordinary
+Every position is sold when they fit the allowance together, which is the ordinary
     case. Capping only bites when the positions being dropped are worth more than the
-    whole allowance, and then the budget — not the signal — is what decides.
+    whole allowance, and then the budget — not the signal — what decides.
+
+    Equal weights are ordered by :func:`_tiebreak_key` rather than by ``sort_values``'s
+    index order, so "which of these equal positions goes first" is not an alphabetical
+    rule.
     """
-    ordered = weights.sort_values()
+    order = np.lexsort((_symbol_tiebreak(weights.index), weights.to_numpy(dtype=float)))
+    ordered = weights.iloc[order]
     if float(ordered.sum()) <= cap + CONSTRAINT_TOL:
         return ordered
     fits = (ordered.cumsum() <= cap + CONSTRAINT_TOL).to_numpy()
@@ -394,9 +521,10 @@ def apply_turnover_budget(
 
     # A target at or below the dead-weight threshold is not a position, so a name it
     # no longer carries must be sold rather than blended toward zero. Slots go to the
-    # target's largest positions; anything past that limit is a drop, too.
+    # target's largest positions; anything past that limit is a drop, too. Equal target
+    # weights are ordered by `_tiebreak_key`, not by index position (alphabetical).
     wanted = tgt > DEAD_WEIGHT_EPS
-    kept = tgt[wanted].nlargest(max_names).index
+    kept = _top_n_weights(tgt[wanted], max_names)
     held_by_target = wanted & tgt.index.isin(kept)
     to_zero = (cur > 0) & ~held_by_target
 
@@ -533,6 +661,21 @@ def run_backtest(
         cost_drag_annual=cost_drag,
         trades_per_year=float(len(rb) / years),
     )
+    # Book diagnostics. `avg_names` alone cannot tell a *small* book from a book that is
+    # nominally the right size but barely funded: one agent found a book held 55.8%
+    # invested against a 90% intent and had to decompose the gap by hand, and three
+    # separate agents asked for this number. `avg_invested_weight` is the missing half
+    # of the picture — the fraction of the book actually at work.
+    #
+    # The mean is taken over the whole held series so it is directly comparable with
+    # `avg_names`; the `min_` forms are taken over the *active* window (first rebalance
+    # onward) because every day before the first rebalance is structurally zero weight,
+    # which would make both minima a constant 0.0 and tell an agent nothing. That is the
+    # "genuinely empty book vs legitimately small one" distinction, and it is the shape
+    # of a broken score panel — see :class:`EmptyScorePanelError`.
+    invested = held.sum(axis=1)
+    n_names = (held > 0).sum(axis=1)
+    active = held.loc[rb[0]:] if len(rb) else held
     return BacktestResult(
         returns=daily,
         equity=equity,
@@ -541,10 +684,14 @@ def run_backtest(
         costs_paid=float(costs_total * initial_capital),
         diag={
             "n_rebalances": len(rb),
-            "avg_names": float((held > 0).sum(axis=1).mean()),
+            "avg_names": float(n_names.mean()),
             "avg_top_weight": float(
                 held.where(held > 0).max(axis=1).mean()
             ),
+            #: mean fraction of capital actually deployed, over the held book.
+            "avg_invested_weight": float(invested.mean()),
+            "min_invested_weight": float(active.sum(axis=1).min()),
+            "min_names": float((active > 0).sum(axis=1).min()),
             "round_trip_bps": rt_bps,
         },
     )

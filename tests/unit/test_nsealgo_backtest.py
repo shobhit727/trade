@@ -339,7 +339,29 @@ def sector_panel() -> pd.DataFrame:
 
 @pytest.fixture(scope="module")
 def dense_score(sector_panel: pd.DataFrame) -> pd.DataFrame:
-    return pd.DataFrame(1.0, index=sector_panel.index, columns=UNIVERSE)
+    """A complete, *stable* signal: every name scores on every date, in the same rank.
+
+    NOTE: this used to be a constant ``1.0`` panel. That is a *fully tied* panel, and a
+    tied score is not a stable signal -- it carries no information about which names to
+    hold, so the engine re-arbitrates the book every rebalance (the tie-break is a
+    function of ``(date, symbol)``, deliberately). Measured on this fixture that is
+    3.93x/y of turnover, which the 35% one-way budget cannot fund, so the book bleeds
+    from 0.90 down to a 0.34 minimum and averages 0.63.
+
+    The old alphabetical tie-break made a constant panel produce the *same* 22 names on
+    every date -- 0.00x/y of turnover, 0.90 invested forever -- and this fixture passed
+    for that reason. That was the tie-break bug, not a property of book construction.
+    The test's stated intent is "a signal on every name produces the configured book,
+    undiluted", so the fixture now supplies a signal that is actually complete *and*
+    stable. See `tests/unit/test_nsealgo_engine_guards.py` for the tie-break tests.
+    """
+    n_sym = len(UNIVERSE)
+    rank = np.arange(n_sym, dtype=float)
+    return pd.DataFrame(
+        np.repeat(rank[None, :], len(sector_panel.index), axis=0),
+        index=sector_panel.index,
+        columns=UNIVERSE,
+    )
 
 
 @pytest.fixture(scope="module")

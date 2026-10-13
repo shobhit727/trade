@@ -5,34 +5,40 @@
 > **The result in this file is the ORIGINAL v1 measurement, taken on data ending
 > 2026-08-25. It is no longer the current result and it must not be quoted.**
 >
-> **The current result is 9.71% annualised / Sharpe 0.34 / max drawdown −14.92% /
-> Calmar 0.65 — Band D, four of six gate checks failing.**
+> **The current result is 9.52% annualised / Sharpe 0.32 / Sortino 0.38 / max drawdown
+> −14.92% / Calmar 0.64 — Band D, four of six gate checks failing.**
 >
-> **The headline has been corrected three times and every correction made it worse:
-> 13.40% → 10.97% → 9.89% → 9.71%.** One correction was a data extension plus two breaches of
-> our own portfolio limits; one was a **critical** bug — an engine that charged **half** the
-> real cost stack; one was a turnover budget that diluted exits so that 59% of a sparse
-> book's held weight was stale residue. See §0.3.
+> **The headline has been corrected four times and every correction made it worse:
+> 13.40% → 10.97% → 9.89% → 9.71% → 9.52%.** One correction was a data extension plus two
+> breaches of our own portfolio limits; one was a **critical** bug — an engine that charged
+> **half** the real cost stack; one was a turnover budget that diluted exits so that 59% of
+> a sparse book's held weight was stale residue; and the fourth is a **silent selection
+> bug** — tied scores were resolved **alphabetically**, not at random. See §0.3.
 >
 > **Everything below the addendum is retained unchanged as the historical record of the
 > original measurement.** Where it conflicts with §0, §0 wins. Nothing has been edited to
 > make the old numbers look better or worse than they were.
 >
-> Two findings lead, per `GOAL.md` §6.7:
+> Three findings lead, per `GOAL.md` §6.7:
 > - **§0.3 — the engine charged exactly half the real cost stack.** Every CAGR this project
 >   had ever reported was flattered, and the Gate 4 slippage stress ran at half strength.
+> - **§0.5 — a tied or discrete score panel silently produced a zero-turnover book.** A
+>   binary 0/1 mask under the old engine held *the same alphabetically-first names every
+>   month, forever*: 1 distinct book across 225 rebalances, 0.0% turnover. Results built
+>   that way are not trustworthy and must be re-run.
 > - **§0.2 — 27 trading days moved Sharpe from 0.66 to 0.44 and the band from C to D**,
 >   with no code change at all. A fragility signal about the strategy, not a data defect.
 
 ---
 
-# §0 — ADDENDUM v3 (2026-10-10): the authoritative result
+# §0 — ADDENDUM v4 (2026-10-12): the authoritative result
 
 **Reproduce:** `.venv/bin/python research/validate.py`
 **Data:** `data/nse/*_1d.csv`, re-fetched 2026-10-06 (`tools/recover_nse_data.py`),
-cleaned per `reports/DATA_AUDIT.md` §5 (rules C1–C8)
+cleaned per `reports/DATA_AUDIT.md` §5 (rules C1–C9)
 **Window:** 2008-01-01 → 2026-10-01 (19.0y), 48 symbols, **4,625 trading days**
-**Engine:** `src/nsealgo/backtest/engine.py`, post half-cost-fix and post residual-weight-fix
+**Provenance:** engine `29764f562cd5` · loader `c1badf5f7df8` · costs `ba350aef75b3` ·
+panel `389b082b832f`
 **Verdict: 🔴 BAND D. SIX GATE CHECKS RUN, FOUR FAIL. NOT 3%/month. NOT DEPLOYABLE.**
 
 ## 0.1 ⚠️ THE CHAIN OF CORRECTIONS — every number this project published was too high
@@ -42,66 +48,73 @@ every correction moved the number DOWN.**
 
 | # | Measurement | OOS CAGR | OOS Sharpe | Band | What was fixed |
 |---|-------------|----------|-----------|------|----------------|
-| 1 | **v1** — data to 2026-08-25 | **13.40%** | **0.66** | **C** | The original measurement. |
-| 2 | **v2** — data to 2026-10-01 | **10.97%** | **0.44** | **D** | +27 sessions of data **and** two §3.2 breaches: a 25.66% single name against a 12% cap, and 48 names held against `max_positions` 30. |
-| 3 | **v2b** | **9.89%** | **0.35** | **D** | **Bug 1 (CRITICAL): the engine charged exactly half the real cost stack.** |
-| 4 | **v3 — FINAL** | **9.71%** | **0.34** | **D** | **Bug 2 (HIGH): residual-weight dilution in `apply_turnover_budget`.** |
+| 1 | **v1** — data to 2026-08-25 | **13.40%** | **0.66** | **C** | The original measurement. **SUPERSEDED.** |
+| 2 | **v2** — data to 2026-10-01 | **10.97%** | **0.44** | **D** | +27 sessions of data **and** two §3.2 breaches: a 25.66% single name against a 12% cap, and 48 names held against `max_positions` 30. **SUPERSEDED.** |
+| 3 | **v2b** | **9.89%** | **0.35** | **D** | **Bug 1 (CRITICAL): the engine charged exactly half the real cost stack.** **SUPERSEDED.** |
+| 4 | **v3** | **9.71%** | **0.34** | **D** | **Bug 2 (HIGH): residual-weight dilution in `apply_turnover_budget`.** **SUPERSEDED.** |
+| 5 | **v4 — CURRENT** | **9.52%** | **0.32** | **D** | **Bug 5 (CRITICAL, silent): tied scores were resolved *alphabetically*.** Now `blake2b(date\|symbol)`. |
 
-**13.40% → 10.97% → 9.89% → 9.71%.** A reader who stopped at v1 was reading a figure
-**38% too high**; at v2, still **13% too high**.
+**13.40% → 10.97% → 9.89% → 9.71% → 9.52%.** A reader who stopped at v1 was reading a
+figure **40% too high**; at v2, still **15% too high**.
+
+> Rows 1–4 are retained **only** as the historical correction chain. They are superseded
+> results and must never be quoted as current.
 
 **The structural finding, and it is about method rather than about strategy: nothing in
-the routine pipeline found any of these.** All four bugs were found by adversarial probing
+the routine pipeline found any of these.** All five bugs were found by adversarial probing
 of the harness while 38 catalog trials were being run on top of it — a cost-ratio
 assertion, a plausibility check on realised exposure, and a run of checks whose whole
 purpose was to attack the engine's own bookkeeping. The current number is the current
 number **because someone went looking for it**, not because the pipeline was trustworthy.
 
 **No step in this project ever made the strategy look better by fixing a bug.** Every fix
-removed an artifact that had been *adding* return.
+removed an artifact that had been *adding* return. Five for five. A correction that had
+*improved* the number would have been the thing to investigate.
 
 ## 0.2 FINAL HEADLINE
 
-| Metric | v1 | v2 | v2b | **v3 — CURRENT (authoritative)** | Target | |
-|--------|----|----|-----|--------------------------------|--------|---|
-| **OOS annualised** | 13.40% | 10.97% | 9.89% | **9.71%** | 42.6% | ❌ 4.4× short |
-| **OOS monthly equivalent** | +1.053% | +0.871% | +0.789% | **+0.775%** | 3.000% | ❌ |
-| **OOS Sharpe** | 0.66 | 0.44 | 0.35 | **0.34** | ≥ 0.7 | ❌ |
-| **OOS Max Drawdown** | −15.41% | −12.91% | — | **−14.92%** | < 35% | ✅ |
-| **OOS Calmar** | 0.87 | 0.85 | — | **0.65** | — | ✅ |
-| **OOS positive years** | 12/13 (92%) | 11/13 (85%) | — | **10/13 (77%)** | ≥ 60% | ✅ |
-| **Band (`GOAL.md` §2.3)** | **C** | D | D | **D** | C or better | ❌ |
+| Metric | v1 | v2 | v2b | v3 | **v4 — CURRENT (authoritative)** | Target | |
+|--------|----|----|-----|----|--------------------------------|--------|---|
+| **OOS annualised** | 13.40% | 10.97% | 9.89% | 9.71% | **9.52%** | 42.6% | ❌ 4.5× short |
+| **OOS monthly equivalent** | +1.053% | +0.871% | +0.789% | +0.775% | **+0.761%** | 3.000% | ❌ |
+| **OOS Sharpe** | 0.66 | 0.44 | 0.35 | 0.34 | **0.32** | ≥ 0.7 | ❌ |
+| **OOS Sortino** | — | — | — | — | **0.38** | — | — |
+| **OOS Max Drawdown** | −15.41% | −12.91% | — | −14.92% | **−14.92%** | < 35% | ✅ |
+| **OOS Calmar** | 0.87 | 0.85 | — | 0.65 | **0.64** | — | ✅ |
+| **OOS positive years** | 12/13 (92%) | 11/13 (85%) | — | 10/13 (77%) | **10/13 (77%)** | ≥ 60% | ✅ |
+| **Band (`GOAL.md` §2.3)** | **C** | D | D | D | **D** | C or better | ❌ |
 
-**The v3 column is the only valid result in this document.** Every other column is quoted
+**The v4 column is the only valid result in this document.** Every other column is quoted
 only to size the corrections.
 
-> **Cost drag on the final window: 6.17%/yr** at 2.00x/yr turnover. This was previously
-> left unmeasured at 5.93%/yr / 1.99x, and was then re-measured to 6.17% / 2.00x when
-> cleaning rule **C9** (frozen-price dropping, §5 of `DATA_AUDIT.md`) removed 539
-> vendor-freeze bars from 2008–2010. **The OOS result did not move** — those bars fall
-> entirely in the training half of fold 6, and every OOS test window starts 2014-11-26
-> or later. The direction of the change is *more* conservative: a higher measured cost
-> drag on an unchanged OOS number. Full attribution in `reports/STRESS_v3.md` §1.
-> See [`reports/STRESS_v3.md`](STRESS_v3.md) for the full Gate 4 re-run, which
-> **fails** two of its checks.
+> **Cost drag on the final window: 6.17%/yr** at 2.00x/yr turnover (measured on the v3
+> engine; not re-measured on v4 — see `reports/STRESS_v3.md`, which carries a staleness
+> banner). This was previously left unmeasured at 5.93%/yr / 1.99x, and was then re-measured
+> to 6.17% / 2.00x when cleaning rule **C9** (frozen-price dropping, §5 of `DATA_AUDIT.md`)
+> removed 539 vendor-freeze bars from 2008–2010. **The OOS result did not move** — those
+> bars fall entirely in the training half of fold 6, and every OOS test window starts
+> 2014-11-26 or later. The direction of the change is *more* conservative: a higher measured
+> cost drag on an unchanged OOS number. See [`reports/STRESS_v3.md`](STRESS_v3.md) for the
+> full Gate 4 re-run, which **fails** two of its checks.
 
 **Against the benchmark** (equal-weight buy & hold of the same 48 symbols, identical test
 windows):
 
 | | CAGR | Sharpe | MaxDD |
 |---|---|---|---|
-| **OOS strategy (v3)** | **9.71%** | **0.34** | **−14.92%** |
-| **OOS benchmark (v3)** | **17.12%** | **0.68** | −37.97% |
-| **Difference** | **−7.41pp** | **−0.34** | **+23.05pp** |
+| **OOS strategy (v4)** | **9.52%** | **0.32** | **−14.92%** |
+| **OOS benchmark (v4)** | **17.12%** | **0.68** | −37.97% |
+| **Difference** | **−7.60pp** | **−0.36** | **+23.05pp** |
 
-**−7.41pp/yr behind buy-and-hold**, for a drawdown that is 61% shallower. The return
-deficit has widened at every measurement: −5.36pp (v1) → −6.00pp (v2) → −7.41pp (v3).
+**−7.60pp/yr behind buy-and-hold**, for a drawdown that is 61% shallower. The return
+deficit has widened at every measurement: −5.36pp (v1) → −6.00pp (v2) → −7.41pp (v3) →
+**−7.60pp (v4)**.
 
-## 0.3 ⚠️ THE FOUR ENGINE BUGS — all four inflated every earlier number
+## 0.3 ⚠️ THE FIVE ENGINE BUGS — all five inflated every earlier number
 
 All fixed in `src/nsealgo/backtest/engine.py` (**on disk, uncommitted**) and in
-`src/nsealgo/data/loader.py` (C8). Found by adversarial probing while catalog trials ran on
-top of the engine — **not** by the normal validation pipeline.
+`src/nsealgo/data/loader.py` (C8/C9). Found by adversarial probing while catalog trials ran
+on top of the engine — **not** by the normal validation pipeline.
 
 | # | Bug | Severity | Measured symptom | Cost of the fix |
 |---|-----|----------|------------------|-----------------|
@@ -109,6 +122,7 @@ top of the engine — **not** by the normal validation pipeline.
 | **2** | **Residual-weight dilution.** `apply_turnover_budget` blended the *whole* book toward the new target, so a name the target no longer wanted decayed instead of exiting. | HIGH | **59% of a sparse book's held weight was stale residue**; realised exposure averaged **~0.6 of the intended 0.9**. The book measured the harness, not the signal. | 9.89% → **9.71%** CAGR. Now whole-position exits, all-or-nothing adoption when the budget binds. |
 | **3** | Sector cap redistributed weight **without re-capping** the receiving names, so the single-name cap was applied first and then invalidated | HIGH | **worst single weight 25.66%** against a 12% cap (§3.2 breach) | worst single weight **10.80%** |
 | **4** | Dead residual weights accumulated — positions below the material threshold were never dropped | HIGH | **48 names held** against `max_positions` 30 (§3.2 breach) | max names **30**, worst sector **22.50%** |
+| **5** | **Tied scores were resolved alphabetically.** `np.argsort(-score, kind="stable")` breaks ties by **column position**, and the panel's columns are alphabetical — so every tied score selected names alphabetically. `build_composite_score` fills missing factor values with the median **0.5**, manufacturing ties by construction. | **CRITICAL** (silent) | On a **binary 0/1 mask** the engine produced **1 distinct book across 225 rebalances and 0.0% turnover** — a frozen book with a fictional monthly rebalance and understated cost drag (§0.5). On the production composite it changed the delivered book on **6 of 225** rebalances and moved the headline by flipping **1 fold's train-window argmax out of 6**. | 9.71% → **9.52%** CAGR, 0.34 → **0.32** Sharpe. Engine `d93815344bd3` → `29764f562cd5` |
 
 **Bug 1 in detail, because it is the one that matters.** A complete rotation of the book —
 sell 100%, buy 100% — is `sum|dW| = 2.0`, i.e. 200% of one-way turnover. The rate
@@ -144,6 +158,24 @@ measured on the pre-fix engine — it had shown Sharpe **+0.42** where the fixed
 result is stale and must be re-run rather than quoted.** A number without an engine
 fingerprint is not reproducible, and an unreproducible number is an opinion.
 
+**This rule has now paid for itself twice.** The second application is bug 5:
+
+| engine | walk-forward OOS | fold-2 train pick |
+|---|---|---|
+| `d93815344bd3` (superseded) | CAGR 9.71% / Sharpe 0.3365 | `22\|126\|0.6` |
+| `29764f562cd5` (current) | CAGR **9.52%** / Sharpe **0.3202** | **`22\|252\|0.6`** |
+
+Two engines differing **only** in how a tied score is broken — nothing about the strategy,
+the factors, the costs, the data or the folds — produce different walk-forward headlines
+and select a **different parameter cell in 1 fold out of 6**. Verified by direct ablation:
+emulating the old alphabetical tie-break inside the current engine reproduces 9.71% /
+0.3365 exactly, and the `_thin` / `_exit_allocation` tie-break fixes alone move the number
+by 0.00. **The tie-break accounts for 100% of the 9.71 → 9.52 move.**
+
+This is the strongest evidence yet that the **selection layer is the weakest part of this
+harness**, and it is direct support for `reports/SELECTION_STUDY.md` §2.5: a train-window
+argmax that can be flipped by reshuffling 2.7% of its own rebalance books is reading noise.
+
 ## 0.4 ⚠️ THE FRAGILITY FINDING — 27 trading days moved the band
 
 **Still true, and the corrections above made the picture worse rather than better.**
@@ -152,13 +184,19 @@ fingerprint is not reproducible, and an unreproducible number is an opinion.
 |---|---|---|---|---|---|
 | v1 | 2026-08-25 | — | 13.40% | 0.66 | **C** |
 | v2 | 2026-10-01 | **+27** | 10.97% | 0.44 | **D** |
-| v3 | 2026-10-01 | +0 | **9.71%** | **0.34** | **D** |
+| v3 | 2026-10-01 | +0 | 9.71% | 0.34 | **D** |
+| **v4 (current)** | 2026-10-01 | +0 | **9.52%** | **0.32** | **D** |
 
 Between v1 and v2 **nothing about the strategy changed**: same code, same Indian cost stack,
 same parameters, same six-fold sliding-origin walk-forward design. The only variable was the
 data end date. **Twenty-seven sessions — about six weeks — removed a third of the measured
 risk-adjusted return and dropped the system out of the band it was previously judged
 against.**
+
+There is now a **second** fragility axis, and it is worse because it is inside the code
+rather than in the data: between v3 and v4, with the **same end date** and the same data,
+the headline moved **9.71% → 9.52%** because a tie-break flipped one fold's selected cell.
+**A 2.7% perturbation of the delivered book is worth 0.19pp/yr of headline.**
 
 | Over the 27-session window (2026-08-26 → 2026-10-01) | Return |
 |---|---|
@@ -175,31 +213,77 @@ one noisy draw away from being wrong.** A result that changes band when the end 
 by six weeks is not a measurement of the strategy's edge; it is a measurement of where the
 end date happened to fall.
 
-**Standing rule, unchanged:** every figure reported by this project must carry its end
-date. A CAGR without a window is not a measurement.
+**Standing rule, strengthened:** every figure reported by this project must carry **its end
+date and its `engine_sha`**. A CAGR without a window is not a measurement, and a CAGR
+without an engine fingerprint is not reproducible.
 
 ## 0.5 Gate re-check (`GOAL.md` §5)
 
 **Six gate checks. Four fail.**
 
-| # | Gate | Requirement | v1 | v2 | **v3** | |
-|---|------|-------------|----|----|--------|---|
-| 1 | G3 | OOS CAGR ≥ 12% | 13.40% ✅ | 10.97% ❌ | **9.71%** | ❌ |
-| 2 | G3 | OOS Sharpe ≥ 0.7 | 0.66 ❌ | 0.44 ❌ | **0.34** | ❌ |
-| 3 | G3 | OOS MaxDD < 35% | −15.41% ✅ | −12.91% ✅ | **−14.92%** | ✅ |
-| 4 | G3 | Positive years ≥ 60% | 92% ✅ | 85% ✅ | **77%** | ✅ |
-| 5 | G4 | Beat benchmark CAGR | −5.36% ❌ | −6.00pp ❌ | **−7.41pp** | ❌ |
-| 6 | G4 | Beat benchmark Sharpe | −0.11 ❌ | −0.23 ❌ | **−0.34** | ❌ |
+| # | Gate | Requirement | v1 | v2 | v3 | **v4 (current)** | |
+|---|------|-------------|----|----|-----|------------------|---|
+| 1 | G3 | OOS CAGR ≥ 12% | 13.40% ✅ | 10.97% ❌ | 9.71% ❌ | **9.52%** | ❌ |
+| 2 | G3 | OOS Sharpe ≥ 0.7 | 0.66 ❌ | 0.44 ❌ | 0.34 ❌ | **0.32** | ❌ |
+| 3 | G3 | OOS MaxDD < 35% | −15.41% ✅ | −12.91% ✅ | −14.92% ✅ | **−14.92%** | ✅ |
+| 4 | G3 | Positive years ≥ 60% | 92% ✅ | 85% ✅ | 77% ✅ | **77%** | ✅ |
+| 5 | G4 | Beat benchmark CAGR | −5.36pp ❌ | −6.00pp ❌ | −7.41pp ❌ | **−7.60pp** | ❌ |
+| 6 | G4 | Beat benchmark Sharpe | −0.11 ❌ | −0.23 ❌ | −0.34 ❌ | **−0.36** | ❌ |
 
 **Three failed at v1. Four fail now**, and the band has fallen from C to D — which also
 fails Gate 3's "Band C or better" line. The trend in the deficit against the benchmark has
 monotonically worsened across every measurement.
 
-**Default verdict per `GOAL.md` §5: NO DEPLOY.** The system is research-complete for v3 and
+**Default verdict per `GOAL.md` §5: NO DEPLOY.** The system is research-complete for v4 and
 not capital-ready. **Nothing about §5 has been changed, relaxed or reinterpreted to
 accommodate the result.**
 
 ## 0.6 Catalog trials — 38 of 38 strategies failed
+
+> ## 🚨 §0.5a — THE ZERO-TURNOVER BOOK: results on tied/binary panels are not trustworthy
+>
+> `build_rebalance_weights` used `np.argsort(-score, kind="stable")`. A stable sort resolves
+> ties by **column position**, and the panel's columns are alphabetical — so **every tied
+> score was resolved alphabetically**. `build_composite_score` fills a missing factor value
+> with the cross-sectional median **0.5** (`src/nsealgo/factors/core.py:219`), manufacturing
+> ties by design; a **binary 0/1 mask** ties every flagged name exactly.
+>
+> **Verified directly** on a static 0/1 mask, 226 monthly rebalances, 22-name book:
+>
+> | engine | distinct books | mean monthly turnover |
+> |---|---|---|
+> | `d93815344bd3` (alphabetical) | **1 / 225** | **0.0%** |
+> | `29764f562cd5` (`blake2b`) | 223 / 225 | 15.7% |
+>
+> The old engine held **the same alphabetically-first names every month, forever**. That is a
+> frozen portfolio wearing a "monthly rebalance" label: it pays the cost stack once and then
+> never trades, so its measured cost drag is understated and its turnover statistics are
+> fictional.
+>
+> **Exposure of the production composite is much smaller, and the honest figures are these**
+> (re-measured, 226 rebalance dates):
+>
+> | measurement | count |
+> |---|---|
+> | dates containing at least one exact duplicate score | **178 / 226** |
+> | dates where a tie sits exactly on the top-22 cut | **43 / 226** |
+> | dates where the old and new rules select a **different set of names** | **6 / 225** (2.7%) |
+>
+> So the production headline moved because a 2.7% perturbation flipped **1 fold's train
+> argmax out of 6** — not because the tie-break decided most books.
+>
+> **Consequences, binding:**
+> - **Any result produced on a binary or heavily-tied score panel under `d93815344bd3` or
+>   earlier must be re-run.** Its CAGR, Sharpe and conclusions are all suspect.
+> - **The 38-agent catalog sweep is affected.** Binary gates are exactly the construction
+>   these agents were built from, so many of the 38 negative results are **not trustworthy
+>   in either direction** and need re-validation. Listed in
+>   [`reports/CATALOG_TRIALS.md`](CATALOG_TRIALS.md). **Those reports are deliberately not
+>   edited here** — they are other authors' documents and a correction has to be re-derived,
+>   not asserted.
+> - Before trusting any run, check `diag["avg_names"]`, `diag["min_names"]` and
+>   `diag["avg_invested_weight"]` (all three now emitted by `run_backtest`). **A
+>   zero-turnover book is a bug in the setup, not a strategy.**
 
 The full per-strategy table, the defect list and the methodology notes are in
 **[`reports/CATALOG_TRIALS.md`](CATALOG_TRIALS.md)**. Summary:
@@ -254,28 +338,30 @@ because it is a property of the universe construction rather than the end date:
 
 | Figure | Reported | Bias-corrected |
 |---|---|---|
-| Strategy (v1) | 13.40% | ≈ 6.1% |
-| Strategy (v2) | 10.97% | ≈ 3.7% |
-| **Strategy (v3 — CURRENT)** | **9.71%** | **3.57%** |
-| Benchmark (v3) | 17.12% | ≈ 9.83% |
+| Strategy (v1) — **SUPERSEDED** | 13.40% | ≈ 6.1% |
+| Strategy (v2) — **SUPERSEDED** | 10.97% | ≈ 3.7% |
+| Strategy (v3) — **SUPERSEDED** | 9.71% | 3.57% |
+| **Strategy (v4 — CURRENT)** | **9.52%** | **3.38%** |
+| Benchmark (v4) | 17.12% | ≈ 9.83% |
 
 **Derivation (correct, and reconciled):** our panel is *price-return only*, so dividends
 must be ADDED before the discount is applied.
 
 ```
-  price return (measured OOS)      9.71%
-+ dividend yield (absent data)   + 1.15%   -> total return 10.86%
+  price return (measured OOS)      9.52%
++ dividend yield (absent data)   + 1.15%   -> total return 10.67%
 - survivorship + selection bias  - 7.29%
-= bias-corrected                  3.57%
+= bias-corrected                  3.38%
 ```
 
 An earlier draft wrote this as `9.71 - 7.3 = 3.6%`, which does not reconcile — it omitted
-the dividend add. The figure is **3.57%**, and the open item is now closed. The ~7.3pp
-discount was measured on the v1 full window and carried forward unchanged because it is a
-property of the universe construction, not of the end date.
+the dividend add. Applying the corrected derivation to the current headline gives
+**3.38%**, and the open item remains closed. The ~7.3pp discount was measured on the v1
+full window and carried forward unchanged because it is a property of the universe
+construction, not of the end date.
 
 **The claim "beats the official NSE index TRI" was never valid** — §6.1 of the original
-report below already established that. At v3 it is further wrong: bias-corrected, the
+report below already established that. At v4 it is further wrong: bias-corrected, the
 strategy is **below** the index on return. A 61% shallower drawdown is the only claim that
 survives.
 
@@ -289,13 +375,25 @@ Four of six gate checks fail. In order of expected value:
    with realised volatility rather than switching on a trend threshold, and an explicit
    evaluation of the Sharpe estimate's confidence interval at 19y. **Until a re-measurement
    over a longer window reproduces the band, no other fix counts.**
-2. **Restore the return.** 9.71% is below the 12% floor and **7.41pp/yr behind** the
+2. **Restore the return.** 9.52% is below the 12% floor and **7.60pp/yr behind** the
    benchmark, and the deficit has widened at every measurement. Note that the entire crypto
    catalog scored *below pure momentum* out of sample (§0.6), so the search space is not
-   where the answer is.
-3. **Re-run Gate 4 against the fixed engine.** The 2× slippage stress was run at half
-   strength by the half-cost bug. It is currently not evidence either way.
-4. **Reconcile the bias-corrected figure** (§0.7).    not follow from the ~7.3pp discount it is supposed to be derived from.
+   where the answer is. **And note the direction of travel: production now sits at the 29th
+   percentile of the random null on gross return** (§0.5a / `GOAL.md` §0.0), so "restore the
+   return" means finding an edge, not recovering one.
+3. **Re-run Gate 4 against the current engine.** The 2× slippage stress ran at half strength
+   under the half-cost bug, and the whole sweep is now on the superseded `d93815344bd3`.
+   See the staleness banner in `reports/STRESS_v3.md`.
+4. **Fix the selection layer, or stop trusting the headline.** The v4 tie-break fix moved
+   the headline 0.19pp/yr by reshuffling only 6 of 225 rebalances, because it flipped one
+   fold's train-window argmax. Until the selection rule is shown to be stable under that
+   class of perturbation, no walk-forward number from this harness should be treated as a
+   measurement of the strategy (§0.3.1, §0.4).
+5. **Re-validate the catalog sweep on the current engine** (§0.5a). Binary-gated agents ran
+   on an engine that turned tied scores into a frozen alphabetical book; their verdicts are
+   not settled.
+6. **Reconcile the bias-corrected figure** (§0.7) — now derived as 3.38%, which *does*
+   reconcile: `9.52 + 1.15 − 7.29`.
 5. **Make the fresh-data path automatic.** The panel was restored by a one-off recovery
    script. Gate 6 requires a repeatable Kite historical feed, and until that exists the
    measurement window will keep being set by hand — precisely the failure mode §0.4 exposed.
