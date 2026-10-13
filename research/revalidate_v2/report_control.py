@@ -52,7 +52,7 @@ class Diff:
 
     def add(self, section: str, label: str, old, new, fmt="pct", tol: float = TOL,
             note: str = "") -> None:
-        if isinstance(old, (int, float)) and isinstance(new, (int, float)):
+        if isinstance(old, int | float) and isinstance(new, int | float):
             changed = abs(new - old) > tol
             delta = new - old
         else:

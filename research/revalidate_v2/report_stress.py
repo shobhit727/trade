@@ -81,7 +81,7 @@ class Rows:
             tol: float | None = None) -> None:
         render, drender = FMT[fmt]
         t = TOL_BY_FMT[fmt] if tol is None else tol
-        numeric = isinstance(old, (int, float)) and isinstance(new, (int, float))
+        numeric = isinstance(old, int | float) and isinstance(new, int | float)
         changed = (abs(new - old) > t) if numeric else str(old) != str(new)
         self.moved += int(changed)
         delta = drender(new - old) if (numeric and changed) else "—"
