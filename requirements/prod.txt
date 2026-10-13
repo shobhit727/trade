@@ -17,7 +17,7 @@ pandas>=2.2
 numpy>=2.2
 # Database / storage (lazy imports in data/storage.py: asyncpg for TimescaleDB, pyarrow for Parquet)
 asyncpg>=0.31.0
-pyarrow>=17.0
+pyarrow>=26.0.0
 
 # Reporting (monthly PDF)
 fpdf2>=2.8.8
