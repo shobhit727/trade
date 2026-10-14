@@ -70,6 +70,10 @@ def main(argv: list[str] | None = None) -> int:
         stocks = stocks[:2]
         args.budget = 4
         args.null_replicas = 32
+        # A smoke run is a correctness check, so it must always execute its pairs. If it
+        # resumed, a previous smoke run's results would make it report "[0/0] done" and
+        # appear to pass while testing nothing.
+        args.no_resume = True
         log.warning("SMOKE MODE: 2 strategies x 2 stocks x 4 configs. Correctness only.")
 
     if not specs:
