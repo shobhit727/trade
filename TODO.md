@@ -91,6 +91,8 @@ the pre-tax view; expect ~0.7–1pp/yr difference on low-turnover books.
 
 ## 5. How you run it
 
+> **All copy/paste commands are in [`RUN.md`](RUN.md).**
+
 ```bash
 # correctness check (~5 s) — NOT a result
 PYTHONPATH=src .venv/bin/python -m research.optimize.run --smoke
