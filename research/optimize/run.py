@@ -14,7 +14,6 @@ import logging
 import sys
 
 from . import config as C
-from . import fastpath
 from . import splitter as S
 from .catalog import discover
 from .engine import run_sweep, set_thread_env
@@ -61,13 +60,12 @@ def main(argv: list[str] | None = None) -> int:
     log = logging.getLogger("optimize")
     set_thread_env(1)
 
-    # Tail-slicing fast path for rsi/sma/roc/stochastic. Verified bit-identical at
-    # start-up: if a future refactor of indicators.py breaks the "reads only the tail"
-    # assumption, this raises before 4,032 pairs are run against it.
+    # The fast path is NOT installed here. Installing at this point rebinds 0 call
+    # sites, because discover() has not imported the 84 catalog modules yet -- and it
+    # would still set _INSTALLED, so fastpath.ensure() inside run_single_stock would
+    # skip the rebind entirely. ensure() installs lazily, after the catalog is loaded.
     if not args.no_fastpath:
-        fastpath.install()
-        fastpath.verify()
-        log.info("fast path installed and verified")
+        log.info("fast path will be installed lazily on first backtest")
 
     if args.list:
         specs = discover(args.strategies or ())
