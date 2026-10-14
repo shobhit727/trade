@@ -35,7 +35,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--timeframe", default="1d", help="1d only; GOAL.md bans intraday")
     p.add_argument("--no-tax", action="store_true",
                    help="disable capital gains tax (pre-tax view)")
-    p.add_argument("--no-resume", action="store_true", help="ignore existing results")
+    p.add_argument("--resume", action="store_true", default=True,
+                   help="skip pairs already in out/test_results.jsonl (this is the default; "
+                        "accepted explicitly so the documented command line is valid)")
+    p.add_argument("--no-resume", action="store_true",
+                   help="ignore existing results and start over (deletes the results file)")
     p.add_argument("--smoke", action="store_true",
                    help="tiny correctness run: 2 strategies x 2 stocks x 4 configs")
     p.add_argument("--dry-run", action="store_true",
