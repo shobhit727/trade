@@ -194,3 +194,21 @@ def verify(seed: int = 0, trials: int = 300) -> None:
             ), f"stochastic p={period}"
     log.info("fast-path verified: sma/rsi/roc/stochastic identical to original on "
              "%d random series", trials)
+
+def ensure() -> bool:
+    """Install on first use, so the rebind happens *after* the catalog is imported.
+
+    Ordering matters and got this wrong once. ``run.py`` called ``install()`` before
+    ``discover()``, so none of the 84 catalog modules were loaded yet and
+    ``_rebind_all()`` found **0 call sites** -- the fast path was silently inert in every
+    joblib worker, costing the 1.19x and nothing else (results stayed correct, since
+    patched and original are verified identical).
+
+    ``discover()`` imports every catalog module, and ``run_single_stock`` is only ever
+    reached afterwards, so installing lazily from here guarantees the rebind sees them.
+    """
+    if _INSTALLED:
+        return False
+    install()
+    verify(trials=40)
+    return True

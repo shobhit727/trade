@@ -164,6 +164,13 @@ def run_single_stock(
     if bars.empty:
         raise BacktestError(f"empty slice for {start}..{end}")
 
+    # Lazily install the indicator fast path here, not in run.py: by the time any
+    # backtest runs, discover() has imported all 84 catalog modules, so the rebind can
+    # actually reach them. See fastpath.ensure().
+    from . import fastpath
+
+    fastpath.ensure()
+
     fees = fees or C.FeeSchedule()
     strategy = spec.build(params)
     symbol = "SYM"
