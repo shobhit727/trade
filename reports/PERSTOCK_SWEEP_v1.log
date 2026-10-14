@@ -1,0 +1,9 @@
+15:03:10 INFO    optimize | fast path will be installed lazily on first backtest
+15:03:12 INFO    optimize | 84 strategies x 48 stocks = 4032 pairs | budget=12 | workers=8 | tax=ON
+15:03:12 INFO    research.optimize.engine | sweep: 3237 pairs (795 already done), 8 workers, budget=12
+15:38:34 INFO    research.optimize.engine | [3237/3237] ok=3237 fail=0 1.53 pair/s elapsed=35.4m eta=0.0m
+[3237/3237] ok=3237 fail=0 1.53 pair/s elapsed=35.4m eta=0.0m
+15:38:34 INFO    research.optimize.engine | sweep complete: 3237 ok, 0 failed in 2121.7s
+
+MANIFEST 3237 run, 0 failed
+next: python -m research.optimize.analyze

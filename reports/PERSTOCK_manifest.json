@@ -1,0 +1,29 @@
+{
+  "engine": "502028fd3954",
+  "capital": 2100000.0,
+  "cost_bps": 21.92,
+  "tax_enabled": true,
+  "stcg": 0.2,
+  "ltcg": 0.125,
+  "rebalance": "M",
+  "budget": 12,
+  "null_replicas": 200,
+  "seed": 20261013,
+  "workers": 8,
+  "n_strategies": 84,
+  "n_stocks": 48,
+  "n_pairs_total": 4032,
+  "n_pairs_skipped": 795,
+  "train": [
+    "2016-01-01",
+    "2023-12-31"
+  ],
+  "test": [
+    "2024-01-01",
+    "2026-10-01"
+  ],
+  "n_pairs_run": 3237,
+  "n_ok": 3237,
+  "n_failed": 0,
+  "elapsed_s": 2121.7
+}

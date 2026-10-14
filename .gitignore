@@ -46,3 +46,6 @@ research/**/_cache/
 # scratch working dir (local only, never committed)
 tem/
 research/optimize/out/
+
+# 6MB sweep result dump, regenerable via --resume / kept in reports/
+reports/PERSTOCK_test_results.jsonl
