@@ -14,6 +14,8 @@ broken behaviour.
 
 from __future__ import annotations
 
+import sys
+
 import pandas as pd
 import pytest
 
@@ -329,3 +331,74 @@ class TestFDR:
         sig = benjamini_hochberg(ps)
         assert sig[0] and sig[1]
         assert not sig[2:].any()
+
+
+class TestFastPath:
+    """The tail-slicing fast path must be provably a no-op on results.
+
+    It changes *how much* of the buffer is converted to numpy, never *what* is computed,
+    for indicators that read only the tail. `ema`, `zscore` and `kama` genuinely read the
+    whole buffer and are deliberately NOT patched.
+    """
+
+    def test_patched_indicators_match_original(self):
+        import numpy as np
+
+        from research.optimize import fastpath
+
+        fastpath.install()
+        fastpath.verify(trials=40)
+
+        from cryptobot.strategies import indicators as I
+
+        rng = np.random.default_rng(3)
+        px = np.cumprod(1 + rng.normal(0, 0.01, 250)) * 100
+        hi, lo = px * 1.01, px * 0.99
+        orig = fastpath._ORIGINALS
+        for period in (2, 5, 14, 20, 50):
+            assert I.sma(px, period) == orig["sma"](px, period)
+            assert I.rsi(px, period) == orig["rsi"](px, period)
+            assert I.roc(px, period) == orig["roc"](px, period)
+            assert I.stochastic(px, hi, lo, period) == orig["stochastic"](px, hi, lo, period)
+
+    def test_full_buffer_indicators_are_not_patched(self):
+        """ema/zscore/kama read the whole buffer; slicing them would change results."""
+        from research.optimize import fastpath
+
+        fastpath.install()
+        from cryptobot.strategies import indicators as I
+
+        for name in ("ema", "zscore", "kama"):
+            assert not hasattr(getattr(I, name), "__wrapped__"), f"{name} must stay unpatched"
+
+    def test_binding_reach_reaches_catalog_modules(self):
+        """Patch only the indicators module and every strategy keeps calling the original.
+
+        This measured 1.02x -- i.e. nothing -- because `from ... import rsi` binds the
+        function object. install() must rebind those call sites.
+        """
+        from research.optimize import fastpath
+        from research.optimize.catalog import load_strategy
+
+        fastpath.install()
+        spec = load_strategy("rsi_strategy")
+        assert hasattr(spec.strategy_cls.__init__, "__call__")  # sanity
+        mod = sys.modules[spec.strategy_cls.__module__]
+        assert getattr(mod, "rsi", None) is not fastpath._ORIGINALS["rsi"], (
+            "catalog module still holds the unpatched rsi"
+        )
+
+    def test_backtest_results_unchanged_by_fastpath(self):
+        from research.optimize import fastpath
+        from research.optimize.catalog import load_strategy
+
+        spec = load_strategy("rsi_strategy")
+        bars = make_bars(800, seed=21)
+        fastpath.install()
+        after = run_single_stock(bars, spec, spec.default, tax_enabled=True)
+        fastpath.uninstall()
+        before = run_single_stock(bars, spec, spec.default, tax_enabled=True)
+        fastpath.install()
+        assert after.equity.equals(before.equity)
+        assert after.total_tax == before.total_tax
+        assert len(after.trades) == len(before.trades)

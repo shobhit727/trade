@@ -14,6 +14,7 @@ import logging
 import sys
 
 from . import config as C
+from . import fastpath
 from . import splitter as S
 from .catalog import discover
 from .engine import run_sweep, set_thread_env
@@ -45,6 +46,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true",
                    help="list the work and exit without backtesting")
     p.add_argument("--list", action="store_true", help="print the strategy catalog and exit")
+    p.add_argument("--no-fastpath", action="store_true",
+                   help="disable the tail-slicing indicator fast path (for A/B comparison)")
     return p
 
 
@@ -57,6 +60,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     log = logging.getLogger("optimize")
     set_thread_env(1)
+
+    # Tail-slicing fast path for rsi/sma/roc/stochastic. Verified bit-identical at
+    # start-up: if a future refactor of indicators.py breaks the "reads only the tail"
+    # assumption, this raises before 4,032 pairs are run against it.
+    if not args.no_fastpath:
+        fastpath.install()
+        fastpath.verify()
+        log.info("fast path installed and verified")
 
     if args.list:
         specs = discover(args.strategies or ())
