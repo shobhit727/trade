@@ -89,8 +89,10 @@ the pre-tax view; expect ~0.7–1pp/yr difference on low-turnover books.
 - [x] 17. Perf: 6.8x (numpy + caches) then 1.19x (tail-slicing indicator fast path)
 - [x] 18. Test hardening: 233 optimizer tests, 0 xfails, 64/64 mutants caught
 - [x] 19. **15 bugs fixed** (9 robustness, 6 property/accounting)
-- [ ] 20. Exhaustive fastpath validation across all 84 strategies (running)
-- [ ] 21. Re-run sweep at `--budget 40` if ever justified (currently NOT — see below)
+- [x] 20. Exhaustive fastpath validation: 51,520 comparisons, 0 divergences
+- [x] 21. Root cause established: signal worth ~24bp/yr vs ~131bp/yr cost bill
+- [x] 22. Inverted-signal test (shorting proxy): negative, 3 of 4 worse
+- [ ] 23. Re-run sweep at `--budget 40` — **DECIDED AGAINST**, see section 4b
 
 ## 4b. WHAT THE SWEEP FOUND — read this before spending more compute
 

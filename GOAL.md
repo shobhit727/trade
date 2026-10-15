@@ -204,6 +204,51 @@ superseded and are quoted only to show the size of the corrections.
 
 **Band D. Six gate checks run, FOUR fail ⇒ `GOAL.md` §5 default verdict: NO DEPLOY.**
 
+### 🚨 §0.0a THE PER-STOCK SWEEP SETTLED IT — THE EDGE IS SMALLER THAN THE COST
+
+**This supersedes every speculative reading below.** A 4,032-pair sweep (84 catalog
+strategies × 48 NIFTY-50 symbols, one tuned config each, TRAIN 2016-23 → TEST
+2024-2026 opened once, ₹21,00,000 per pair, 21.92 bps all-in **plus capital gains tax
+modelled**) found **no deployable edge in any strategy, on any stock.**
+
+| measurement | value |
+|---|---|
+| pairs run / failed | **4,032 / 0** |
+| beat an exposure-matched buy-and-hold | **8.5%** |
+| timing component of alpha (mean) | **−7.59%/yr** |
+| timing component positive in | **8.5%** of pairs |
+| risk-avoidance component positive in | **50.0%** — a coin flip |
+| strategies with positive mean alpha | **0 of 84** |
+
+**Root cause, measured directly** ([`reports/PERSTOCK_EDGE_VS_COST.md`](reports/PERSTOCK_EDGE_VS_COST.md)):
+
+| | |
+|---|---|
+| gross day-selection edge, best strategy | **+2.4 bp/day ≈ +59 bp/yr** (t = 0.22) |
+| gross day-selection edge, median | **+1.0 bp/day ≈ +24 bp/yr** (t = 0.09) |
+| cost of one round trip | **21.92 bp** |
+| ~12 switches/yr on monthly rebalance | **≈ 131 bp/yr** minimum |
+| cost drag actually measured | **169 bp/yr** |
+
+**The signal is worth one fifth to one half of what it costs to trade.** No t-stat
+reaches significance. Closing that gap needs a **~55×** better signal, which parameter
+search cannot deliver — it is a difference in kind, not degree.
+
+Corroborating, and rejecting the one remaining hope: three signals showed a *negative*
+gross edge on TRAIN, so trading them **inverted** was tested directly
+([`reports/PERSTOCK_INVERSION_TEST.md`](reports/PERSTOCK_INVERSION_TEST.md)). **Three of
+four got worse.** The TRAIN sign did not survive out-of-sample.
+
+**Binding consequences.**
+
+1. **Do NOT escalate the parameter budget.** A deeper search cannot move a
+   +24 bp/yr edge across a ~131 bp/yr bill. With 4,032 hypotheses already tested against
+   a null, more search manufactures false positives rather than removing them.
+2. **Every earlier "beats the null" claim in this repo is void.** The random-timing null
+   has a median CAGR of **−15.15%/yr** — beating it is not evidence.
+3. The §0.0 finding below (production sits at the 29th percentile of a random-book null)
+   is **strengthened**, not superseded: per-stock, 84 strategies, 0/84 profitable.
+
 ### 🚨 §0.0 THE HEADLINE RESULT IS NOT EVIDENCE OF SKILL
 
 **Read this before any other number in this document.**
