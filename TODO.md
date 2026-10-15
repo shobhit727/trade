@@ -84,8 +84,30 @@ the pre-tax view; expect ~0.7–1pp/yr difference on low-turnover books.
 - [x] 12. Unit tests — **27 passing**, mutation-verified
 - [x] 13. Smoke test — 2 strategies × 2 stocks × 4 configs, end-to-end
 - [x] 14. Lint clean (`ruff check`)
-- [ ] 15. **YOU:** run the full sweep
-- [ ] 16. **ME:** read your 3 artefacts → `reports/PERSTOCK_v1.md`
+- [x] 15. **Full sweep run** — 4,032/4,032 pairs, 0 failures, 35 min
+- [x] 16. **Analysis + decomposition** — `reports/PERSTOCK_{DECOMPOSITION,TIMING_DECOMPOSITION}.md`
+- [x] 17. Perf: 6.8x (numpy + caches) then 1.19x (tail-slicing indicator fast path)
+- [x] 18. Test hardening: 233 optimizer tests, 0 xfails, 64/64 mutants caught
+- [x] 19. **15 bugs fixed** (9 robustness, 6 property/accounting)
+- [ ] 20. Exhaustive fastpath validation across all 84 strategies (running)
+- [ ] 21. Re-run sweep at `--budget 40` if ever justified (currently NOT — see below)
+
+## 4b. WHAT THE SWEEP FOUND — read this before spending more compute
+
+Full results in `reports/PERSTOCK_TIMING_DECOMPOSITION.md`.
+
+1. **A mostly-invested book is achievable** — `williams_r_strategy` and
+   `rsi_momentum_strategy` both reach **96.9% exposure** on 45–47 of 48 stocks.
+   Catalogue median is 30.1%, so "the gates keep you in cash" is true of the median
+   and false of the best two.
+2. **But the alpha is entirely negative *timing*, not risk avoidance.** Decomposing
+   alpha vs buy-and-hold into `avoidance + timing`:
+   - all 4,032 pairs: **−7.29% = +0.30% avoidance + −7.59% timing**
+   - timing is positive in only **8.5%** of pairs; avoidance in exactly **50.0%**
+3. **Only 8.5% beat an exposure-matched buy-and-hold.** The 723 that beat the timing
+   *null* were a straw-man benchmark (that null loses **−15.15%/yr**).
+4. **Recommendation stands: do NOT escalate to `--budget 40`.** No parameter search
+   moves the timing channel from −7.6% toward 0. That needs a different signal.
 
 ---
 
