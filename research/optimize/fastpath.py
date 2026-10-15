@@ -154,6 +154,16 @@ def _dyn(fn, need_fn, name: str):
     """Wrapper whose slice size depends on the ``period`` argument."""
 
     def wrapper(values, period=20, *a, **kw):
+        # A non-integral period makes `values[-period:]` raise TypeError in the
+        # original. Slicing it here with an int() would instead return a number, so the
+        # wrapper would silently accept input the original rejects. Pass through
+        # untouched so the error is reproduced exactly.
+        try:
+            integral = float(period).is_integer()
+        except (TypeError, ValueError):
+            integral = False
+        if not integral:
+            return fn(values, period, *a, **kw)
         return fn(_tail(values, need_fn(period)), period, *a, **kw)
 
     wrapper.__name__ = name
@@ -165,6 +175,12 @@ def _dyn3(fn, name: str):
     """``stochastic(closes, highs, lows, period)`` -- slice all three series."""
 
     def wrapper(closes, highs, lows, period=14, *a, **kw):
+        try:
+            integral = float(period).is_integer()
+        except (TypeError, ValueError):
+            integral = False
+        if not integral:
+            return fn(closes, highs, lows, period, *a, **kw)
         n = max(int(period), 1)
         return fn(_tail(closes, n), _tail(highs, n), _tail(lows, n), period, *a, **kw)
 
@@ -174,10 +190,26 @@ def _dyn3(fn, name: str):
 
 
 def uninstall() -> None:
-    """Restore the originals. Used by the tests."""
+    """Restore the originals EVERYWHERE they were rebound.
+
+    Restoring only the indicators module left all 42 catalog modules holding wrappers,
+    so a test that installed the fast path left the process permanently patched for
+    every later test. Verified: n_modules_still_wrapped_after_uninstall was 42.
+    """
     global _INSTALLED
     if not _INSTALLED:
         return
+    wrappers = {id(getattr(I, name)): fn for name, fn in _ORIGINALS.items()}
+    for mod in list(sys.modules.values()):
+        d = getattr(mod, "__dict__", None)
+        if not d:
+            continue
+        for attr, val in list(d.items()):
+            if id(val) in wrappers:
+                try:
+                    setattr(mod, attr, wrappers[id(val)])
+                except Exception:  # noqa: BLE001
+                    continue
     for name, fn in _ORIGINALS.items():
         setattr(I, name, fn)
     _ORIGINALS.clear()
