@@ -32,7 +32,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--workers", type=int, default=8)
     p.add_argument("--rebalance", choices=["M", "W", "D"], default="M")
     p.add_argument("--seed", type=int, default=C.MASTER_SEED)
-    p.add_argument("--timeframe", default="1d", help="1d only; GOAL.md bans intraday")
+    p.add_argument("--timeframe", default="1d",
+                   help="only 1d is supported; GOAL.md section 1.1 bans intraday")
     p.add_argument("--no-tax", action="store_true",
                    help="disable capital gains tax (pre-tax view)")
     p.add_argument("--resume", action="store_true", default=True,
@@ -75,6 +76,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {s.name:30} {s.strategy_cls.__name__:32} {p}")
         return 0
 
+    if args.timeframe != "1d":
+        log.error("--timeframe %s is not supported and is barred by GOAL.md section 1.1 "
+                  "(intraday). 5m/15m yield ~7 weeks and 1h has no TRAIN data; "
+                  "running it produces 4,032 pairs that all fail on an empty slice.",
+                  args.timeframe)
+        return 2
+
     specs = discover(tuple(args.strategies))
     stocks = args.stocks or S.available_symbols(args.timeframe)
 
@@ -92,9 +100,23 @@ def main(argv: list[str] | None = None) -> int:
     if not specs:
         log.error("no strategies loaded")
         return 2
+    # FIX A: an explicit --stocks must not bypass the corruption exclusions. Without
+    # this, `--stocks jiofin` swept a symbol nsealgo.data.loader rejects outright.
+    # Excluded symbols are fatal. Unknown symbols only warn -- a partially-valid list
+    # should still sweep the valid part rather than silently doing nothing.
+    excluded = sorted(set(stocks) & S.EXCLUDED_SYMBOLS)
+    if excluded:
+        log.error("refusing excluded symbol(s) %s -- corrupt in the source files and "
+                  "excluded by nsealgo.data.loader", excluded)
+        return 2
+    known = {p.name[: -len("_1d.csv")] for p in C.DATA_DIR.glob("*_1d.csv")}
+    unknown = [s for s in stocks if s not in known]
+    if unknown:
+        log.warning("ignoring unknown symbol(s) with no data file: %s", unknown)
     stocks = [s for s in stocks if not S.bars(s, S.FULL, args.timeframe).empty]
     if not stocks:
-        log.error("no symbols with usable data")
+        log.error("no symbols with usable data (requested %d, unknown %d)",
+                  len(set(args.stocks) & set(stocks)) or len(args.stocks), len(unknown))
         return 2
 
     cfg = C.RunConfig(

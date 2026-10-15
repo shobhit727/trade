@@ -33,9 +33,9 @@ from . import config as C
 log = logging.getLogger(__name__)
 
 
-def load_rows(path=None) -> list[dict]:
+def load_rows(path=None, include_failed: bool = False) -> list[dict]:
     path = path or C.TEST_JSONL
-    rows = []
+    rows, failed = [], []
     if not path.exists():
         return rows
     with path.open(encoding="utf-8") as fh:
@@ -47,8 +47,14 @@ def load_rows(path=None) -> list[dict]:
                 r = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if r.get("stage") == "test" and r.get("ok"):
+            if r.get("stage") != "test":
+                continue
+            if r.get("ok"):
                 rows.append(r)
+            elif include_failed:
+                failed.append(r)
+    if failed:
+        rows.extend(failed)
     return rows
 
 
@@ -75,12 +81,37 @@ def benjamini_hochberg(pvals: list[float], alpha: float = C.FDR_ALPHA) -> np.nda
 
 
 def analyse(rows: list[dict] | None = None) -> dict:
-    rows = rows if rows is not None else load_rows()
+    if rows is None:
+        all_rows = load_rows(include_failed=True)
+        rows = [r for r in all_rows if r.get("ok")]
+        n_failed_pairs = len(all_rows) - len(rows)
+    else:
+        # Rows were supplied (e.g. from a filtered load_rows), yet none of them
+        # succeeded. That is the all-failed case, and the caller cannot see the failure
+        # count -- it was filtered out before analyse() ran. Consult the configured file
+        # so the verdict can say "7 ran and all failed" rather than "NO DATA", which
+        # would send the operator to re-run a sweep whose answer is already on disk.
+        n_failed_pairs = 0
+        if not any(r.get("ok") for r in rows):
+            on_disk = load_rows(include_failed=True)
+            n_failed_pairs = sum(1 for r in on_disk if not r.get("ok"))
+
     out: dict = {
         "n_pairs": len(rows),
+        "n_failed_pairs": n_failed_pairs,
         "n_failed_candidates_total": sum(r.get("n_failed_candidates", 0) for r in rows),
     }
     if not rows:
+        # FIX E: "7 pairs, all failed" and "no file at all" must not read identically --
+        # the first is an answer sitting on disk and the operator would re-run for it.
+        if n_failed_pairs:
+            out["verdict"] = (
+                f"{n_failed_pairs} pairs ran and ALL FAILED -- there is no result to "
+                f"summarise. This is not the same as never having run the sweep; the "
+                f"reasons are in {C.TEST_JSONL}."
+            )
+        else:
+            out["verdict"] = "NO DATA"
         out["error"] = f"no completed pairs in {C.TEST_JSONL}"
         return out
 
@@ -169,12 +200,12 @@ def _verdict(out: dict) -> str:
     if sig == 0:
         return (
             f"NO EDGE. 0 of {n} pairs beat their own timing null at FDR q<{C.FDR_ALPHA}. "
-            f"About {C.FDR_ALPHA * n:.0f} would be expected by chance alone. Nothing here "
+            f"About {C.FDR_ALPHA * n:.1f} would be expected by chance alone. Nothing here "
             "survives multiple-testing correction, so no pair may be deployed or quoted."
         )
     return (
         f"{sig} of {n} pairs ({100 * sig / n:.2f}%) beat their own timing null at "
-        f"q<{C.FDR_ALPHA}, against ~{C.FDR_ALPHA * n:.0f} expected by chance. "
+        f"q<{C.FDR_ALPHA}, against {C.FDR_ALPHA * n:.1f} expected by chance. "
         f"{out['n_significant_and_beats_bh']} of those also beat their own stock's "
         f"buy-and-hold. Read the per-pair table before quoting any of them."
     )
@@ -189,6 +220,7 @@ def write_report(out: dict) -> str:
         "| | |",
         "|---|---|",
         f"| pairs completed | {out.get('n_pairs')} |",
+        f"| pairs that failed | {out.get('n_failed_pairs', 0)} |",
         f"| strategies x stocks | {out.get('n_strategies')} x {out.get('n_stocks')} |",
         f"| beat own timing null (FDR q<{C.FDR_ALPHA}) | **{out.get('n_significant_vs_timing_null')}** |",
         f"| expected by chance | ~{out.get('expected_false_positives_at_alpha')} |",

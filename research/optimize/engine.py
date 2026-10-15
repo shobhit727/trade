@@ -60,6 +60,29 @@ def _json_default(o):
     return str(o)
 
 
+def repair_jsonl(path: Path) -> int:
+    """Drop a trailing partial line left by a hard kill. Returns bytes discarded.
+
+    Without this, the next append *fuses* onto the truncated line, producing one
+    unparseable line -- which silently destroyed an already-completed pair. Reproduced:
+    a good row followed by `{"strategy":"zzz",...,"stage":"te`; after appending,
+    ``load_rows`` returned 1 of 2 completed pairs and that pair re-ran forever.
+    """
+    if not path.exists() or path.stat().st_size == 0:
+        return 0
+    with path.open("rb") as fh:
+        fh.seek(-1, 2)
+        if fh.read(1) == b"\n":
+            return 0
+    data = path.read_bytes()
+    cut = data.rfind(b"\n")
+    if cut == -1:
+        path.write_bytes(b"")
+        return len(data)
+    path.write_bytes(data[: cut + 1])
+    return len(data) - (cut + 1)
+
+
 def _read_jsonl(path: Path) -> set[tuple[str, str]]:
     """Pair ids already present in a results file."""
     done: set[tuple[str, str]] = set()
@@ -131,7 +154,12 @@ def optimise_pair(
     # ---- search on TRAIN only -------------------------------------------------
     candidates: list[tuple[str, dict]] = [("default", dict(spec.default))]
     seen = {json.dumps(spec.default, sort_keys=True, default=str)}
-    while len(candidates) < cfg.budget:
+    # Bail out rather than spin forever: a spec whose space is a single bool or a
+    # 2-valued Literal can never reach `budget` distinct draws.
+    max_draws = cfg.budget * 50
+    draws = 0
+    while len(candidates) < cfg.budget and draws < max_draws:
+        draws += 1
         p = spec.sample(rng)
         k = json.dumps(p, sort_keys=True, default=str)
         if k in seen:
@@ -158,8 +186,15 @@ def optimise_pair(
         train_rows.append({"label": label, "params": params, "metrics": m.to_dict()})
 
     if not train_rows:
+        # Keep the per-candidate reasons, both in a side field and inline. This row
+        # exists precisely so a broken strategy is auditable; returning only a count
+        # threw the diagnosis away and forced a re-run just to learn why.
+        sample = "; ".join(f"{k}: {v}" for k, v in list(failures.items())[:3])[:400]
         return {**base, "ok": False,
-                "error": f"no candidate backtested ({len(failures)} failures)"}, None
+                "error": (f"no candidate backtested ({len(failures)} failures) "
+                          f"[{sample}]"),
+                "failures": failures,
+                "params": None}, None
 
     # Selection objective: Sharpe, then Calmar as a tiebreak. Chosen a priori.
     best = max(train_rows, key=lambda r: (r["metrics"]["sharpe"], r["metrics"]["calmar"]))
@@ -260,9 +295,15 @@ def run_sweep(specs: list[StrategySpec], stocks: list[str], cfg: C.RunConfig,
     C.ensure_dirs()
     workers = workers or cfg.workers
 
+    repair_jsonl(C.TEST_JSONL)
+    repair_jsonl(C.RESULTS_JSONL)
     done: set[tuple[str, str]] = _read_jsonl(C.TEST_JSONL) if resume else set()
-    if not resume and C.TEST_JSONL.exists():
-        C.TEST_JSONL.unlink()
+    if not resume:
+        # Both files: leaving a stale results.jsonl behind while replacing
+        # test_results.jsonl makes the two disagree.
+        for stale in (C.TEST_JSONL, C.RESULTS_JSONL):
+            if stale.exists():
+                stale.unlink()
 
     tasks = [(sp, st) for sp in specs for st in stocks if (sp.name, st) not in done]
     total = len(specs) * len(stocks)
@@ -293,8 +334,13 @@ def run_sweep(specs: list[StrategySpec], stocks: list[str], cfg: C.RunConfig,
     t0 = time.time()
     ok = fail = 0
 
-    def _work(task):
+    def _work(task, test_path: str = "", train_path: str = ""):
         sp, st = task
+        # loky re-imports config in the child, so module-level C.TEST_JSONL resolves to
+        # the *default* path and ignores any caller override -- silently appending rows
+        # to the real 4,032-pair artefact during a scratch run. Paths are passed
+        # explicitly so the child cannot get them wrong.
+        tp, rp = Path(test_path or C.TEST_JSONL), Path(train_path or C.RESULTS_JSONL)
         try:
             row, summ = optimise_pair(sp, st, cfg, timeframe=timeframe)
         except Exception as exc:  # noqa: BLE001 - never let one pair kill the run
@@ -302,9 +348,9 @@ def run_sweep(specs: list[StrategySpec], stocks: list[str], cfg: C.RunConfig,
                    "error": f"UNCAUGHT {type(exc).__name__}: {exc}"[:300],
                    "traceback": traceback.format_exc()[-800:]}
             summ = None
-        _append(C.TEST_JSONL, row)
+        _append(tp, row)
         if summ is not None:
-            _append(C.RESULTS_JSONL, summ)
+            _append(rp, summ)
         return row.get("ok", False), row.get("error")
 
     if workers <= 1:
@@ -318,13 +364,19 @@ def run_sweep(specs: list[StrategySpec], stocks: list[str], cfg: C.RunConfig,
         from joblib import Parallel, delayed
 
         results = Parallel(n_jobs=workers, batch_size=1, backend="loky", verbose=0)(
-            delayed(_work)(t) for t in tasks
+            delayed(_work)(t, str(C.TEST_JSONL), str(C.RESULTS_JSONL)) for t in tasks
         )
         ok = sum(1 for o, _ in results if o)
         fail = len(results) - ok
         _progress(len(tasks), len(tasks), t0, ok, fail)
 
+    # Skips that belong to THIS sweep's scope. `done` is read from the whole results
+    # file, so a 1-pair rerun of a 2-row file previously reported n_pairs_skipped: 2
+    # alongside n_pairs_total: 1 -- the manifest overstated its own work.
+    scope = {(sp.name, st) for sp in specs for st in stocks}
     manifest.update({"n_pairs_run": len(tasks), "n_ok": ok, "n_failed": fail,
+                     "n_pairs_skipped_in_scope": len(done & scope),
+                     "n_pairs_skipped_other_scope": len(done - scope),
                      "elapsed_s": round(time.time() - t0, 1)})
     C.MANIFEST_JSON.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     log.info("sweep complete: %d ok, %d failed in %.1fs", ok, fail, time.time() - t0)

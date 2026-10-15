@@ -43,12 +43,34 @@ class BacktestError(RuntimeError):
 @dataclass
 class Lot:
     shares: float
-    cost_basis: float  # total rupees paid, including buy-side charges
+    #: Total rupees paid for the shares, EXCLUDING the buy-side charge. The charge is
+    #: tracked once, in ``TradingLedger.fees``, so that ``capital - buys + sells - fees -
+    #: tax == equity`` holds exactly. Including it here as well would double-count the
+    #: buy fee and change the tax base, invalidating every recorded sweep result.
+    cost_basis: float
     opened: datetime
 
 
 @dataclass
 class Trade:
+    """One execution.
+
+    ``pnl`` is **net of the sell fee** (computed from ``proceeds = value - fee``) and
+    **gross of the buy fee**, so::
+
+        capital + sum(pnl) - buy_fees - tax == realised_equity
+
+    where realised_equity EXCLUDES any still-open position. The authoritative identity
+    is the cash-flow one, which holds exactly and is what the engine relies on::
+
+        capital - sum(buy_value) + sum(sell_value) - sum(all_fees) - sum(tax)
+            == cash + shares * final_price == final_equity
+
+    Written down because leaving it implicit produced a false accounting violation that
+    looked like an engine bug, and because an earlier draft of this docstring claimed
+    ``cost_basis`` included buy-side charges when it did not.
+    """
+
     date: datetime
     side: str
     shares: float
@@ -92,7 +114,11 @@ def rebalance_dates(index: pd.DatetimeIndex, freq: str) -> frozenset:
     convention; the nsealgo engine anchors on W-MON, so weekly results are not directly
     comparable between the two harnesses.
     """
-    key = (len(index), index[0], index[-1], freq)
+    # Key on CONTENT. (len, first, last) is a summary: two different calendars with the
+    # same length and endpoints share an entry and the second silently trades on the
+    # first's rebalance dates. Latent today only because every slice of one symbol's CSV
+    # is a contiguous range of one fixed calendar.
+    key = (index.to_numpy(dtype="datetime64[ns]").tobytes(), freq)
     hit = _REBAL_CACHE.get(key)
     if hit is not None:
         return hit
@@ -191,7 +217,10 @@ def run_single_stock(
     vol_a = (bars["volume"].to_numpy(dtype=np.float64, copy=False)
              if "volume" in bars.columns else np.zeros(n_bars))
     # Epoch milliseconds without a per-bar Timestamp.timestamp() call.
-    ts_ms = dates.asi8 // 1_000_000
+    # `DatetimeIndex.asi8` is MICROSECONDS for datetime64[us] resolution, so dividing by
+    # 1e6 silently yields SECONDS. Ask numpy for milliseconds directly so the unit is
+    # correct whatever the index resolution is.
+    ts_ms = dates.to_numpy(dtype="datetime64[ms]").astype("int64")
     rebal_flags = np.fromiter((d in rebal for d in dates), dtype=bool, count=n_bars)
     # DatetimeIndex.__getitem__ was 49% of the remaining time after the numpy
     # conversion. It is only needed to stamp a Trade or to raise, so it is looked up
@@ -271,20 +300,26 @@ def run_single_stock(
     )
 
 
-def _affordable_shares(close: float, budget: float, fees: C.FeeSchedule) -> float:
-    """Largest whole position affordable at ``close`` after charges.
+def _affordable_shares(close: float, budget: float, fees: C.FeeSchedule) -> int:
+    """Largest WHOLE position affordable at ``close`` after charges.
 
     Sized off *current equity*, not starting capital, so the book compounds.
+
+    Returns an integer. NSE delivery trades in whole shares; returning
+    ``budget / close`` unrounded held 2022.86 shares of a Rs 1,017 stock, which is not a
+    position anyone can take and which puts fractional gains through the FIFO tax ledger.
     """
     if close <= 0 or budget <= 0:
-        return 0.0
-    shares = budget / close
+        return 0
+    shares = int(budget / close)
     for _ in range(12):
+        if shares <= 0:
+            return 0
         value = shares * close
         if value + _fee(value, fees) <= budget:
             return shares
-        shares *= 0.98
-    return 0.0
+        shares = int(shares * 0.98)
+    return 0
 
 
 def _settle_tax(

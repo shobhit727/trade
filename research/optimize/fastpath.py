@@ -43,6 +43,7 @@ tail-only assumption is caught before 161,000 backtests run against it.
 
 from __future__ import annotations
 
+import importlib
 import logging
 import sys
 
@@ -119,18 +120,33 @@ def _rebind_all() -> int:
     this safe: it only touches bindings of exactly these four functions.
     """
     wrappers = {id(fn): getattr(I, name) for name, fn in _ORIGINALS.items()}
+    names = set(_ORIGINALS)
     n = 0
-    for mod in list(sys.modules.values()):
+    # Scope the walk to the indicators module and the catalog. A blanket sys.modules
+    # sweep matched on object identity alone, so it rewrote ANY attribute whose value
+    # happened to be one of these functions -- including an unrelated module-level
+    # variable named `saved` that held a reference to roc(). The name must match too.
+    targets = [I]
+    cat = importlib.import_module("cryptobot.strategies.catalog")
+    targets += [m for m in list(sys.modules.values())
+                if m is not None and getattr(m, "__name__", "").startswith(
+                    ("cryptobot.strategies.catalog", "cryptobot.strategies"))]
+    seen = set()
+    for mod in targets:
+        if id(mod) in seen:
+            continue
+        seen.add(id(mod))
         d = getattr(mod, "__dict__", None)
         if not d:
             continue
         for attr, val in list(d.items()):
-            if id(val) in wrappers and val is not getattr(I, attr, None):
+            if attr in names and id(val) in wrappers and val is not wrappers[id(val)]:
                 try:
                     setattr(mod, attr, wrappers[id(val)])
                     n += 1
-                except Exception:  # noqa: BLE001 - read-only module namespace
+                except Exception:  # noqa: BLE001 - read-only namespace
                     continue
+    del cat
     return n
 
 

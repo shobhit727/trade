@@ -75,7 +75,11 @@ def compute(equity: pd.Series, *, exposure: float = 0.0, turnover: float = 0.0,
     sortino = float(rets.mean() * C.TRADING_DAYS / dstd) if dstd > 0 else 0.0
 
     running_max = equity.cummax()
-    dd = (equity / running_max - 1.0).where(running_max > 0, 0.0)
+    # A curve at or below zero has no drawdown *to* measure -- the usual ratio is
+    # undefined. Reporting 0.0 while also reporting cagr = -1.0 is self-contradictory
+    # (unreachable from run_single_stock, which keeps equity positive, but compute() is
+    # public). Use -1.0 for a total loss, which is the honest floor.
+    dd = (equity / running_max - 1.0).where(running_max > 0, -1.0)
     maxdd = float(dd.min()) if len(dd) else 0.0
     calmar = float(cagr / abs(maxdd)) if maxdd < -1e-9 else 0.0
 

@@ -104,15 +104,44 @@ class StrategySpec:
         Only fields present in ``values`` are overridden; the rest keep their defaults.
         That is deliberate -- the caller may pass a partial dict (e.g. the shipped
         default) and get the shipped behaviour.
+
+        Values are coerced back to their annotated type. This matters for reproducibility:
+        the results JSONL serialises ``Decimal`` as a JSON string, so re-running a saved
+        result handed the config ``quantity='1'`` (a str) instead of ``Decimal('1')``.
+        The catalog's own ``SignalStrategy.feed`` then evaluates ``'1' * Decimal(2)`` and
+        raises ``TypeError: can't multiply sequence by non-int``. Every saved pair was
+        therefore unreproducible. Coercion here fixes it for all callers at once.
         """
         cfg_cls = self.config_cls
-        valid = {f.name for f in dataclasses.fields(cfg_cls)}
-        kwargs = {k: v for k, v in values.items() if k in valid}
+        kwargs = {
+            f.name: _coerce(f, v)
+            for f in dataclasses.fields(cfg_cls)
+            if (v := values.get(f.name)) is not None
+        }
         try:
             cfg = cfg_cls(**kwargs)
         except (TypeError, ValueError) as exc:
             raise ValueError(f"{self.name}: rejected config {kwargs!r}: {exc}") from exc
         return self.strategy_cls(cfg)
+
+
+def _coerce(f, value):
+    """Restore a JSON round-tripped value to the type its dataclass field declares."""
+    if not isinstance(value, str):
+        return value
+    return _coerce_str(value, f.type)
+
+
+def _coerce_str(value: str, annotation):
+    import decimal
+
+    text = annotation if isinstance(annotation, str) else getattr(annotation, "__name__", "")
+    if "Decimal" in text:
+        try:
+            return decimal.Decimal(value)
+        except decimal.InvalidOperation:
+            return value
+    return value
 
 
 def _pick_class(mod, suffix: str):
