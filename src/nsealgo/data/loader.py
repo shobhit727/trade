@@ -38,6 +38,70 @@ EXCLUDE_SYMBOLS: frozenset[str] = frozenset({"adanient"})
 #: C5 — a surviving daily move beyond this is not market data, it is a glitch.
 MAX_ABS_RETURN = 0.45
 
+#: C10 — a gap beyond this cannot be a market move. Set deliberately FAR above the
+#: 20% circuit limit, not at it: a stock can open at -20% and close lower still, so
+#: a ~30% close-to-close collapse with a ~30% gap is genuinely reachable and must
+#: NOT be rescaled away. Only gaps with no plausible trading path fire.
+C10_MIN_GAP = 0.30
+
+#: C10 — price alone cannot always separate a crash from a bonus, so a rescale is
+#: only trusted when the implied ratio matches a real corporate-action ratio to
+#: within this relative tolerance. Arbitrary ratios are flagged, never applied.
+C10_RESCALE_TOLERANCE = 0.02
+
+#: Recognisable bonus/split ratios (1:x for x in 1, 1.5, 2, 2.5, 3, 4, 5, 10).
+#: TRENT's 2026-01-01 event is 1:1.5, i.e. 2/3. Anything else is ambiguous.
+C10_SPLIT_RATIOS: tuple[float, ...] = (1.0, 2 / 3, 0.5, 2 / 5, 1 / 3, 0.25, 0.2, 0.1)
+
+#: First date of the walk-forward TRAIN window. An unpriceable corporate action on
+#: or after this date cannot be worked around, so its symbol is excluded outright.
+ANALYSIS_START = "2016-01-01"
+
+def _apply_c10(df: pd.DataFrame, symbol: str, rep: CleaningReport) -> pd.DataFrame:
+    """Rescale provably-unadjusted bonus/split events. Never deletes rows.
+
+    Detection is deliberately one-sided. An earlier draft also *truncated* at any
+    ambiguous event; measurement killed that idea:
+
+    * ``nestleind`` 2010-01-08 (gap 75.8%) is the end of the vendor freeze that C9
+      already handles correctly. Truncating it deleted 2 years of good history.
+    * ``bajajfinsv`` 2008-03-14 / 2008-05-26 (gaps 64.7% / 91.3%) sit inside the
+      real 2008 collapse. Truncating them would have deleted a genuine drawdown --
+      exactly the GOAL.md §6 failure of hiding risk.
+
+    So C10 now only *rescales*, and only when the implied ratio matches a real 1:x
+    corporate-action ratio. Anything else is recorded in
+    :attr:`CleaningReport.unresolved_actions` for disclosure and left untouched:
+    an unrepaired event we have flagged is recoverable, a silently deleted
+    drawdown is not.
+    """
+    if len(df) < 2:
+        return df
+
+    prev_close = df["close"].shift(1)
+    gap = (df["open"] / prev_close - 1).abs()
+    events = [idx for idx in df.index[gap > C10_MIN_GAP]]
+    if not events:
+        return df
+
+    for event in events:
+        pos = df.index.get_loc(event)
+        prior_close = df["close"].iloc[pos - 1]
+        ratio_open = df["open"].iloc[pos] / prior_close
+        ratio_close = df["close"].iloc[pos] / prior_close
+        ratio = (ratio_open + ratio_close) / 2
+
+        nearest = min(C10_SPLIT_RATIOS, key=lambda r: abs(r - ratio))
+        if abs(nearest - ratio) <= C10_RESCALE_TOLERANCE * nearest:
+            df.loc[df.index < event, ["open", "high", "low", "close"]] *= nearest
+            rep.rescaled_actions.append((symbol, str(event.date()), float(nearest)))
+        else:
+            rep.unresolved_actions.append(
+                (symbol, str(event.date()), float(ratio), abs(ratio_open - ratio_close))
+            )
+
+    return df
+
 #: C9 — a run of at least this many *identical consecutive closes* is a vendor feed
 #: freeze, not market data.
 #:
@@ -75,13 +139,10 @@ FROZEN_RUN_MIN = 5
 
 OHLCV = ["open", "high", "low", "close", "vol"]
 
-
 class DataIntegrityError(RuntimeError):
     """Raised when a dataset fails a hard integrity assertion (C6)."""
 
-
 # --------------------------------------------------------------------------- #
-
 
 @dataclass
 class CleaningReport:
@@ -98,6 +159,13 @@ class CleaningReport:
     extreme_log: list[tuple[str, str, float]] = field(default_factory=list)
     #: (symbol, first date, last date, run length, frozen close) per frozen run.
     frozen_log: list[tuple[str, str, str, int, float]] = field(default_factory=list)
+    #: (symbol, date, ratio) per unadjusted bonus/split that C10 rescaled.
+    rescaled_actions: list[tuple[str, str, float]] = field(default_factory=list)
+    #: (symbol, date, implied ratio, open/close ratio spread) for every overnight
+    #: gap beyond C10_MIN_GAP that did NOT match a known split ratio. These are
+    #: disclosed, not modified: some are genuine crashes, some are demergers, and
+    #: price alone cannot tell which. See `reports/DATA_AUDIT.md`.
+    unresolved_actions: list[tuple[str, str, float, float]] = field(default_factory=list)
 
     def merge(self, other: CleaningReport) -> None:
         self.rows_in += other.rows_in
@@ -110,6 +178,8 @@ class CleaningReport:
         self.excluded_symbols.extend(other.excluded_symbols)
         self.extreme_log.extend(other.extreme_log)
         self.frozen_log.extend(other.frozen_log)
+        self.rescaled_actions.extend(other.rescaled_actions)
+        self.unresolved_actions.extend(other.unresolved_actions)
 
     @property
     def rows_dropped(self) -> int:
@@ -152,9 +222,7 @@ class CleaningReport:
             f"  extreme events     : {s['n_extreme_events']}\n"
         )
 
-
 # --------------------------------------------------------------------------- #
-
 
 def _assert_integrity(df: pd.DataFrame, symbol: str) -> None:
     """C6 — post-clean structural checks (ts already consumed; date index is the key)."""
@@ -165,7 +233,6 @@ def _assert_integrity(df: pd.DataFrame, symbol: str) -> None:
         raise DataIntegrityError(f"{symbol}: {int(df['close'].isna().sum())} NaN closes")
     if not df.index.is_monotonic_increasing:
         raise DataIntegrityError(f"{symbol}: date index not monotonic")
-
 
 def _run_ids(values: np.ndarray) -> np.ndarray:
     """Id of the maximal run of identical consecutive values each entry belongs to.
@@ -181,7 +248,6 @@ def _run_ids(values: np.ndarray) -> np.ndarray:
     new_run[0] = True
     np.not_equal(values[1:], values[:-1], out=new_run[1:])
     return np.cumsum(new_run) - 1
-
 
 def load_symbol(
     path: str, symbol: str, report: CleaningReport | None = None
@@ -236,6 +302,21 @@ def load_symbol(
     if n_art:
         df = df.loc[~art]
         rep.dropped_artifact += n_art
+
+    # ---- C10: unadjusted corporate actions, detected on RAW adjacency.
+    #
+    # NSE enforces a +/-20% circuit limit, so an overnight gap can never exceed
+    # 20% in magnitude. Anything beyond is a corporate action the vendor never
+    # back-adjusted. C5 cannot see it: C5 fires above 45% and on close-to-close
+    # rather than the overnight gap, so TRENT's 1:1.5 bonus on 2026-01-01 read as
+    # only a -33.0% close-to-close return and survived every prior rule -- inside
+    # the TEST window, corrupting every TRENT result.
+    #
+    # ORDER IS LOAD-BEARING: this runs BEFORE C5 and C9. Run after them and it
+    # fires on gaps those rules CREATED by deleting rows -- nestleind 2010-01-11
+    # (3.8% raw, a 30%+ gap once the adjacent freeze was dropped) and bajajfinsv
+    # twice (7.0% and 0.0% raw). A deletion is not a corporate action.
+    df = _apply_c10(df, symbol, rep)
 
     if df.empty:
         rep.rows_out += 0
@@ -311,7 +392,6 @@ def load_symbol(
         report.merge(rep) if report is not rep else None
     return df
 
-
 def load_universe(
     data_dir: str | None = None,
     exclude: frozenset[str] | None = None,
@@ -348,6 +428,18 @@ def load_universe(
         if len(df) < min_bars:
             dropped.append(symbol)
             continue
+        # A corporate action C10 could not price (a demerger: value genuinely left
+        # the entity, so the series is not comparable across the event) makes the
+        # symbol unbacktestable from that date on. Events before ANALYSIS_START do
+        # not matter -- C5 drops their return and the post-event level is
+        # self-consistent, and a 2016+ backtest never looks back that far -- so
+        # they are disclosed in `unresolved_actions` rather than dropping the symbol.
+        live_unresolved = [
+            sym for sym, date, *_ in local.unresolved_actions if date >= ANALYSIS_START
+        ]
+        if live_unresolved:
+            dropped.append(symbol)
+            continue
         series[symbol] = df["close"].rename(symbol)
         report.merge(local)
 
@@ -380,7 +472,6 @@ def load_universe(
         panel = panel.loc[~sparse]
 
     return panel, list(panel.columns), report
-
 
 def load_returns(panel: pd.DataFrame) -> pd.DataFrame:
     """Daily simple returns of the close panel."""

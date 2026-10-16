@@ -104,7 +104,14 @@ def _read(sym: str, timeframe: str = "1d") -> pd.DataFrame:
 #: (``nsealgo.data.loader`` reports ``excluded symbols: ['adanient', 'jiofin']``). The
 #: same exclusions are applied here so this sweep never optimises on data the production
 #: engine has already rejected -- otherwise the two harnesses would silently disagree.
-EXCLUDED_SYMBOLS = frozenset({"adanient", "jiofin"})
+#: Must stay identical to the production loader's exclusions.
+#:   adanient  - C3 structural corruption in the raw file.
+#:   jiofin    - corrupt series.
+#:   tmpv      - demerger on 2025-10-14. C10 cannot rescale a demerger (value
+#:               genuinely left the entity), so it truncates to 244 bars starting
+#:               *inside* our TRAIN window. There is nothing to backtest.
+#: `test_exclusions_match_the_production_loader` fails loudly if this drifts.
+EXCLUDED_SYMBOLS = frozenset({"adanient", "jiofin", "tmpv"})
 
 
 def available_symbols(timeframe: str = "1d", include_excluded: bool = False) -> list[str]:
