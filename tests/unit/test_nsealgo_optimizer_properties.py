@@ -819,9 +819,38 @@ class TestNoLookahead:
         assert rebalance_dates(idx, "D") == frozenset(idx)
 
     def test_unsupported_frequency_raises_instead_of_trading_nothing(self):
+        """An unknown clock must raise, never silently return zero rebalances.
+
+        Quarterlies were added for Phase 1 (the exposure-vs-turnover experiment
+        needs the coarse end of the clock), so ``"Q"`` is now valid and can no
+        longer stand in for an unparseable frequency. The guard is what matters:
+        a typo must fail loudly rather than produce a book that never trades.
+        """
         idx = pd.bdate_range("2020-01-01", periods=10)
-        with pytest.raises(BacktestError, match="unsupported rebalance freq"):
-            rebalance_dates(idx, "Q")
+        for bogus in ("X", "3M", "", "monthly", "q1", "z"):
+            with pytest.raises(BacktestError, match="unsupported rebalance freq"):
+                rebalance_dates(idx, bogus)
+
+    def test_every_supported_frequency_rebales_at_least_once(self):
+        """D/W/M/Q/2Q/A must all produce a usable, strictly increasing date set.
+
+        A frequency that parsed but yielded one date would silently turn the book
+        into buy-and-hold, which is the exact confusion Phase 1 had to rule out.
+        """
+        idx = pd.bdate_range("2016-01-01", "2026-12-31")
+        seen = {}
+        for freq in ("D", "W", "M", "Q", "2Q", "A"):
+            dates = sorted(rebalance_dates(idx, freq))
+            assert dates, f"{freq} produced no rebalance dates"
+            assert dates[0] == idx[0], f"{freq} must trade on the first bar"
+            assert all(a < b for a, b in zip(dates, dates[1:])), f"{freq} not increasing"
+            seen[freq] = len(dates)
+        # Coarser clocks must never be finer than their neighbour.
+        assert seen["D"] > seen["W"] > seen["M"] > seen["Q"] > seen["2Q"] > seen["A"]
+        # 11 calendar years: annual=11, semi=22, quarterly=44.
+        assert seen["A"] == 11
+        assert seen["2Q"] == 22
+        assert seen["Q"] == 44
 
 
 # --------------------------------------------------------------------------- #

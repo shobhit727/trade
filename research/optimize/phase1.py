@@ -34,7 +34,6 @@ import json
 import logging
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass
-from decimal import Decimal as D
 from pathlib import Path
 
 from . import config as C
