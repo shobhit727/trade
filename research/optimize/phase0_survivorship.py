@@ -66,7 +66,14 @@ def build_pit_panel(px: pd.DataFrame, m, *, n_hold: int) -> pd.DataFrame:
     months = pd.to_datetime(px.index, utc=True).tz_convert("Asia/Kolkata").to_period("M")
     for mth in months.unique():
         rows = px.index[months == mth]
-        keep = _pit_members(m, rows[-1])
+        # LAGGED membership: the membership in force during month M is the one
+        # published at the END of month M-1. Using M's own month-end snapshot would
+        # let a name enter the universe up to a month before it actually joined --
+        # a look-ahead, which GOAL.md §6 forbids outright.
+        prior = px.index[px.index < rows[0]]
+        if len(prior) == 0:
+            continue
+        keep = _pit_members(m, prior[-1])
         norm = {s.upper().replace("-", "").replace("&", "").replace(" ", "") for s in keep}
         for col in px.columns:
             if col.upper() in norm:
