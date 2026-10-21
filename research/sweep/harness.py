@@ -623,6 +623,21 @@ def _book(
             ok = live[t] & np.isfinite(row)
             if ok.any():
                 masked = np.where(ok, row, -np.inf)
+                # TIE-BREAK. A stable argsort resolves ties by COLUMN POSITION,
+                # and the panel's columns are alphabetical -- so a binary or
+                # boolean score (which creates large tie groups) would select
+                # ALPHABETICALLY. That is a silent, systematic bias. An agent in
+                # wave 1 hit it with a boolean frequency factor whose tie groups
+                # were 18 of 47 names.
+                #
+                # The production engine (src/nsealgo) breaks ties with
+                # blake2b(f"{date}|{symbol}"). We use the same principle: a
+                # hash of the SYMBOL NAME, so the tie-break is arbitrary with
+                # respect to the score, deterministic across processes, and
+                # independent of column order. Date-independent is deliberate
+                # and stronger here: a tied name is treated consistently rather
+                # than reshuffled each date.
+                masked = masked + _TIEBREAK * _tiebreak_vector(px.columns)
                 order = np.argsort(-masked, kind="stable")
                 order = order[np.isfinite(masked[order])]
             else:
@@ -710,6 +725,32 @@ def _book(
             "n_trades": trades, "fees": fees, "tax": tax,
             "curve": curve, "gross_exp": gross_sum / T}
 
+
+#: Tie-break epsilon. Must be far smaller than any meaningful score gap and
+#: far larger than float noise. 1e-9 is safe for z-scored and rank scores.
+_TIEBREAK = 1e-9
+
+_TIEBREAK_CACHE: dict[tuple, np.ndarray] = {}
+
+
+def _tiebreak_vector(columns) -> np.ndarray:
+    """Per-symbol pseudo-random tie-break weights in [0, 1).
+
+    Derived from blake2b of the symbol name, so it is deterministic, independent
+    of column order, and uncorrelated with any score. A stable argsort would
+    otherwise resolve ties by column position -- and the columns are
+    alphabetical, which is a silent bias.
+    """
+    key = tuple(columns)
+    hit = _TIEBREAK_CACHE.get(key)
+    if hit is not None:
+        return hit
+    out = np.empty(len(key), dtype=float)
+    for i, c in enumerate(key):
+        h = hashlib.blake2b(str(c).encode("utf-8"), digest_size=8).digest()
+        out[i] = int.from_bytes(h, "big") / float(1 << 64)
+    _TIEBREAK_CACHE[key] = out
+    return out
 
 _BENCH_CACHE: dict[tuple, dict] = {}
 
