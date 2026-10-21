@@ -338,7 +338,16 @@ limit — `verify_limits()` exists precisely to make that impossible.
     *Prevent*: simulate the control and measure it. A filter's benefit is an empirical
     claim.
 
-12. **Blowing up your own context with a bad groupby.**
+12. **Writing instinct files in the wrong format.**
+    *What went wrong*: recorded the instincts as JSON. The importer only accepts
+    `.yaml`/`.yml`/`.md` with `---`-delimited frontmatter, and a hand-written file in
+    the wrong place is invisible to `instinct-cli.py status` — it looked installed and
+    was not.
+    *Prevent*: install instincts with the CLI, then **verify with `status`**. Keep the
+    YAML in the repo as source of truth (`research/instincts/`) and re-import from it.
+    Use `scope: project` so a trading lesson does not leak into unrelated repos.
+
+13. **Blowing up your own context with a bad groupby.**
     *What went wrong*: episode analysis grouped by a cumsum that incremented per bar,
     producing 762 one-bar "episodes" and flooding the output.
     *Prevent*: assert the group count before printing; sanity-check the first few groups.
@@ -447,7 +456,55 @@ def test_exclusions_match_the_production_loader(self, production_universe):
 
 ---
 
-## 6. Instincts (continuous-learning-v2 format)
+## 6. Instincts — installed, not just described
+
+The instincts for this session are **installed and live** in the continuous-learning-v2
+store, scoped to this project so they do not contaminate unrelated work:
+
+```
+Scope     : project
+Project   : trade (e691ea49feb8)
+Count     : 14 instincts, 10 in domain `quant-research`, 3 in `python`, 1 in `testing`
+Installed : ~/.local/share/ecc-homunculus/projects/e691ea49feb8/instincts/inherited/
+Source of truth (version controlled): research/instincts/trade-instincts.yaml
+```
+
+**The real format is `---`-delimited YAML frontmatter, not JSON.** An earlier draft of
+this document recorded them as JSON, which the importer silently does not accept
+(`ALLOWED_INSTINCT_EXTENSIONS = (".yaml", ".yml", ".md")`). Install them with the CLI,
+not by writing files by hand:
+
+```bash
+python3 <skill>/scripts/instinct-cli.py import research/instincts/trade-instincts.yaml --dry-run --force
+python3 <skill>/scripts/instinct-cli.py import research/instincts/trade-instincts.yaml --force
+python3 <skill>/scripts/instinct-cli.py status      # verify they are readable
+```
+
+Each entry needs at minimum `id`, `trigger`, `action`, `confidence`, `scope`, `domain`.
+`scope: project` is what keeps a trading-research lesson from leaking into an unrelated
+repo; `scope: global` is only for genuinely universal lessons.
+
+### The fourteen
+
+| id | confidence | domain |
+|---|---|---|
+| `shared-constant-unit-mismatch` | 0.95 | python |
+| `charge-selection-to-the-hypothesis` | 0.95 | quant-research |
+| `repair-only-what-is-provable` | 0.90 | quant-research |
+| `detector-before-deletion` | 0.90 | quant-research |
+| `mask-selection-not-prices` | 0.90 | quant-research |
+| `benchmark-against-doing-nothing` | 0.90 | quant-research |
+| `mandate-conflict-is-a-human-decision` | 0.90 | quant-research |
+| `exposure-is-the-first-order-driver` | 0.85 | quant-research |
+| `incomplete-correction-is-a-floor` | 0.85 | quant-research |
+| `deliver-the-thing-not-the-research-program` | 0.85 | quant-research |
+| `measure-the-risk-control-before-trusting-it` | 0.80 | quant-research |
+| `units-typo-in-the-verification-script` | 0.80 | python |
+| `reproduce-in-isolation-before-attributing` | 0.80 | testing |
+| `sanity-check-grouping-before-printing` | 0.75 | python |
+
+The JSON form below is retained only for reading by tools that do not speak YAML.
+It is **not** the installed format.
 
 ```json
 [
@@ -523,8 +580,6 @@ def test_exclusions_match_the_production_loader(self, production_universe):
   }
 ]
 ```
-
----
 
 ## 7. Suggested skill updates
 
