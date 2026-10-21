@@ -98,21 +98,78 @@ def _norm(sym: str) -> str:
 
 
 def panel() -> pd.DataFrame:
-    """Close-price panel for the usable universe, forward-filled."""
+    """Close-price panel for the usable universe, from the PRODUCTION LOADER.
+
+    Was built from the research splitter, which reads the raw CSV and applies
+    only a subset of the cleaning rules -- crucially NOT rule C10. So the sweep
+    panel still contained TRENT's unadjusted 1:1.5 bonus, a fake -33%
+    close-to-close move inside the TEST window. An agent found it and had to
+    black it out of their own factor by hand. The panel and the OHLC loader
+    must come from the same cleaned source or the two disagree.
+    """
     global _PANEL
     if _PANEL is None:
-        from research.optimize import splitter as S
-
         frames: dict[str, pd.Series] = {}
+        for sym, df in ohlc_panel().items():
+            frames[sym] = df["close"]
+        p = pd.DataFrame(frames).sort_index().ffill()
+        if isinstance(p.index, pd.DatetimeIndex) and p.index.tz is not None:
+            p.index = p.index.tz_convert("Asia/Kolkata").tz_localize(None).normalize()
+        p.columns = [c.lower() for c in p.columns]
+        _PANEL = p
+    return _PANEL
+
+
+_OHLC: dict[str, pd.DataFrame] | None = None
+
+
+def ohlc_panel() -> dict[str, pd.DataFrame]:
+    """Per-symbol OHLCV frames, CLEANED by the production loader.
+
+    Agents kept writing their own CSV readers, and at least one read the RAW
+    csv -- which does NOT have loader rule C10 applied, so TRENT's unadjusted
+    1:1.5 bonus (a fake -33% close-to-close move) leaked into factors and the
+    agent had to black it out by hand. One shared, cleaned loader removes both
+    the duplication and the divergence.
+
+    Returns a dict of symbol -> DataFrame with columns open/high/low/close/vol.
+    """
+    global _OHLC
+    if _OHLC is None:
+        from nsealgo.data.loader import load_symbol
+
+        frames: dict[str, pd.DataFrame] = {}
         for f in sorted((REPO / "data" / "nse").glob("*_1d.csv")):
             sym = f.name[: -len("_1d.csv")]
             if sym in EXCLUDED:
                 continue
-            frames[_norm(sym)] = S.bars(sym, timeframe="1d")["close"]
-        p = pd.DataFrame(frames).sort_index().ffill()
-        p.columns = [c.lower() for c in p.columns]
-        _PANEL = p
-    return _PANEL
+            df = load_symbol(str(f), sym)
+            if df.empty:
+                continue
+            frames[_norm(sym).lower()] = df
+        _OHLC = frames
+    return _OHLC
+
+
+_OHLC_WIDE: dict[str, pd.DataFrame] = {}
+
+
+def ohlc_wide(column: str) -> pd.DataFrame:
+    """One OHLCV column as a wide (date x symbol) frame, from the CLEANED loader."""
+    hit = _OHLC_WIDE.get(column)
+    if hit is not None:
+        return hit
+    frames = {}
+    for sym, df in ohlc_panel().items():
+        if column in df.columns:
+            frames[sym] = df[column]
+    wide = pd.DataFrame(frames).sort_index()
+    # The production loader returns tz-aware IST; the sweep panel is tz-naive
+    # normalised dates. Align to the panel's convention so the two join.
+    if isinstance(wide.index, pd.DatetimeIndex) and wide.index.tz is not None:
+        wide.index = wide.index.tz_convert("Asia/Kolkata").tz_localize(None).normalize()
+    _OHLC_WIDE[column] = wide
+    return wide
 
 
 def membership():
@@ -300,12 +357,30 @@ def _vol_of_vol(px: pd.DataFrame) -> pd.DataFrame:
 
 @factor("idio_vol")
 def _idio_vol(px: pd.DataFrame) -> pd.DataFrame:
-    """Idiosyncratic volatility: total vol minus beta-scaled market vol."""
+    """Idiosyncratic volatility: total vol minus beta-scaled market vol.
+
+    Computed with an explicit per-symbol loop ON PURPOSE. The obvious vectorised
+    form -- ``r.rolling(252).cov(mkt)`` where mkt is a Series -- broadcasts the
+    Series across every column and returns a 4,676-column frame (47 x 47)
+    instead of 47. Every idio_vol cell was therefore a degenerate EMPTY book
+    (cagr 0.0, exposure 0.0) that failed silently instead of raising, so the
+    results looked like "no edge" rather than "this factor never ran".
+    """
     r = px.pct_change()
     mkt = r.mean(axis=1)
-    beta = r.rolling(252, min_periods=120).cov(mkt) / mkt.rolling(252, min_periods=120).var()
-    ivar = (r.rolling(63, min_periods=30).var()
-            - (beta * mkt.rolling(63, min_periods=30).var()))
+    mvar = mkt.rolling(252, min_periods=120).var()
+    beta = pd.DataFrame(index=px.index, columns=px.columns, dtype=float)
+    for c in px.columns:
+        beta[c] = r[c].rolling(252, min_periods=120).cov(mkt) / mvar.replace(0, np.nan)
+    # Broadcast mvar to a DataFrame EXPLICITLY. `beta * mvar` where mvar is a
+    # Series aligns it to beta's COLUMNS, producing a 47x47 = 2,209-column (and
+    # with the rolling var, 4,676-column) frame instead of 47. Every idio_vol
+    # cell was therefore a degenerate EMPTY book (cagr 0.0, exposure 0.0) that
+    # failed silently instead of raising -- so it looked like "no edge" rather
+    # than "this factor never ran".
+    mvar_wide = pd.DataFrame(np.repeat(mvar.to_numpy()[:, None], len(px.columns), axis=1),
+                              index=px.index, columns=px.columns)
+    ivar = r.rolling(63, min_periods=30).var() - (beta * mvar_wide)
     return -np.sqrt(ivar.clip(lower=0))
 
 
@@ -364,10 +439,14 @@ def _range_pos(px: pd.DataFrame) -> pd.DataFrame:
 # --- microstructure family (uses OHLC -- genuinely new information) --------- #
 @factor("gap")
 def _gap(px: pd.DataFrame) -> pd.DataFrame:
-    """Overnight gap. We have OHLC, so this is information the close-only
-    factors never saw."""
-    o = px.shift(0)
-    return o
+    """Overnight gap: open/prev_close - 1.
+
+    Was a PLACEHOLDER (``px.shift(0)`` -- just the close price again), so it
+    duplicated no information at all. Now it loads the real 'open' column from
+    the raw CSVs via the shared OHLC loader.
+    """
+    wide = ohlc_wide("open")
+    return wide.reindex(columns=px.columns) / px.shift(1) - 1.0
 
 
 @factor("intraday_vs_overnight")
@@ -492,11 +571,16 @@ def scramble(score: pd.DataFrame, seed: int) -> pd.DataFrame:
     between a symbol and its score. Deliberately NOT a time-shift: shifting in
     time smuggles real lagged information back in, so it is not a null.
     """
-    ckey = (id(score), score.shape, seed)
+    # KEY ON CONTENT, NOT id(). id() is reused once a frame is freed, so a new
+    # factor's score could inherit the PREVIOUS factor's permutation -- a null
+    # built from a different factor's scores. Three wave-1 agents hit this
+    # independently and it silently corrupted the null for 78/468 of one
+    # agent's cells (edge_vs_null shifted by up to 4.7pp).
+    arr = np.array(score.to_numpy(), copy=True)
+    ckey = (hashlib.blake2b(arr.tobytes(), digest_size=16).digest(), seed)
     hit = _SCRAMBLE_CACHE.get(ckey)
     if hit is not None:
         return hit
-    arr = np.array(score.to_numpy(), copy=True)
     rng = np.random.default_rng(seed)
     for i in range(arr.shape[0]):
         arr[i] = rng.permutation(arr[i])
@@ -852,7 +936,17 @@ def evaluate(cell: Cell, window: str = "TEST", seed: int = 20260101) -> Result |
         fn = FACTORS.get(cell.factor)
         if fn is None:
             return None
-        score = fn(px_all).loc[px.index].reindex(columns=px.columns)
+        score = fn(px_all)
+        # SHAPE GUARD. A factor that returns the wrong number of columns
+        # produces a degenerate book, not an error -- so it reads as "no edge"
+        # rather than "this factor never ran". That is exactly what happened to
+        # idio_vol (4,676 columns instead of 47). Fail loudly instead.
+        if score.shape[1] != px.shape[1]:
+            raise ValueError(
+                f"factor {cell.factor!r} returned {score.shape[1]} columns, "
+                f"expected {px.shape[1]} -- a factor must return one column per symbol"
+            )
+        score = score.loc[px.index].reindex(columns=px.columns)
 
         one_way = INSTRUMENT_BPS[cell.instrument] / 2 / 10_000
 
