@@ -175,9 +175,6 @@ def _load_agent_factors() -> None:
             print(f"[harness] skipping {f.name}: {exc}", file=sys.stderr)
 
 
-_load_agent_factors()
-
-
 def factor(name: str) -> Callable[[pd.DataFrame], pd.DataFrame]:
     def deco(fn: Callable[[pd.DataFrame], pd.DataFrame]) -> Callable[[pd.DataFrame], pd.DataFrame]:
         FACTORS[name] = fn
@@ -877,3 +874,13 @@ def read_rows(path: Path) -> list[dict]:
             except json.JSONDecodeError:
                 continue
     return out
+
+
+# --------------------------------------------------------------------------- #
+# Agent factor auto-registration
+# --------------------------------------------------------------------------- #
+# This call MUST be at the very end of the module. ``factor`` has to exist
+# before an agent module does ``from research.sweep.harness import factor``.
+# An earlier draft put the call next to the decorator definition, which made
+# every agent module fail with ImportError.
+_load_agent_factors()
