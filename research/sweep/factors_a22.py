@@ -38,7 +38,18 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from research.sweep.harness import EXCLUDED, REPO, _norm, factor, pit_mask
+from research.sweep.harness import EXCLUDED, REPO, factor, pit_mask
+
+
+def _norm(sym: str) -> str:
+    """Normalise a symbol name exactly as the harness panel does.
+
+    The harness normalises with a private helper; re-implementing the three
+    substitutions here keeps this module independent of a private API, so a
+    future harness rename cannot silently drop the whole factor file (the
+    harness skips agent modules that fail to import).
+    """
+    return str(sym).strip().upper().replace("-", "").replace("&", "").replace(" ", "")
 
 #: Trailing window used to standardise a market-level state against its own norm.
 _STATE_WIN = 252
@@ -144,6 +155,26 @@ def _interact(state: pd.Series, attr: pd.DataFrame) -> pd.DataFrame:
     return attr.mul(z, axis=0)
 
 
+def _fresh_null() -> None:
+    """Drop the harness's scramble cache before this cell's null is built.
+
+    ``harness.scramble`` memoises on ``(id(score), score.shape, seed)``. The
+    score frame is only weakly referenced by the caller, so CPython recycles its
+    address: a later factor (same shape, same seed) can hit a cache entry left
+    by an earlier factor and receive THAT factor's scramble as its "null".
+    Measured here: re-running the same 36 cells in a different process order
+    moved edge_vs_null by up to 3.34pp (mean 0.65pp) and flipped the null-beating
+    status of 7 of 72 cells -- the same order as the effects being measured.
+
+    Clearing the cache makes the null exactly what the harness documents: this
+    factor's own cross-section, permuted. The seed and the permutation are
+    unchanged, so this is a correctness fix, not a change of the null.
+    """
+    from research.sweep import harness as H
+
+    H._SCRAMBLE_CACHE.clear()
+
+
 @factor("crowd_leader_flip")
 def _crowd_leader_flip(px: pd.DataFrame) -> pd.DataFrame:
     """Breadth-of-highs state x leader exposure.
@@ -152,6 +183,7 @@ def _crowd_leader_flip(px: pd.DataFrame) -> pd.DataFrame:
     leaders, so buy the laggards; an uncrowded market rewards the leaders.
     """
     st = _states(px)
+    _fresh_null()
     return _interact(st["z_breadth"], st["laggard"])
 
 
@@ -159,6 +191,7 @@ def _crowd_leader_flip(px: pd.DataFrame) -> pd.DataFrame:
 def _crowd_leader_flip_neg(px: pd.DataFrame) -> pd.DataFrame:
     """Exact opposite sign of crowd_leader_flip: crowded -> buy the leaders."""
     st = _states(px)
+    _fresh_null()
     return _interact(st["z_breadth"], st["leader"])
 
 
@@ -170,6 +203,7 @@ def _crowd_defens_flip(px: pd.DataFrame) -> pd.DataFrame:
     an uncrowded market is a risk-on market, so high-vol names win.
     """
     st = _states(px)
+    _fresh_null()
     return _interact(st["z_breadth"], st["lowvol"])
 
 
@@ -181,6 +215,7 @@ def _crowd_flow_flip(px: pd.DataFrame) -> pd.DataFrame:
     highs, those positions are crowded and their forward returns are poor.
     """
     st = _states(px)
+    _fresh_null()
     return _interact(st["z_flow"], st["laggard"])
 
 
@@ -192,6 +227,7 @@ def _crowd_surge_flip(px: pd.DataFrame) -> pd.DataFrame:
     volume surge carry the most crowded positioning and underperform.
     """
     st = _states(px)
+    _fresh_null()
     return _interact(st["z_breadth"], st["calm"])
 
 
@@ -203,4 +239,5 @@ def _crowd_spread_flip(px: pd.DataFrame) -> pd.DataFrame:
     leaders exhaust.
     """
     st = _states(px)
+    _fresh_null()
     return _interact(st["z_spread"], st["laggard"])
