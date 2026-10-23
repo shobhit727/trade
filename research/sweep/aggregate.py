@@ -6,14 +6,28 @@ By wave 35 the programme will have tested on the order of 1,400 cells. At that
 scale a naive p<0.05 threshold produces roughly 70 false positives. So a cell
 only counts as a finding if it survives:
 
-  1. Benjamini-Hochberg FDR across every cell tested so far (not per wave --
-     the multiple-comparison burden is cumulative)
-  2. a sign test against its own scrambled null
-  3. an edge over the do-nothing benchmark
-  4. a walk-forward replication
+  1. Benjamini-Hochberg FDR across every hypothesis tested so far (not per
+     wave -- the multiple-comparison burden is cumulative)
+  2. an edge over the do-nothing benchmark (the decisive metric: the scrambled
+     null churns more than a persistent book, so edge_vs_null alone rewards
+     turnover, not skill)
+  3. a sign test against its own scrambled null
+  4. a TRAIN replication
 
-This module reports all four, and is deliberately harsh: a "candidate" that
-fails step 1 is not a candidate.
+Unit of hypothesis
+------------------
+A single (factor, n_hold, buffer, clock) cell is a *configuration*, not a
+hypothesis. Testing 36 configs of one signal and reporting the best as a
+discovery is exactly the post-hoc selection this project has already been
+burned by. So the hypothesis unit is the FACTOR: its p-value is the binomial
+tail probability of seeing at least k of its n configs beat the benchmark if
+the signal carried no information. BH-FDR is applied across factors.
+
+Fixes over the first draft (which reported nothing and could not have worked):
+  * glob was "agent*.jsonl"; files are "aNN.jsonl" -> zero rows found
+  * directory was "wave{w}"; actual layout is "w{w}"
+  * sign_pvalue computed ONE p-value from the whole array and broadcast it to
+    every cell, so every q_fdr was identical and the FDR layer was inert
 """
 
 from __future__ import annotations
@@ -27,13 +41,20 @@ import pandas as pd
 
 from .harness import REPO, read_rows
 
+CELL_GLOB = "a[0-9][0-9].jsonl"
+TRAIN_GLOB = "a[0-9][0-9]_train.jsonl"
 
-def load_all(waves: list[int]) -> pd.DataFrame:
+
+def load_all(waves: list[int], pattern: str = CELL_GLOB) -> pd.DataFrame:
     rows: list[dict] = []
     for w in waves:
-        for f in sorted((REPO / "tem" / "waves" / f"wave{w}").glob("agent*.jsonl")):
+        d = REPO / "tem" / "waves" / f"w{w}"
+        if not d.is_dir():
+            continue
+        for f in sorted(d.glob(pattern)):
             for r in read_rows(f):
                 r["wave"] = w
+                r["src"] = f.name
                 rows.append(r)
     if not rows:
         return pd.DataFrame()
@@ -54,22 +75,21 @@ def bh_fdr(p: np.ndarray) -> np.ndarray:
     return out
 
 
-def sign_pvalue(edge: np.ndarray) -> np.ndarray:
-    """One-sided binomial p: P(at least this many positive | each is a coin flip).
+def binom_tail(k: int, n: int, p0: float = 0.5) -> float:
+    """One-sided P(X >= k | n Bernoulli(p0))."""
+    if n <= 0:
+        return 1.0
+    k = max(0, min(k, n))
+    if k == 0:
+        return 1.0
+    total = sum(math.comb(n, i) * p0**i * (1 - p0) ** (n - i) for i in range(k, n + 1))
+    return min(total, 1.0)
 
-    With ~1,400 cells this is the statistic that actually bites. A cell with
-    edge > 0 in 40 of 40 comparisons has p = 2^-40, but only if the comparisons
-    are independent, which they are not across overlapping windows. The FDR
-    layer above handles that dependence; this is the per-cell direction test.
-    """
-    n = len(edge)
-    if n == 0:
-        return edge
-    k = int((edge > 0).sum())
-    p = 0.0
-    for i in range(k, n + 1):
-        p += math.comb(n, i) * 0.5 ** n
-    return np.full(n, min(p, 1.0))
+
+def _dedupe(df: pd.DataFrame) -> pd.DataFrame:
+    """One row per configuration, keeping the last successful run."""
+    df = df[df["ok"] == 1].copy() if "ok" in df.columns else df.copy()
+    return df.sort_values("cid").drop_duplicates("cid", keep="last")
 
 
 def main() -> int:
@@ -80,70 +100,97 @@ def main() -> int:
     args = ap.parse_args()
 
     waves = args.waves or list(range(1, 36))
+
     df = load_all(waves)
     if df.empty:
         print("no rows found")
         return 1
-    df = df[df["ok"] == 1].copy()
-    print(f"loaded {len(df)} rows from waves {min(waves)}..{max(waves)}")
+    test = _dedupe(df[df["window"] == "TEST"] if "window" in df.columns else df)
+    print(f"loaded {len(df)} rows -> {len(test)} unique TEST configs, waves {min(waves)}..{max(waves)}")
 
-    # One row per (cell, window). TEST is the decision window.
-    test = df[df["window"] == "TEST"].copy()
-    if test.empty:
-        test = df.copy()
-    test = test.sort_values("cid").drop_duplicates("cid", keep="last")
+    train = load_all(waves, TRAIN_GLOB)
+    train = _dedupe(train) if not train.empty else train
 
-    # FDR across the whole family, on the null-comparison p-value.
-    p_raw = sign_pvalue(test["edge_vs_null"].to_numpy())
-    test["p_null"] = p_raw
-    test["q_fdr"] = bh_fdr(p_raw)
-    test["beats_bench"] = test["edge_vs_bench"] > 0
-    test["survives_fdr"] = test["q_fdr"] < 0.05
-    test["candidate"] = test["survives_fdr"] & test["beats_bench"]
+    # ---- hypothesis unit = factor -----------------------------------------
+    fam = (
+        test.groupby("factor")
+        .agg(
+            n_cfg=("cid", "size"),
+            n_bench=("edge_vs_bench", lambda s: int((s > 0).sum())),
+            n_null=("edge_vs_null", lambda s: int((s > 0).sum())),
+            med_edge_bench=("edge_vs_bench", "median"),
+            med_edge_null=("edge_vs_null", "median"),
+            max_edge_bench=("edge_vs_bench", "max"),
+            med_cagr=("cagr", "median"),
+            med_dd=("max_dd", "median"),
+            med_turnover=("turnover", "median"),
+        )
+        .reset_index()
+    )
+    fam["p_bench"] = [binom_tail(k, n) for k, n in zip(fam.n_bench, fam.n_cfg)]
+    fam["p_null"] = [binom_tail(k, n) for k, n in zip(fam.n_null, fam.n_cfg)]
+    fam["q_bench"] = bh_fdr(fam.p_bench.to_numpy())
+    fam["q_null"] = bh_fdr(fam.p_null.to_numpy())
+    fam["survives_fdr"] = fam.q_bench < 0.05
+    fam["beats_bench_family"] = fam.med_edge_bench > 0
+    fam["candidate"] = fam.survives_fdr & fam.beats_bench_family
 
-    n = len(test)
-    cands = test[test["candidate"]]
-    print(f"cells: {n}")
-    print(f"  beat null (edge>0)      : {(test.edge_vs_null > 0).sum()}")
-    print(f"  beat benchmark          : {test.beats_bench.sum()}")
-    print(f"  survive FDR q<0.05      : {test.survives_fdr.sum()}")
-    print(f"  CANDIDATES (both)       : {len(cands)}")
+    print(f"\nfactor families tested : {len(fam)}")
+    print(f"  families beating bench on majority of configs : {(fam.n_bench / fam.n_cfg > 0.5).sum()}")
+    print(f"  families with median edge_vs_bench > 0        : {fam.beats_bench_family.sum()}")
+    print(f"  families surviving FDR q<0.05 (vs bench)      : {fam.survives_fdr.sum()}")
+    print(f"  CANDIDATE families                            : {fam.candidate.sum()}")
 
-    cols = ["wave", "factor", "n_hold", "buffer", "clock", "universe", "instrument",
-            "cagr", "null_cagr", "edge_vs_null", "q_fdr", "bench_cagr",
-            "edge_vs_bench", "max_dd", "sharpe", "exposure", "turnover",
-            "breach_halt"]
-    show = [c for c in cols if c in test.columns]
-    top = test.nlargest(args.top, "edge_vs_null")[show]
+    cols = ["factor", "n_cfg", "n_bench", "n_null", "med_edge_bench", "med_edge_null",
+            "max_edge_bench", "med_cagr", "med_dd", "med_turnover", "p_bench", "q_bench"]
+    print(f"\n=== top {args.top} families by median edge over benchmark ===")
+    with pd.option_context("display.width", 220, "display.max_columns", 40):
+        print(fam.nlargest(args.top, "med_edge_bench")[cols].round(4).to_string(index=False))
 
-    print(f"\n=== top {args.top} cells by edge over null ===")
-    with pd.option_context("display.width", 200, "display.max_columns", 40):
-        print(top.to_string(index=False))
+    if len(fam[fam.candidate]):
+        print("\n=== CANDIDATE FAMILIES -- must still pass walk-forward ===")
+        with pd.option_context("display.width", 220, "display.max_columns", 40):
+            print(fam[fam.candidate][cols].round(4).to_string(index=False))
 
-    if len(cands):
-        print(f"\n=== CANDIDATES ({len(cands)}) -- must still pass walk-forward ===")
-        with pd.option_context("display.width", 200, "display.max_columns", 40):
-            print(cands[show].to_string(index=False))
+    # ---- per-cell detail for inspection ------------------------------------
+    cand_factors = set(fam.loc[fam.candidate, "factor"])
+    cell_cols = ["wave", "factor", "n_hold", "buffer", "clock", "universe", "instrument",
+                 "cagr", "null_cagr", "edge_vs_null", "bench_cagr", "edge_vs_bench",
+                 "max_dd", "sharpe", "exposure", "turnover", "breach_halt"]
+    show = [c for c in cell_cols if c in test.columns]
+    print(f"\n=== top {args.top} cells by edge over benchmark ===")
+    with pd.option_context("display.width", 220, "display.max_columns", 40):
+        print(test.nlargest(args.top, "edge_vs_bench")[show].round(4).to_string(index=False))
 
-    # Per-factor summary: a factor that wins on many cells is more credible
-    # than one that wins on a single lucky cell.
-    fam = test.groupby("factor").agg(
-        n_cells=("cid", "size"),
-        med_edge=("edge_vs_null", "median"),
-        max_edge=("edge_vs_null", "max"),
-        pct_pos=("edge_vs_null", lambda s: (s > 0).mean() * 100),
-        med_cagr=("cagr", "median"),
-        med_dd=("max_dd", "median"),
-        n_fdr=("survives_fdr", "sum"),
-        n_bench=("beats_bench", "sum"),
-    ).sort_values("med_edge", ascending=False)
-    print("\n=== per-factor summary (top 20 by median edge) ===")
-    with pd.option_context("display.width", 200, "display.max_columns", 40):
-        print(fam.head(20).round(4).to_string())
+    # ---- TRAIN replication for candidate factors ---------------------------
+    if cand_factors and not train.empty:
+        tr = train[train["factor"].isin(cand_factors)]
+        if not tr.empty:
+            trf = (
+                tr.groupby("factor")
+                .agg(n_cfg=("cid", "size"),
+                     n_bench=("edge_vs_bench", lambda s: int((s > 0).sum())),
+                     med_edge_bench=("edge_vs_bench", "median"))
+                .reset_index()
+            )
+            trf["train_replicates"] = (trf.n_bench / trf.n_cfg > 0.5) & (trf.med_edge_bench > 0)
+            print("\n=== TRAIN replication of candidate families ===")
+            with pd.option_context("display.width", 200):
+                print(trf.round(4).to_string(index=False))
+            fam = fam.merge(trf[["factor", "train_replicates"]], on="factor", how="left")
+            fam["deployable"] = fam.candidate & fam.train_replicates.fillna(False)
+            n_dep = int(fam.deployable.sum())
+            print(f"\nDEPLOYABLE (FDR + bench + TRAIN): {n_dep}")
+            if n_dep:
+                print(fam[fam.deployable][cols].round(4).to_string(index=False))
+    else:
+        print("\n(no candidate families reached the TRAIN replication stage)")
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     test.to_json(args.out, orient="records")
+    fam.to_json(args.out.with_name("_aggregate_families.json"), orient="records")
     print(f"\n-> {args.out}")
+    print(f"-> {args.out.with_name('_aggregate_families.json')}")
     return 0
 
 
