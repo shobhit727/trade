@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
+import numpy as np
 import pandas as pd
 
 from .data_catalog import DatasetManifest, LicenseStatus, ValueOrigin
@@ -35,7 +36,7 @@ def _normalise_ohlcv(frame: pd.DataFrame, *, timezone_name: str) -> pd.DataFrame
     result = frame.copy()
     result.columns = [str(column).strip().lower() for column in result.columns]
     timestamp_column = next(
-        (column for column in ("timestamp", "datetime", "date", "ts", "time") if column in result.columns),
+        (column for column in ("timestamp", "datetime", "date", "ts", "_ts", "time") if column in result.columns),
         None,
     )
     if timestamp_column is None:
@@ -71,8 +72,6 @@ def _normalise_ohlcv(frame: pd.DataFrame, *, timezone_name: str) -> pd.DataFrame
         raise ValueError(f"OHLCV source missing columns: {sorted(required - set(result.columns))}")
     prices = result[["open", "high", "low", "close"]].to_numpy(dtype="float64")
     volume = result["volume"].to_numpy(dtype="float64")
-    import numpy as np
-
     # Reject corruption; do not coerce missing values into synthetic prices.
     if not np.isfinite(prices).all() or not np.isfinite(volume).all():
         raise ValueError("OHLCV source has missing or non-finite values")
