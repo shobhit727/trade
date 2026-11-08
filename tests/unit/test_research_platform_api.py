@@ -41,6 +41,37 @@ def _payload(**updates: object) -> dict[str, object]:
     return value
 
 
+def _dataset_payload(**updates: object) -> dict[str, object]:
+    # This synthetic manifest has explicit provenance and a declared approved test licence.
+    value: dict[str, object] = {
+        "dataset_id": "api-fixture-data-v1",
+        "market": "nse",
+        "provider": "synthetic-test-provider",
+        "source": "synthetic-test-fixture",
+        "instrument": "TEST",
+        "exchange": "NSE",
+        "category": "ohlcv",
+        "resolution": "1d",
+        "coverage_start": "2010-01-01T00:00:00+00:00",
+        "coverage_end": "2026-11-09T00:00:00+00:00",
+        "timezone": "UTC",
+        "timestamp_convention": "bar-close-time",
+        "acquired_at": "2026-11-08T00:00:00+00:00",
+        "update_frequency": "daily",
+        "license_status": "approved",
+        "license_reference": "test-only-approved-licence",
+        "value_origin": "observed",
+        "quality_score": 1.0,
+        "known_gaps": [],
+        "adjustment_method": "none",
+        "processing_history": ["synthetic unit-test fixture"],
+        "schema_version": "1",
+        "extra_metadata": {"synthetic": "true"},
+    }
+    value.update(updates)
+    return value
+
+
 def _request(app: ResearchAPI, method: str, path: str, payload: object | None = None):
     # Call the WSGI app directly without binding a network socket in the test suite.
     body = b"" if payload is None else json.dumps(payload).encode("utf-8")
@@ -90,6 +121,10 @@ def test_research_api_creates_and_lists_real_experiment_records(tmp_path) -> Non
     # Creating an experiment persists immutable metadata and an audit event.
     store = ExperimentStore(tmp_path / "research.sqlite3")
     app = ResearchAPI(store)
+    status, _, body = _request(app, "POST", "/api/datasets", _dataset_payload())
+    assert status == 201
+    registered = json.loads(body)
+    assert registered["status"] == "manifest_registered_not_data_uploaded"
     status, _, body = _request(app, "POST", "/api/experiments", _payload())
     assert status == 201
     created = json.loads(body)
@@ -112,6 +147,7 @@ def test_research_api_market_filter_and_cross_market_rejection(tmp_path) -> None
     # Market filters keep financial records separate and track validation rejects mixing.
     store = ExperimentStore(tmp_path / "research.sqlite3")
     app = ResearchAPI(store)
+    assert _request(app, "POST", "/api/datasets", _dataset_payload())[0] == 201
     _request(app, "POST", "/api/experiments", _payload())
     status, _, body = _request(app, "GET", "/api/experiments")
     assert status == 200
@@ -135,6 +171,7 @@ def test_research_api_duplicate_record_returns_conflict(tmp_path) -> None:
     # Duplicate experiment IDs are conflicts, not silent overwrites.
     app = ResearchAPI(ExperimentStore(tmp_path / "research.sqlite3"))
     payload = _payload()
+    assert _request(app, "POST", "/api/datasets", _dataset_payload())[0] == 201
     assert _request(app, "POST", "/api/experiments", payload)[0] == 201
     status, _, body = _request(app, "POST", "/api/experiments", payload)
     assert status == 409
@@ -165,3 +202,57 @@ def test_research_api_rejects_invalid_timezones_and_non_json_content(tmp_path) -
 
     b"".join(app(environ, start_response))
     assert captured["status"].startswith("415")
+
+
+
+def test_research_api_blocks_unapproved_and_insufficient_dataset_coverage(tmp_path) -> None:
+    # Research jobs cannot silently consume unlicensed or temporally incomplete datasets.
+    app = ResearchAPI(ExperimentStore(tmp_path / "research.sqlite3"))
+    unapproved = _dataset_payload(
+        dataset_id="review-required-v1",
+        license_status="review_required",
+        license_reference="pending-review",
+    )
+    assert _request(app, "POST", "/api/datasets", unapproved)[0] == 201
+    status, _, body = _request(
+        app,
+        "POST",
+        "/api/experiments",
+        _payload(dataset_ids=["review-required-v1"]),
+    )
+    assert status == 400
+    assert "licence must be approved" in json.loads(body)["error"]
+
+    insufficient = _dataset_payload(
+        dataset_id="short-history-v1",
+        coverage_end="2025-01-01T00:00:00+00:00",
+    )
+    assert _request(app, "POST", "/api/datasets", insufficient)[0] == 201
+    status, _, body = _request(
+        app,
+        "POST",
+        "/api/experiments",
+        _payload(dataset_ids=["short-history-v1"]),
+    )
+    assert status == 400
+    assert "does not cover requested window" in json.loads(body)["error"]
+
+
+def test_research_api_rejects_cross_market_dataset_reference(tmp_path) -> None:
+    # Even an approved crypto manifest cannot be attached to an NSE experiment.
+    app = ResearchAPI(ExperimentStore(tmp_path / "research.sqlite3"))
+    crypto_manifest = _dataset_payload(
+        dataset_id="crypto-fixture-v1",
+        market="crypto",
+        exchange="BINANCE",
+        instrument="BTCUSDT",
+    )
+    assert _request(app, "POST", "/api/datasets", crypto_manifest)[0] == 201
+    status, _, body = _request(
+        app,
+        "POST",
+        "/api/experiments",
+        _payload(dataset_ids=["crypto-fixture-v1"]),
+    )
+    assert status == 400
+    assert "cross-market dataset rejected" in json.loads(body)["error"]
