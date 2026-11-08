@@ -1183,14 +1183,56 @@ class GeneticProgrammingJobRunner:
                 start=spec.validation_start, end=spec.validation_end,
                 periods_per_year=periods_per_year,
             )
-            validation_rows.append({
+            validation_score = float(result.metrics[objective_name])
+            validation_definition = {
+                "experiment_fingerprint": spec.fingerprint,
+                "train_candidate_digest": candidate["candidate_digest"],
+                "expression": candidate["tree_payload"],
+                "validation_metrics": result.metrics,
+                "validation_objective": validation_score,
+                "bars_sha256": bars_digest,
+            }
+            validation_digest = hashlib.sha256(
+                json.dumps(
+                    validation_definition, sort_keys=True, separators=(",", ":"), allow_nan=False
+                ).encode("utf-8")
+            ).hexdigest()
+            validation_candidate_id = f"{spec.experiment_id}-gp-validation-{validation_digest[:16]}"
+            validation_row = {
                 "candidate_id": candidate["candidate_id"],
                 "candidate_digest": candidate["candidate_digest"],
+                "validation_candidate_id": validation_candidate_id,
+                "validation_candidate_digest": validation_digest,
                 "expression": candidate["tree_payload"],
                 "train_fitness": candidate["train_score"],
-                "validation_score": float(result.metrics[objective_name]),
+                "validation_score": validation_score,
                 "validation_metrics": result.metrics,
-            })
+            }
+            validation_rows.append(validation_row)
+            # Persist an explicit validation child whose parent is the TRAIN expression.
+            if not context.store.has_candidate(spec.experiment_id, validation_digest):
+                context.store.append_candidate(
+                    candidate_id=validation_candidate_id,
+                    experiment_id=spec.experiment_id,
+                    candidate_digest=validation_digest,
+                    family="genetic_programming_validation",
+                    generation=settings["generations"] + 1,
+                    parameters={
+                        "expression": candidate["tree_payload"],
+                        "feature_windows": windows,
+                    },
+                    metrics={
+                        "train_fitness": candidate["train_score"],
+                        "validation": result.metrics,
+                        "validation_objective": validation_score,
+                    },
+                    lineage={
+                        "origin": "genetic_programming_validation",
+                        "parent_candidate_ids": [candidate["candidate_id"]],
+                        "selection": "validation_objective",
+                        "feature_windows": windows,
+                    },
+                )
         selected = max(
             validation_rows,
             key=lambda item: (
@@ -1203,6 +1245,8 @@ class GeneticProgrammingJobRunner:
             {
                 "selected_candidate_id": selected["candidate_id"],
                 "selected_candidate_digest": selected["candidate_digest"],
+                "selected_validation_candidate_id": selected["validation_candidate_id"],
+                "selected_validation_candidate_digest": selected["validation_candidate_digest"],
                 "objective": objective_name,
                 "feature_windows": windows,
                 "population_size": settings["population_size"],
@@ -1232,12 +1276,51 @@ class GeneticProgrammingJobRunner:
             start=spec.oos_start, end=spec.oos_end,
             periods_per_year=periods_per_year,
         )
+        oos_definition = {
+            "experiment_fingerprint": spec.fingerprint,
+            "validation_candidate_digest": selected["validation_candidate_digest"],
+            "expression": selected["expression"],
+            "oos_metrics": oos_result.metrics,
+            "bars_sha256": bars_digest,
+        }
+        oos_digest = hashlib.sha256(
+            json.dumps(
+                oos_definition, sort_keys=True, separators=(",", ":"), allow_nan=False
+            ).encode("utf-8")
+        ).hexdigest()
+        oos_candidate_id = f"{spec.experiment_id}-gp-oos-{oos_digest[:16]}"
+        if not context.store.has_candidate(spec.experiment_id, oos_digest):
+            context.store.append_candidate(
+                candidate_id=oos_candidate_id,
+                experiment_id=spec.experiment_id,
+                candidate_digest=oos_digest,
+                family="genetic_programming_selected_oos",
+                generation=settings["generations"] + 2,
+                parameters={
+                    "expression": selected["expression"],
+                    "feature_windows": windows,
+                },
+                metrics={
+                    "train_fitness": selected["train_fitness"],
+                    "validation": selected["validation_metrics"],
+                    "out_of_sample": oos_result.metrics,
+                },
+                lineage={
+                    "origin": "genetic_programming_frozen_oos",
+                    "parent_candidate_ids": [selected["validation_candidate_id"]],
+                    "selection": "validation_objective",
+                    "final_holdout_accessed": False,
+                },
+            )
         context.store.append_event(
             spec.experiment_id,
             "genetic_programming_oos_recorded",
             {
                 "selected_candidate_id": selected["candidate_id"],
                 "selected_candidate_digest": selected["candidate_digest"],
+                "selected_validation_candidate_id": selected["validation_candidate_id"],
+                "oos_candidate_id": oos_candidate_id,
+                "oos_candidate_digest": oos_digest,
                 "oos_metrics": oos_result.metrics,
                 "final_holdout_accessed": False,
             },
@@ -1254,6 +1337,7 @@ class GeneticProgrammingJobRunner:
             "failed_candidates": len(candidate_rows) - len(successful),
             "validation_shortlist": validation_rows,
             "selected_candidate": selected,
+            "out_of_sample_candidate_id": oos_candidate_id,
             "out_of_sample": {
                 "metrics": oos_result.metrics,
                 "portfolio": oos_result.result.to_dict(),
