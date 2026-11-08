@@ -570,3 +570,88 @@ def test_api_rejects_single_objective_pareto_experiment(tmp_path) -> None:
     )
     assert status == 400
     assert "2+ unique objectives" in json.loads(body)["error"]
+
+
+
+def test_api_creates_hybrid_optimizer_experiment_with_method_budgets(tmp_path) -> None:
+    # The method list and sub-budgets are frozen as part of the hybrid experiment spec.
+    app = ResearchAPI(ExperimentStore(tmp_path / "hybrid-api.sqlite3"))
+    status, _, _ = _request(app, "POST", "/api/datasets", _dataset_payload())
+    assert status == 201
+    parameters = {
+        "strategy_name": "absolute_momentum",
+        "strategy_parameters": {"period": 10, "threshold": 0.0},
+        "execution_assumptions": {
+            "slippage_bps": 5,
+            "impact_coefficient_bps": 10,
+            "max_participation": 0.05,
+            "max_gross_exposure": 1.0,
+            "periods_per_year": 252,
+        },
+        "hybrid_optimization": {
+            "methods": ["random_search", "differential_evolution", "bayesian"],
+            "budget_per_method": 8,
+            "validation_candidates": 4,
+            "objective": "sharpe",
+            "de_population_size": 4,
+            "de_generations": 1,
+            "de_mutation": 0.7,
+            "de_crossover": 0.8,
+            "tpe_startup_trials": 3,
+        },
+    }
+    status, _, body = _request(
+        app,
+        "POST",
+        "/api/experiments",
+        _payload(
+            experiment_id="api-hybrid-ensemble",
+            algorithm_family="hybrid",
+            parameters=parameters,
+        ),
+    )
+    assert status == 201
+    payload = json.loads(body)
+    assert payload["spec"]["algorithm_family"] == "hybrid"
+    assert payload["spec"]["parameters"]["hybrid_optimization"]["methods"] == [
+        "random_search", "differential_evolution", "bayesian"
+    ]
+
+
+def test_api_rejects_hybrid_de_budget_mismatch(tmp_path) -> None:
+    # DE population/generation settings must consume exactly the declared per-method budget.
+    app = ResearchAPI(ExperimentStore(tmp_path / "hybrid-invalid-api.sqlite3"))
+    status, _, _ = _request(app, "POST", "/api/datasets", _dataset_payload())
+    assert status == 201
+    parameters = {
+        "strategy_name": "absolute_momentum",
+        "execution_assumptions": {
+            "slippage_bps": 5,
+            "impact_coefficient_bps": 10,
+            "max_participation": 0.05,
+            "max_gross_exposure": 1.0,
+            "periods_per_year": 252,
+        },
+        "hybrid_optimization": {
+            "methods": ["random_search", "differential_evolution"],
+            "budget_per_method": 8,
+            "validation_candidates": 3,
+            "objective": "sharpe",
+            "de_population_size": 4,
+            "de_generations": 2,
+            "de_mutation": 0.7,
+            "de_crossover": 0.8,
+        },
+    }
+    status, _, body = _request(
+        app,
+        "POST",
+        "/api/experiments",
+        _payload(
+            experiment_id="api-hybrid-bad-de-budget",
+            algorithm_family="hybrid",
+            parameters=parameters,
+        ),
+    )
+    assert status == 400
+    assert "must equal budget_per_method" in json.loads(body)["error"]
