@@ -77,6 +77,11 @@ pre { overflow:auto; white-space:pre-wrap; word-break:break-word; color:#c4d3e4;
 <pre id="detail">Select an experiment row to inspect its stored specification.</pre>
 </section>
 </div>
+<section style="margin-top:16px">
+<h2>Data availability and provenance</h2>
+<p>Registered dataset manifests only. Registering metadata does not upload market data.</p>
+<table><thead><tr><th>Dataset</th><th>Market / exchange</th><th>Category / resolution</th><th>Fingerprint</th></tr></thead><tbody id="dataset-rows"></tbody></table>
+</section>
 </main>
 <script>
 const tracks = {
@@ -137,6 +142,24 @@ async function refresh() {
     $("detail").textContent = JSON.stringify(await api("/api/experiments/" +
       encodeURIComponent(row.dataset.id)), null, 2);
   }));
+  const catalogue = await api("/api/datasets");
+  const datasetBody = $("dataset-rows");
+  datasetBody.replaceChildren();
+  catalogue.datasets.forEach(item => {
+    // Render manifest fields as text so provider data cannot inject dashboard markup.
+    const row = document.createElement("tr");
+    [
+      item.dataset_id,
+      item.market + " / " + item.exchange,
+      item.category + " / " + item.resolution,
+      item.fingerprint.slice(0, 12)
+    ].forEach(value => {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      row.appendChild(cell);
+    });
+    datasetBody.appendChild(row);
+  });
 }
 $("market").addEventListener("change", refreshTrackOptions);
 $("filter-market").addEventListener("change", refresh);
