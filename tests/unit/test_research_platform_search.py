@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from research.platform.adapters import CryptoLocalAdapter
+from research.platform.adapters import CryptoLocalAdapter, _normalise_ohlcv, validate_ohlcv_quality
 from research.platform.composition import Component, StrategyComposer
 from research.platform.domain import DataResolution, Market
 from research.platform.genetic_programming import GeneticProgrammer, Node
@@ -676,3 +676,71 @@ def test_optuna_tpe_search_records_sampler_seed_and_attempts() -> None:
     assert result.best.lineage["sampler"] == "TPESampler"
     assert result.best.lineage["seed"] == 123
     assert all(np.isfinite(candidate.score) for candidate in result.candidates)
+
+
+
+def test_ohlcv_quality_rejects_open_outside_bar_range_and_bad_prices() -> None:
+    # The open must be contained by the observed low/high, even if other OHLC checks pass.
+    index = pd.date_range("2025-01-01", periods=2, freq="D", tz="UTC")
+    invalid = pd.DataFrame(
+        {
+            "open": [101.0, 102.0],
+            "high": [100.5, 103.0],
+            "low": [99.0, 101.0],
+            "close": [100.0, 102.5],
+            "volume": [1000.0, 1000.0],
+        },
+        index=index,
+    )
+    with pytest.raises(ValueError, match=r"open is outside \[low, high\]"):
+        validate_ohlcv_quality(invalid)
+
+    invalid_price = invalid.copy()
+    invalid_price.loc[index[0], "open"] = 0.0
+    with pytest.raises(ValueError, match="prices must be positive"):
+        validate_ohlcv_quality(invalid_price)
+
+
+def test_nse_daily_quality_policy_rejects_close_return_at_twenty_percent() -> None:
+    # The NSE daily quality gate uses a strict <20% close-return condition.
+    index = pd.date_range("2005-01-01", periods=3, freq="D", tz="Asia/Kolkata")
+    frame = pd.DataFrame(
+        {
+            "open": [100.0, 120.0, 121.0],
+            "high": [101.0, 121.0, 122.0],
+            "low": [99.0, 119.0, 120.0],
+            "close": [100.0, 120.0, 121.0],
+            "volume": [1000.0, 1000.0, 1000.0],
+        },
+        index=index,
+    )
+    with pytest.raises(ValueError, match="absolute close return must be < 20.0%"):
+        validate_ohlcv_quality(frame, max_abs_close_return=0.20)
+
+    # A clearly sub-threshold daily series produces a persisted quality summary.
+    frame["close"] = [100.0, 110.0, 115.0]
+    frame["open"] = [100.0, 109.0, 114.0]
+    frame["high"] = [101.0, 111.0, 116.0]
+    frame["low"] = [99.0, 108.0, 113.0]
+    report = validate_ohlcv_quality(frame, max_abs_close_return=0.20)
+    assert report["bars_checked"] == 3
+    assert report["open_range_violations"] == 0
+    assert report["close_return_outliers"] == 0
+
+
+def test_crypto_adapter_does_not_apply_nse_twenty_percent_return_cap(tmp_path: Path) -> None:
+    # A valid crypto price series may have a >20% daily move and is not rejected by NSE rules.
+    venue = tmp_path / "binance"
+    venue.mkdir()
+    source = venue / "BTCUSDT_1d.csv"
+    source.write_text(
+        "timestamp,open,high,low,close,volume\n"
+        "2025-01-01T00:00:00Z,100,102,99,100,1000\n"
+        "2025-01-02T00:00:00Z,125,127,124,125,1200\n"
+        "2025-01-03T00:00:00Z,160,162,159,160,1500\n",
+        encoding="utf-8",
+    )
+    adapter = CryptoLocalAdapter(tmp_path, "binance")
+    loaded = adapter.load("BTCUSDT", DataResolution.ONE_DAY)
+    assert loaded["close"].tolist() == [100.0, 125.0, 160.0]
+    assert loaded.attrs["quality_report"]["close_return_outliers"] == 0
