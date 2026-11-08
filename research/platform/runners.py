@@ -575,7 +575,8 @@ class ExistingStrategyOptimizerJobRunner:
         bars = self.bar_loader(context.store, spec)
         config, periods_per_year = _build_portfolio_config(spec, manifests)
         space = self._search_parameters(descriptor)
-        defaults = dict(descriptor.defaults)
+        shipped_defaults = dict(descriptor.defaults)
+        defaults = dict(shipped_defaults)
         defaults.update(strategy_parameters)
 
         context.log(
@@ -584,10 +585,15 @@ class ExistingStrategyOptimizerJobRunner:
         )
         bars_digest = _bars_fingerprint(bars)
         train_metrics: dict[str, dict[str, float | int]] = {}
+        train_calls = 0
 
         def train_objective(candidate_values: Mapping[str, object]) -> float:
             # Each candidate is assessed only on TRAIN; no VALIDATION/OOS data is used here.
+            nonlocal train_calls
             context.check_cancelled()
+            train_calls += 1
+            if train_calls % max(1, budget // 10) == 0:
+                context.log(f"TRAIN candidate evaluations: {train_calls}")
             current = dict(defaults)
             current.update(candidate_values)
             key = self._config_key(current)
@@ -620,15 +626,22 @@ class ExistingStrategyOptimizerJobRunner:
                 f"all {spec.algorithm_family.value} candidates failed: {search.failures[:5]}"
             )
 
-        # Include the exact shipped default as a baseline under the same TRAIN objective.
-        baseline_score = train_objective({})
-        baseline = SearchCandidate(
+        # Compare both the shipped Config defaults and any caller-supplied starting config.
+        shipped_score = train_objective(shipped_defaults)
+        shipped_baseline = SearchCandidate(
             candidate_id="shipped-default",
-            parameters={},
-            score=baseline_score,
+            parameters=shipped_defaults,
+            score=shipped_score,
+            evaluation_index=-2,
+        )
+        user_baseline_score = train_objective({})
+        user_baseline = SearchCandidate(
+            candidate_id="user-configured-baseline",
+            parameters=defaults,
+            score=user_baseline_score,
             evaluation_index=-1,
         )
-        search_candidates = (baseline, *search.candidates)
+        search_candidates = (shipped_baseline, user_baseline, *search.candidates)
 
         # Merge partial genomes with the original Config defaults and deduplicate exact configs.
         unique: dict[str, tuple[dict[str, Any], float, int]] = {}
