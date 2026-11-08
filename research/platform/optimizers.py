@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from itertools import product
 from typing import Callable, Mapping
 
@@ -49,6 +49,7 @@ class Candidate:
     parameters: Mapping[str, object]
     score: float
     evaluation_index: int
+    lineage: Mapping[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +83,13 @@ def _evaluate(
             score = float(objective(configuration))
             if not np.isfinite(score):
                 raise ValueError("objective returned a non-finite score")
-            candidates.append(Candidate(f"{method}-{index:08d}", dict(configuration), score, index))
+            candidates.append(Candidate(
+                f"{method}-{index:08d}",
+                dict(configuration),
+                score,
+                index,
+                {"operator": method, "seed": seed, "evaluation_index": index},
+            ))
         except Exception as exc:  # noqa: BLE001 - a failed candidate must not vanish.
             failures.append(f"candidate={index}: {type(exc).__name__}: {exc}")
     return SearchResult(method, seed, tuple(candidates), tuple(failures))
@@ -212,6 +219,12 @@ def optuna_tpe_search(
                 dict(trial.params),
                 float(trial.value),
                 int(trial.number),
+                {
+                    "operator": "optuna_tpe",
+                    "sampler": "TPESampler",
+                    "seed": seed,
+                    "trial_number": int(trial.number),
+                },
             ))
         else:
             failures.append(
@@ -231,12 +244,12 @@ def differential_evolution(
     crossover: float = 0.8,
     seed: int = 42,
 ) -> SearchResult:
-    """Differential evolution for bounded numeric parameters.
+    """Differential evolution for bounded numeric parameters with explicit lineage.
 
     Categorical dimensions are deliberately unsupported in this baseline. Use random or
     grid search for mixed/categorical spaces until a mixed-space algorithm is added.
     """
-    # Keep all evaluated scores; never replay a strategy objective after selection.
+    # Keep all evaluated scores and parent relationships; never replay objective calls.
     if not space or any(p.kind not in {"float", "int"} for p in space):
         raise ValueError("differential evolution supports numeric dimensions only")
     if population_size < 4 or generations < 1 or not 0 < mutation <= 2 or not 0 <= crossover <= 1:
@@ -246,6 +259,7 @@ def differential_evolution(
     high = np.asarray([float(p.high) for p in space], dtype=np.float64)
     population = rng.uniform(low, high, size=(population_size, len(space)))
     population_scores = np.full(population_size, -np.inf, dtype=np.float64)
+    population_candidate_ids: list[str] = []
     history: list[Candidate] = []
     failures: list[str] = []
     eval_index = 0
@@ -258,41 +272,96 @@ def differential_evolution(
             for parameter, value in zip(space, vector, strict=True)
         }
 
-    def evaluate(vector: np.ndarray) -> float:
-        # Score exactly once and append the exact score associated with this genome.
+    def evaluate(
+        vector: np.ndarray,
+        lineage: Mapping[str, object],
+    ) -> tuple[float, str]:
+        # Score once and store the exact genome and its parent/operator metadata.
         nonlocal eval_index
         configuration = decode(vector)
         current_index = eval_index
         eval_index += 1
+        candidate_id = f"de-{current_index:08d}"
         try:
             score = float(objective(configuration))
             if not np.isfinite(score):
                 raise ValueError("objective returned a non-finite score")
             history.append(Candidate(
-                f"de-{current_index:08d}", configuration, score, current_index
+                candidate_id,
+                configuration,
+                score,
+                current_index,
+                dict(lineage),
             ))
-            return score
+            return score, candidate_id
         except Exception as exc:  # noqa: BLE001
             failures.append(f"candidate={current_index}: {type(exc).__name__}: {exc}")
-            return -np.inf
+            history.append(Candidate(
+                candidate_id,
+                configuration,
+                -np.inf,
+                current_index,
+                {**dict(lineage), "evaluation_failed": True},
+            ))
+            return -np.inf, candidate_id
 
     # Evaluate the initial population before evolution.
     for index in range(population_size):
-        population_scores[index] = evaluate(population[index])
+        score, candidate_id = evaluate(
+            population[index],
+            {
+                "operator": "initial_population",
+                "generation": 0,
+                "population_index": index,
+                "parent_candidate_ids": [],
+                "seed": seed,
+            },
+        )
+        population_scores[index] = score
+        population_candidate_ids.append(candidate_id)
 
-    # Evolve the population using bounded mutation and binomial crossover.
-    for _generation in range(generations):
+    # Evolve with mutation and crossover; record rejected offspring as well as accepted ones.
+    for generation in range(1, generations + 1):
         for target in range(population_size):
             available = np.delete(np.arange(population_size), target)
             a, b, c = rng.choice(available, size=3, replace=False)
-            mutant = np.clip(population[a] + mutation * (population[b] - population[c]), low, high)
+            mutant = np.clip(
+                population[a] + mutation * (population[b] - population[c]),
+                low,
+                high,
+            )
             mask = rng.random(len(space)) < crossover
             mask[int(rng.integers(0, len(space)))] = True
             trial = np.where(mask, mutant, population[target])
-            trial_score = evaluate(trial)
-            if trial_score >= population_scores[target]:
+            parent_ids = [
+                population_candidate_ids[int(a)],
+                population_candidate_ids[int(b)],
+                population_candidate_ids[int(c)],
+                population_candidate_ids[target],
+            ]
+            trial_score, trial_id = evaluate(
+                trial,
+                {
+                    "operator": "differential_mutation_binomial_crossover",
+                    "generation": generation,
+                    "target_population_index": target,
+                    "parent_candidate_ids": parent_ids,
+                    "mutation_factor": mutation,
+                    "crossover_rate": crossover,
+                    "forced_crossover_dimension": int(np.flatnonzero(mask)[0]),
+                    "seed": seed,
+                },
+            )
+            accepted = trial_score >= population_scores[target]
+            # Record whether the offspring replaced the target without mutating history data.
+            history[-1] = replace(
+                history[-1],
+                lineage={**dict(history[-1].lineage), "accepted": bool(accepted)},
+            )
+            if accepted:
                 population[target] = trial
                 population_scores[target] = trial_score
+                population_candidate_ids[target] = trial_id
 
     return SearchResult("differential_evolution", seed, tuple(history), tuple(failures))
 
