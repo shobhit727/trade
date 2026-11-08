@@ -80,6 +80,8 @@ def _partition_target_frame(
         raise ValueError("portfolio config market differs from experiment market")
     if config.cost_model_id != spec.cost_model_id:
         raise ValueError("portfolio cost model id differs from experiment cost model id")
+    if config.execution_model_id != spec.execution_model_id:
+        raise ValueError("portfolio execution model id differs from experiment execution model id")
     truncated: dict[str, pd.DataFrame] = {}
     for symbol, frame in bars_by_symbol.items():
         index = pd.DatetimeIndex(frame.index)
@@ -154,6 +156,8 @@ def evaluate_existing_strategy(
         raise ValueError("portfolio config market differs from experiment market")
     if portfolio_config.cost_model_id != spec.cost_model_id:
         raise ValueError("portfolio cost model id differs from experiment cost model id")
+    if portfolio_config.execution_model_id != spec.execution_model_id:
+        raise ValueError("portfolio execution model id differs from experiment execution model id")
     if periods_per_year < 1:
         raise ValueError("periods_per_year must be positive")
     strategy_name = spec.parameters.get("strategy_name")
@@ -162,6 +166,36 @@ def evaluate_existing_strategy(
     strategy_parameters = spec.parameters.get("strategy_parameters", {})
     if not isinstance(strategy_parameters, dict):
         raise ValueError("strategy_parameters must be an object")
+
+    # Reproducible evaluation requires persisted, approved manifests for each data input.
+    if store is None:
+        raise ValueError("ExperimentStore with registered approved datasets is required")
+    required_windows = (
+        (spec.training_start, spec.training_end),
+        (spec.validation_start, spec.validation_end),
+        (spec.oos_start, spec.oos_end),
+        (spec.final_holdout_start, spec.final_holdout_end),
+    )
+    manifest_instruments: set[str] = set()
+    for dataset_id in spec.dataset_ids:
+        row = store.get_dataset(dataset_id)
+        manifest = row["manifest"]
+        if row["market"] != spec.market.value:
+            raise ValueError(f"cross-market dataset rejected: {dataset_id}")
+        if row["resolution"] != spec.resolution.value:
+            raise ValueError(f"dataset {dataset_id} resolution differs from experiment")
+        if manifest["license_status"] != "approved":
+            raise ValueError(f"dataset {dataset_id} licence is not approved")
+        manifest_instruments.add(str(manifest["instrument"]))
+        coverage_start = datetime.fromisoformat(manifest["coverage_start"])
+        coverage_end = datetime.fromisoformat(manifest["coverage_end"])
+        if coverage_start.tzinfo is None or coverage_end.tzinfo is None:
+            raise ValueError(f"dataset {dataset_id} has timezone-naive coverage")
+        for window_start, window_end in required_windows:
+            if coverage_start > window_start or coverage_end < window_end:
+                raise ValueError(f"dataset {dataset_id} does not cover every experiment partition")
+    if not manifest_instruments.issubset(set(bars_by_symbol)):
+        raise ValueError("provided bar symbols do not match registered dataset instruments")
 
     # Validate parameter field names against the authoritative existing catalogue.
     adapter = ExistingStrategySignalAdapter()
