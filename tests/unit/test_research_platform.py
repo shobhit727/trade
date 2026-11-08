@@ -359,7 +359,7 @@ def test_compute_engine_auto_backend_is_consistent() -> None:
 
 def test_nse_exposed_test_period_cannot_be_declared_final_holdout() -> None:
     # The old 2024-2026 test set has already been inspected and cannot be called pristine.
-    with pytest.raises(ValueError, match="historical test window is exposed"):
+    with pytest.raises(ValueError, match="NSE OOS must begin after 2026-10-01"):
         make_experiment(
             oos_start=datetime(2024, 1, 1, tzinfo=UTC),
             oos_end=datetime(2025, 1, 1, tzinfo=UTC),
