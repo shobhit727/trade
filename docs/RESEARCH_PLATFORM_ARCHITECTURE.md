@@ -76,20 +76,54 @@ benchmark results must be measured on the actual host with representative data, 
 transfer overhead. The host's exact NVIDIA model, driver, CUDA compatibility and VRAM
 remain machine-side facts to be recorded before choosing production dependencies.
 
-## Next software increments
+## Implemented increment — branch `feature/hybrid-evolution-research`
 
-1. Adapter interfaces for existing NSE and crypto data readers, with point-in-time
-   availability and corporate-action/funding metadata.
-2. Shared strategy and execution protocols that wrap existing catalogue implementations
-   without changing their semantics.
-3. Portfolio simulation and market-specific accounting, while keeping the existing
-   single-stock engine as a compatibility baseline.
-4. Conventional optimiser adapters and budget-matched experiment scheduling.
-5. Typed genetic-programming expression trees and bounded evaluation.
-6. Neuroevolution and strategy-composition genomes, compared to simple baselines.
-7. Multi-objective selection and statistically controlled candidate accounting.
-8. GPU batch kernels for measured bottlenecks, with CPU/GPU differential tests.
-9. Real experiment API and dashboard views backed by stored records.
+The feature branch now contains the following additive modules:
 
-Each increment must add tests and preserve negative findings. A successful build is not a
-strategy result; a profitable historical simulation is not evidence of a deployable edge.
+| Capability | Implementation | Limitation |
+|---|---|---|
+| Existing data adapters | `NSELegacyAdapter`, `CryptoLocalAdapter` | Local historical files only; licence review remains required |
+| Existing strategy discovery | `ExistingStrategyCatalogueAdapter` | Catalogue discovery only; full optimizer integration still required |
+| Cash portfolio simulation | `PortfolioSimulator` | Long-only, INR cash; no derivative margin/liquidation or corporate-action ledger |
+| Execution assumptions | Next-open, participation cap, slippage, square-root impact, proportional fee bps | NSE statutory cost calculator and historical schedules need a fee-model adapter |
+| Optimisation baselines | Random, capped grid, differential evolution, Parzen-style heuristic | Parzen method is explicitly not canonical Optuna TPE |
+| Genetic programming | Bounded numerical AST interpreter and evolution | No Boolean/control-flow grammar yet |
+| Neuroevolution | Dense one-hidden-layer network + mirrored-noise ES | CPU implementation; topology evolution / GPU path not yet integrated |
+| Strategy composition | Declarative component-genome evolution | Requires adapters to actual strategy component implementations |
+| Multi-objective optimisation | Non-dominated sorting and crowding selection | No full experiment scheduler integration yet |
+| Statistical diagnostics | BH FDR, moving-block bootstrap, CSCV PBO diagnostic | Requires independent statistical review and broader tests |
+| Population compute | Batched long/flat fitness, NumPy / optional CuPy | CuPy path and target GPU remain unverified |
+| API and dashboard | Local WSGI API, create/list/detail records, HTML dashboard | Creates metadata only; worker start/stop, logs, telemetry and comparisons are incomplete |
+
+## Execution and accounting limitations
+
+The portfolio engine uses target weights selected at close (t), calculates desired positions from information available at that close, and attempts execution at open (t+1). It caps participation using next-bar volume and records adverse slippage and a square-root participation impact estimate. The engine must be tested against market-specific historical execution assumptions before its results are treated as realistic.
+
+The generic simulator currently uses a proportional per-side fee schedule. A dedicated adapter to `src/nsealgo/costs.py` is still required to apply the complete statutory delivery cost stack, including fixed DP charges and itemised taxes. Crypto venue-specific maker/taker/funding/borrow schedules also remain to be integrated. Current portfolio accounting is long-only INR cash. It is not a futures/perpetual, margin, short-selling, liquidation or cross-currency engine. It does not yet apply Indian capital-gains tax or corporate actions to portfolio lots.
+
+The local crypto adapter imports CSV/Parquet and records source-file hashes, but intentionally sets licence status to `REVIEW_REQUIRED`. The NSE adapter reuses the repository's audited splitter. Existing NSE `open` data defects mean the strict OHLCV validation may reject data that has not been corrected or independently checked. No source is scraped or downloaded and no market coverage is claimed.
+
+## API / dashboard operating model
+
+Run `python -m research.platform.app --host 127.0.0.1 --port 8765`. The server binds to loopback by default and refuses a non-loopback host unless `--allow-remote` is supplied. Remote access must not be enabled without adding authentication and transport security. The dashboard uses persisted SQLite experiment records; creating an experiment does not launch a worker. Data providers, worker scheduling, cancellation and job logs are not yet exposed through the API.
+
+## Validation and statistical interpretation
+
+The Python lifecycle state machine prevents accidental stage transitions in one process, but it is not an OS/process security boundary. Final holdout data must be isolated in a separate process/service and access transitions must be persisted. The historical NSE 2024–2026 TEST is exposed and remains unsuitable as a new pristine holdout.
+
+The included BH, moving-block bootstrap and CSCV functions are diagnostics whose assumptions and outputs must be independently reviewed, especially for dependence structure and the actual trial family. They do not by themselves correct universe survivorship, data-quality, publication-time, cost or execution bias.
+
+## Remaining implementation priorities
+
+1. Integrate statutory NSE and venue-specific crypto cost calculators with the new portfolio simulator.
+2. Add portfolio tax lots, corporate actions, dividends, funding, borrow, margin and liquidation models where reliable data exists.
+3. Connect data adapters to persistent manifests, availability coverage, quality reports and point-in-time feature joins.
+4. Add a common interface over existing strategy catalogue, NSE factors and crypto signals, and compare shipped defaults to search results.
+5. Integrate the evolutionary/optimisation families with the experiment store, candidate lineage and budget-equal orchestration.
+6. Add type-safe conditional GP nodes, topology evolution, multi-population hybrid selection and lineage validation.
+7. Add multi-asset GPU simulation and CPU/GPU parity tests on the actual target NVIDIA hardware.
+8. Audit statistical implementations against independent published fixtures and lock down the complete holdout protocol.
+9. Implement a bounded worker/job manager, cancellation, logs, resource limits, worker persistence and real dashboard monitoring/comparisons.
+10. Run all four tracks on actual, licence-cleared historical datasets and publish negative as well as positive results.
+
+A successful build is not a strategy result. A profitable historical simulation is not evidence of a deployable edge.
