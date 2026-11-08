@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
+from .data_catalog import DatasetManifest
 from .experiments import ExperimentSpec
 
 
@@ -84,6 +85,26 @@ class ExperimentStore:
                     created_at TEXT NOT NULL,
                     UNIQUE(experiment_id, candidate_digest)
                 );
+                CREATE TABLE IF NOT EXISTS datasets (
+                    dataset_id TEXT PRIMARY KEY,
+                    market TEXT NOT NULL CHECK (market IN ('nse', 'crypto')),
+                    exchange TEXT NOT NULL,
+                    resolution TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    fingerprint TEXT NOT NULL,
+                    manifest_json TEXT NOT NULL,
+                    registered_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_datasets_market
+                    ON datasets(market, exchange, resolution);
+                CREATE TRIGGER IF NOT EXISTS immutable_datasets_update
+                BEFORE UPDATE ON datasets BEGIN
+                    SELECT RAISE(ABORT, 'dataset manifests are immutable');
+                END;
+                CREATE TRIGGER IF NOT EXISTS immutable_datasets_delete
+                BEFORE DELETE ON datasets BEGIN
+                    SELECT RAISE(ABORT, 'dataset manifests are immutable');
+                END;
                 CREATE INDEX IF NOT EXISTS idx_candidates_experiment
                     ON candidates(experiment_id, generation);
                 CREATE TRIGGER IF NOT EXISTS immutable_events_update
@@ -221,4 +242,66 @@ class ExperimentStore:
                     (market, limit),
                 ).fetchall()
         # Return independent market-scoped rows; no aggregate capital or return is computed.
+        return tuple(dict(row) for row in rows)
+
+
+    def register_dataset(self, manifest: DatasetManifest) -> None:
+        """Persist an immutable dataset provenance manifest."""
+        # Source file bytes are not copied into SQLite; the manifest references their checksum.
+        payload = json.dumps(manifest.to_dict(), sort_keys=True, separators=(",", ":"), allow_nan=False)
+        with self._connection() as connection:
+            connection.execute(
+                """INSERT INTO datasets
+                   (dataset_id, market, exchange, resolution, category, fingerprint,
+                    manifest_json, registered_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    manifest.dataset_id,
+                    manifest.market.value,
+                    manifest.exchange,
+                    manifest.resolution.value,
+                    manifest.category,
+                    manifest.fingerprint,
+                    payload,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+
+    def get_dataset(self, dataset_id: str) -> dict[str, Any]:
+        """Return a persisted manifest and its immutable fingerprint."""
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM datasets WHERE dataset_id = ?", (dataset_id,)
+            ).fetchone()
+        if row is None:
+            raise KeyError(dataset_id)
+        result = dict(row)
+        result["manifest"] = json.loads(result.pop("manifest_json"))
+        return result
+
+    def list_datasets(
+        self, *, market: str | None = None, limit: int = 1000
+    ) -> tuple[dict[str, Any], ...]:
+        """List market-scoped dataset coverage records."""
+        # Bound dashboard queries and prevent accidental combined financial coverage views.
+        if not 1 <= limit <= 5000:
+            raise ValueError("limit must be between 1 and 5000")
+        if market is not None and market not in {"nse", "crypto"}:
+            raise ValueError("market must be 'nse' or 'crypto'")
+        with self._connection() as connection:
+            if market is None:
+                rows = connection.execute(
+                    """SELECT dataset_id, market, exchange, resolution, category,
+                              fingerprint, registered_at
+                       FROM datasets ORDER BY market, exchange, dataset_id LIMIT ?""",
+                    (limit,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """SELECT dataset_id, market, exchange, resolution, category,
+                              fingerprint, registered_at
+                       FROM datasets WHERE market = ?
+                       ORDER BY exchange, dataset_id LIMIT ?""",
+                    (market, limit),
+                ).fetchall()
         return tuple(dict(row) for row in rows)
