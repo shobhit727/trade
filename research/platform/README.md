@@ -18,12 +18,20 @@ any existing backtest engine.
   and one-time final-holdout access.
 - SQLite experiment/event/candidate persistence with append-only event and candidate
   records, including evolutionary lineage JSON.
-- Optional CuPy batch linear-population and long/flat fitness evaluation with NumPy CPU fallback.
+- Optional CuPy batch linear-population, dense-neural inference and long/flat fitness
+  kernels with NumPy CPU fallback. Dense neural inference is checked against the scalar
+  NumPy implementation; the portfolio simulator remains the execution/fee fitness engine.
+  GPU availability and performance depend on the machine running the worker.
 
 ## Additional research capabilities
 
 - Local adapters for the legacy NSE splitter and exchange-scoped crypto CSV/Parquet files.
   They do not download market data. Imported datasets remain licence-review-required.
+  Ingest rejects non-positive prices, negative volume, open values outside [low, high] and
+  inconsistent high/low bounds. NSE daily imports default to a strict absolute close-return
+  threshold below 20%; crypto does not inherit that NSE-specific limit. Quality checks are
+  recorded as canonical JSON in manifest metadata; a full gap/universe quality grade is not
+  inferred from these checks.
 - Explicit quote-currency to INR conversion using backward-only FX alignment, maximum staleness
   limits and source provenance. Future or stale FX rates are rejected.
 - A causal trailing price/volume feature engine plus separately timestamped forward labels.
@@ -45,8 +53,14 @@ any existing backtest engine.
   candidate ancestry, TRAIN Pareto fronts, VALIDATION selection and frozen OOS evaluation.
 - Market-specific fee calculators: the existing itemised NSE delivery cost model and a
   separately configured crypto maker/taker fee schedule.
-- Benjamini-Hochberg FDR, moving-block bootstrap and a CSCV PBO diagnostic.
-- Batched long/flat population fitness in NumPy or optional CuPy.
+- TRAIN-only candidate-family diagnostics across optimiser, GP, neuroevolution, composition
+  and Pareto workers: PSR-derived one-sided p-values, Benjamini-Hochberg FDR, DSR and CSCV/PBO.
+  FDR/DSR use the full successful candidate family; CSCV uses a deterministic, evenly spaced
+  subset capped at 128 candidates. These reports do not influence model selection and are
+  diagnostic, not evidence of profitability.
+- Batched long/flat population fitness and dense-neural inference in NumPy or optional CuPy.
+  Neural inference uses bounded candidate chunks; auto mode falls back to NumPy after a
+  runtime CUDA error, while explicit CuPy mode fails rather than silently changing backend.
 - A loopback WSGI API and dashboard backed by SQLite manifests, experiments, jobs and
   candidate lineage. The dashboard can queue, inspect and cooperatively cancel the
   allow-listed existing-strategy, parameter-search, hybrid search ensemble, GP,
