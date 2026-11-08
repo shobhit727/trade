@@ -63,6 +63,7 @@ def experiment_spec_from_record(record: Mapping[str, Any]) -> ExperimentSpec:
         compute_backend=data["compute_backend"],
         compute_device=data["compute_device"],
         parameters=dict(data["parameters"]),
+        embargo_seconds=int(data.get("embargo_seconds", 0)),
         created_at=_parse_timestamp(data["created_at"]),
     )
 
