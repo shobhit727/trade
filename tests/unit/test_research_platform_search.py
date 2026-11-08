@@ -982,3 +982,39 @@ def test_partition_materializer_rejects_naive_or_empty_cutoff(tmp_path: Path) ->
             root=tmp_path,
             final_holdout_start=datetime(2025, 1, 1, tzinfo=timezone.utc),
         )
+
+
+
+def test_non_holdout_partition_reader_rejects_coverage_metadata_drift(tmp_path: Path) -> None:
+    # A valid file checksum cannot be paired with false manifest coverage endpoints.
+    from dataclasses import replace
+    from datetime import timedelta
+
+    index = pd.date_range("2025-01-01", periods=4, freq="D", tz="UTC")
+    close = np.asarray([100.0, 101.0, 102.0, 103.0])
+    frame = pd.DataFrame(
+        {
+            "open": close - 0.2,
+            "high": close + 0.5,
+            "low": close - 0.5,
+            "close": close,
+            "volume": np.full(4, 1000.0),
+        },
+        index=index,
+    )
+    root = tmp_path / "partition-store"
+    cutoff = datetime(2025, 1, 4, tzinfo=timezone.utc)
+    manifest = materialize_non_holdout_partition(
+        _partition_manifest(), frame, root=root, final_holdout_start=cutoff
+    )
+    tampered = replace(
+        manifest,
+        coverage_end=manifest.coverage_end + timedelta(days=1),
+    )
+    with pytest.raises(ValueError, match="timestamps differ from manifest coverage"):
+        load_non_holdout_partition(
+            tampered,
+            root=root,
+            final_holdout_start=cutoff,
+            end=cutoff,
+        )
