@@ -469,6 +469,41 @@ def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
                 f"{algorithm_family.value} experiments require a registered strategy_name"
             )
         ExistingStrategyRegistry().describe(strategy_name)
+    if algorithm_family is AlgorithmFamily.GENETIC_PROGRAMMING:
+        # GP limits and feature windows are immutable inputs to the experiment fingerprint.
+        gp = parameters.get("genetic_programming")
+        required_gp = {
+            "population_size", "generations", "max_depth", "max_nodes",
+            "mutation_rate", "validation_candidates", "objective", "feature_windows",
+        }
+        if not isinstance(gp, dict) or not required_gp.issubset(gp):
+            raise ValueError(f"genetic_programming settings require {sorted(required_gp)}")
+        for key in ("population_size", "generations", "max_depth", "max_nodes", "validation_candidates"):
+            value = gp[key]
+            minimum = 4 if key == "population_size" else 3 if key == "max_nodes" else 1
+            if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+                raise ValueError(f"genetic_programming.{key} must be an integer >= {minimum}")
+        evaluation_count = gp["population_size"] * (gp["generations"] + 1)
+        if evaluation_count > 10000:
+            raise ValueError("genetic_programming candidate count exceeds the 10000 evaluation limit")
+        mutation = gp["mutation_rate"]
+        if (
+            isinstance(mutation, bool)
+            or not isinstance(mutation, int | float)
+            or not 0 <= mutation <= 1
+        ):
+            raise ValueError("genetic_programming.mutation_rate must be between zero and one")
+        if gp["objective"] not in {"sharpe", "sortino", "cagr", "calmar", "total_return"}:
+            raise ValueError("genetic_programming objective is not supported")
+        feature_windows = gp["feature_windows"]
+        if (
+            not isinstance(feature_windows, list)
+            or not feature_windows
+            or any(isinstance(value, bool) or not isinstance(value, int) or value < 2
+                   for value in feature_windows)
+            or len(set(feature_windows)) != len(feature_windows)
+        ):
+            raise ValueError("genetic_programming.feature_windows must be unique integers >= 2")
     if algorithm_family in {
         AlgorithmFamily.RANDOM_SEARCH,
         AlgorithmFamily.GRID_SEARCH,
@@ -645,6 +680,8 @@ class ResearchAPI:
                     AlgorithmFamily.BAYESIAN,
                 }:
                     expected_runner = "existing_strategy_optimization"
+                elif family is AlgorithmFamily.GENETIC_PROGRAMMING:
+                    expected_runner = "genetic_programming"
                 else:
                     raise ValueError(
                         "no job runner is registered for this algorithm family yet"
