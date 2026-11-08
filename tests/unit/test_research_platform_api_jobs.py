@@ -386,3 +386,48 @@ def test_jobs_api_routes_neuroevolution_to_registered_neural_worker(tmp_path) ->
         assert "requires runner neuroevolution" in rejected["error"]
     finally:
         app.shutdown()
+
+
+
+def test_jobs_api_routes_strategy_composition_to_registered_composition_runner(tmp_path) -> None:
+    # Strategy composition uses its dedicated allow-listed component-evolution worker.
+    base = _experiment()
+    parameters = dict(base.parameters)
+    parameters["strategy_composition"] = {
+        "population_size": 4,
+        "generations": 2,
+        "max_components": 6,
+        "mutation_rate": 0.25,
+        "validation_candidates": 2,
+        "objective": "sharpe",
+        "feature_windows": [3],
+    }
+    spec = replace(
+        base,
+        experiment_id="api-composition-experiment",
+        algorithm_family=AlgorithmFamily.STRATEGY_COMPOSITION,
+        parameters=parameters,
+    )
+
+    def runner(context, experiment, parameters):
+        return {"family": experiment["spec"]["algorithm_family"]}
+
+    _, manager, app = _app(tmp_path, runner=runner, experiment=spec)
+    manager.register_runner("strategy_composition", runner)
+    try:
+        status, payload = _request(
+            app,
+            "POST",
+            "/api/jobs",
+            {
+                "experiment_id": spec.experiment_id,
+                "runner_name": "strategy_composition",
+                "parameters": {},
+            },
+        )
+        assert status == 202
+        job = manager.wait(payload["job_id"], timeout=5)
+        assert job["status"] == "succeeded"
+        assert job["result"]["family"] == "strategy_composition"
+    finally:
+        app.shutdown()
