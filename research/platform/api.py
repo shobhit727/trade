@@ -559,6 +559,44 @@ def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
             or len(set(feature_windows)) != len(feature_windows)
         ):
             raise ValueError("genetic_programming.feature_windows must be unique integers >= 2")
+    if algorithm_family is AlgorithmFamily.NEUROEVOLUTION:
+        # Bound network dimensions, total candidates and numerical search parameters before queueing.
+        neural = parameters.get("neuroevolution")
+        required_neural = {
+            "hidden_size", "population_size", "generations", "learning_rate",
+            "noise_std", "weight_limit", "validation_candidates", "objective",
+            "feature_windows",
+        }
+        if not isinstance(neural, dict) or not required_neural.issubset(neural):
+            raise ValueError(f"neuroevolution settings require {sorted(required_neural)}")
+        for key in ("hidden_size", "population_size", "generations", "validation_candidates"):
+            value = neural[key]
+            minimum = 4 if key == "population_size" else 1
+            if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+                raise ValueError(f"neuroevolution.{key} must be an integer >= {minimum}")
+        if neural["population_size"] % 2:
+            raise ValueError("neuroevolution.population_size must be even")
+        if neural["population_size"] * neural["generations"] > 10000:
+            raise ValueError("neuroevolution candidate count exceeds the 10000 evaluation limit")
+        for key in ("learning_rate", "noise_std", "weight_limit"):
+            value = neural[key]
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int | float)
+                or not float("-inf") < value < float("inf")
+                or value <= 0
+            ):
+                raise ValueError(f"neuroevolution.{key} must be finite and positive")
+        if neural["objective"] not in {"sharpe", "sortino", "cagr", "calmar", "total_return"}:
+            raise ValueError("neuroevolution objective is not supported")
+        windows = neural["feature_windows"]
+        if (
+            not isinstance(windows, list)
+            or not windows
+            or any(isinstance(value, bool) or not isinstance(value, int) or value < 2 for value in windows)
+            or len(set(windows)) != len(windows)
+        ):
+            raise ValueError("neuroevolution.feature_windows must be unique integers >= 2")
     if algorithm_family in {
         AlgorithmFamily.RANDOM_SEARCH,
         AlgorithmFamily.GRID_SEARCH,
@@ -771,6 +809,8 @@ class ResearchAPI:
                     expected_runner = "existing_strategy_optimization"
                 elif family is AlgorithmFamily.GENETIC_PROGRAMMING:
                     expected_runner = "genetic_programming"
+                elif family is AlgorithmFamily.NEUROEVOLUTION:
+                    expected_runner = "neuroevolution"
                 else:
                     raise ValueError(
                         "no job runner is registered for this algorithm family yet"
