@@ -128,6 +128,21 @@ class PortfolioSimulator:
         self.initial_capital = MARKET_SPECS[config.market].initial_simulated_capital
         self.ledger = MarketLedger(config.market, self.initial_capital)
 
+    def _execution_price(
+        self, side: Side, reference: Decimal, quantity: Decimal, available_volume: Decimal
+    ) -> tuple[Decimal, Decimal, Decimal]:
+        # Derive impact and participation from the final quantity, not the requested order.
+        if quantity <= 0 or available_volume <= 0:
+            raise ValueError("execution quantity and available volume must be positive")
+        participation = quantity / available_volume
+        impact = self.config.impact_coefficient_bps * D(str(float(participation) ** 0.5))
+        adverse = self.config.slippage_bps + impact
+        direction = D("1") if side is Side.BUY else D("-1")
+        price = reference * (D("1") + direction * adverse / D("10000"))
+        if price <= 0:
+            raise ValueError("execution assumptions produced a non-positive fill price")
+        return price, participation, impact
+
     def _fee(self, side: Side, quantity: Decimal, price: Decimal) -> Decimal:
         # Prefer the market-specific calculator; use proportional bps only as fallback.
         if self.config.fee_calculator is not None:
@@ -224,33 +239,39 @@ class PortfolioSimulator:
                 executable = min(requested, max_quantity)
                 if executable <= 0:
                     continue
-                participation = executable / available if available > 0 else D("0")
-                impact = self.config.impact_coefficient_bps * D(str(float(participation) ** 0.5))
-                adverse = self.config.slippage_bps + impact
-                direction = D("1") if side is Side.BUY else D("-1")
-                price = reference * (D("1") + direction * adverse / D("10000"))
-                orders.append((symbol, side, executable, reference, price))
+                orders.append((symbol, side, executable, reference))
 
             # Unwind existing risk first to make proceeds available for new long positions.
             orders.sort(key=lambda item: (0 if item[1] is Side.SELL else 1, item[0]))
-            for symbol, side, quantity, reference, price in orders:
-                notional = quantity * price
+            for symbol, side, quantity, reference in orders:
+                available = D(str(bars[symbol]["volume"].iloc[row]))
+                price, participation, impact = self._execution_price(side, reference, quantity, available)
                 fee = self._fee(side, quantity, price)
                 if side is Side.BUY:
-                    # Binary-search affordability so flat charges and tiered fees are supported.
-                    if notional + fee > self.ledger.cash_inr:
-                        low, high = D("0"), quantity
-                        for _ in range(64):
-                            middle = (low + high) / D("2")
-                            if middle * price + self._fee(side, middle, price) <= self.ledger.cash_inr:
-                                low = middle
-                            else:
-                                high = middle
-                        quantity = low
+                    # Binary-search affordability with quantity-dependent impact and flat fees.
+                    affordable_low, affordable_high = D("0"), quantity
+                    for _ in range(64):
+                        middle = (affordable_low + affordable_high) / D("2")
+                        if middle <= 0:
+                            affordable_low = middle
+                            continue
+                        middle_price, _, _ = self._execution_price(side, reference, middle, available)
+                        middle_fee = self._fee(side, middle, middle_price)
+                        if middle * middle_price + middle_fee <= self.ledger.cash_inr:
+                            affordable_low = middle
+                        else:
+                            affordable_high = middle
+                    quantity = affordable_low
                     if quantity <= 0:
                         continue
-                    notional = quantity * price
+                    # Recompute price, participation, impact and fee for the actual fill.
+                    price, participation, impact = self._execution_price(
+                        side, reference, quantity, available
+                    )
                     fee = self._fee(side, quantity, price)
+                    if quantity * price + fee > self.ledger.cash_inr:
+                        raise RuntimeError("cash affordability solver returned an unaffordable fill")
+                notional = quantity * price
                 timestamp = index[row].to_pydatetime()
                 fill = Fill(
                     fill_id=f"{self.config.market.value}-{timestamp.isoformat()}-{symbol}-{side.value}",
@@ -265,8 +286,6 @@ class PortfolioSimulator:
                     fx_provenance="input bars are required to be INR-denominated",
                 )
                 self.ledger.apply_fill(fill)
-                participation = quantity / D(str(bars[symbol]["volume"].iloc[row]))
-                impact = self.config.impact_coefficient_bps * D(str(float(participation) ** 0.5))
                 fills.append(SimulatedFill(fill, reference, participation,
                                            self.config.slippage_bps, impact))
                 turnover += notional / self.initial_capital
