@@ -315,6 +315,20 @@ def load_non_holdout_partition(
         raise ValueError("partition file contains rows at or after its declared cutoff")
     if frame_utc.max() >= final_boundary:
         raise ValueError("partition file contains a final-holdout row")
+    # Coverage timestamps in the immutable manifest must describe the exact safe file.
+    if isinstance(manifest, DatasetManifest):
+        expected_start = pd.Timestamp(manifest.coverage_start)
+        expected_end = pd.Timestamp(manifest.coverage_end)
+    else:
+        expected_start = pd.Timestamp(manifest["coverage_start"])
+        expected_end = pd.Timestamp(manifest["coverage_end"])
+    if expected_start.tzinfo is None or expected_end.tzinfo is None:
+        raise ValueError("partition coverage endpoints in manifest must be timezone-aware")
+    if (
+        frame_utc.min() != expected_start.tz_convert("UTC")
+        or frame_utc.max() != expected_end.tz_convert("UTC")
+    ):
+        raise ValueError("partition file timestamps differ from manifest coverage")
     end_utc = pd.Timestamp(end).tz_convert("UTC")
     clipped = frame.loc[frame_utc < end_utc].copy()
     if clipped.empty:
