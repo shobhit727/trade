@@ -51,9 +51,9 @@ def _spec(*, assumptions: bool = True) -> ExperimentSpec:
         training_end=datetime(2018, 1, 1, tzinfo=UTC),
         validation_start=datetime(2018, 1, 1, tzinfo=UTC),
         validation_end=datetime(2020, 1, 1, tzinfo=UTC),
-        oos_start=datetime(2020, 1, 1, tzinfo=UTC),
-        oos_end=datetime(2022, 1, 1, tzinfo=UTC),
-        final_holdout_start=datetime(2026, 10, 2, tzinfo=UTC),
+        oos_start=datetime(2026, 10, 2, tzinfo=UTC),
+        oos_end=datetime(2026, 10, 16, tzinfo=UTC),
+        final_holdout_start=datetime(2026, 10, 16, tzinfo=UTC),
         final_holdout_end=datetime(2026, 11, 8, tzinfo=UTC),
         cost_model_id="nse-delivery-cost-model",
         execution_model_id="next-open-participation-impact-v1",
@@ -65,7 +65,7 @@ def _spec(*, assumptions: bool = True) -> ExperimentSpec:
 
 def _bars() -> dict[str, pd.DataFrame]:
     # Synthetic deterministic bars exercise the runner only; these are not market data.
-    index = pd.date_range("2015-01-01", "2022-01-02", freq="D", tz="Asia/Kolkata")
+    index = pd.date_range("2015-01-01", "2026-11-09", freq="D", tz="Asia/Kolkata")
     step = np.arange(len(index), dtype=np.float64)
     close = 100.0 + 0.015 * step + 3.0 * np.sin(step / 12.0)
     frame = pd.DataFrame(
