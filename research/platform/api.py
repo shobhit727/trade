@@ -536,6 +536,7 @@ def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
         AlgorithmFamily.DIFFERENTIAL_EVOLUTION,
         AlgorithmFamily.BAYESIAN,
         AlgorithmFamily.PARETO_SEARCH,
+        AlgorithmFamily.HYBRID,
     }
     if algorithm_family in supported_existing_families:
         # Never accept arbitrary strategy names; resolve against the repository catalogue.
@@ -716,6 +717,60 @@ def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
             or len(set(windows)) != len(windows)
         ):
             raise ValueError("neuroevolution.feature_windows must be unique integers >= 2")
+    if algorithm_family is AlgorithmFamily.HYBRID:
+        # A hybrid is an ensemble of independently seeded search methods over one strategy.
+        hybrid = parameters.get("hybrid_optimization")
+        required_hybrid = {
+            "methods", "budget_per_method", "validation_candidates", "objective",
+        }
+        if not isinstance(hybrid, dict) or not required_hybrid.issubset(hybrid):
+            raise ValueError(f"hybrid_optimization requires {sorted(required_hybrid)}")
+        methods = hybrid["methods"]
+        allowed_methods = {
+            "random_search", "grid_search", "differential_evolution", "bayesian"
+        }
+        if (
+            not isinstance(methods, list)
+            or len(methods) < 2
+            or len(set(methods)) != len(methods)
+            or any(method not in allowed_methods for method in methods)
+        ):
+            raise ValueError("hybrid methods must be 2+ unique supported search methods")
+        for key in ("budget_per_method", "validation_candidates"):
+            value = hybrid[key]
+            minimum = 4 if key == "budget_per_method" else 1
+            maximum = 10000 if key == "budget_per_method" else 1000
+            if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
+                raise ValueError(f"hybrid_optimization.{key} must be an integer from {minimum} to {maximum}")
+        if hybrid["budget_per_method"] * len(methods) > 10000:
+            raise ValueError("hybrid total search budget exceeds 10000 evaluations")
+        if hybrid["objective"] not in {"sharpe", "sortino", "cagr", "calmar", "total_return"}:
+            raise ValueError("hybrid objective is not supported")
+        if "grid_search" in methods:
+            points = hybrid.get("points_per_numeric_dimension")
+            if isinstance(points, bool) or not isinstance(points, int) or points < 2:
+                raise ValueError("hybrid grid_search requires points_per_numeric_dimension >= 2")
+        if "differential_evolution" in methods:
+            required_de = {"de_population_size", "de_generations", "de_mutation", "de_crossover"}
+            if not required_de.issubset(hybrid):
+                raise ValueError(f"hybrid differential_evolution requires {sorted(required_de)}")
+            population = hybrid["de_population_size"]
+            generations = hybrid["de_generations"]
+            if (
+                isinstance(population, bool) or not isinstance(population, int) or population < 4
+                or isinstance(generations, bool) or not isinstance(generations, int) or generations < 1
+            ):
+                raise ValueError("hybrid DE population/generations are outside valid bounds")
+            if population * (generations + 1) != hybrid["budget_per_method"]:
+                raise ValueError("hybrid DE population_size * (generations + 1) must equal budget_per_method")
+            mutation = float(hybrid["de_mutation"])
+            crossover = float(hybrid["de_crossover"])
+            if not 0 < mutation <= 2 or not 0 <= crossover <= 1:
+                raise ValueError("hybrid DE mutation/crossover are outside valid bounds")
+        if "bayesian" in methods:
+            startup = hybrid.get("tpe_startup_trials")
+            if isinstance(startup, bool) or not isinstance(startup, int) or not 1 <= startup < hybrid["budget_per_method"]:
+                raise ValueError("hybrid TPE startup trials must be less than budget_per_method")
     if algorithm_family in {
         AlgorithmFamily.RANDOM_SEARCH,
         AlgorithmFamily.GRID_SEARCH,
