@@ -14,6 +14,7 @@ from .data_catalog import DatasetManifest, LicenseStatus, TimeGap, ValueOrigin
 from .domain import AlgorithmFamily, DataResolution, MARKET_SPECS, Market, ResearchTrack
 from .experiments import ExperimentSpec
 from .storage import ExperimentStore
+from .strategy_catalog import ExistingStrategyRegistry
 
 
 DASHBOARD_HTML = """<!doctype html>
@@ -362,6 +363,31 @@ class ResearchAPI:
                     for market, spec in MARKET_SPECS.items()
                 ]
                 return self._response(start_response, HTTPStatus.OK, {"markets": markets})
+            if method == "GET" and path == "/api/strategies":
+                # This endpoint enumerates existing strategy code; it does not execute strategies.
+                query = parse_qs(environ.get("QUERY_STRING", ""))
+                limit = int(query.get("limit", ["500"])[0])
+                if not 1 <= limit <= 500:
+                    raise ValueError("limit must be between 1 and 500")
+                registry = ExistingStrategyRegistry()
+                names = registry.names()[:limit]
+                descriptors = []
+                for name in names:
+                    item = registry.describe(name)
+                    descriptors.append({
+                        "name": item.name,
+                        "module": item.module,
+                        "strategy_class": item.strategy_class,
+                        "config_class": item.config_class,
+                        "defaults": item.defaults,
+                        "parameters": list(item.parameters),
+                        "held_fixed": list(item.held_fixed),
+                    })
+                return self._response(start_response, HTTPStatus.OK, {
+                    "strategy_count": len(registry.names()),
+                    "returned": len(descriptors),
+                    "strategies": descriptors,
+                })
             if method == "GET" and path == "/api/datasets":
                 # Data coverage is returned as dataset metadata, not as combined financial performance.
                 query = parse_qs(environ.get("QUERY_STRING", ""))
