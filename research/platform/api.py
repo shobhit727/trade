@@ -52,7 +52,7 @@ pre { overflow:auto; white-space:pre-wrap; word-break:break-word; color:#c4d3e4;
 <div class="grid" style="margin-top:16px">
 <section>
 <h2>Create experiment</h2>
-<p>Creates an immutable experiment record. It does not start a research worker.</p>
+<p>Creates an immutable experiment record. The second action queues the registered existing-strategy worker; it evaluates TRAIN, VALIDATION and OOS only.</p>
 <form id="create-form">
 <label>Market</label><select id="market"><option value="nse">NSE</option><option value="crypto">Crypto</option></select>
 <label>Research track</label><select id="track"></select>
@@ -62,15 +62,18 @@ pre { overflow:auto; white-space:pre-wrap; word-break:break-word; color:#c4d3e4;
 <label>Dataset IDs (comma-separated)</label><input id="dataset-ids" value="example-dataset-v1" required>
 <label>Experiment ID</label><input id="experiment-id" required>
 <label>Git commit</label><input id="git-commit" placeholder="40-character commit SHA" required>
-<label>Cost model ID</label><input id="cost-model" value="market-cost-v1" required>
+<label>Cost model ID</label><input id="cost-model" value="nse-delivery-cost-model" required>
 <label>Execution model ID</label><input id="execution-model" value="next-open-participation-impact-v1" required>
 <label>Seed</label><input id="seed" type="number" min="0" value="42" required>
 <label>Objectives (comma-separated)</label><input id="objectives" value="net_return,max_drawdown,turnover" required>
+<label>Strategy parameters JSON</label><textarea id="strategy-parameters" rows="3">{}</textarea>
+<label>Execution assumptions JSON</label><textarea id="execution-assumptions" rows="4">{"slippage_bps":5,"impact_coefficient_bps":10,"max_participation":0.05,"max_gross_exposure":1.0,"periods_per_year":252}</textarea>
+<label>Crypto maker/taker fee schedule JSON</label><textarea id="fee-schedule" rows="2">{"maker_fee_bps":10,"taker_fee_bps":10}</textarea>
 <label>Training start / end (ISO timestamps)</label><input id="train-start" type="datetime-local" value="2016-01-01T00:00" required><input id="train-end" type="datetime-local" value="2020-01-01T00:00" required>
 <label>Validation start / end</label><input id="val-start" type="datetime-local" value="2020-01-01T00:00" required><input id="val-end" type="datetime-local" value="2022-01-01T00:00" required>
 <label>OOS start / end</label><input id="oos-start" type="datetime-local" value="2022-01-01T00:00" required><input id="oos-end" type="datetime-local" value="2024-01-01T00:00" required>
 <label>Final holdout start / end</label><small>NSE holdout data must start after 1 October 2026; the prior 2024–2026 test window is exposed.</small><input id="hold-start" type="datetime-local" value="2026-10-02T00:00" required><input id="hold-end" type="datetime-local" value="2026-11-08T00:00" required>
-<button type="submit">Create experiment record</button><p id="form-status" class="status"></p>
+<button type="submit" name="action" value="create">Create experiment record</button><button type="submit" name="action" value="queue">Create and queue evaluation</button><p id="form-status" class="status"></p>
 </form>
 </section>
 <section>
@@ -80,6 +83,11 @@ pre { overflow:auto; white-space:pre-wrap; word-break:break-word; color:#c4d3e4;
 <pre id="detail">Select an experiment row to inspect its stored specification.</pre>
 </section>
 </div>
+<section style="margin-top:16px">
+<h2>Research jobs</h2>
+<p>Persisted worker status and cooperative cancellation between partitions.</p>
+<table><thead><tr><th>Job</th><th>Experiment</th><th>Runner</th><th>Status</th><th>Created</th><th>Action</th></tr></thead><tbody id="job-rows"></tbody></table>
+</section>
 <section style="margin-top:16px">
 <h2>Existing strategy catalogue</h2>
 <p>Registered strategy implementations and their typed configuration spaces. Listing does not execute a strategy.</p>
@@ -152,6 +160,42 @@ async function refresh() {
     $("detail").textContent = JSON.stringify(await api("/api/experiments/" +
       encodeURIComponent(row.dataset.id)), null, 2);
   }));
+  const jobPayload = await api("/api/jobs?limit=100");
+  const jobBody = $("job-rows");
+  jobBody.replaceChildren();
+  jobPayload.jobs.forEach(item => {
+    // Render stored job metadata as text and invoke the actual cancel endpoint.
+    const row = document.createElement("tr");
+    [item.job_id, item.experiment_id, item.runner_name, item.status, item.created_at].forEach(value => {
+      const cell = document.createElement("td");
+      cell.textContent = value || "";
+      row.appendChild(cell);
+    });
+    const actionCell = document.createElement("td");
+    if (["queued", "running"].includes(item.status)) {
+      const cancel = document.createElement("button");
+      cancel.textContent = "Request cancel";
+      cancel.addEventListener("click", async () => {
+        try {
+          await api("/api/jobs/" + encodeURIComponent(item.job_id) + "/cancel", {method:"POST"});
+          await refresh();
+        } catch (error) {
+          $("form-status").textContent = "Cancellation error: " + error.message;
+        }
+      });
+      actionCell.appendChild(cancel);
+    } else {
+      const inspect = document.createElement("button");
+      inspect.textContent = "Inspect";
+      inspect.addEventListener("click", async () => {
+        const payload = await api("/api/jobs/" + encodeURIComponent(item.job_id));
+        $("detail").textContent = JSON.stringify(payload.job, null, 2);
+      });
+      actionCell.appendChild(inspect);
+    }
+    row.appendChild(actionCell);
+    jobBody.appendChild(row);
+  });
   if (strategyCache === null) strategyCache = await api("/api/strategies?limit=500");
   const strategies = strategyCache;
   const strategySelect = $("strategy-name");
@@ -218,9 +262,18 @@ $("market").addEventListener("change", refreshTrackOptions);
 $("filter-market").addEventListener("change", refresh);
 $("create-form").addEventListener("submit", async event => {
   event.preventDefault();
+  const action = event.submitter ? event.submitter.value : "create";
   $("form-status").textContent = "Saving…";
   try {
     const value = id => $(id).value;
+    const parseObject = id => {
+      // Parse experiment settings as JSON instead of silently converting malformed text.
+      const parsed = JSON.parse(value(id) || "{}");
+      if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+        throw new Error(id + " must be a JSON object");
+      }
+      return parsed;
+    };
     const market = value("market");
     const payload = {
       experiment_id: value("experiment-id"),
@@ -245,12 +298,32 @@ $("create-form").addEventListener("submit", async event => {
       objectives: value("objectives").split(",").map(x => x.trim()).filter(Boolean),
       compute_backend: "auto",
       compute_device: "unverified",
-      parameters: value("family") === "existing_strategy" ? {strategy_name: value("strategy-name")} : {}
+      parameters: value("family") === "existing_strategy" ? {
+        strategy_name: value("strategy-name"),
+        strategy_parameters: parseObject("strategy-parameters"),
+        execution_assumptions: parseObject("execution-assumptions"),
+        ...(market === "crypto" ? {fee_schedule: parseObject("fee-schedule")} : {})
+      } : {}
     };
     const result = await api("/api/experiments", {
       method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
     });
     $("form-status").textContent = "Created " + result.experiment_id;
+    if (action === "queue") {
+      if (value("family") !== "existing_strategy") {
+        throw new Error("The connected worker currently supports existing_strategy only.");
+      }
+      const queued = await api("/api/jobs", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          experiment_id: result.experiment_id,
+          runner_name: "existing_strategy_evaluation",
+          parameters: {}
+        })
+      });
+      $("form-status").textContent = "Queued research job " + queued.job_id;
+    }
     await refresh();
   } catch (error) {
     $("form-status").textContent = "Error: " + error.message;
