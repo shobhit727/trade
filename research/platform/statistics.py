@@ -223,6 +223,7 @@ def candidate_family_report(
     skewness: float = 0.0,
     kurtosis: float = 3.0,
     pbo_blocks: int = 8,
+    pbo_candidate_limit: int = 128,
 ) -> dict[str, object]:
     """Combine FDR, DSR and CSCV PBO diagnostics for one declared search family.
 
@@ -243,8 +244,10 @@ def candidate_family_report(
         raise ValueError("candidate_returns must have one row per candidate")
     if returns.shape[1] != observations:
         raise ValueError("observations must match the candidate return-matrix width")
+    if isinstance(pbo_candidate_limit, bool) or pbo_candidate_limit < 2:
+        raise ValueError("pbo_candidate_limit must be at least two")
 
-    # Apply multiple-testing controls to exactly this family and record the actual count.
+    # Apply FDR/DSR to the complete family; bound only the more expensive CSCV diagnostic.
     fdr = benjamini_hochberg(p_values, alpha=alpha)
     sharpes = np.asarray(trial_sharpes, dtype=np.float64)
     if not np.isfinite(sharpes).all():
@@ -257,7 +260,33 @@ def candidate_family_report(
         skewness=skewness,
         kurtosis=kurtosis,
     )
-    pbo = pbo_cscv(returns, blocks=pbo_blocks)
+    if len(ids) < 2 or observations < pbo_blocks:
+        pbo: dict[str, object] = {
+            "status": "not_computed",
+            "reason": (
+                "at least two candidates and eight observations are required for CSCV"
+                if pbo_blocks == 8 else
+                f"at least two candidates and {pbo_blocks} observations are required for CSCV"
+            ),
+            "candidate_family_size": len(ids),
+            "observations": observations,
+            "blocks": pbo_blocks,
+        }
+    else:
+        # Use evenly spaced input-order candidates, not score-ranked candidates, for bounded CSCV.
+        subset_indices = (
+            np.linspace(0, len(ids) - 1, num=pbo_candidate_limit, dtype=np.int64)
+            if len(ids) > pbo_candidate_limit
+            else np.arange(len(ids), dtype=np.int64)
+        )
+        pbo = dict(pbo_cscv(returns[subset_indices], blocks=pbo_blocks))
+        pbo.update({
+            "status": "computed",
+            "candidate_family_size": len(ids),
+            "candidate_subset_size": len(subset_indices),
+            "candidate_subset_policy": "evenly_spaced_input_order",
+            "candidate_ids": [ids[int(index)] for index in subset_indices],
+        })
     adjusted = fdr["adjusted_p_values"]
     rejected = fdr["reject"]
     candidate_rows = [
