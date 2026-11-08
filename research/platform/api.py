@@ -375,7 +375,7 @@ $("create-form").addEventListener("submit", async event => {
           ...(market === "crypto" ? {fee_schedule: feeSchedule} : {})
         };
         const supportedExisting = ["existing_strategy","random_search","grid_search",
-          "differential_evolution","bayesian"];
+          "differential_evolution","bayesian","hybrid"];
         if (supportedExisting.includes(family)) {
           const result = {
             ...common,
