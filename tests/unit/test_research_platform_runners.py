@@ -586,6 +586,9 @@ def test_genetic_programming_worker_persists_lineage_selects_validation_and_eval
         assert result["algorithm_family"] == "genetic_programming"
         assert result["candidate_count"] == 8
         assert result["successful_train_candidates"] > 0
+        stats = result["training_candidate_family_diagnostics"]
+        assert stats["candidate_family_size"] == result["successful_train_candidates"]
+        assert stats["fdr"]["hypotheses"] == stats["candidate_family_size"]
         assert len(result["validation_shortlist"]) == 2
         assert result["out_of_sample"]["sample_count"] > 0
         assert result["final_holdout_accessed"] is False
@@ -694,6 +697,9 @@ def test_neuroevolution_worker_persists_mirrored_candidates_and_evaluates_oos(tm
         assert result["successful_train_candidates"] > 0
         assert len(result["validation_shortlist"]) == 2
         assert result["network"]["parameter_count"] > 0
+        stats = result["training_candidate_family_diagnostics"]
+        assert stats["candidate_family_size"] > 0
+        assert stats["deflated_sharpe"]["trial_count"] == stats["candidate_family_size"]
         assert result["compute"]["backend"] == "numpy"
         assert result["compute"]["requested_backend"] == "numpy"
         assert result["compute"]["inference_batch_size"] == 8
@@ -803,6 +809,9 @@ def test_strategy_composition_worker_evolves_registered_components_and_evaluates
         assert result["algorithm_family"] == "strategy_composition"
         assert result["candidate_count"] == 12
         assert result["successful_train_candidates"] > 0
+        stats = result["training_candidate_family_diagnostics"]
+        assert stats["candidate_family_size"] == result["successful_train_candidates"]
+        assert stats["fdr"]["hypotheses"] == stats["candidate_family_size"]
         assert len(result["validation_shortlist"]) == 2
         assert result["registry_component_count"] >= 6
         assert result["out_of_sample"]["sample_count"] > 0
@@ -895,6 +904,9 @@ def test_pareto_search_worker_persists_nsga2_front_and_oos_evaluation(tmp_path) 
         assert result["algorithm_family"] == "pareto_search"
         assert result["evaluations"] == 8
         assert result["candidate_count"] == 8
+        stats = result["training_candidate_family_diagnostics"]
+        assert stats["candidate_family_size"] > 0
+        assert stats["fdr"]["hypotheses"] == stats["candidate_family_size"]
         assert result["objectives"] == ["cagr", "max_drawdown", "turnover"]
         assert result["directions"] == ["max", "max", "min"]
         assert result["train_pareto_front"]
