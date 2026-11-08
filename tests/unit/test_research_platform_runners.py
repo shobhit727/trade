@@ -421,6 +421,24 @@ def test_existing_strategy_optimizer_searches_train_selects_validation_then_eval
             candidate for candidate in stored_candidates
             if candidate["family"] == "random_search"
         ]
+        validation_candidates = [
+            candidate for candidate in stored_candidates
+            if candidate["family"] == "random_search_validation"
+        ]
+        selected_validation = next(
+            candidate for candidate in validation_candidates
+            if candidate["candidate_id"] == result["selected_candidate"]["candidate_id"]
+        )
+        assert selected_validation["lineage"]["origin"] == "validation_shortlist"
+        assert selected_validation["lineage"]["parent_candidate_ids"]
+        oos_candidates = [
+            candidate for candidate in stored_candidates
+            if candidate["family"] == "random_search_selected_oos"
+        ]
+        assert len(oos_candidates) == 1
+        assert oos_candidates[0]["lineage"]["parent_candidate_ids"] == [
+            selected_validation["candidate_id"]
+        ]
         assert search_candidates
         assert all(
             candidate["lineage"]["operator"] == "random"
