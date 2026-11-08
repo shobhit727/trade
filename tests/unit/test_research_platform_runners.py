@@ -282,14 +282,20 @@ def test_crypto_loader_converts_usdt_using_prior_fx_close_only(tmp_path) -> None
     from research.platform.runners import load_registered_bars
 
     exchange = tmp_path / "binance"
-    stamps = [
+    asset_stamps = [
         int(pd.Timestamp(f"2025-01-01T{hour:02d}:00:00Z").timestamp() * 1000)
         for hour in range(4)
     ]
+    fx_stamps = [
+        int(pd.Timestamp("2024-12-31T23:00:00Z").timestamp() * 1000),
+        *asset_stamps[:-1],
+    ]
     asset_path = exchange / "BTCUSDT_1h.csv"
-    asset_hash = _write_crypto_csv(asset_path, timestamps=stamps, close=[100000, 101000, 102000, 103000])
+    asset_hash = _write_crypto_csv(
+        asset_path, timestamps=asset_stamps, close=[100000, 101000, 102000, 103000]
+    )
     fx_path = exchange / "USDTINR_1h.csv"
-    fx_hash = _write_crypto_csv(fx_path, timestamps=stamps, close=[84, 85, 86, 87])
+    fx_hash = _write_crypto_csv(fx_path, timestamps=fx_stamps, close=[83, 84, 85, 86])
 
     spec = _crypto_spec("crypto-binance-btcusdt-1h")
     store = ExperimentStore(tmp_path / "fx.sqlite3")
@@ -349,7 +355,8 @@ def test_crypto_loader_converts_usdt_using_prior_fx_close_only(tmp_path) -> None
     ))
 
     bars = load_registered_bars(store, spec, crypto_data_root=tmp_path)
-    # First bar has no prior completed FX candle, so it is intentionally unavailable.
-    assert bars["BTCUSDT"].index[0] == pd.Timestamp("2025-01-01T01:00:00Z")
-    assert bars["BTCUSDT"]["open"].iloc[0] == 100000 * 85
+    # Each bar uses the close of the immediately preceding completed FX candle.
+    assert bars["BTCUSDT"].index[0] == pd.Timestamp("2025-01-01T00:00:00Z")
+    assert bars["BTCUSDT"]["open"].iloc[0] == 100000 * 83
+    assert bars["BTCUSDT"]["open"].iloc[1] == 101000 * 84
     assert bars["BTCUSDT"].attrs["fx_alignment"] == "backward_asof_no_future"
