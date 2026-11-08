@@ -642,7 +642,9 @@ class ExistingStrategyOptimizerJobRunner:
             evaluation_index=-1,
             lineage={"operator": "user_configured_baseline", "parent_candidate_ids": []},
         )
-        search_candidates = (shipped_baseline, user_baseline, *search.candidates)
+        # Persist every attempted trial, including failures carried separately from valid winners.
+        attempted_trials = search.attempts or search.candidates
+        search_candidates = (shipped_baseline, user_baseline, *attempted_trials)
 
         # Prepare all attempted candidates before writing lineage so parent IDs can be resolved.
         candidate_rows: list[dict[str, Any]] = []
@@ -858,7 +860,7 @@ class ExistingStrategyOptimizerJobRunner:
                     and candidate["evaluation_index"] >= 0
                     for candidate in candidate_rows
                 ),
-                "search_attempted_candidates": (len(search.candidates) if search.method == "differential_evolution" else len(search.candidates) + len(search.failures)),
+                "search_attempted_candidates": (len(search.attempts) if search.attempts else len(search.candidates) + len(search.failures)),
                 "search_failures": list(search.failures),
                 "validation_shortlist_count": len(validation_rows),
                 "objective": objective_name,
