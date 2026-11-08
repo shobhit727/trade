@@ -463,6 +463,35 @@ class ExperimentStore:
         ]
         return result
 
+    def recover_interrupted_jobs(self) -> int:
+        """Mark queued/running jobs from a previous process as failed and auditable."""
+        # ThreadPoolExecutor work is not durable across process death; never imply it resumed.
+        now = datetime.now(timezone.utc).isoformat()
+        reason = "worker process restarted; job was interrupted and must be resubmitted"
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT job_id, status FROM jobs WHERE status IN ('queued', 'running')"
+            ).fetchall()
+            for row in rows:
+                connection.execute(
+                    """UPDATE jobs
+                       SET status = 'failed', completed_at = ?, error_message = ?
+                       WHERE job_id = ? AND status IN ('queued', 'running')""",
+                    (now, reason, row["job_id"]),
+                )
+                connection.execute(
+                    """INSERT INTO job_events
+                       (job_id, event_type, occurred_at, payload_json)
+                       VALUES (?, 'job_interrupted_on_restart', ?, ?)""",
+                    (
+                        row["job_id"],
+                        now,
+                        json.dumps({"previous_status": row["status"], "reason": reason},
+                                   sort_keys=True, separators=(",", ":")),
+                    ),
+                )
+        return len(rows)
+
     def list_jobs(
         self, *, experiment_id: str | None = None, limit: int = 100
     ) -> tuple[dict[str, Any], ...]:
