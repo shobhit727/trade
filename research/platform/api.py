@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import datetime
 from http import HTTPStatus
 from typing import Any
@@ -100,6 +101,10 @@ async function api(path, options) {
   if (!response.ok) throw new Error(payload.error || response.statusText);
   return payload;
 }
+function utc(id) {
+  // datetime-local inputs are interpreted as UTC to keep stored timestamps explicit.
+  return document.getElementById(id).value + ":00Z";
+}
 async function refresh() {
   // Keep the two financial environments visibly separate.
   const [nse, crypto] = await Promise.all([
@@ -109,11 +114,20 @@ async function refresh() {
   $("crypto-count").textContent = crypto.experiments.length + " stored research experiments";
   const filter = $("filter-market").value;
   const rows = filter ? await api("/api/experiments?market=" + filter) : {experiments:[...nse.experiments,...crypto.experiments]};
-  $("experiment-rows").innerHTML = rows.experiments.map(item =>
-    '<tr data-id="' + item.experiment_id + '" data-market="' + item.market + '"><td>' +
-    item.experiment_id + '</td><td>' + item.market + ' / ' + item.track +
-    '</td><td>' + item.created_at + '</td></tr>'
-  ).join("");
+  const body = $("experiment-rows");
+  body.replaceChildren();
+  rows.experiments.forEach(item => {
+    // Render stored identifiers with textContent to prevent HTML/script injection.
+    const row = document.createElement("tr");
+    row.dataset.id = item.experiment_id;
+    row.dataset.market = item.market;
+    [item.experiment_id, item.market + " / " + item.track, item.created_at].forEach(value => {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      row.appendChild(cell);
+    });
+    body.appendChild(row);
+  });
   document.querySelectorAll("#experiment-rows tr").forEach(row => row.addEventListener("click", async () => {
     // A detail request remains scoped to the record selected by its market and ID.
     $("detail").textContent = JSON.stringify(await api("/api/experiments/" +
@@ -138,14 +152,14 @@ $("create-form").addEventListener("submit", async event => {
       random_seed: Number(value("seed")),
       git_commit: value("git-commit"),
       code_version: "dashboard-api-v1",
-      training_start: value("train-start"),
-      training_end: value("train-end"),
-      validation_start: value("val-start"),
-      validation_end: value("val-end"),
-      oos_start: value("oos-start"),
-      oos_end: value("oos-end"),
-      final_holdout_start: value("hold-start"),
-      final_holdout_end: value("hold-end"),
+      training_start: utc("train-start"),
+      training_end: utc("train-end"),
+      validation_start: utc("val-start"),
+      validation_end: utc("val-end"),
+      oos_start: utc("oos-start"),
+      oos_end: utc("oos-end"),
+      final_holdout_start: utc("hold-start"),
+      final_holdout_end: utc("hold-end"),
       cost_model_id: value("cost-model"),
       execution_model_id: value("execution-model"),
       objectives: value("objectives").split(",").map(x => x.trim()).filter(Boolean),
@@ -301,6 +315,8 @@ class ResearchAPI:
                 return self._response(start_response, HTTPStatus.METHOD_NOT_ALLOWED,
                                       {"error": "method not allowed"})
             return self._response(start_response, HTTPStatus.NOT_FOUND, {"error": "route not found"})
+        except sqlite3.IntegrityError as exc:
+            return self._response(start_response, HTTPStatus.CONFLICT, {"error": f"record conflict: {exc}"})
         except KeyError as exc:
             return self._response(start_response, HTTPStatus.NOT_FOUND, {"error": f"not found: {exc}"})
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
