@@ -297,7 +297,12 @@ def _build_portfolio_config(
         raise ValueError("periods_per_year must be positive")
     fee_calculator = None
     if spec.market is Market.NSE:
-        fee_calculator = NSEDeliveryFeeCalculator(model_id=spec.cost_model_id)
+        fee_calculator = NSEDeliveryFeeCalculator()
+        if spec.cost_model_id != fee_calculator.model_id:
+            raise ValueError(
+                "NSE cost_model_id must match the existing statutory delivery calculator "
+                f"{fee_calculator.model_id}"
+            )
     else:
         exchanges = {str(item["exchange"]).lower() for item in manifests}
         if len(exchanges) != 1:
