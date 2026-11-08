@@ -138,3 +138,38 @@ def test_job_manager_rejects_unknown_runner_names(tmp_path) -> None:
     with pytest.raises(ValueError, match="unknown research runner"):
         manager.submit("job-manager-test", "execute_shell_command")
     manager.shutdown()
+
+
+
+def test_store_marks_queued_and_running_jobs_interrupted_after_restart(tmp_path) -> None:
+    # ThreadPoolExecutor state is process-local; persisted active jobs must not look live.
+    store, manager = _manager(tmp_path / "restart.sqlite3", max_workers=1)
+    manager.register_runner("never_submitted", lambda context, experiment, parameters: {"ok": True})
+    queued_id = "queued-before-restart"
+    running_id = "running-before-restart"
+    store.create_job(
+        job_id=queued_id,
+        experiment_id="job-manager-test",
+        runner_name="never_submitted",
+        parameters={},
+    )
+    store.create_job(
+        job_id=running_id,
+        experiment_id="job-manager-test",
+        runner_name="never_submitted",
+        parameters={},
+    )
+    store.update_job_status(running_id, "running")
+    manager.shutdown(wait=True)
+
+    recovered = store.recover_interrupted_jobs()
+    assert recovered == 2
+    assert store.get_job(queued_id)["status"] == "failed"
+    assert store.get_job(running_id)["status"] == "failed"
+    assert store.get_job(queued_id)["error_message"].startswith("worker process restarted")
+    assert any(
+        event["event_type"] == "job_interrupted_on_restart"
+        for event in store.get_job(running_id)["events"]
+    )
+    # Recovery is idempotent; terminal jobs are not rewritten.
+    assert store.recover_interrupted_jobs() == 0
