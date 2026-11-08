@@ -326,3 +326,63 @@ def test_jobs_api_routes_genetic_programming_to_registered_gp_runner(tmp_path) -
         assert "requires runner genetic_programming" in rejected["error"]
     finally:
         app.shutdown()
+
+
+
+def test_jobs_api_routes_neuroevolution_to_registered_neural_worker(tmp_path) -> None:
+    # Neural policy experiments cannot be accidentally run by the GP or generic evaluator.
+    base = _experiment()
+    neural_parameters = dict(base.parameters)
+    neural_parameters["neuroevolution"] = {
+        "hidden_size": 3,
+        "population_size": 4,
+        "generations": 2,
+        "learning_rate": 0.05,
+        "noise_std": 0.1,
+        "weight_limit": 2.0,
+        "validation_candidates": 2,
+        "objective": "sharpe",
+        "feature_windows": [3],
+    }
+    spec = replace(
+        base,
+        experiment_id="api-neuroevolution",
+        algorithm_family=AlgorithmFamily.NEUROEVOLUTION,
+        parameters=neural_parameters,
+    )
+
+    def runner(context, experiment, parameters):
+        return {"family": experiment["spec"]["algorithm_family"]}
+
+    _, manager, app = _app(tmp_path, runner=runner, experiment=spec)
+    manager.register_runner("neuroevolution", runner)
+    try:
+        status, payload = _request(
+            app,
+            "POST",
+            "/api/jobs",
+            {
+                "experiment_id": spec.experiment_id,
+                "runner_name": "neuroevolution",
+                "parameters": {},
+            },
+        )
+        assert status == 202
+        job = manager.wait(payload["job_id"], timeout=5)
+        assert job["status"] == "succeeded"
+        assert job["result"]["family"] == "neuroevolution"
+
+        status, rejected = _request(
+            app,
+            "POST",
+            "/api/jobs",
+            {
+                "experiment_id": spec.experiment_id,
+                "runner_name": "genetic_programming",
+                "parameters": {},
+            },
+        )
+        assert status == 400
+        assert "requires runner neuroevolution" in rejected["error"]
+    finally:
+        app.shutdown()
