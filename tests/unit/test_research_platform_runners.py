@@ -17,6 +17,7 @@ from research.platform.runners import (
     ExistingStrategyJobRunner,
     ExistingStrategyOptimizerJobRunner,
     GeneticProgrammingJobRunner,
+    NeuroevolutionJobRunner,
     _build_portfolio_config,
     experiment_spec_from_record,
 )
@@ -628,5 +629,100 @@ def test_genetic_programming_worker_rejects_missing_model_settings(tmp_path) -> 
         job = manager.wait(job_id, timeout=10)
         assert job["status"] == "failed"
         assert "genetic_programming requires" in job["error_message"]
+    finally:
+        manager.shutdown(wait=True, cancel_pending=True)
+
+
+
+def test_neuroevolution_worker_persists_mirrored_candidates_and_evaluates_oos(tmp_path) -> None:
+    # A small dense model tests the complete neural TRAIN/VALIDATION/OOS lifecycle.
+    base = _spec()
+    parameters = dict(base.parameters)
+    parameters["neuroevolution"] = {
+        "hidden_size": 3,
+        "population_size": 4,
+        "generations": 2,
+        "learning_rate": 0.05,
+        "noise_std": 0.1,
+        "weight_limit": 2.0,
+        "validation_candidates": 2,
+        "objective": "sharpe",
+        "feature_windows": [3],
+    }
+    spec = replace(
+        base,
+        experiment_id="runner-neuroevolution",
+        algorithm_family=AlgorithmFamily.NEUROEVOLUTION,
+        parameters=parameters,
+    )
+    store = _store(tmp_path / "neuro-runner.sqlite3", spec)
+    manager = ResearchJobManager(store, max_workers=1, max_queued=1)
+    runner = NeuroevolutionJobRunner(
+        bar_loader=lambda current_store, current_spec: _bars()
+    )
+    manager.register_runner("neuroevolution", runner)
+    try:
+        job_id = manager.submit(spec.experiment_id, "neuroevolution")
+        job = manager.wait(job_id, timeout=60)
+        assert job["status"] == "succeeded", job["error_message"]
+        result = job["result"]
+        assert result["algorithm_family"] == "neuroevolution"
+        assert result["candidate_count"] == 8
+        assert result["successful_train_candidates"] > 0
+        assert len(result["validation_shortlist"]) == 2
+        assert result["network"]["parameter_count"] > 0
+        assert result["out_of_sample"]["sample_count"] > 0
+        assert result["final_holdout_accessed"] is False
+
+        candidates = store.candidates(spec.experiment_id)
+        assert len(candidates) == 8
+        assert all(item["family"] == "neuroevolution" for item in candidates)
+        assert all(len(item["parameters"]["weights"]) == result["network"]["parameter_count"]
+                   for item in candidates)
+        candidate_ids = {item["candidate_id"] for item in candidates}
+        later_generation = [item for item in candidates if item["generation"] == 1]
+        assert later_generation
+        assert all(item["lineage"]["parent_candidate_ids"] for item in later_generation)
+        for item in later_generation:
+            assert set(item["lineage"]["parent_candidate_ids"]).issubset(candidate_ids)
+        event_types = {event["event_type"] for event in store.events(spec.experiment_id)}
+        assert "neuroevolution_candidate_frozen" in event_types
+        assert "neuroevolution_oos_recorded" in event_types
+    finally:
+        manager.shutdown(wait=True, cancel_pending=True)
+
+
+def test_neuroevolution_worker_rejects_odd_or_unbounded_population(tmp_path) -> None:
+    # The antithetic ES population must be even and remain within the fixed evaluation cap.
+    base = _spec()
+    parameters = dict(base.parameters)
+    parameters["neuroevolution"] = {
+        "hidden_size": 3,
+        "population_size": 5,
+        "generations": 2,
+        "learning_rate": 0.05,
+        "noise_std": 0.1,
+        "weight_limit": 2.0,
+        "validation_candidates": 2,
+        "objective": "sharpe",
+        "feature_windows": [3],
+    }
+    spec = replace(
+        base,
+        experiment_id="runner-neuroevolution-invalid",
+        algorithm_family=AlgorithmFamily.NEUROEVOLUTION,
+        parameters=parameters,
+    )
+    store = _store(tmp_path / "neuro-invalid.sqlite3", spec)
+    manager = ResearchJobManager(store, max_workers=1, max_queued=1)
+    runner = NeuroevolutionJobRunner(
+        bar_loader=lambda current_store, current_spec: _bars()
+    )
+    manager.register_runner("neuroevolution", runner)
+    try:
+        job_id = manager.submit(spec.experiment_id, "neuroevolution")
+        job = manager.wait(job_id, timeout=10)
+        assert job["status"] == "failed"
+        assert "population_size must be even" in job["error_message"]
     finally:
         manager.shutdown(wait=True, cancel_pending=True)
