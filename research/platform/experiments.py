@@ -77,6 +77,15 @@ class ExperimentSpec:
             and self.oos_end <= self.final_holdout_start
         ):
             raise ValueError("experiment partitions must be chronological and non-overlapping")
+
+        # The old NSE 2024-2026 test set was exposed to prior strategy selection.
+        # It cannot be relabelled as an untouched final holdout in the new platform.
+        if self.market is Market.NSE:
+            exposed_end = datetime(2026, 10, 1, 23, 59, 59, tzinfo=timezone.utc)
+            if self.final_holdout_start.astimezone(timezone.utc) <= exposed_end:
+                raise ValueError(
+                    "NSE final holdout must begin after 2026-10-01; the historical test window is exposed"
+                )
         if self.created_at.tzinfo is None or self.created_at.utcoffset() is None:
             raise ValueError("created_at must be timezone-aware")
         # Restrict parameters to finite JSON values so every configuration can be stored.
@@ -117,6 +126,12 @@ class ExperimentSpec:
     def validate_datasets(self, catalog: DataAvailabilityCatalog) -> None:
         """Reject missing or cross-market dataset references before a run starts."""
         # The market of every source dataset must match the experiment's isolated market.
+        required_windows = (
+            (self.training_start, self.training_end),
+            (self.validation_start, self.validation_end),
+            (self.oos_start, self.oos_end),
+            (self.final_holdout_start, self.final_holdout_end),
+        )
         for dataset_id in self.dataset_ids:
             manifest = catalog.get(dataset_id)
             if manifest.market is not self.market:
@@ -124,6 +139,15 @@ class ExperimentSpec:
                     f"cross-market dataset rejected: {dataset_id} belongs to {manifest.market.value}, "
                     f"not {self.market.value}"
                 )
+            # A dataset reference must cover every requested stage; missing coverage is not imputed.
+            coverage_start = manifest.coverage_start.astimezone(timezone.utc)
+            coverage_end = manifest.coverage_end.astimezone(timezone.utc)
+            for window_start, window_end in required_windows:
+                if coverage_start > window_start.astimezone(timezone.utc) or coverage_end < window_end.astimezone(timezone.utc):
+                    raise ValueError(
+                        f"dataset {dataset_id} does not cover window "
+                        f"{window_start.isoformat()}..{window_end.isoformat()}"
+                    )
 
     @property
     def fingerprint(self) -> str:
