@@ -273,25 +273,27 @@ def evaluate_existing_strategy(
     )
 
     if store is not None:
-        # Persist stage-level metrics, immutable candidate parameters and no-holdout status.
+        # Persist candidate identity once; append a new immutable evaluation event per run.
         stage_metrics = {item.partition: item.metrics for item in evaluations}
-        store.append_candidate(
-            candidate_id=f"{spec.experiment_id}-existing-baseline",
-            experiment_id=spec.experiment_id,
-            candidate_digest=candidate_digest,
-            family="existing_strategy",
-            generation=0,
-            parameters=candidate_definition,
-            metrics=stage_metrics,
-            lineage={
-                "parent_candidate_ids": [],
-                "origin": "existing_catalogue",
-                "strategy_name": strategy_name,
-                "mutation": None,
-                "crossover": None,
-                "selection": "frozen_experiment_spec",
-            },
-        )
+        candidate_already_recorded = store.has_candidate(spec.experiment_id, candidate_digest)
+        if not candidate_already_recorded:
+            store.append_candidate(
+                candidate_id=f"{spec.experiment_id}-existing-baseline",
+                experiment_id=spec.experiment_id,
+                candidate_digest=candidate_digest,
+                family="existing_strategy",
+                generation=0,
+                parameters=candidate_definition,
+                metrics=stage_metrics,
+                lineage={
+                    "parent_candidate_ids": [],
+                    "origin": "existing_catalogue",
+                    "strategy_name": strategy_name,
+                    "mutation": None,
+                    "crossover": None,
+                    "selection": "frozen_experiment_spec",
+                },
+            )
         store.append_event(
             spec.experiment_id,
             "existing_strategy_evaluated",
@@ -302,6 +304,8 @@ def evaluate_existing_strategy(
                 "final_holdout_accessed": False,
                 "cost_model_id": spec.cost_model_id,
                 "execution_model_id": spec.execution_model_id,
+                "metrics": stage_metrics,
+                "repeat_evaluation": candidate_already_recorded,
             },
         )
     return result
