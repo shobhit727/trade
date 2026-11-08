@@ -36,6 +36,7 @@ from .neuroevolution import DenseMLP, EvolutionStrategy
 from .optimizers import (
     Candidate as SearchCandidate,
     Parameter as SearchParameter,
+    SearchResult,
     differential_evolution,
     grid_search,
     optuna_tpe_search,
@@ -487,7 +488,126 @@ class ExistingStrategyOptimizerJobRunner:
         settings: Mapping[str, Any],
         seed: int,
     ):
-        # Every optimiser receives the same finite search space and caller-declared budget.
+        # Each optimiser receives the same finite search space and its own seeded sub-budget.
+        if family is AlgorithmFamily.HYBRID:
+            methods = tuple(settings["methods"])
+            budget_each = int(settings["budget_per_method"])
+            if (
+                len(methods) < 2
+                or len(set(methods)) != len(methods)
+                or any(method not in {
+                    "random_search", "grid_search", "differential_evolution", "bayesian"
+                } for method in methods)
+            ):
+                raise ValueError("hybrid methods must be 2+ unique supported search methods")
+            if budget_each < 4 or len(methods) * budget_each > 10000:
+                raise ValueError("hybrid budget_per_method must be >=4 and total budget <=10000")
+
+            # The same objective callback and strategy space are shared by every method.
+            all_candidates: list[SearchCandidate] = []
+            all_attempts: list[SearchCandidate] = []
+            all_failures: list[str] = []
+            offset = 0
+            for method_index, method in enumerate(methods):
+                method_seed = seed + 104729 * method_index
+                if method == "random_search":
+                    result = random_search(
+                        space, objective, budget=budget_each, seed=method_seed
+                    )
+                elif method == "grid_search":
+                    result = grid_search(
+                        space,
+                        objective,
+                        points_per_numeric_dimension=int(settings["points_per_numeric_dimension"]),
+                        max_evaluations=budget_each,
+                        seed=method_seed,
+                    )
+                elif method == "differential_evolution":
+                    population = int(settings["de_population_size"])
+                    generations = int(settings["de_generations"])
+                    if population * (generations + 1) != budget_each:
+                        raise ValueError(
+                            "hybrid DE budget_per_method must equal "
+                            "de_population_size * (de_generations + 1)"
+                        )
+                    result = differential_evolution(
+                        space,
+                        objective,
+                        population_size=population,
+                        generations=generations,
+                        mutation=float(settings["de_mutation"]),
+                        crossover=float(settings["de_crossover"]),
+                        seed=method_seed,
+                    )
+                else:
+                    result = optuna_tpe_search(
+                        space,
+                        objective,
+                        budget=budget_each,
+                        startup_trials=int(settings["tpe_startup_trials"]),
+                        seed=method_seed,
+                    )
+
+                # Rewrite method-local IDs before merging the different search traces.
+                local_attempts = result.attempts or result.candidates
+                local_id_map = {
+                    item.candidate_id: f"{method}:{item.candidate_id}"
+                    for item in local_attempts
+                }
+                local_failure_by_index: dict[int, str] = {}
+                for failure in result.failures:
+                    prefix = failure.split(":", 1)[0]
+                    if "=" not in prefix:
+                        continue
+                    try:
+                        local_failure_by_index[int(prefix.split("=", 1)[1])] = failure
+                    except ValueError:
+                        continue
+                for attempt in local_attempts:
+                    local_index = int(attempt.evaluation_index)
+                    global_index = offset + local_index
+                    lineage = dict(attempt.lineage)
+                    raw_parents = lineage.get("parent_candidate_ids", [])
+                    lineage["parent_candidate_ids"] = [
+                        local_id_map.get(str(parent), str(parent))
+                        for parent in raw_parents
+                    ] if isinstance(raw_parents, list) else []
+                    lineage.update({
+                        "operator": f"hybrid_{method}_{lineage.get('operator', method)}",
+                        "search_method": method,
+                        "method_index": method_index,
+                        "method_seed": method_seed,
+                        "method_local_candidate_id": attempt.candidate_id,
+                    })
+                    if not np.isfinite(attempt.score):
+                        failure_reason = (
+                            str(lineage.get("failure_reason"))
+                            or local_failure_by_index.get(local_index)
+                            or "search method produced a non-finite candidate"
+                        )
+                        lineage["evaluation_failed"] = True
+                        lineage["failure_reason"] = failure_reason[:500]
+                        all_failures.append(f"candidate={global_index}: {method}: {failure_reason}")
+                    candidate = SearchCandidate(
+                        candidate_id=f"{method}:{attempt.candidate_id}",
+                        parameters=dict(attempt.parameters),
+                        score=float(attempt.score),
+                        evaluation_index=global_index,
+                        lineage=lineage,
+                    )
+                    all_attempts.append(candidate)
+                    if np.isfinite(candidate.score):
+                        all_candidates.append(candidate)
+                offset += len(local_attempts)
+
+            return SearchResult(
+                method="hybrid_ensemble",
+                seed=seed,
+                candidates=tuple(all_candidates),
+                failures=tuple(all_failures),
+                attempts=tuple(all_attempts),
+            )
+
         budget = int(settings["budget"])
         if budget < 4:
             raise ValueError("optimization budget must be at least four evaluations")
@@ -547,6 +667,7 @@ class ExistingStrategyOptimizerJobRunner:
             AlgorithmFamily.GRID_SEARCH,
             AlgorithmFamily.DIFFERENTIAL_EVOLUTION,
             AlgorithmFamily.BAYESIAN,
+            AlgorithmFamily.HYBRID,
         }
         if spec.algorithm_family not in supported:
             raise ValueError("existing_strategy_optimization requires a supported search family")
@@ -560,21 +681,46 @@ class ExistingStrategyOptimizerJobRunner:
             raise ValueError("strategy_parameters must be a JSON object")
         self.registry.validate_parameter_payload(strategy_name, strategy_parameters)
 
-        settings = spec.parameters.get("optimization")
-        required = {"budget", "validation_candidates", "objective"}
+        settings_key = "hybrid_optimization" if spec.algorithm_family is AlgorithmFamily.HYBRID else "optimization"
+        settings = spec.parameters.get(settings_key)
+        required = (
+            {"budget_per_method", "methods", "validation_candidates", "objective"}
+            if spec.algorithm_family is AlgorithmFamily.HYBRID
+            else {"budget", "validation_candidates", "objective"}
+        )
         if not isinstance(settings, dict) or not required.issubset(settings):
-            raise ValueError(
-                "parameters.optimization must declare budget, validation_candidates and objective"
-            )
+            raise ValueError(f"parameters.{settings_key} must declare {sorted(required)}")
         objective_name = str(settings["objective"])
         if objective_name not in self.OBJECTIVES:
             raise ValueError(f"objective must be one of {sorted(self.OBJECTIVES)}")
-        budget = int(settings["budget"])
         validation_count = int(settings["validation_candidates"])
-        if not 4 <= budget <= 10000 or not 1 <= validation_count <= 1000:
-            raise ValueError(
-                "budget must be 4..10000 and validation_candidates must be 1..1000"
-            )
+        if not 1 <= validation_count <= 1000:
+            raise ValueError("validation_candidates must be 1..1000")
+        if spec.algorithm_family is AlgorithmFamily.HYBRID:
+            methods = settings["methods"]
+            if not isinstance(methods, list) or len(methods) < 2 or len(set(methods)) != len(methods):
+                raise ValueError("hybrid_optimization.methods must be 2+ unique method IDs")
+            budget_each = settings["budget_per_method"]
+            if isinstance(budget_each, bool) or not isinstance(budget_each, int) or not 4 <= budget_each <= 10000:
+                raise ValueError("hybrid_optimization.budget_per_method must be 4..10000")
+            budget = budget_each * len(methods)
+            if budget > 10000:
+                raise ValueError("hybrid total search budget exceeds 10000 evaluations")
+            if "grid_search" in methods and int(settings.get("points_per_numeric_dimension", 0)) < 2:
+                raise ValueError("hybrid grid_search requires points_per_numeric_dimension >= 2")
+            if "differential_evolution" in methods:
+                population = int(settings.get("de_population_size", 0))
+                generations = int(settings.get("de_generations", 0))
+                if population < 4 or generations < 1 or population * (generations + 1) != budget_each:
+                    raise ValueError("hybrid DE parameters must exactly match budget_per_method")
+            if "bayesian" in methods:
+                startup = int(settings.get("tpe_startup_trials", 0))
+                if not 1 <= startup < budget_each:
+                    raise ValueError("hybrid TPE startup trials must be less than budget_per_method")
+        else:
+            budget = int(settings["budget"])
+            if not 4 <= budget <= 10000:
+                raise ValueError("budget must be 4..10000")
 
         manifests = [
             context.store.get_dataset(dataset_id)["manifest"]
