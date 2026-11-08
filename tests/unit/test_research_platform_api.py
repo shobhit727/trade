@@ -412,3 +412,81 @@ def test_api_rejects_unbounded_genetic_programming_budget(tmp_path) -> None:
     )
     assert status == 400
     assert "10000 evaluation limit" in json.loads(body)["error"]
+
+
+def test_experiment_comparison_is_market_scoped_and_keeps_partition_metrics_separate(tmp_path) -> None:
+    # The comparison endpoint presents candidate records without combining portfolios.
+    from research.platform.api import ResearchAPI
+    from research.platform.storage import ExperimentStore
+
+    store = ExperimentStore(tmp_path / "compare.sqlite3")
+    app = ResearchAPI(store)
+    assert _request(app, "POST", "/api/datasets", _dataset_payload())[0] == 201
+
+    first = _payload(experiment_id="compare-nse-one")
+    second = _payload(experiment_id="compare-nse-two", random_seed=43)
+    assert _request(app, "POST", "/api/experiments", first)[0] == 201
+    assert _request(app, "POST", "/api/experiments", second)[0] == 201
+
+    for experiment_id, suffix in ((first["experiment_id"], "a"), (second["experiment_id"], "b")):
+        store.append_candidate(
+            candidate_id=f"candidate-{suffix}",
+            experiment_id=experiment_id,
+            candidate_digest=(suffix * 64),
+            family="random_search_selected_oos",
+            generation=0,
+            parameters={"strategy_name": "absolute_momentum"},
+            metrics={
+                "train": {"sharpe": 0.2},
+                "validation": {"sharpe": 0.1},
+                "out_of_sample": {"sharpe": -0.05},
+            },
+            lineage={"parent_candidate_ids": []},
+        )
+
+    status, result = _request(
+        app,
+        "GET",
+        f"/api/compare?experiment_id={first['experiment_id']}&experiment_id={second['experiment_id']}",
+    )
+    assert status == 200
+    assert result["market"] == "nse"
+    assert result["candidate_count"] == 2
+    assert result["aggregation"].startswith("none")
+    assert result["candidates"][0]["metrics"]["out_of_sample"]["sharpe"] == -0.05
+
+
+def test_experiment_comparison_rejects_mixed_market_ids(tmp_path) -> None:
+    # NSE and crypto remain separate even when candidate metrics share the same schema.
+    from research.platform.api import ResearchAPI
+    from research.platform.storage import ExperimentStore
+
+    store = ExperimentStore(tmp_path / "compare-markets.sqlite3")
+    app = ResearchAPI(store)
+    nse_manifest = _dataset_payload()
+    crypto_manifest = _dataset_payload(
+        dataset_id="api-crypto-fixture-v1",
+        market="crypto",
+        exchange="BINANCE",
+        instrument="BTCINR",
+    )
+    assert _request(app, "POST", "/api/datasets", nse_manifest)[0] == 201
+    assert _request(app, "POST", "/api/datasets", crypto_manifest)[0] == 201
+
+    nse = _payload(experiment_id="compare-market-nse")
+    crypto = _payload(
+        experiment_id="compare-market-crypto",
+        market="crypto",
+        track="crypto_individual",
+        dataset_ids=["api-crypto-fixture-v1"],
+    )
+    assert _request(app, "POST", "/api/experiments", nse)[0] == 201
+    assert _request(app, "POST", "/api/experiments", crypto)[0] == 201
+
+    status, result = _request(
+        app,
+        "GET",
+        f"/api/compare?experiment_id={nse['experiment_id']}&experiment_id={crypto['experiment_id']}",
+    )
+    assert status == 400
+    assert "cannot be compared in one financial view" in result["error"]
