@@ -212,6 +212,93 @@ def pbo_cscv(
 
 
 
+def candidate_family_report_from_returns(
+    candidate_ids: Sequence[str],
+    candidate_returns: Mapping[str, Sequence[float]],
+    *,
+    periods_per_year: int,
+    alpha: float = 0.05,
+    pbo_blocks: int = 8,
+    pbo_candidate_limit: int = 128,
+) -> dict[str, object]:
+    """Derive PSR p-values and multiple-testing diagnostics from TRAIN return vectors.
+
+    FDR and DSR use the full candidate family. CSCV/PBO uses a deterministic evenly
+    spaced subset to bound runtime and memory for large candidate populations.
+    """
+    # Preserve the caller's candidate ordering so all family-level arrays remain aligned.
+    ids = tuple(str(value) for value in candidate_ids)
+    if not ids or len(set(ids)) != len(ids):
+        raise ValueError("candidate_ids must be non-empty and unique")
+    if periods_per_year < 1:
+        raise ValueError("periods_per_year must be positive")
+    if set(ids) - set(candidate_returns):
+        raise ValueError("candidate return vectors are missing for one or more candidates")
+
+    vectors = [np.asarray(candidate_returns[candidate_id], dtype=np.float64) for candidate_id in ids]
+    if any(vector.ndim != 1 or not np.isfinite(vector).all() for vector in vectors):
+        raise ValueError("each candidate return vector must be finite and one-dimensional")
+    observation_counts = {len(vector) for vector in vectors}
+    if len(observation_counts) != 1 or next(iter(observation_counts)) < 2:
+        raise ValueError("candidate return vectors must have equal lengths of at least two")
+    observations = next(iter(observation_counts))
+
+    # Estimate each candidate's per-period Sharpe and PSR-derived one-sided p-value.
+    sharpes: list[float] = []
+    p_values: list[float] = []
+    shape_parameters: list[tuple[float, float]] = []
+    for vector in vectors:
+        deviation = float(np.std(vector, ddof=1))
+        if deviation > 0:
+            per_period_sharpe = float(np.mean(vector) / deviation)
+            standardised = (vector - float(np.mean(vector))) / deviation
+            skewness = float(np.mean(standardised ** 3))
+            pearson_kurtosis = float(np.mean(standardised ** 4))
+            pearson_kurtosis = max(pearson_kurtosis, 1e-12)
+        else:
+            per_period_sharpe = 0.0
+            skewness = 0.0
+            pearson_kurtosis = 3.0
+        probability = probabilistic_sharpe_ratio(
+            per_period_sharpe,
+            observations=observations,
+            skewness=skewness,
+            kurtosis=pearson_kurtosis,
+            benchmark_sharpe=0.0,
+        )
+        sharpes.append(per_period_sharpe)
+        p_values.append(float(np.clip(1.0 - probability, 0.0, 1.0)))
+        shape_parameters.append((skewness, pearson_kurtosis))
+
+    # Select the best candidate's higher moments only as DSR's common-family approximation.
+    best_index = int(np.argmax(sharpes))
+    pbo_indices = (
+        np.linspace(0, len(ids) - 1, num=min(len(ids), pbo_candidate_limit), dtype=np.int64)
+    )
+    pbo_matrix = np.vstack([vectors[int(index)] for index in pbo_indices])
+    skewness, kurtosis = shape_parameters[best_index]
+    report = candidate_family_report(
+        ids,
+        p_values,
+        sharpes,
+        pbo_matrix,
+        observations=observations,
+        alpha=alpha,
+        skewness=skewness,
+        kurtosis=kurtosis,
+        pbo_blocks=pbo_blocks,
+        pbo_candidate_limit=pbo_candidate_limit,
+        pbo_candidate_indices=pbo_indices,
+    )
+    report["sampling_frequency"] = {
+        "periods_per_year": int(periods_per_year),
+        "sharpe_scale": "per_period",
+    }
+    report["p_value_method"] = "one_minus_probabilistic_sharpe_ratio_vs_zero"
+    report["dsr_shape_source"] = "best_candidate_by_observed_per_period_sharpe"
+    return report
+
+
 def candidate_family_report(
     candidate_ids: Sequence[str],
     p_values: Sequence[float],
