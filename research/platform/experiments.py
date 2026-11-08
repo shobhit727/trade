@@ -139,6 +139,10 @@ class ExperimentSpec:
                     f"cross-market dataset rejected: {dataset_id} belongs to {manifest.market.value}, "
                     f"not {self.market.value}"
                 )
+            if manifest.license_status.value != "approved":
+                raise ValueError(
+                    f"dataset {dataset_id} licence must be approved before research use"
+                )
             # A dataset reference must cover every requested stage; missing coverage is not imputed.
             coverage_start = manifest.coverage_start.astimezone(timezone.utc)
             coverage_end = manifest.coverage_end.astimezone(timezone.utc)
