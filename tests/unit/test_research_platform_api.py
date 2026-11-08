@@ -125,6 +125,15 @@ def test_research_api_creates_and_lists_real_experiment_records(tmp_path) -> Non
     assert status == 201
     registered = json.loads(body)
     assert registered["status"] == "manifest_registered_not_data_uploaded"
+
+    status, _, body = _request(app, "GET", "/api/datasets?market=nse")
+    assert status == 200
+    datasets = json.loads(body)["datasets"]
+    assert len(datasets) == 1
+    assert datasets[0]["coverage_start"] == "2010-01-01T00:00:00+00:00"
+    assert datasets[0]["license_status"] == "approved"
+    assert datasets[0]["provider"] == "synthetic-test-provider"
+
     status, _, body = _request(app, "POST", "/api/experiments", _payload())
     assert status == 201
     created = json.loads(body)
