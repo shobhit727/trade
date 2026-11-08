@@ -526,7 +526,7 @@ def test_nsga2_runs_generations_and_preserves_multiple_pareto_tradeoffs() -> Non
 
     def mutate(genome, rng):
         # Add a bounded Gaussian perturbation to preserve the search domain.
-        return {"x": float(np.clip(genome["x"] + rng.normal(0.0, 0.08), 0.0, 1.0)}
+        return {"x": float(np.clip(genome["x"] + rng.normal(0.0, 0.08), 0.0, 1.0))}
 
     first = nsga2_optimize(
         initialize, evaluate, crossover, mutate,
