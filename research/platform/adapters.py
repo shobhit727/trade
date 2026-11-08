@@ -194,12 +194,20 @@ class CryptoLocalAdapter:
         if not symbol or any(part in symbol for part in ("/", "\\", "..")):
             raise ValueError("symbol must be a simple instrument identifier")
         label = resolution.value
-        return (
+        candidates = (
             self.exchange_root / f"{symbol}_{label}.parquet",
             self.exchange_root / f"{symbol}_{label}.csv",
             self.exchange_root / symbol / f"{label}.parquet",
             self.exchange_root / symbol / f"{label}.csv",
         )
+        # Reject symlinked files/directories that resolve outside the exchange boundary.
+        for candidate in candidates:
+            resolved = candidate.resolve()
+            try:
+                resolved.relative_to(self.exchange_root)
+            except ValueError as exc:
+                raise ValueError("data source path escapes the exchange directory") from exc
+        return candidates
 
     def load(self, symbol: str, resolution: DataResolution) -> pd.DataFrame:
         """Read CSV or Parquet; no network requests or automatic gap filling occur."""
