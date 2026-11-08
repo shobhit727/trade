@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from dataclasses import replace
 from datetime import datetime, timedelta
@@ -10,6 +11,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+import numpy as np
 import pandas as pd
 
 from .adapters import CryptoLocalAdapter, NSELegacyAdapter, RESOLUTION_MAP
@@ -793,7 +795,7 @@ def build_default_job_manager(
     max_workers: int = 1,
     max_queued: int = 8,
 ):
-    """Create a bounded manager with only the safe existing-strategy runner registered."""
+    """Create a bounded manager with allow-listed existing-strategy evaluation and search runners."""
     # One worker is the conservative default until local GPU/RAM throughput is measured.
     from .jobs import ResearchJobManager
 
