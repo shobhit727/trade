@@ -32,7 +32,7 @@ from .optimizers import (
     Parameter as SearchParameter,
     differential_evolution,
     grid_search,
-    parzen_heuristic_search,
+    optuna_tpe_search,
     random_search,
 )
 from .portfolio import PortfolioConfig
@@ -515,12 +515,11 @@ class ExistingStrategyOptimizerJobRunner:
             )
         if family is AlgorithmFamily.BAYESIAN:
             # This is an explicitly labelled Parzen-style heuristic, not canonical TPE.
-            return parzen_heuristic_search(
+            return optuna_tpe_search(
                 space,
                 objective,
                 budget=budget,
                 startup_trials=int(settings["startup_trials"]),
-                good_fraction=float(settings["good_fraction"]),
                 seed=seed,
             )
         raise ValueError(f"unsupported existing-strategy optimisation family: {family.value}")
