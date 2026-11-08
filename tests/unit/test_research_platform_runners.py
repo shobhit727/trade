@@ -1100,6 +1100,12 @@ def test_hybrid_runner_merges_random_de_and_tpe_candidate_traces(tmp_path) -> No
         assert result["total_train_evaluations"] == 26
         assert result["final_holdout_accessed"] is False
         assert result["final_evaluation"]["final_holdout_accessed"] is False
+        diagnostics = result["training_candidate_family_diagnostics"]
+        assert diagnostics["candidate_family_size"] == 26
+        assert diagnostics["fdr"]["hypotheses"] == 26
+        assert diagnostics["deflated_sharpe"]["trial_count"] == 26
+        assert diagnostics["pbo_cscv"]["status"] == "computed"
+        assert diagnostics["pbo_cscv"]["candidate_subset_size"] == 26
 
         stored = store.candidates(spec.experiment_id)
         search_candidates = [item for item in stored if item["family"] == "hybrid"]
