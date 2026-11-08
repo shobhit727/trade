@@ -30,7 +30,9 @@ RESOLUTION_MAP = {
 }
 
 
-def _normalise_ohlcv(frame: pd.DataFrame, *, timezone_name: str) -> pd.DataFrame:
+def _normalise_ohlcv(
+    frame: pd.DataFrame, *, timezone_name: str, numeric_timestamp_unit: str | None = None
+) -> pd.DataFrame:
     # Standardise schema without filling gaps or fabricating observations.
     result = frame.copy()
     result.columns = [str(column).strip().lower() for column in result.columns]
@@ -46,8 +48,10 @@ def _normalise_ohlcv(frame: pd.DataFrame, *, timezone_name: str) -> pd.DataFrame
     else:
         raw_time = result.pop(timestamp_column)
         if pd.api.types.is_numeric_dtype(raw_time):
-            # Numeric timestamps are milliseconds only when the source explicitly uses ms.
-            index = pd.to_datetime(raw_time, unit="ms", utc=True, errors="coerce")
+            # Numeric timestamp units must come from the provider's documented convention.
+            if numeric_timestamp_unit not in {"s", "ms", "us", "ns"}:
+                raise ValueError("numeric timestamps require an explicit s/ms/us/ns unit")
+            index = pd.to_datetime(raw_time, unit=numeric_timestamp_unit, utc=True, errors="coerce")
         else:
             index = pd.to_datetime(raw_time, utc=True, errors="coerce")
     if index.isna().any():
@@ -146,11 +150,21 @@ class NSELegacyAdapter:
 class CryptoLocalAdapter:
     """Load local crypto OHLCV CSV/Parquet files from an exchange-scoped directory."""
 
-    def __init__(self, data_root: str | Path, exchange: str, *, timezone_name: str = "UTC") -> None:
-        # Keep every venue rooted inside its own local data directory.
+    def __init__(
+        self,
+        data_root: str | Path,
+        exchange: str,
+        *,
+        timezone_name: str = "UTC",
+        numeric_timestamp_unit: str | None = None,
+    ) -> None:
+        # Keep every venue rooted inside its own local data directory and timestamp convention.
         self.data_root = Path(data_root).resolve()
         self.exchange = exchange.strip().lower()
         self.timezone_name = timezone_name
+        self.numeric_timestamp_unit = numeric_timestamp_unit
+        if numeric_timestamp_unit not in {None, "s", "ms", "us", "ns"}:
+            raise ValueError("numeric_timestamp_unit must be s, ms, us, ns or None")
         if not self.exchange or any(part in self.exchange for part in ("/", "\\", "..")):
             raise ValueError("exchange must be a simple venue identifier")
         self.exchange_root = (self.data_root / self.exchange).resolve()
@@ -180,7 +194,11 @@ class CryptoLocalAdapter:
             frame = pd.read_parquet(path)
         else:
             frame = pd.read_csv(path)
-        return _normalise_ohlcv(frame, timezone_name=self.timezone_name)
+        return _normalise_ohlcv(
+            frame,
+            timezone_name=self.timezone_name,
+            numeric_timestamp_unit=self.numeric_timestamp_unit,
+        )
 
     def load_inr(
         self,
@@ -224,7 +242,10 @@ class CryptoLocalAdapter:
             coverage_start=frame.index[0].to_pydatetime(),
             coverage_end=frame.index[-1].to_pydatetime(),
             timezone=self.timezone_name,
-            timestamp_convention="source timestamp; converted to configured timezone",
+            timestamp_convention=(
+                f"source timestamp; numeric_unit={self.numeric_timestamp_unit or 'none'}; "
+                "converted to configured timezone"
+            ),
             acquired_at=datetime.now(timezone.utc),
             update_frequency="unknown",
             license_status=LicenseStatus.REVIEW_REQUIRED,
