@@ -1026,3 +1026,106 @@ def test_hybrid_optimizer_rejects_incompatible_method_budget(tmp_path) -> None:
         assert "must equal" in job["error_message"]
     finally:
         manager.shutdown(wait=True, cancel_pending=True)
+
+
+
+def test_hybrid_runner_merges_random_de_and_tpe_candidate_traces(tmp_path) -> None:
+    # The search-method ensemble preserves every sub-search and merges them before validation.
+    base = _spec()
+    parameters = dict(base.parameters)
+    parameters["hybrid_optimization"] = {
+        "methods": ["random_search", "differential_evolution", "bayesian"],
+        "budget_per_method": 8,
+        "validation_candidates": 4,
+        "objective": "sharpe",
+        "de_population_size": 4,
+        "de_generations": 1,
+        "de_mutation": 0.7,
+        "de_crossover": 0.8,
+        "tpe_startup_trials": 3,
+    }
+    spec = replace(
+        base,
+        experiment_id="runner-hybrid-search",
+        algorithm_family=AlgorithmFamily.HYBRID,
+        parameters=parameters,
+    )
+    store = _store(tmp_path / "hybrid-runner.sqlite3", spec)
+    manager = ResearchJobManager(store, max_workers=1, max_queued=1)
+    runner = ExistingStrategyOptimizerJobRunner(
+        bar_loader=lambda current_store, current_spec: _bars()
+    )
+    manager.register_runner("existing_strategy_optimization", runner)
+    try:
+        job_id = manager.submit(spec.experiment_id, "existing_strategy_optimization")
+        job = manager.wait(job_id, timeout=90)
+        assert job["status"] == "succeeded", job["error_message"]
+        result = job["result"]
+        assert result["search_family"] == "hybrid"
+        assert result["search_method"] == "hybrid_ensemble"
+        assert result["budget"] == 24
+        assert result["search_attempted_candidates"] == 24
+        assert result["successful_train_candidates"] == 24
+        assert result["total_train_evaluations"] == 26
+        assert result["final_holdout_accessed"] is False
+        assert result["final_evaluation"]["final_holdout_accessed"] is False
+
+        stored = store.candidates(spec.experiment_id)
+        search_candidates = [item for item in stored if item["family"] == "hybrid"]
+        methods = {
+            item["lineage"]["search_method"]
+            for item in search_candidates
+        }
+        assert methods == {"random_search", "differential_evolution", "bayesian"}
+        de_offspring = [
+            item for item in search_candidates
+            if item["lineage"].get("search_method") == "differential_evolution"
+            and item["lineage"].get("generation", 0) > 0
+        ]
+        assert de_offspring
+        stored_ids = {item["candidate_id"] for item in stored}
+        for item in de_offspring:
+            assert item["lineage"]["parent_candidate_ids"]
+            assert set(item["lineage"]["parent_candidate_ids"]).issubset(stored_ids)
+        assert result["validation_shortlist"]
+        assert any(
+            event["event_type"] == "existing_strategy_optimization_selected"
+            for event in store.events(spec.experiment_id)
+        )
+    finally:
+        manager.shutdown(wait=True, cancel_pending=True)
+
+
+def test_hybrid_runner_rejects_missing_method_or_incorrect_de_budget(tmp_path) -> None:
+    # A hybrid run cannot hide a mismatched DE evaluation count behind another method.
+    base = _spec()
+    parameters = dict(base.parameters)
+    parameters["hybrid_optimization"] = {
+        "methods": ["random_search", "differential_evolution"],
+        "budget_per_method": 8,
+        "validation_candidates": 2,
+        "objective": "sharpe",
+        "de_population_size": 4,
+        "de_generations": 2,
+        "de_mutation": 0.7,
+        "de_crossover": 0.8,
+    }
+    spec = replace(
+        base,
+        experiment_id="runner-hybrid-bad-de-budget",
+        algorithm_family=AlgorithmFamily.HYBRID,
+        parameters=parameters,
+    )
+    store = _store(tmp_path / "hybrid-invalid-runner.sqlite3", spec)
+    manager = ResearchJobManager(store, max_workers=1, max_queued=1)
+    runner = ExistingStrategyOptimizerJobRunner(
+        bar_loader=lambda current_store, current_spec: _bars()
+    )
+    manager.register_runner("existing_strategy_optimization", runner)
+    try:
+        job_id = manager.submit(spec.experiment_id, "existing_strategy_optimization")
+        job = manager.wait(job_id, timeout=10)
+        assert job["status"] == "failed"
+        assert "must equal" in job["error_message"]
+    finally:
+        manager.shutdown(wait=True, cancel_pending=True)
