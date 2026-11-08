@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import sqlite3
 from datetime import datetime
 from http import HTTPStatus
 from typing import Any
@@ -103,6 +104,10 @@ async function api(path, options) {
 }
 function utc(id) {
   // datetime-local inputs are interpreted as UTC to keep stored timestamps explicit.
+  return document.getElementById(id).value + ":00Z";
+}
+function utc(id) {
+  // datetime-local inputs are interpreted as UTC to keep timestamps explicit.
   return document.getElementById(id).value + ":00Z";
 }
 async function refresh() {
@@ -315,6 +320,8 @@ class ResearchAPI:
                 return self._response(start_response, HTTPStatus.METHOD_NOT_ALLOWED,
                                       {"error": "method not allowed"})
             return self._response(start_response, HTTPStatus.NOT_FOUND, {"error": "route not found"})
+        except sqlite3.IntegrityError as exc:
+            return self._response(start_response, HTTPStatus.CONFLICT, {"error": f"record conflict: {exc}"})
         except sqlite3.IntegrityError as exc:
             return self._response(start_response, HTTPStatus.CONFLICT, {"error": f"record conflict: {exc}"})
         except KeyError as exc:
