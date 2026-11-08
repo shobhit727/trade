@@ -196,3 +196,29 @@ class ExperimentStore:
         result = dict(row)
         result["spec"] = json.loads(result.pop("spec_json"))
         return result
+
+
+    def list_experiments(
+        self, *, market: str | None = None, limit: int = 100
+    ) -> tuple[dict[str, Any], ...]:
+        """List experiment metadata, optionally restricted to one financial environment."""
+        # Bound result size and validate the market filter to avoid an unbounded dashboard query.
+        if not 1 <= limit <= 1000:
+            raise ValueError("limit must be between 1 and 1000")
+        if market is not None and market not in {"nse", "crypto"}:
+            raise ValueError("market must be 'nse' or 'crypto'")
+        with self._connection() as connection:
+            if market is None:
+                rows = connection.execute(
+                    """SELECT experiment_id, market, track, created_at, fingerprint
+                       FROM experiments ORDER BY created_at DESC LIMIT ?""",
+                    (limit,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """SELECT experiment_id, market, track, created_at, fingerprint
+                       FROM experiments WHERE market = ? ORDER BY created_at DESC LIMIT ?""",
+                    (market, limit),
+                ).fetchall()
+        # Return independent market-scoped rows; no aggregate capital or return is computed.
+        return tuple(dict(row) for row in rows)
