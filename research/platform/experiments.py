@@ -62,8 +62,10 @@ class ExperimentSpec:
             raise ValueError("at least one explicitly named objective is required")
         if not self.cost_model_id.strip() or not self.execution_model_id.strip():
             raise ValueError("market-specific cost and execution model IDs are required")
-        if not self.compute_backend.strip() or not self.compute_device.strip():
-            raise ValueError("compute backend and device provenance must be recorded")
+        if self.compute_backend not in {"auto", "numpy", "cpu", "cupy"}:
+            raise ValueError("compute_backend must be auto, numpy, cpu or cupy")
+        if not self.compute_device.strip():
+            raise ValueError("compute device provenance must be recorded")
         windows = (
             (self.training_start, self.training_end),
             (self.validation_start, self.validation_end),
