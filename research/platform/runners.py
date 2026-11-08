@@ -41,6 +41,7 @@ from .optimizers import (
     optuna_tpe_search,
     random_search,
 )
+from .pareto import ParetoCandidate, non_dominated_fronts, nsga2_optimize, select_nsga2
 from .portfolio import PortfolioConfig
 from .storage import ExperimentStore
 from .strategy_catalog import ExistingStrategyRegistry
@@ -2022,6 +2023,399 @@ class StrategyCompositionJobRunner:
         }
 
 
+class ParetoStrategySearchJobRunner:
+    """Run NSGA-II over existing-strategy parameters using isolated portfolio simulations."""
+
+    OBJECTIVES = frozenset({
+        "sharpe", "sortino", "cagr", "calmar", "total_return",
+        "max_drawdown", "volatility", "win_rate", "turnover",
+    })
+
+    def __init__(
+        self,
+        *,
+        crypto_data_root: str | Path | None = None,
+        bar_loader: Callable[[ExperimentStore, ExperimentSpec], dict[str, pd.DataFrame]] | None = None,
+    ) -> None:
+        # Data access is identical to the other research workers and stops at OOS end.
+        self.crypto_data_root = crypto_data_root
+        self.bar_loader = bar_loader or (
+            lambda store, spec: load_registered_bars(
+                store, spec, crypto_data_root=self.crypto_data_root
+            )
+        )
+        self.registry = ExistingStrategyRegistry()
+
+    @staticmethod
+    def _config_key(values: Mapping[str, Any]) -> str:
+        # Use canonical JSON for genome deduplication and fitness caching.
+        return json.dumps(values, sort_keys=True, separators=(",", ":"), default=str)
+
+    def __call__(
+        self,
+        context: JobContext,
+        experiment_record: dict[str, Any],
+        parameters: dict[str, Any],
+    ) -> dict[str, Any]:
+        # Multi-objective search inputs are fixed in the experiment fingerprint.
+        if parameters:
+            raise ValueError("Pareto runner accepts no job-time overrides")
+        context.check_cancelled()
+        spec = experiment_spec_from_record(experiment_record)
+        if spec.algorithm_family is not AlgorithmFamily.PARETO_SEARCH:
+            raise ValueError("pareto_search runner requires pareto_search family")
+        strategy_name = spec.parameters.get("strategy_name")
+        if not isinstance(strategy_name, str) or not strategy_name.strip():
+            raise ValueError("Pareto search requires a registered strategy_name")
+        descriptor = self.registry.describe(strategy_name)
+        base_parameters = spec.parameters.get("strategy_parameters", {})
+        if not isinstance(base_parameters, dict):
+            raise ValueError("strategy_parameters must be a JSON object")
+        self.registry.validate_parameter_payload(strategy_name, base_parameters)
+        space = ExistingStrategyOptimizerJobRunner._search_parameters(descriptor)
+
+        settings = spec.parameters.get("pareto_search")
+        required = {
+            "population_size", "generations", "mutation_rate",
+            "validation_candidates", "objectives", "directions",
+        }
+        if not isinstance(settings, dict) or not required.issubset(settings):
+            raise ValueError(f"pareto_search settings require {sorted(required)}")
+        for name in ("population_size", "generations", "validation_candidates"):
+            value = settings[name]
+            minimum = 4 if name == "population_size" else 1
+            maximum = 10000 if name != "validation_candidates" else 1000
+            if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
+                raise ValueError(f"pareto_search.{name} must be an integer from {minimum} to {maximum}")
+        if settings["population_size"] * (settings["generations"] + 1) > 10000:
+            raise ValueError("Pareto candidate count exceeds the 10000 evaluation limit")
+        mutation_rate = settings["mutation_rate"]
+        if (
+            isinstance(mutation_rate, bool)
+            or not isinstance(mutation_rate, int | float)
+            or not np.isfinite(mutation_rate)
+            or not 0 <= mutation_rate <= 1
+        ):
+            raise ValueError("pareto_search.mutation_rate must be between zero and one")
+        objectives = tuple(settings["objectives"])
+        directions = tuple(settings["directions"])
+        if (
+            not objectives
+            or len(objectives) != len(directions)
+            or len(set(objectives)) != len(objectives)
+            or any(name not in self.OBJECTIVES for name in objectives)
+            or any(direction not in {"min", "max"} for direction in directions)
+        ):
+            raise ValueError("Pareto objectives and directions must be unique and aligned")
+        if not objectives or "turnover" not in objectives and len(objectives) < 2:
+            raise ValueError("Pareto search requires at least two distinct objectives")
+
+        manifests = [
+            context.store.get_dataset(dataset_id)["manifest"]
+            for dataset_id in spec.dataset_ids
+        ]
+        bars = self.bar_loader(context.store, spec)
+        config, periods_per_year = _build_portfolio_config(spec, manifests)
+        defaults = dict(descriptor.defaults)
+        defaults.update(base_parameters)
+        bars_digest = _bars_fingerprint(bars)
+        train_metrics: dict[str, dict[str, float | int]] = {}
+        train_calls = 0
+
+        def metrics_vector(genome: Mapping[str, Any]) -> tuple[float, ...]:
+            # Every objective is calculated from the same TRAIN-only cash portfolio result.
+            nonlocal train_calls
+            context.check_cancelled()
+            current = dict(defaults)
+            current.update(genome)
+            key = self._config_key(current)
+            if key not in train_metrics:
+                partition = _partition_target_frame(
+                    spec,
+                    strategy_name,
+                    current,
+                    bars,
+                    config,
+                    partition_name="train",
+                    start=spec.training_start,
+                    end=spec.training_end,
+                    periods_per_year=int(spec.parameters["execution_assumptions"]["periods_per_year"]),
+                )
+                metrics = dict(partition.metrics)
+                metrics["turnover"] = float(partition.result.turnover)
+                train_metrics[key] = metrics
+                train_calls += 1
+                if train_calls % max(1, int(settings["population_size"])) == 0:
+                    context.log(f"Pareto TRAIN distinct genome evaluations: {train_calls}")
+            values = tuple(float(train_metrics[key][name]) for name in objectives)
+            if not np.isfinite(values).all():
+                raise ValueError("Pareto TRAIN objective vector is non-finite")
+            return values
+
+        def initialise(rng: np.random.Generator) -> dict[str, object]:
+            # Sample every parameter from the existing strategy's typed registry bounds.
+            return {parameter.name: parameter.sample(rng) for parameter in space}
+
+        def crossover(
+            left: dict[str, object],
+            right: dict[str, object],
+            rng: np.random.Generator,
+        ) -> dict[str, object]:
+            # Select one parent's gene per dimension; no parameter escapes its declared domain.
+            return {
+                parameter.name: (
+                    left[parameter.name]
+                    if rng.random() < 0.5 else right[parameter.name]
+                )
+                for parameter in space
+            }
+
+        def mutate(
+            genome: dict[str, object],
+            rng: np.random.Generator,
+        ) -> dict[str, object]:
+            # Mutate each bounded dimension independently using its registered sampler.
+            result = dict(genome)
+            for parameter in space:
+                if rng.random() < float(mutation_rate):
+                    result[parameter.name] = parameter.sample(rng)
+            return result
+
+        context.log(
+            f"NSGA-II TRAIN start: strategy={strategy_name}, objectives={objectives}, "
+            f"population={settings['population_size']}, generations={settings['generations']}"
+        )
+        result = nsga2_optimize(
+            initialise,
+            metrics_vector,
+            crossover,
+            mutate,
+            population_size=settings["population_size"],
+            generations=settings["generations"],
+            directions=directions,
+            seed=spec.random_seed,
+        )
+
+        archive = list(result["candidate_archive"])
+        candidate_rows: list[dict[str, Any]] = []
+        candidate_id_map: dict[str, str] = {}
+        for item in archive:
+            context.check_cancelled()
+            genome = dict(item["genome"])
+            current = dict(defaults)
+            current.update(genome)
+            key = self._config_key(current)
+            metrics = train_metrics.get(key)
+            succeeded = item["status"] == "succeeded" and metrics is not None
+            digest_payload = {
+                "experiment_fingerprint": spec.fingerprint,
+                "bars_sha256": bars_digest,
+                "strategy_name": strategy_name,
+                "genome": genome,
+                "candidate_id": item["candidate_id"],
+                "generation": item["generation"],
+                "objectives": item["objectives"],
+                "directions": directions,
+            }
+            candidate_digest = hashlib.sha256(
+                json.dumps(
+                    digest_payload, sort_keys=True, separators=(",", ":"), default=str,
+                    allow_nan=False,
+                ).encode("utf-8")
+            ).hexdigest()
+            candidate_id = f"{spec.experiment_id}-{candidate_digest[:16]}"
+            candidate_id_map[str(item["candidate_id"])] = candidate_id
+            candidate_rows.append({
+                "source_candidate_id": item["candidate_id"],
+                "candidate_id": candidate_id,
+                "candidate_digest": candidate_digest,
+                "parameters": current,
+                "genome": genome,
+                "generation": int(item["generation"]),
+                "objectives": list(item["objectives"]) if succeeded else [],
+                "train_metrics": metrics or {},
+                "status": "succeeded" if succeeded else "failed",
+                "failure_reason": item.get("failure_reason"),
+                "lineage": dict(item["lineage"]),
+            })
+
+        # Persist all tried candidates, not just the final nondominated set.
+        for candidate in candidate_rows:
+            if context.store.has_candidate(spec.experiment_id, candidate["candidate_digest"]):
+                continue
+            lineage = dict(candidate["lineage"])
+            raw_parents = lineage.get("parent_candidate_ids", [])
+            lineage["parent_candidate_ids"] = [
+                candidate_id_map.get(str(parent), str(parent))
+                for parent in raw_parents
+            ] if isinstance(raw_parents, list) else []
+            lineage.update({
+                "origin": "nsga2_existing_strategy_parameter_search",
+                "source_candidate_id": candidate["source_candidate_id"],
+                "objectives": list(objectives),
+                "directions": list(directions),
+                "selection": "pareto_rank_and_crowding_distance",
+            })
+            if candidate["status"] == "succeeded":
+                metric_payload = {
+                    "status": "succeeded",
+                    "train": candidate["train_metrics"],
+                    "objective_vector": candidate["objectives"],
+                }
+            else:
+                metric_payload = {
+                    "status": "failed",
+                    "failure_reason": candidate["failure_reason"] or "NSGA-II fitness failed",
+                }
+            context.store.append_candidate(
+                candidate_id=candidate["candidate_id"],
+                experiment_id=spec.experiment_id,
+                candidate_digest=candidate["candidate_digest"],
+                family=AlgorithmFamily.PARETO_SEARCH.value,
+                generation=candidate["generation"],
+                parameters={
+                    "strategy_name": strategy_name,
+                    "strategy_parameters": candidate["parameters"],
+                },
+                metrics=metric_payload,
+                lineage=lineage,
+            )
+
+        # Validation shortlist is drawn only from the final TRAIN Pareto front.
+        train_front = list(result["pareto_front"])
+        if not train_front:
+            raise RuntimeError("NSGA-II produced no final TRAIN Pareto front")
+        pareto_candidates = [
+            ParetoCandidate(
+                candidate_id=str(item["candidate_id"]),
+                objectives=tuple(float(value) for value in item["objectives"]),
+            )
+            for item in train_front
+        ]
+        shortlist_ids = {
+            candidate.candidate_id
+            for candidate in select_nsga2(
+                pareto_candidates,
+                directions,
+                size=min(settings["validation_candidates"], len(pareto_candidates)),
+            )
+        }
+        by_source_id = {item["source_candidate_id"]: item for item in candidate_rows}
+        shortlist = [
+            by_source_id[str(item["candidate_id"])]
+            for item in train_front
+            if str(item["candidate_id"]) in shortlist_ids
+        ]
+
+        validation_rows: list[dict[str, Any]] = []
+        for index, candidate in enumerate(shortlist, start=1):
+            context.check_cancelled()
+            context.log(f"Pareto VALIDATION candidate {index}/{len(shortlist)}")
+            partition = _partition_target_frame(
+                spec,
+                strategy_name,
+                candidate["parameters"],
+                bars,
+                config,
+                partition_name="validation",
+                start=spec.validation_start,
+                end=spec.validation_end,
+                periods_per_year=int(spec.parameters["execution_assumptions"]["periods_per_year"]),
+            )
+            metrics = dict(partition.metrics)
+            metrics["turnover"] = float(partition.result.turnover)
+            vector = tuple(float(metrics[name]) for name in objectives)
+            validation_rows.append({
+                "candidate_id": candidate["candidate_id"],
+                "candidate_digest": candidate["candidate_digest"],
+                "parameters": candidate["parameters"],
+                "train_objectives": candidate["objectives"],
+                "validation_objectives": vector,
+                "validation_metrics": metrics,
+            })
+        validation_pareto = [
+            ParetoCandidate(
+                candidate_id=item["candidate_id"],
+                objectives=tuple(item["validation_objectives"]),
+            )
+            for item in validation_rows
+        ]
+        validation_fronts = non_dominated_fronts(validation_pareto, directions)
+        if not validation_fronts:
+            raise RuntimeError("no candidate survived Pareto VALIDATION evaluation")
+        first_front = [validation_pareto[index] for index in validation_fronts[0]]
+        # The final selection policy is explicitly NSGA-II crowding within the VALIDATION front.
+        selected_candidate = select_nsga2(
+            first_front,
+            directions,
+            size=1,
+        )[0]
+        selected = next(
+            item for item in validation_rows
+            if item["candidate_id"] == selected_candidate.candidate_id
+        )
+        context.store.append_event(
+            spec.experiment_id,
+            "pareto_search_candidate_frozen",
+            {
+                "strategy_name": strategy_name,
+                "objectives": list(objectives),
+                "directions": list(directions),
+                "train_pareto_front_size": len(result["pareto_front"]),
+                "validation_pareto_front_size": len(validation_fronts[0]),
+                "validation_shortlist_count": len(validation_rows),
+                "selection_policy": "nsga2_crowding_within_validation_front",
+                "selected_candidate_id": selected["candidate_id"],
+                "selected_candidate_digest": selected["candidate_digest"],
+                "bars_sha256": bars_digest,
+                "final_holdout_accessed": False,
+            },
+        )
+        context.check_cancelled()
+
+        # Evaluate the chosen validation-Pareto candidate once on OOS after freezing it.
+        frozen_parameters = dict(spec.parameters)
+        frozen_parameters["strategy_parameters"] = selected["parameters"]
+        frozen_spec = replace(spec, parameters=frozen_parameters)
+        oos_evaluation = evaluate_existing_strategy(
+            frozen_spec,
+            bars,
+            config,
+            periods_per_year=int(spec.parameters["execution_assumptions"]["periods_per_year"]),
+            store=context.store,
+            check_cancelled=context.check_cancelled,
+            progress_callback=lambda stage, completed, total: context.log(
+                f"frozen Pareto candidate {stage}: {completed}/{total}"
+            ),
+            candidate_family=AlgorithmFamily.PARETO_SEARCH.value,
+            lineage_metadata={
+                "origin": "nsga2_validation_pareto_selection",
+                "parent_candidate_ids": [],
+                "selected_pareto_candidate_id": selected["candidate_id"],
+                "objectives": list(objectives),
+                "directions": list(directions),
+            },
+        )
+        return {
+            "experiment_id": spec.experiment_id,
+            "algorithm_family": AlgorithmFamily.PARETO_SEARCH.value,
+            "strategy_name": strategy_name,
+            "objectives": list(objectives),
+            "directions": list(directions),
+            "objective_directions": result["objective_directions"],
+            "evaluations": result["evaluations"],
+            "candidate_count": len(candidate_rows),
+            "failed_candidates": len(result["failures"]),
+            "train_pareto_front": result["pareto_front"],
+            "validation_shortlist": validation_rows,
+            "validation_pareto_front_size": len(validation_fronts[0]),
+            "selection_policy": "nsga2_crowding_within_validation_front",
+            "selected_candidate": selected,
+            "final_evaluation": oos_evaluation.to_dict(),
+            "final_holdout_accessed": False,
+        }
+
+
 def build_default_job_manager(
     store: ExperimentStore,
     *,
@@ -2053,5 +2447,9 @@ def build_default_job_manager(
     manager.register_runner(
         "strategy_composition",
         StrategyCompositionJobRunner(crypto_data_root=crypto_data_root),
+    )
+    manager.register_runner(
+        "pareto_search",
+        ParetoStrategySearchJobRunner(crypto_data_root=crypto_data_root),
     )
     return manager
