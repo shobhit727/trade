@@ -260,7 +260,7 @@ def test_crypto_local_adapter_records_licence_review_and_file_hash(tmp_path: Pat
         "1735776000000,101,103,100,102,1200\n",
         encoding="utf-8",
     )
-    adapter = CryptoLocalAdapter(tmp_path, "binance")
+    adapter = CryptoLocalAdapter(tmp_path, "binance", numeric_timestamp_unit="ms")
     frame = adapter.load("BTCUSDT", DataResolution.ONE_DAY)
     manifest = adapter.manifest("BTCUSDT", DataResolution.ONE_DAY)
     assert len(frame) == 2
