@@ -1800,14 +1800,70 @@ class NeuroevolutionJobRunner:
                 start=spec.validation_start, end=spec.validation_end,
                 periods_per_year=periods_per_year,
             )
+            # Persist validation as a child record; the train genome remains immutable.
+            validation_definition = {
+                "experiment_fingerprint": spec.fingerprint,
+                "train_candidate_digest": candidate["candidate_digest"],
+                "network": {
+                    "input_size": network.input_size,
+                    "hidden_size": network.hidden_size,
+                    "output_size": network.output_size,
+                },
+                "weights": candidate["weights"],
+                "validation_metrics": result.metrics,
+                "bars_sha256": bars_digest,
+                "objective": objective_name,
+            }
+            validation_digest = hashlib.sha256(
+                json.dumps(
+                    validation_definition, sort_keys=True, separators=(",", ":"), allow_nan=False
+                ).encode("utf-8")
+            ).hexdigest()
+            validation_candidate_id = (
+                f"{spec.experiment_id}-validation-{validation_digest[:16]}"
+            )
+            validation_score = float(result.metrics[objective_name])
             validation_rows.append({
                 "candidate_id": candidate["candidate_id"],
                 "candidate_digest": candidate["candidate_digest"],
+                "validation_candidate_id": validation_candidate_id,
+                "validation_candidate_digest": validation_digest,
                 "weights": candidate["weights"],
                 "train_fitness": candidate["train_score"],
-                "validation_score": float(result.metrics[objective_name]),
+                "validation_score": validation_score,
                 "validation_metrics": result.metrics,
             })
+            if not context.store.has_candidate(spec.experiment_id, validation_digest):
+                context.store.append_candidate(
+                    candidate_id=validation_candidate_id,
+                    experiment_id=spec.experiment_id,
+                    candidate_digest=validation_digest,
+                    family="neuroevolution_validation",
+                    generation=settings["generations"],
+                    parameters={
+                        "network": {
+                            "input_size": network.input_size,
+                            "hidden_size": network.hidden_size,
+                            "output_size": network.output_size,
+                        },
+                        "weights": candidate["weights"],
+                        "feature_windows": windows,
+                    },
+                    metrics={
+                        "train_fitness": candidate["train_score"],
+                        "train": candidate["train_metrics"],
+                        "validation_objective": validation_score,
+                        "validation": result.metrics,
+                    },
+                    lineage={
+                        "origin": "neuroevolution_validation_shortlist",
+                        "parent_candidate_ids": [candidate["candidate_id"]],
+                        "selection": "validation_objective",
+                        "train_candidate_digest": candidate["candidate_digest"],
+                        "objective": objective_name,
+                        "final_holdout_accessed": False,
+                    },
+                )
         selected = max(
             validation_rows,
             key=lambda item: (
@@ -1820,6 +1876,8 @@ class NeuroevolutionJobRunner:
             {
                 "selected_candidate_id": selected["candidate_id"],
                 "selected_candidate_digest": selected["candidate_digest"],
+                "selected_validation_candidate_id": selected["validation_candidate_id"],
+                "selected_validation_candidate_digest": selected["validation_candidate_digest"],
                 "objective": objective_name,
                 "feature_windows": windows,
                 "hidden_size": settings["hidden_size"],
@@ -1850,12 +1908,61 @@ class NeuroevolutionJobRunner:
             start=spec.oos_start, end=spec.oos_end,
             periods_per_year=periods_per_year,
         )
+        # OOS is a child of the validation-selected candidate, never a new selection input.
+        oos_definition = {
+            "experiment_fingerprint": spec.fingerprint,
+            "validation_candidate_digest": selected["validation_candidate_digest"],
+            "weights": selected["weights"],
+            "oos_metrics": oos_result.metrics,
+            "portfolio": oos_result.result.to_dict(),
+            "bars_sha256": bars_digest,
+        }
+        oos_digest = hashlib.sha256(
+            json.dumps(
+                oos_definition, sort_keys=True, separators=(",", ":"), allow_nan=False
+            ).encode("utf-8")
+        ).hexdigest()
+        oos_candidate_id = f"{spec.experiment_id}-oos-{oos_digest[:16]}"
+        if not context.store.has_candidate(spec.experiment_id, oos_digest):
+            context.store.append_candidate(
+                candidate_id=oos_candidate_id,
+                experiment_id=spec.experiment_id,
+                candidate_digest=oos_digest,
+                family="neuroevolution_selected_oos",
+                generation=settings["generations"] + 1,
+                parameters={
+                    "network": {
+                        "input_size": network.input_size,
+                        "hidden_size": network.hidden_size,
+                        "output_size": network.output_size,
+                    },
+                    "weights": selected["weights"],
+                    "feature_windows": windows,
+                },
+                metrics={
+                    "train_fitness": selected["train_fitness"],
+                    "validation": selected["validation_metrics"],
+                    "out_of_sample": oos_result.metrics,
+                    "portfolio": oos_result.result.to_dict(),
+                },
+                lineage={
+                    "origin": "neuroevolution_frozen_oos",
+                    "parent_candidate_ids": [selected["validation_candidate_id"]],
+                    "train_parent_candidate_id": selected["candidate_id"],
+                    "selection": "validation_objective",
+                    "objective": objective_name,
+                    "final_holdout_accessed": False,
+                },
+            )
         context.store.append_event(
             spec.experiment_id,
             "neuroevolution_oos_recorded",
             {
                 "selected_candidate_id": selected["candidate_id"],
                 "selected_candidate_digest": selected["candidate_digest"],
+                "selected_validation_candidate_id": selected["validation_candidate_id"],
+                "oos_candidate_id": oos_candidate_id,
+                "oos_candidate_digest": oos_digest,
                 "oos_metrics": oos_result.metrics,
                 "final_holdout_accessed": False,
             },
@@ -1878,6 +1985,7 @@ class NeuroevolutionJobRunner:
             "failed_candidates": len(candidate_rows) - len(successful),
             "validation_shortlist": validation_rows,
             "selected_candidate": selected,
+            "out_of_sample_candidate_id": oos_candidate_id,
             "out_of_sample": {
                 "metrics": oos_result.metrics,
                 "portfolio": oos_result.result.to_dict(),
