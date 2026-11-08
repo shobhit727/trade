@@ -33,6 +33,7 @@ class PortfolioConfig:
     max_gross_exposure: Decimal = D("1.0")
     assumed_timezone: str = "UTC"
     cost_model_id: str = "research-cost-v1"
+    execution_model_id: str = "next-open-participation-impact-v1"
     fee_calculator: FeeCalculator | None = None
 
     def __post_init__(self) -> None:
@@ -50,8 +51,12 @@ class PortfolioConfig:
             raise ValueError("max_participation must be in (0, 1]")
         if not D("0") < self.max_gross_exposure <= D("1"):
             raise ValueError("cash simulator exposure must be in (0, 1]")
-        if not self.assumed_timezone.strip() or not self.cost_model_id.strip():
-            raise ValueError("timezone and cost_model_id are required")
+        if (
+            not self.assumed_timezone.strip()
+            or not self.cost_model_id.strip()
+            or not self.execution_model_id.strip()
+        ):
+            raise ValueError("timezone, cost_model_id and execution_model_id are required")
 
 
 @dataclass(frozen=True, slots=True)
