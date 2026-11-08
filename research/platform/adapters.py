@@ -205,6 +205,13 @@ def materialize_non_holdout_partition(
         raise ValueError("no non-holdout rows exist before final_holdout_start")
     if safe_frame.index.tz_convert("UTC").max() >= boundary:
         raise AssertionError("non-holdout partition contains a protected timestamp")
+    source_start = pd.Timestamp(manifest.coverage_start).tz_convert("UTC")
+    source_end = pd.Timestamp(manifest.coverage_end).tz_convert("UTC")
+    if (
+        safe_frame.index.tz_convert("UTC").min() < source_start
+        or safe_frame.index.tz_convert("UTC").max() > source_end
+    ):
+        raise ValueError("non-holdout rows fall outside the registered source coverage")
     quality_report = validate_ohlcv_quality(
         safe_frame,
         max_abs_close_return=quality_limit,
@@ -286,6 +293,9 @@ def load_non_holdout_partition(
         not relative
         or not expected_hash
         or not boundary_text
+        or not metadata.get("research_partition_coverage_start")
+        or not metadata.get("research_partition_coverage_end")
+        or not metadata.get("research_partition_bars")
         or metadata.get("research_partition_schema") != "ohlcv-csv-v1"
     ):
         raise ValueError("dataset manifest has no valid pre-materialised non-holdout partition")
