@@ -190,7 +190,7 @@ def evaluate_existing_strategy(
         (spec.oos_start, spec.oos_end),
         (spec.final_holdout_start, spec.final_holdout_end),
     )
-    manifest_instruments: set[str] = set()
+    manifest_instruments: list[str] = []
     for dataset_id in spec.dataset_ids:
         row = store.get_dataset(dataset_id)
         manifest = row["manifest"]
@@ -200,7 +200,7 @@ def evaluate_existing_strategy(
             raise ValueError(f"dataset {dataset_id} resolution differs from experiment")
         if manifest["license_status"] != "approved":
             raise ValueError(f"dataset {dataset_id} licence is not approved")
-        manifest_instruments.add(str(manifest["instrument"]))
+        manifest_instruments.append(str(manifest["instrument"]))
         coverage_start = datetime.fromisoformat(manifest["coverage_start"])
         coverage_end = datetime.fromisoformat(manifest["coverage_end"])
         if coverage_start.tzinfo is None or coverage_end.tzinfo is None:
@@ -208,8 +208,13 @@ def evaluate_existing_strategy(
         for window_start, window_end in required_windows:
             if coverage_start > window_start or coverage_end < window_end:
                 raise ValueError(f"dataset {dataset_id} does not cover every experiment partition")
-    if not manifest_instruments.issubset(set(bars_by_symbol)):
-        raise ValueError("provided bar symbols do not match registered dataset instruments")
+    if len(set(manifest_instruments)) != len(manifest_instruments):
+        raise ValueError("multiple registered datasets map to the same instrument")
+    if set(manifest_instruments) != set(bars_by_symbol):
+        raise ValueError(
+            "provided bar symbols must exactly match registered dataset instruments; "
+            "unregistered or missing instruments are not permitted"
+        )
 
     # Validate parameter field names against the authoritative existing catalogue.
     adapter = ExistingStrategySignalAdapter()
