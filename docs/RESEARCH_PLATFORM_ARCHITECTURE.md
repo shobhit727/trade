@@ -86,7 +86,7 @@ The feature branch now contains the following additive modules:
 | Existing strategy discovery | `ExistingStrategyRegistry`, `ExistingStrategySignalAdapter` | Original classes stream bar by bar; only long/flat signals are adapted so far |
 | Cash portfolio simulation | `PortfolioSimulator` | Long-only, INR cash; no derivative margin/liquidation or corporate-action ledger |
 | Execution assumptions | Next-open, prior-completed-bar participation cap, slippage, square-root impact, injected market fee calculators | NSE uses existing itemised delivery cost model; crypto uses explicit venue maker/taker bps; historical fee schedules and intraday changes need sourcing |
-| Optimisation baselines | Random, capped grid, differential evolution, seeded Optuna TPE | Separate Parzen-style approximation is a heuristic baseline, not canonical TPE |
+| Optimisation baselines | Random, capped grid, differential evolution, seeded Optuna TPE; hybrid ensemble combines multiple methods under equal per-method budgets | Separate Parzen-style approximation remains a heuristic baseline; hybrid does not yet mix GP/neural/component genome types |
 | Genetic programming | Bounded numerical AST interpreter, full candidate archive and TRAIN/VALIDATION/OOS worker | Numeric-only grammar; no Boolean/control-flow nodes yet |
 | Neuroevolution | Dense one-hidden-layer network, mirrored-noise candidate archive and TRAIN/VALIDATION/OOS worker | CPU implementation; topology evolution / GPU path not yet integrated |
 | Strategy composition | Closed causal component registry and TRAIN/VALIDATION/OOS evolution worker | Current entries/exits/filters are simple numerical rules; not yet adapters to all production strategy modules |
