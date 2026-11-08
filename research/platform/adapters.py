@@ -225,8 +225,14 @@ class CryptoLocalAdapter:
                 raise ValueError("data source path escapes the exchange directory") from exc
         return candidates
 
-    def load(self, symbol: str, resolution: DataResolution) -> pd.DataFrame:
-        """Read CSV or Parquet; no network requests or automatic gap filling occur."""
+    def load(
+        self,
+        symbol: str,
+        resolution: DataResolution,
+        *,
+        end: datetime | None = None,
+    ) -> pd.DataFrame:
+        """Read local CSV/Parquet and optionally clip observations before an end boundary."""
         # Resolve only supported local files under the exchange folder.
         path = next((candidate for candidate in self._candidate_paths(symbol, resolution)
                      if candidate.is_file()), None)
@@ -236,11 +242,18 @@ class CryptoLocalAdapter:
             frame = pd.read_parquet(path)
         else:
             frame = pd.read_csv(path)
-        return _normalise_ohlcv(
+        normalised = _normalise_ohlcv(
             frame,
             timezone_name=self.timezone_name,
             numeric_timestamp_unit=self.numeric_timestamp_unit,
         )
+        if end is not None:
+            # Exclude the boundary and every later observation before returning the frame.
+            end_utc = end.astimezone(timezone.utc)
+            normalised = normalised.loc[
+                pd.DatetimeIndex(normalised.index).tz_convert("UTC") < end_utc
+            ]
+        return normalised
 
     def load_inr(
         self,
