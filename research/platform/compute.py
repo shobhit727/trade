@@ -27,6 +27,7 @@ class ComputeEngine:
         if backend not in {"auto", "cpu", "numpy", "cupy"}:
             raise ValueError("backend must be 'auto', 'cpu', 'numpy', or 'cupy'")
         self._cupy: Any | None = None
+        self._strict_backend = backend == "cupy"
         self._device_id = device_id
         self._fallback_reason: str | None = None
         if backend in {"auto", "cupy"}:
@@ -45,6 +46,14 @@ class ComputeEngine:
             self._fallback_reason = f"CuPy/CUDA unavailable: {type(exc).__name__}: {exc}"
             if required:
                 raise RuntimeError(self._fallback_reason) from exc
+
+    def _fallback_after_gpu_error(self, exc: Exception) -> None:
+        # Auto mode degrades to NumPy after device/runtime failures; explicit CuPy mode fails.
+        reason = f"CuPy runtime failed: {type(exc).__name__}: {exc}"
+        if self._strict_backend:
+            raise RuntimeError(reason) from exc
+        self._cupy = None
+        self._fallback_reason = reason
 
     @property
     def backend(self) -> str:
@@ -74,16 +83,19 @@ class ComputeEngine:
             raise ValueError("feature dimensions do not match population weight dimensions")
         if not np.isfinite(feature_array).all() or not np.isfinite(weight_array).all():
             raise ValueError("non-finite feature or population values are not permitted")
-        if self._cupy is None:
-            return weight_array @ feature_array.T
-        # Transfer the input panel once per batch and return a contiguous host result.
-        cp = self._cupy
-        with cp.cuda.Device(self._device_id):
-            gpu_features = cp.asarray(feature_array)
-            gpu_weights = cp.asarray(weight_array)
-            scores = gpu_weights @ gpu_features.T
-            cp.cuda.get_current_stream().synchronize()
-            return cp.asnumpy(scores)
+        if self._cupy is not None:
+            # Transfer the input panel once per batch and return a contiguous host result.
+            cp = self._cupy
+            try:
+                with cp.cuda.Device(self._device_id):
+                    gpu_features = cp.asarray(feature_array)
+                    gpu_weights = cp.asarray(weight_array)
+                    scores = gpu_weights @ gpu_features.T
+                    cp.cuda.get_current_stream().synchronize()
+                    return cp.asnumpy(scores)
+            except Exception as exc:  # noqa: BLE001 - device OOM/driver reset can occur after probing.
+                self._fallback_after_gpu_error(exc)
+        return weight_array @ feature_array.T
 
     def batch_dense_mlp_scores(
         self,
@@ -121,34 +133,41 @@ class ComputeEngine:
         if not np.isfinite(feature_array).all() or not np.isfinite(parameter_array).all():
             raise ValueError("features and network parameters must be finite")
 
-        # A population-by-observation-by-hidden tensor can be large; callers should chunk.
-        xp = self._cupy if self._cupy is not None else np
-        if self._cupy is not None:
-            with self._cupy.cuda.Device(self._device_id):
-                x = self._cupy.asarray(feature_array)
-                theta = self._cupy.asarray(parameter_array)
-        else:
-            x, theta = feature_array, parameter_array
+        # One shared numerical implementation supports both NumPy and CuPy namespaces.
+        def evaluate(xp: Any, x: Any, theta: Any) -> Any:
+            population = theta.shape[0]
+            cursor = 0
+            w1_count = input_size * hidden_size
+            w1 = theta[:, cursor:cursor + w1_count].reshape(
+                population, input_size, hidden_size
+            )
+            cursor += w1_count
+            b1 = theta[:, cursor:cursor + hidden_size]
+            cursor += hidden_size
+            w2_count = hidden_size * output_size
+            w2 = theta[:, cursor:cursor + w2_count].reshape(
+                population, hidden_size, output_size
+            )
+            cursor += w2_count
+            b2 = theta[:, cursor:cursor + output_size]
+            # Batched matrix multiplication matches DenseMLP's exact weight layout.
+            hidden = xp.tanh(
+                xp.matmul(x[None, :, :], w1) + b1[:, None, :]
+            )
+            return xp.tanh(xp.matmul(hidden, w2) + b2[:, None, :])
 
-        population = theta.shape[0]
-        cursor = 0
-        w1_count = input_size * hidden_size
-        w1 = theta[:, cursor:cursor + w1_count].reshape(population, input_size, hidden_size)
-        cursor += w1_count
-        b1 = theta[:, cursor:cursor + hidden_size]
-        cursor += hidden_size
-        w2_count = hidden_size * output_size
-        w2 = theta[:, cursor:cursor + w2_count].reshape(population, hidden_size, output_size)
-        cursor += w2_count
-        b2 = theta[:, cursor:cursor + output_size]
-
-        # Batched matrix multiplication retains the DenseMLP W1,b1,W2,b2 layout.
-        hidden = xp.tanh(xp.matmul(xp.broadcast_to(x[None, :, :], (population,) + x.shape), w1)
-                         + b1[:, None, :])
-        output = xp.tanh(xp.matmul(hidden, w2) + b2[:, None, :])
         if self._cupy is not None:
-            self._cupy.cuda.get_current_stream().synchronize()
-            return self._cupy.asnumpy(output)
+            cp = self._cupy
+            try:
+                with cp.cuda.Device(self._device_id):
+                    x = cp.asarray(feature_array)
+                    theta = cp.asarray(parameter_array)
+                    output = evaluate(cp, x, theta)
+                    cp.cuda.get_current_stream().synchronize()
+                    return cp.asnumpy(output)
+            except Exception as exc:  # noqa: BLE001 - recover from GPU runtime/OOM failures in auto mode.
+                self._fallback_after_gpu_error(exc)
+        output = evaluate(np, feature_array, parameter_array)
         return np.asarray(output)
 
     def batch_long_flat_fitness(
