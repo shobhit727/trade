@@ -282,7 +282,7 @@ class ExperimentStore:
     def list_datasets(
         self, *, market: str | None = None, limit: int = 1000
     ) -> tuple[dict[str, Any], ...]:
-        """List market-scoped dataset coverage records."""
+        """List market-scoped dataset coverage and licence metadata."""
         # Bound dashboard queries and prevent accidental combined financial coverage views.
         if not 1 <= limit <= 5000:
             raise ValueError("limit must be between 1 and 5000")
@@ -292,16 +292,35 @@ class ExperimentStore:
             if market is None:
                 rows = connection.execute(
                     """SELECT dataset_id, market, exchange, resolution, category,
-                              fingerprint, registered_at
+                              fingerprint, manifest_json, registered_at
                        FROM datasets ORDER BY market, exchange, dataset_id LIMIT ?""",
                     (limit,),
                 ).fetchall()
             else:
                 rows = connection.execute(
                     """SELECT dataset_id, market, exchange, resolution, category,
-                              fingerprint, registered_at
+                              fingerprint, manifest_json, registered_at
                        FROM datasets WHERE market = ?
                        ORDER BY exchange, dataset_id LIMIT ?""",
                     (market, limit),
                 ).fetchall()
-        return tuple(dict(row) for row in rows)
+        output = []
+        for row in rows:
+            # Surface metadata already registered with the immutable dataset manifest.
+            item = dict(row)
+            manifest = json.loads(item.pop("manifest_json"))
+            item.update({
+                "provider": manifest["provider"],
+                "source": manifest["source"],
+                "coverage_start": manifest["coverage_start"],
+                "coverage_end": manifest["coverage_end"],
+                "timezone": manifest["timezone"],
+                "license_status": manifest["license_status"],
+                "license_reference": manifest["license_reference"],
+                "quality_score": manifest.get("quality_score"),
+                "known_gap_count": len(manifest.get("known_gaps", [])),
+                "update_frequency": manifest["update_frequency"],
+                "value_origin": manifest["value_origin"],
+            })
+            output.append(item)
+        return tuple(output)
