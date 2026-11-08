@@ -85,14 +85,14 @@ The feature branch now contains the following additive modules:
 | Existing data adapters | `NSELegacyAdapter`, `CryptoLocalAdapter` | Local historical files only; licence review remains required |
 | Existing strategy discovery | `ExistingStrategyCatalogueAdapter` | Catalogue discovery only; full optimizer integration still required |
 | Cash portfolio simulation | `PortfolioSimulator` | Long-only, INR cash; no derivative margin/liquidation or corporate-action ledger |
-| Execution assumptions | Next-open, participation cap, slippage, square-root impact, proportional fee bps | NSE statutory cost calculator and historical schedules need a fee-model adapter |
+| Execution assumptions | Next-open, participation cap, slippage, square-root impact, proportional or injected fees | NSE calculator delegates to `src/nsealgo/costs.py`; crypto uses explicit maker/taker bps; historical venue schedules still need sourcing |
 | Optimisation baselines | Random, capped grid, differential evolution, Parzen-style heuristic | Parzen method is explicitly not canonical Optuna TPE |
 | Genetic programming | Bounded numerical AST interpreter and evolution | No Boolean/control-flow grammar yet |
 | Neuroevolution | Dense one-hidden-layer network + mirrored-noise ES | CPU implementation; topology evolution / GPU path not yet integrated |
 | Strategy composition | Declarative component-genome evolution | Requires adapters to actual strategy component implementations |
 | Multi-objective optimisation | Non-dominated sorting and crowding selection | No full experiment scheduler integration yet |
 | Statistical diagnostics | BH FDR, moving-block bootstrap, CSCV PBO diagnostic | Requires independent statistical review and broader tests |
-| Population compute | Batched long/flat fitness, NumPy / optional CuPy | CuPy path and target GPU remain unverified |
+| Population compute | Batched linear and long/flat fitness, NumPy / optional CuPy | CuPy path and target GPU remain unverified |
 | API and dashboard | Local WSGI API, create/list/detail records, HTML dashboard | Creates metadata only; worker start/stop, logs, telemetry and comparisons are incomplete |
 
 ## Execution and accounting limitations
