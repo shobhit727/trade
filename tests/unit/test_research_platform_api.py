@@ -379,8 +379,10 @@ def test_api_creates_validated_genetic_programming_experiment(tmp_path) -> None:
     )
     assert status == 201
     payload = json.loads(body)
-    assert payload["spec"]["algorithm_family"] == "genetic_programming"
-    assert payload["spec"]["parameters"]["genetic_programming"]["feature_windows"] == [3, 5]
+    assert payload["experiment_id"] == "api-genetic-programming"
+    stored = app.store.get_experiment(payload["experiment_id"])
+    assert stored["spec"]["algorithm_family"] == "genetic_programming"
+    assert stored["spec"]["parameters"]["genetic_programming"]["feature_windows"] == [3, 5]
 
 
 def test_api_rejects_unbounded_genetic_programming_budget(tmp_path) -> None:
@@ -529,8 +531,10 @@ def test_api_creates_validated_pareto_search_experiment(tmp_path) -> None:
     )
     assert status == 201
     payload = json.loads(body)
-    assert payload["spec"]["algorithm_family"] == "pareto_search"
-    assert payload["spec"]["parameters"]["pareto_search"]["objectives"] == [
+    assert payload["experiment_id"] == "api-pareto-search"
+    stored = app.store.get_experiment(payload["experiment_id"])
+    assert stored["spec"]["algorithm_family"] == "pareto_search"
+    assert stored["spec"]["parameters"]["pareto_search"]["objectives"] == [
         "cagr", "max_drawdown", "turnover"
     ]
 
@@ -612,8 +616,10 @@ def test_api_creates_hybrid_optimizer_experiment_with_method_budgets(tmp_path) -
     )
     assert status == 201
     payload = json.loads(body)
-    assert payload["spec"]["algorithm_family"] == "hybrid"
-    assert payload["spec"]["parameters"]["hybrid_optimization"]["methods"] == [
+    assert payload["experiment_id"] == "api-hybrid-ensemble"
+    stored = app.store.get_experiment(payload["experiment_id"])
+    assert stored["spec"]["algorithm_family"] == "hybrid"
+    assert stored["spec"]["parameters"]["hybrid_optimization"]["methods"] == [
         "random_search", "differential_evolution", "bayesian"
     ]
 
