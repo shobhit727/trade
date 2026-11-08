@@ -182,6 +182,27 @@ class CryptoLocalAdapter:
             frame = pd.read_csv(path)
         return _normalise_ohlcv(frame, timezone_name=self.timezone_name)
 
+    def load_inr(
+        self,
+        symbol: str,
+        resolution: DataResolution,
+        *,
+        fx_rates,
+        source_quote_currency: str,
+    ) -> pd.DataFrame:
+        """Load quote-denominated bars and convert them with point-in-time FX rates."""
+        # Require an explicit FX series; never infer quote currency from the symbol text.
+        from .fx import FXRateSeries, convert_ohlcv_to_inr
+
+        if not isinstance(fx_rates, FXRateSeries):
+            raise TypeError("fx_rates must be an FXRateSeries with explicit provenance")
+        frame = self.load(symbol, resolution)
+        return convert_ohlcv_to_inr(
+            frame,
+            fx_rates,
+            source_quote_currency=source_quote_currency,
+        )
+
     def manifest(self, symbol: str, resolution: DataResolution) -> DatasetManifest:
         """Create a manifest fingerprinted by source-file bytes and coverage."""
         # Local possession is not proof of data redistribution or derivative-use rights.
