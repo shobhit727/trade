@@ -62,7 +62,7 @@ pre { overflow:auto; white-space:pre-wrap; word-break:break-word; color:#c4d3e4;
 <label>Experiment ID</label><input id="experiment-id" required>
 <label>Git commit</label><input id="git-commit" placeholder="40-character commit SHA" required>
 <label>Cost model ID</label><input id="cost-model" value="market-cost-v1" required>
-<label>Execution model ID</label><input id="execution-model" value="next-open-v1" required>
+<label>Execution model ID</label><input id="execution-model" value="next-open-participation-impact-v1" required>
 <label>Seed</label><input id="seed" type="number" min="0" value="42" required>
 <label>Objectives (comma-separated)</label><input id="objectives" value="net_return,max_drawdown,turnover" required>
 <label>Training start / end (ISO timestamps)</label><input id="train-start" type="datetime-local" value="2016-01-01T00:00" required><input id="train-end" type="datetime-local" value="2020-01-01T00:00" required>
@@ -99,6 +99,7 @@ const tracks = {
 const families = ["existing_strategy","random_search","grid_search","bayesian","differential_evolution","genetic_programming","neuroevolution","strategy_composition","hybrid"];
 const resolutions = ["tick","order_book_event","order_book_snapshot","1s","1m","5m","15m","30m","1h","4h","1d","1w","1mo"];
 const $ = id => document.getElementById(id);
+let strategyCache = null;
 function refreshTrackOptions() {
   // Keep the selected track consistent with the independently selected market.
   $("track").innerHTML = tracks[$("market").value].map(x => '<option value="' + x + '">' + x + '</option>').join("");
@@ -150,7 +151,8 @@ async function refresh() {
     $("detail").textContent = JSON.stringify(await api("/api/experiments/" +
       encodeURIComponent(row.dataset.id)), null, 2);
   }));
-  const strategies = await api("/api/strategies?limit=500");
+  if (strategyCache === null) strategyCache = await api("/api/strategies?limit=500");
+  const strategies = strategyCache;
   const strategySelect = $("strategy-name");
   strategySelect.replaceChildren();
   const strategyBody = $("strategy-rows");
@@ -179,10 +181,14 @@ async function refresh() {
     });
     strategyBody.appendChild(row);
   });
-  strategySelect.addEventListener("change", () => {
-    const selected = strategies.strategies.find(item => item.name === strategySelect.value);
-    $("strategy-detail").textContent = selected ? JSON.stringify(selected, null, 2) : "";
-  });
+  if (strategySelect.dataset.listenerBound !== "true") {
+    // Bind the strategy selector once even when the dashboard refreshes its tables.
+    strategySelect.addEventListener("change", () => {
+      const selected = strategies.strategies.find(item => item.name === strategySelect.value);
+      $("strategy-detail").textContent = selected ? JSON.stringify(selected, null, 2) : "";
+    });
+    strategySelect.dataset.listenerBound = "true";
+  }
   if (strategies.strategies.length) {
     $("strategy-detail").textContent = JSON.stringify(strategies.strategies[0], null, 2);
   }
@@ -375,8 +381,9 @@ class ResearchAPI:
     """Minimal local WSGI API for creating and inspecting actual experiment records."""
 
     def __init__(self, store: ExperimentStore) -> None:
-        # The API operates on metadata only; workers/data vendors are separate services.
+        # Cache the authoritative strategy registry; discovery is lazy and read-only.
         self.store = store
+        self.strategy_registry = ExistingStrategyRegistry()
 
     def _response(self, start_response: StartResponse, status: HTTPStatus, payload: object,
                   content_type: str = "application/json; charset=utf-8") -> list[bytes]:
@@ -420,7 +427,7 @@ class ResearchAPI:
                 limit = int(query.get("limit", ["500"])[0])
                 if not 1 <= limit <= 500:
                     raise ValueError("limit must be between 1 and 500")
-                registry = ExistingStrategyRegistry()
+                registry = self.strategy_registry
                 names = registry.names()[:limit]
                 descriptors = []
                 for name in names:
