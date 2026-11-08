@@ -283,7 +283,7 @@ def evaluate_existing_strategy(
         candidate_already_recorded = store.has_candidate(spec.experiment_id, candidate_digest)
         if not candidate_already_recorded:
             store.append_candidate(
-                candidate_id=f"{spec.experiment_id}-existing-baseline",
+                candidate_id=f"{spec.experiment_id}-{candidate_digest[:16]}",
                 experiment_id=spec.experiment_id,
                 candidate_digest=candidate_digest,
                 family="existing_strategy",
