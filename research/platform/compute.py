@@ -24,8 +24,8 @@ class ComputeEngine:
 
     def __init__(self, backend: str = "auto", device_id: int = 0) -> None:
         # Resolve the backend lazily so importing the research package never requires CUDA.
-        if backend not in {"auto", "cpu", "cupy"}:
-            raise ValueError("backend must be 'auto', 'cpu', or 'cupy'")
+        if backend not in {"auto", "cpu", "numpy", "cupy"}:
+            raise ValueError("backend must be 'auto', 'cpu', 'numpy', or 'cupy'")
         self._cupy: Any | None = None
         self._device_id = device_id
         self._fallback_reason: str | None = None
@@ -84,6 +84,72 @@ class ComputeEngine:
             scores = gpu_weights @ gpu_features.T
             cp.cuda.get_current_stream().synchronize()
             return cp.asnumpy(scores)
+
+    def batch_dense_mlp_scores(
+        self,
+        features: np.ndarray,
+        population_parameters: np.ndarray,
+        *,
+        hidden_size: int,
+        output_size: int = 1,
+    ) -> np.ndarray:
+        """Evaluate a population of one-hidden-layer tanh networks in one batched pass.
+
+        Parameter layout for every candidate is W1, b1, W2, b2, matching DenseMLP.
+        The result shape is (population, observations, output_size).
+        """
+        # Validate dimensions and all weights on CPU before allocating device buffers.
+        feature_array = np.asarray(features, dtype=np.float64)
+        parameter_array = np.asarray(population_parameters, dtype=np.float64)
+        if feature_array.ndim != 2 or parameter_array.ndim != 2:
+            raise ValueError("features and population_parameters must both be 2D")
+        if hidden_size < 1 or output_size < 1:
+            raise ValueError("hidden_size and output_size must be positive")
+        if feature_array.shape[1] < 1 or parameter_array.shape[0] < 1:
+            raise ValueError("feature and population dimensions must be non-empty")
+        input_size = feature_array.shape[1]
+        expected = (
+            input_size * hidden_size
+            + hidden_size
+            + hidden_size * output_size
+            + output_size
+        )
+        if parameter_array.shape[1] != expected:
+            raise ValueError(
+                f"population parameter width must be {expected} for the supplied network"
+            )
+        if not np.isfinite(feature_array).all() or not np.isfinite(parameter_array).all():
+            raise ValueError("features and network parameters must be finite")
+
+        # A population-by-observation-by-hidden tensor can be large; callers should chunk.
+        xp = self._cupy if self._cupy is not None else np
+        if self._cupy is not None:
+            with self._cupy.cuda.Device(self._device_id):
+                x = self._cupy.asarray(feature_array)
+                theta = self._cupy.asarray(parameter_array)
+        else:
+            x, theta = feature_array, parameter_array
+
+        population = theta.shape[0]
+        cursor = 0
+        w1_count = input_size * hidden_size
+        w1 = theta[:, cursor:cursor + w1_count].reshape(population, input_size, hidden_size)
+        cursor += w1_count
+        b1 = theta[:, cursor:cursor + hidden_size]
+        cursor += hidden_size
+        w2_count = hidden_size * output_size
+        w2 = theta[:, cursor:cursor + w2_count].reshape(population, hidden_size, output_size)
+        cursor += w2_count
+        b2 = theta[:, cursor:cursor + output_size]
+
+        # Batched matrix multiplication retains the DenseMLP W1,b1,W2,b2 layout.
+        hidden = xp.tanh(xp.matmul(xp.broadcast_to(x[None, :, :], (population,) + x.shape), w1)
+                         + b1[:, None, :])
+        output = xp.tanh(xp.matmul(hidden, w2) + b2[:, None, :])
+        if self._cupy is not None:
+            self._cupy.cuda.get_current_stream().synchronize()
+            return self._cupy.asnumpy(output)
+        return np.asarray(output)
 
     def batch_long_flat_fitness(
         self,
