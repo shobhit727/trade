@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+from dataclasses import replace
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -15,12 +16,26 @@ from .adapters import CryptoLocalAdapter, NSELegacyAdapter, RESOLUTION_MAP
 from .costs import CryptoVenueFeeCalculator, NSEDeliveryFeeCalculator
 from .data_catalog import LicenseStatus
 from .domain import AlgorithmFamily, DataResolution, Market, ResearchTrack
-from .evaluation import ExistingStrategyEvaluation, evaluate_existing_strategy
+from .evaluation import (
+    ExistingStrategyEvaluation,
+    _bars_fingerprint,
+    _partition_target_frame,
+    evaluate_existing_strategy,
+)
 from .experiments import ExperimentSpec
 from .fx import FXRateSeries, convert_ohlcv_to_inr
 from .jobs import JobContext
+from .optimizers import (
+    Candidate as SearchCandidate,
+    Parameter as SearchParameter,
+    differential_evolution,
+    grid_search,
+    parzen_heuristic_search,
+    random_search,
+)
 from .portfolio import PortfolioConfig
 from .storage import ExperimentStore
+from .strategy_catalog import ExistingStrategyRegistry
 
 
 D = Decimal
@@ -399,6 +414,378 @@ class ExistingStrategyJobRunner:
         return result.to_dict()
 
 
+class ExistingStrategyOptimizerJobRunner:
+    """Optimise an existing strategy on TRAIN, select on VALIDATION, then evaluate OOS."""
+
+    OBJECTIVES = frozenset({"sharpe", "sortino", "cagr", "calmar", "total_return"})
+
+    def __init__(
+        self,
+        *,
+        crypto_data_root: str | Path | None = None,
+        bar_loader: Callable[[ExperimentStore, ExperimentSpec], dict[str, pd.DataFrame]] | None = None,
+    ) -> None:
+        # Keep the same verified local data path as the frozen-strategy evaluator.
+        self.crypto_data_root = crypto_data_root
+        self.bar_loader = bar_loader or (
+            lambda store, spec: load_registered_bars(
+                store, spec, crypto_data_root=self.crypto_data_root
+            )
+        )
+        self.registry = ExistingStrategyRegistry()
+
+    @staticmethod
+    def _search_parameters(descriptor) -> tuple[SearchParameter, ...]:
+        # Convert the repository's original typed parameter catalogue without duplicating it.
+        parameters: list[SearchParameter] = []
+        for item in descriptor.parameters:
+            kind = item["kind"]
+            if kind in {"int", "float"}:
+                parameters.append(SearchParameter(
+                    name=item["name"],
+                    low=float(item["low"]),
+                    high=float(item["high"]),
+                    kind=kind,
+                ))
+            elif kind == "bool":
+                parameters.append(SearchParameter(
+                    name=item["name"],
+                    kind="categorical",
+                    choices=(False, True),
+                ))
+            elif kind == "choice":
+                parameters.append(SearchParameter(
+                    name=item["name"],
+                    kind="categorical",
+                    choices=tuple(item["choices"]),
+                ))
+            else:
+                raise ValueError(f"unsupported existing strategy parameter kind: {kind}")
+        if not parameters:
+            raise ValueError("selected strategy has no searchable parameters")
+        return tuple(parameters)
+
+    @staticmethod
+    def _config_key(parameters: Mapping[str, Any]) -> str:
+        # Canonical JSON ensures candidate ordering and deduplication are reproducible.
+        return json.dumps(parameters, sort_keys=True, separators=(",", ":"), default=str)
+
+    def _run_search(
+        self,
+        family: AlgorithmFamily,
+        space: tuple[SearchParameter, ...],
+        objective: Callable[[Mapping[str, object]], float],
+        settings: Mapping[str, Any],
+        seed: int,
+    ):
+        # Every optimiser receives the same finite search space and caller-declared budget.
+        budget = int(settings["budget"])
+        if budget < 4:
+            raise ValueError("optimization budget must be at least four evaluations")
+        if family is AlgorithmFamily.RANDOM_SEARCH:
+            return random_search(space, objective, budget=budget, seed=seed)
+        if family is AlgorithmFamily.GRID_SEARCH:
+            points = int(settings["points_per_numeric_dimension"])
+            return grid_search(
+                space,
+                objective,
+                points_per_numeric_dimension=points,
+                max_evaluations=budget,
+                seed=seed,
+            )
+        if family is AlgorithmFamily.DIFFERENTIAL_EVOLUTION:
+            population = int(settings["population_size"])
+            generations = int(settings["generations"])
+            expected = population * (generations + 1)
+            if expected != budget:
+                raise ValueError(
+                    f"differential evolution budget must equal population_size "
+                    f"* (generations + 1); expected {expected}, got {budget}"
+                )
+            return differential_evolution(
+                space,
+                objective,
+                population_size=population,
+                generations=generations,
+                mutation=float(settings["mutation"]),
+                crossover=float(settings["crossover"]),
+                seed=seed,
+            )
+        if family is AlgorithmFamily.BAYESIAN:
+            # This is an explicitly labelled Parzen-style heuristic, not canonical TPE.
+            return parzen_heuristic_search(
+                space,
+                objective,
+                budget=budget,
+                startup_trials=int(settings["startup_trials"]),
+                good_fraction=float(settings["good_fraction"]),
+                seed=seed,
+            )
+        raise ValueError(f"unsupported existing-strategy optimisation family: {family.value}")
+
+    def __call__(
+        self,
+        context: JobContext,
+        experiment_record: dict[str, Any],
+        parameters: dict[str, Any],
+    ) -> dict[str, Any]:
+        # Job arguments cannot override an immutable research specification.
+        if parameters:
+            raise ValueError("optimizer runner accepts no job-time overrides; update the experiment spec")
+        context.check_cancelled()
+        spec = experiment_spec_from_record(experiment_record)
+        supported = {
+            AlgorithmFamily.RANDOM_SEARCH,
+            AlgorithmFamily.GRID_SEARCH,
+            AlgorithmFamily.DIFFERENTIAL_EVOLUTION,
+            AlgorithmFamily.BAYESIAN,
+        }
+        if spec.algorithm_family not in supported:
+            raise ValueError("existing_strategy_optimization requires a supported search family")
+
+        strategy_name = spec.parameters.get("strategy_name")
+        if not isinstance(strategy_name, str) or not strategy_name.strip():
+            raise ValueError("optimization experiment requires parameters.strategy_name")
+        descriptor = self.registry.describe(strategy_name)
+        strategy_parameters = spec.parameters.get("strategy_parameters", {})
+        if not isinstance(strategy_parameters, dict):
+            raise ValueError("strategy_parameters must be a JSON object")
+        self.registry.validate_parameter_payload(strategy_name, strategy_parameters)
+
+        settings = spec.parameters.get("optimization")
+        required = {"budget", "validation_candidates", "objective"}
+        if not isinstance(settings, dict) or not required.issubset(settings):
+            raise ValueError(
+                "parameters.optimization must declare budget, validation_candidates and objective"
+            )
+        objective_name = str(settings["objective"])
+        if objective_name not in self.OBJECTIVES:
+            raise ValueError(f"objective must be one of {sorted(self.OBJECTIVES)}")
+        budget = int(settings["budget"])
+        validation_count = int(settings["validation_candidates"])
+        if budget < 4 or validation_count < 1:
+            raise ValueError("budget must be >= 4 and validation_candidates must be positive")
+
+        manifests = [
+            context.store.get_dataset(dataset_id)["manifest"]
+            for dataset_id in spec.dataset_ids
+        ]
+        bars = self.bar_loader(context.store, spec)
+        config, periods_per_year = _build_portfolio_config(spec, manifests)
+        space = self._search_parameters(descriptor)
+        defaults = dict(descriptor.defaults)
+        defaults.update(strategy_parameters)
+
+        context.log(
+            f"optimising {strategy_name} with {spec.algorithm_family.value}; "
+            f"budget={budget}, objective={objective_name}"
+        )
+        bars_digest = _bars_fingerprint(bars)
+        train_metrics: dict[str, dict[str, float | int]] = {}
+
+        def train_objective(candidate_values: Mapping[str, object]) -> float:
+            # Each candidate is assessed only on TRAIN; no VALIDATION/OOS data is used here.
+            context.check_cancelled()
+            current = dict(defaults)
+            current.update(candidate_values)
+            key = self._config_key(current)
+            partition = _partition_target_frame(
+                spec,
+                strategy_name,
+                current,
+                bars,
+                config,
+                partition_name="train",
+                start=spec.training_start,
+                end=spec.training_end,
+                periods_per_year=periods_per_year,
+            )
+            train_metrics[key] = partition.metrics
+            score = float(partition.metrics[objective_name])
+            if not np.isfinite(score):
+                raise ValueError("TRAIN objective is non-finite")
+            return score
+
+        search = self._run_search(
+            spec.algorithm_family,
+            space,
+            train_objective,
+            settings,
+            spec.random_seed,
+        )
+        if not search.candidates:
+            raise RuntimeError(
+                f"all {spec.algorithm_family.value} candidates failed: {search.failures[:5]}"
+            )
+
+        # Include the exact shipped default as a baseline under the same TRAIN objective.
+        baseline_score = train_objective({})
+        baseline = SearchCandidate(
+            candidate_id="shipped-default",
+            parameters={},
+            score=baseline_score,
+            evaluation_index=-1,
+        )
+        search_candidates = (baseline, *search.candidates)
+
+        # Merge partial genomes with the original Config defaults and deduplicate exact configs.
+        unique: dict[str, tuple[dict[str, Any], float, int]] = {}
+        for candidate in search_candidates:
+            merged = dict(defaults)
+            merged.update(candidate.parameters)
+            key = self._config_key(merged)
+            if key not in unique or candidate.score > unique[key][1]:
+                unique[key] = (merged, float(candidate.score), int(candidate.evaluation_index))
+
+        # Persist every evaluated TRAIN candidate once, including failures in the search event.
+        candidate_rows: list[dict[str, Any]] = []
+        for index, (key, (candidate_config, score, evaluation_index)) in enumerate(unique.items()):
+            context.check_cancelled()
+            digest_payload = {
+                "experiment_fingerprint": spec.fingerprint,
+                "bars_sha256": bars_digest,
+                "strategy_name": strategy_name,
+                "strategy_parameters": candidate_config,
+                "search_family": spec.algorithm_family.value,
+                "evaluation_index": evaluation_index,
+            }
+            candidate_digest = hashlib.sha256(
+                json.dumps(
+                    digest_payload,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    default=str,
+                ).encode("utf-8")
+            ).hexdigest()
+            metrics = train_metrics.get(key)
+            if metrics is None:
+                raise RuntimeError("missing TRAIN metrics for evaluated candidate")
+            candidate_id = f"{spec.experiment_id}-{candidate_digest[:16]}"
+            candidate_rows.append({
+                "candidate_id": candidate_id,
+                "candidate_digest": candidate_digest,
+                "parameters": candidate_config,
+                "train_score": score,
+                "train_metrics": metrics,
+                "evaluation_index": evaluation_index,
+            })
+            if not context.store.has_candidate(spec.experiment_id, candidate_digest):
+                context.store.append_candidate(
+                    candidate_id=candidate_id,
+                    experiment_id=spec.experiment_id,
+                    candidate_digest=candidate_digest,
+                    family=spec.algorithm_family.value,
+                    generation=max(evaluation_index, 0),
+                    parameters={
+                        "strategy_name": strategy_name,
+                        "strategy_parameters": candidate_config,
+                        "search_family": spec.algorithm_family.value,
+                    },
+                    metrics={"train": metrics, "train_objective": score},
+                    lineage={
+                        "origin": "existing_strategy_parameter_search",
+                        "parent_candidate_ids": [],
+                        "mutation": None,
+                        "crossover": None,
+                        "selection": "train_objective",
+                    },
+                )
+
+        # Validation may select only a bounded TRAIN shortlist; it never feeds back into search.
+        shortlist = sorted(
+            candidate_rows,
+            key=lambda item: (-item["train_score"], item["candidate_digest"]),
+        )[:min(validation_count, len(candidate_rows))]
+        validation_rows: list[dict[str, Any]] = []
+        for index, candidate in enumerate(shortlist, start=1):
+            context.check_cancelled()
+            context.log(f"validation shortlist {index}/{len(shortlist)}")
+            partition = _partition_target_frame(
+                spec,
+                strategy_name,
+                candidate["parameters"],
+                bars,
+                config,
+                partition_name="validation",
+                start=spec.validation_start,
+                end=spec.validation_end,
+                periods_per_year=periods_per_year,
+            )
+            validation_score = float(partition.metrics[objective_name])
+            validation_rows.append({
+                "candidate_digest": candidate["candidate_digest"],
+                "candidate_id": candidate["candidate_id"],
+                "parameters": candidate["parameters"],
+                "train_score": candidate["train_score"],
+                "validation_score": validation_score,
+                "validation_metrics": partition.metrics,
+            })
+
+        if not validation_rows:
+            raise RuntimeError("no candidate survived TRAIN/VALIDATION evaluation")
+        selected = max(
+            validation_rows,
+            key=lambda item: (
+                item["validation_score"],
+                item["train_score"],
+                item["candidate_digest"],
+            ),
+        )
+        context.store.append_event(
+            spec.experiment_id,
+            "existing_strategy_optimization_selected",
+            {
+                "search_family": spec.algorithm_family.value,
+                "budget": budget,
+                "successful_train_candidates": len(search.candidates),
+                "search_failures": list(search.failures),
+                "validation_shortlist_count": len(validation_rows),
+                "objective": objective_name,
+                "selected_candidate_id": selected["candidate_id"],
+                "selected_candidate_digest": selected["candidate_digest"],
+                "train_score": selected["train_score"],
+                "validation_score": selected["validation_score"],
+                "bars_sha256": bars_digest,
+                "final_holdout_accessed": False,
+            },
+        )
+        context.check_cancelled()
+
+        # Freeze the selected configuration and send it through the established OOS-only path.
+        frozen_parameters = dict(spec.parameters)
+        frozen_parameters["strategy_parameters"] = selected["parameters"]
+        frozen_spec = replace(spec, parameters=frozen_parameters)
+        context.log(
+            f"selected {selected['candidate_id']} on VALIDATION; evaluating frozen OOS candidate"
+        )
+        final_evaluation = evaluate_existing_strategy(
+            frozen_spec,
+            bars,
+            config,
+            periods_per_year=periods_per_year,
+            store=context.store,
+            check_cancelled=context.check_cancelled,
+            progress_callback=lambda stage, completed, total: context.log(
+                f"frozen candidate {stage}: {completed}/{total}"
+            ),
+        )
+        return {
+            "experiment_id": spec.experiment_id,
+            "search_family": spec.algorithm_family.value,
+            "search_method": search.method,
+            "objective": objective_name,
+            "budget": budget,
+            "candidate_count": len(candidate_rows),
+            "successful_train_candidates": len(search.candidates),
+            "failed_candidates": len(search.failures),
+            "validation_shortlist": validation_rows,
+            "selected_candidate": selected,
+            "bars_sha256": bars_digest,
+            "final_holdout_accessed": False,
+            "final_evaluation": final_evaluation.to_dict(),
+        }
+
+
 def build_default_job_manager(
     store: ExperimentStore,
     *,
@@ -414,5 +801,9 @@ def build_default_job_manager(
     manager.register_runner(
         "existing_strategy_evaluation",
         ExistingStrategyJobRunner(crypto_data_root=crypto_data_root),
+    )
+    manager.register_runner(
+        "existing_strategy_optimization",
+        ExistingStrategyOptimizerJobRunner(crypto_data_root=crypto_data_root),
     )
     return manager
