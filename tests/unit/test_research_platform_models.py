@@ -68,9 +68,11 @@ def test_model_feature_panel_maps_predictions_to_exact_instrument_rows() -> None
     assert panel.features.shape[1] == 2 + 2 * 5
     targets = panel.targets_from_scores(np.ones(len(panel.features)))
     assert targets.shape == (19, 2)
-    assert np.allclose(targets.sum(axis=1).to_numpy(), 1.0)
+    # Portfolio exposure is equally allocated only on dates with valid feature decisions.
+    decision_rows = targets.index >= datetime(2025, 1, 10, tzinfo=UTC)
+    assert np.allclose(targets.loc[decision_rows].sum(axis=1).to_numpy(), 1.0)
     # No positions are opened before the first model decision date.
-    assert (targets.loc[targets.index < datetime(2025, 1, 10, tzinfo=UTC)] == 0).all().all()
+    assert (targets.loc[~decision_rows] == 0).all().all()
 
 
 def test_model_feature_panel_keeps_partition_boundary_half_open() -> None:
