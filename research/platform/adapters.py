@@ -238,6 +238,8 @@ def materialize_non_holdout_partition(
         "research_partition_path": relative_path,
         "research_partition_sha256": digest,
         "research_partition_before": cutoff_iso,
+        "research_partition_coverage_start": safe_frame.index[0].astimezone(timezone.utc).isoformat(),
+        "research_partition_coverage_end": safe_frame.index[-1].astimezone(timezone.utc).isoformat(),
         "research_partition_schema": "ohlcv-csv-v1",
         "research_partition_bars": str(len(safe_frame)),
         "quality_report_json": json.dumps(
@@ -250,8 +252,8 @@ def materialize_non_holdout_partition(
     )
     return replace(
         manifest,
-        coverage_start=safe_frame.index[0].to_pydatetime(),
-        coverage_end=safe_frame.index[-1].to_pydatetime(),
+        # The manifest describes the registered source's full coverage. The safe-copy
+        # endpoints are separately fingerprinted so API coverage checks remain truthful.
         extra_metadata=extra,
         processing_history=history,
     )
@@ -315,13 +317,9 @@ def load_non_holdout_partition(
         raise ValueError("partition file contains rows at or after its declared cutoff")
     if frame_utc.max() >= final_boundary:
         raise ValueError("partition file contains a final-holdout row")
-    # Coverage timestamps in the immutable manifest must describe the exact safe file.
-    if isinstance(manifest, DatasetManifest):
-        expected_start = pd.Timestamp(manifest.coverage_start)
-        expected_end = pd.Timestamp(manifest.coverage_end)
-    else:
-        expected_start = pd.Timestamp(manifest["coverage_start"])
-        expected_end = pd.Timestamp(manifest["coverage_end"])
+    # The source manifest keeps full coverage; these two fields describe the isolated copy.
+    expected_start = pd.Timestamp(metadata["research_partition_coverage_start"])
+    expected_end = pd.Timestamp(metadata["research_partition_coverage_end"])
     if expected_start.tzinfo is None or expected_end.tzinfo is None:
         raise ValueError("partition coverage endpoints in manifest must be timezone-aware")
     if (
@@ -329,6 +327,14 @@ def load_non_holdout_partition(
         or frame_utc.max() != expected_end.tz_convert("UTC")
     ):
         raise ValueError("partition file timestamps differ from manifest coverage")
+    if isinstance(manifest, DatasetManifest):
+        source_start = pd.Timestamp(manifest.coverage_start).tz_convert("UTC")
+        source_end = pd.Timestamp(manifest.coverage_end).tz_convert("UTC")
+    else:
+        source_start = pd.Timestamp(manifest["coverage_start"]).tz_convert("UTC")
+        source_end = pd.Timestamp(manifest["coverage_end"]).tz_convert("UTC")
+    if frame_utc.min() < source_start or frame_utc.max() > source_end:
+        raise ValueError("partition coverage lies outside the registered source coverage")
     end_utc = pd.Timestamp(end).tz_convert("UTC")
     clipped = frame.loc[frame_utc < end_utc].copy()
     if clipped.empty:
