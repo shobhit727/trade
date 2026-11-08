@@ -557,3 +557,20 @@ def test_nsga2_rejects_invalid_initial_objective_population() -> None:
             lambda genome, rng: genome,
             population_size=8, generations=2, directions=("min", "min"), seed=1,
         )
+
+
+
+def test_optuna_tpe_search_respects_budget_and_seed_when_installed() -> None:
+    # The canonical TPE baseline is optional but must retain its declared search budget.
+    pytest.importorskip("optuna")
+    from research.platform.optimizers import optuna_tpe_search
+
+    space = (Parameter("x", -2.0, 2.0), Parameter("count", 1, 6, kind="int"))
+    objective = lambda config: -((float(config["x"]) - 0.3) ** 2) - (
+        int(config["count"]) - 4
+    ) ** 2
+    first = optuna_tpe_search(space, objective, budget=24, seed=51, startup_trials=6)
+    second = optuna_tpe_search(space, objective, budget=24, seed=51, startup_trials=6)
+    assert len(first.candidates) + len(first.failures) == 24
+    assert first.best.score == pytest.approx(second.best.score)
+    assert first.best.parameters == second.best.parameters
