@@ -858,7 +858,7 @@ class ExistingStrategyOptimizerJobRunner:
                     and candidate["evaluation_index"] >= 0
                     for candidate in candidate_rows
                 ),
-                "search_attempted_candidates": len(search.candidates) + len(search.failures),
+                "search_attempted_candidates": (len(search.candidates) if search.method == "differential_evolution" else len(search.candidates) + len(search.failures)),
                 "search_failures": list(search.failures),
                 "validation_shortlist_count": len(validation_rows),
                 "objective": objective_name,
@@ -911,7 +911,7 @@ class ExistingStrategyOptimizerJobRunner:
                 and candidate["evaluation_index"] >= 0
                 for candidate in candidate_rows
             ),
-            "search_attempted_candidates": len(search.candidates) + len(search.failures),
+            "search_attempted_candidates": (len(search.candidates) if search.method == "differential_evolution" else len(search.candidates) + len(search.failures)),
             "failed_candidates": len(search.failures),
             "total_train_evaluations": train_calls,
             "validation_shortlist": validation_rows,
