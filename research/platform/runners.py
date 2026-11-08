@@ -46,6 +46,7 @@ from .optimizers import (
 from .pareto import ParetoCandidate, non_dominated_fronts, nsga2_optimize, select_nsga2
 from .portfolio import PortfolioConfig
 from .storage import ExperimentStore
+from .statistics import candidate_family_report_from_returns
 from .strategy_catalog import ExistingStrategyRegistry
 
 
@@ -740,6 +741,7 @@ class ExistingStrategyOptimizerJobRunner:
         )
         bars_digest = _bars_fingerprint(bars)
         train_metrics: dict[str, dict[str, float | int]] = {}
+        train_return_vectors: dict[str, np.ndarray] = {}
         train_calls = 0
 
         def train_objective(candidate_values: Mapping[str, object]) -> float:
@@ -764,6 +766,9 @@ class ExistingStrategyOptimizerJobRunner:
                 periods_per_year=periods_per_year,
             )
             train_metrics[key] = partition.metrics
+            train_return_vectors[key] = (
+                partition.result.equity_curve.pct_change().dropna().to_numpy(dtype=np.float64)
+            )
             score = float(partition.metrics[objective_name])
             if not np.isfinite(score):
                 raise ValueError("TRAIN objective is non-finite")
@@ -904,6 +909,49 @@ class ExistingStrategyOptimizerJobRunner:
             candidate for candidate in candidate_rows
             if candidate["status"] == "succeeded"
         ]
+        # Statistical diagnostics use only TRAIN returns and never affect validation ranking.
+        statistical_rows = [
+            candidate for candidate in successful_candidates
+            if self._config_key(candidate["parameters"]) in train_return_vectors
+        ]
+        statistical_report: dict[str, Any]
+        if len(statistical_rows) >= 1:
+            return_map = {
+                candidate["candidate_id"]: train_return_vectors[
+                    self._config_key(candidate["parameters"])
+                ]
+                for candidate in statistical_rows
+            }
+            statistical_report = candidate_family_report_from_returns(
+                [candidate["candidate_id"] for candidate in statistical_rows],
+                return_map,
+                periods_per_year=periods_per_year,
+                pbo_blocks=8,
+                pbo_candidate_limit=128,
+            )
+            # Keep the full candidate-level p-values in the job result; persist a compact event.
+            context.store.append_event(
+                spec.experiment_id,
+                "training_candidate_family_diagnostics",
+                {
+                    "candidate_family_size": statistical_report["candidate_family_size"],
+                    "fdr": {
+                        "hypotheses": statistical_report["fdr"]["hypotheses"],
+                        "rejections": statistical_report["fdr"].get("rejections", 0),
+                        "alpha": statistical_report["fdr"]["alpha"],
+                    },
+                    "deflated_sharpe": statistical_report["deflated_sharpe"],
+                    "pbo_cscv": statistical_report["pbo_cscv"],
+                    "sampling_frequency": statistical_report["sampling_frequency"],
+                    "selection_effect": "diagnostic_only_not_used_for_candidate_selection",
+                },
+            )
+        else:
+            statistical_report = {
+                "classification": "not_computed",
+                "reason": "no successful TRAIN candidate return vectors",
+                "candidate_family_size": 0,
+            }
         if not successful_candidates:
             raise RuntimeError("no valid baseline or search candidate completed TRAIN")
         # Keep failed attempts in the immutable search trace, but never send them to VALIDATION.
