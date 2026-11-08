@@ -30,19 +30,25 @@ any existing backtest engine.
   Feature outputs never use negative shifts or future rows.
 - A long-only multi-asset cash simulator which decides on close t and executes on open t+1,
   with participation limits, adverse slippage, square-root impact and declared per-side fees.
-- Random search, capped grid search, differential evolution and a clearly labelled
-  Parzen-style heuristic. The latter is not canonical Optuna TPE or a Bayesian result.
+- Random search, capped grid search, differential evolution and seeded Optuna TPE.
+  The separate Parzen-style approximation remains available as a heuristic baseline.
 - Bounded numerical genetic programming with a closed AST interpreter; generated Python
-  is never executed.
-- A compact dense-network evolution strategy and declarative strategy-composition search.
-- Pareto non-dominated sorting / NSGA-II crowding selection.
+  is never executed. The worker evolves only on TRAIN, selects from the final population
+  on VALIDATION, and evaluates one frozen expression on OOS.
+- A compact dense-network neuroevolution worker using mirrored-noise ES, candidate weight
+  vectors and generation ancestry.
+- Declarative strategy-composition evolution over a fixed causal component registry:
+  momentum/trend entries and exits, volatility/volume filters, regime and risk gates.
+- NSGA-II multi-objective search over existing strategy parameters, including persisted
+  candidate ancestry, TRAIN Pareto fronts, VALIDATION selection and frozen OOS evaluation.
 - Market-specific fee calculators: the existing itemised NSE delivery cost model and a
   separately configured crypto maker/taker fee schedule.
 - Benjamini-Hochberg FDR, moving-block bootstrap and a CSCV PBO diagnostic.
 - Batched long/flat population fitness in NumPy or optional CuPy.
 - A loopback WSGI API and dashboard backed by SQLite manifests, experiments, jobs and
   candidate lineage. The dashboard can queue, inspect and cooperatively cancel the
-  allow-listed existing-strategy evaluation worker.
+  allow-listed existing-strategy, parameter-search, GP, neuroevolution, composition and
+  Pareto workers.
 
 ## Explicit limitations
 
@@ -51,8 +57,10 @@ system, full NSE tax-lot/corporate-action portfolio simulator, crypto derivative
 liquidation engine, exchange arbitrage simulator, durable distributed worker cluster,
 secured process-isolated holdout service, or full dashboard telemetry/comparison suite.
 The job manager uses local threads and marks in-flight jobs interrupted after process
-restart; interrupted jobs must be resubmitted. The default job runner currently supports
-existing strategies only. The crypto adapter reads local files only. The market ledger and
+restart; interrupted jobs must be resubmitted. GP, neural and composition policies are
+currently long/flat cash models over price/volume features; they do not yet use point-in-time
+fundamentals, macro, news, or order-book execution. NSGA-II presently evolves existing
+strategy parameters, not a unified mixed population of GP, neural and component genomes. The crypto adapter reads local files only. The market ledger and
 portfolio simulator are long-only INR cash models. There is no live brokerage connection
 or order placement.
 
