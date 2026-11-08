@@ -433,3 +433,32 @@ def test_forward_labels_have_explicit_end_timestamps_and_are_separate() -> None:
     assert labels.loc[dates[0], "label_end_timestamp"] == dates[1]
     assert pd.isna(labels.loc[dates[-1], "forward_return_1"])
     assert labels.attrs["uses_future_data"] is True
+
+
+
+def test_probabilistic_and_deflated_sharpe_adjust_for_trial_family() -> None:
+    # The same observed Sharpe must clear a higher benchmark after many trials.
+    from research.platform.statistics import deflated_sharpe_ratio, probabilistic_sharpe_ratio
+
+    observed = 0.08
+    psr = probabilistic_sharpe_ratio(observed, observations=500, kurtosis=3.0)
+    dsr_small = deflated_sharpe_ratio(
+        observed, [-0.02, 0.00, 0.03, 0.05], observations=500
+    )
+    dsr_large = deflated_sharpe_ratio(
+        observed, [-0.02, 0.00, 0.03, 0.05] * 25, observations=500
+    )
+    assert 0.0 <= dsr_small["deflated_sharpe_probability"] <= 1.0
+    assert dsr_small["deflated_sharpe_probability"] < psr
+    assert dsr_large["expected_max_sharpe_per_period"] >= dsr_small["expected_max_sharpe_per_period"]
+    assert dsr_large["trial_count"] == 100
+
+
+def test_sharpe_diagnostics_reject_invalid_sampling_inputs() -> None:
+    # Undefined periods or invalid moments cannot produce an optimistic confidence score.
+    from research.platform.statistics import deflated_sharpe_ratio, probabilistic_sharpe_ratio
+
+    with pytest.raises(ValueError, match="observations"):
+        probabilistic_sharpe_ratio(0.2, observations=1)
+    with pytest.raises(ValueError, match="finite"):
+        deflated_sharpe_ratio(0.2, [0.1, float("nan")], observations=100)
