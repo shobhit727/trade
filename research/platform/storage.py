@@ -187,6 +187,17 @@ class ExperimentStore:
             )
             return int(cursor.lastrowid)
 
+    def has_candidate(self, experiment_id: str, candidate_digest: str) -> bool:
+        """Return whether an immutable candidate fingerprint is already recorded."""
+        # Duplicate evaluations may reference an existing candidate without overwriting it.
+        with self._connection() as connection:
+            row = connection.execute(
+                """SELECT 1 FROM candidates
+                   WHERE experiment_id = ? AND candidate_digest = ? LIMIT 1""",
+                (experiment_id, candidate_digest),
+            ).fetchone()
+        return row is not None
+
     def append_candidate(
         self,
         *,
