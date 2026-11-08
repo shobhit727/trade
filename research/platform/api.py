@@ -479,14 +479,14 @@ class ResearchAPI:
             if path.startswith("/api/jobs/"):
                 # Job IDs are opaque identifiers and cannot select arbitrary runner code.
                 suffix = path.removeprefix("/api/jobs/").strip("/")
-                if not suffix or "/" in suffix:
-                    raise KeyError(suffix)
                 if method == "GET":
+                    if not suffix or "/" in suffix:
+                        raise KeyError(suffix)
                     return self._response(
                         start_response, HTTPStatus.OK, {"job": self.store.get_job(suffix)}
                     )
                 if method == "POST" and suffix.endswith("/cancel"):
-                    job_id = suffix.removesuffix("/cancel")
+                    job_id = suffix.removesuffix("/cancel").strip("/")
                     if not job_id or "/" in job_id:
                         raise KeyError(job_id)
                     if self.job_manager is None:
