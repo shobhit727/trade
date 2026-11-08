@@ -715,6 +715,8 @@ def create_app(
     from .runners import build_default_job_manager
 
     store = ExperimentStore(database_path)
+    # Jobs from a previous process cannot resume in a ThreadPoolExecutor; mark them failed.
+    store.recover_interrupted_jobs()
     manager = build_default_job_manager(
         store,
         crypto_data_root=crypto_data_root,
