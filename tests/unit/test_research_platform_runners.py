@@ -149,8 +149,17 @@ def test_existing_strategy_job_runner_executes_and_persists_partition_results(tm
             "train", "validation", "out_of_sample"
         ]
         assert store.candidates(spec.experiment_id)[0]["family"] == "existing_strategy"
+
+        # Re-running the identical frozen spec appends an evaluation event, not a duplicate row.
+        second_job_id = manager.submit(spec.experiment_id, "existing_strategy_evaluation")
+        second_job = manager.wait(second_job_id, timeout=20)
+        assert second_job["status"] == "succeeded", second_job["error_message"]
+        assert len(store.candidates(spec.experiment_id)) == 1
+
         events = store.events(spec.experiment_id)
-        assert any(event["event_type"] == "existing_strategy_evaluated" for event in events)
+        evaluations = [event for event in events if event["event_type"] == "existing_strategy_evaluated"]
+        assert len(evaluations) == 2
+        assert evaluations[1]["payload"]["repeat_evaluation"] is True
     finally:
         manager.shutdown(wait=True, cancel_pending=True)
 
