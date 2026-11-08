@@ -454,3 +454,11 @@ def test_purged_walk_forward_split_rejects_unaligned_or_naive_timestamps() -> No
             [datetime(2026, 1, day, tzinfo=UTC) for day in range(2, 6)],
             window,
         )
+
+
+def test_experiment_spec_rejects_fractional_embargo_seconds() -> None:
+    # A fractional embargo must not be silently rounded or truncated at validation time.
+    with pytest.raises(ValueError, match="embargo_seconds must be an integer"):
+        make_experiment(embargo_seconds=1.5)
+    with pytest.raises(ValueError, match="embargo_seconds must be an integer"):
+        make_experiment(embargo_seconds=True)
