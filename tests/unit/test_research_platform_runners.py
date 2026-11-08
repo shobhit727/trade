@@ -169,3 +169,187 @@ def test_default_runner_rejects_missing_execution_assumptions(tmp_path) -> None:
         assert "execution_assumptions" in job["error_message"]
     finally:
         manager.shutdown(wait=True, cancel_pending=True)
+
+
+
+def _crypto_spec(dataset_id: str) -> ExperimentSpec:
+    # Crypto experiment has its own INR seed capital and one spot dataset.
+    return ExperimentSpec(
+        experiment_id="runner-crypto-data-test",
+        market=Market.CRYPTO,
+        track=ResearchTrack.CRYPTO_INDIVIDUAL,
+        algorithm_family=AlgorithmFamily.EXISTING_STRATEGY,
+        resolution=DataResolution.ONE_HOUR,
+        dataset_ids=(dataset_id,),
+        random_seed=13,
+        git_commit="0123456789abcdef0123456789abcdef01234567",
+        code_version="crypto-loader-test",
+        training_start=datetime(2025, 1, 1, tzinfo=UTC),
+        training_end=datetime(2025, 1, 1, 1, tzinfo=UTC),
+        validation_start=datetime(2025, 1, 1, 1, tzinfo=UTC),
+        validation_end=datetime(2025, 1, 1, 2, tzinfo=UTC),
+        oos_start=datetime(2025, 1, 1, 2, tzinfo=UTC),
+        oos_end=datetime(2025, 1, 1, 3, tzinfo=UTC),
+        final_holdout_start=datetime(2025, 1, 1, 3, tzinfo=UTC),
+        final_holdout_end=datetime(2025, 1, 1, 4, tzinfo=UTC),
+        cost_model_id="crypto-binance-taker-maker1-taker5",
+        execution_model_id="next-open-participation-impact-v1",
+        objectives=("net_return", "max_drawdown"),
+        parameters={
+            "strategy_name": "absolute_momentum",
+            "execution_assumptions": {
+                "slippage_bps": 5,
+                "impact_coefficient_bps": 10,
+                "max_participation": 0.02,
+                "max_gross_exposure": 1.0,
+                "periods_per_year": 365 * 24,
+            },
+            "fee_schedule": {"maker_fee_bps": 1, "taker_fee_bps": 5},
+        },
+        created_at=datetime(2026, 11, 8, tzinfo=UTC),
+    )
+
+
+def _write_crypto_csv(path: Path, *, timestamps: list[int], close: list[float]) -> str:
+    # Write a small deterministic OHLCV file and return the exact source checksum.
+    import hashlib
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows = ["timestamp,open,high,low,close,volume"]
+    for stamp, price in zip(timestamps, close, strict=True):
+        rows.append(f"{stamp},{price},{price * 1.01},{price * 0.99},{price},1000")
+    path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_crypto_loader_verifies_registered_source_hash_and_quote_currency(tmp_path) -> None:
+    # INR-quoted crypto spot bars are loaded only when file bytes match the manifest.
+    from research.platform.runners import load_registered_bars
+
+    exchange = tmp_path / "binance"
+    stamps = [
+        int(pd.Timestamp("2025-01-01T00:00:00Z").timestamp() * 1000),
+        int(pd.Timestamp("2025-01-01T01:00:00Z").timestamp() * 1000),
+        int(pd.Timestamp("2025-01-01T02:00:00Z").timestamp() * 1000),
+        int(pd.Timestamp("2025-01-01T03:00:00Z").timestamp() * 1000),
+    ]
+    source = exchange / "BTCINR_1h.csv"
+    digest = _write_crypto_csv(source, timestamps=stamps, close=[8000000, 8010000, 8020000, 8030000])
+    spec = _crypto_spec("crypto-binance-btcinr-1h")
+    store = ExperimentStore(tmp_path / "crypto.sqlite3")
+    store.create_experiment(spec)
+    store.register_dataset(DatasetManifest(
+        dataset_id=spec.dataset_ids[0],
+        market=Market.CRYPTO,
+        provider="unit-test",
+        source="binance/BTCINR_1h.csv",
+        instrument="BTCINR",
+        exchange="binance",
+        category="ohlcv",
+        resolution=DataResolution.ONE_HOUR,
+        coverage_start=datetime(2025, 1, 1, tzinfo=UTC),
+        coverage_end=datetime(2025, 1, 1, 3, tzinfo=UTC),
+        timezone="UTC",
+        timestamp_convention="bar_open",
+        acquired_at=datetime(2026, 11, 8, tzinfo=UTC),
+        update_frequency="hourly",
+        license_status=LicenseStatus.APPROVED,
+        license_reference="synthetic-test-only",
+        value_origin=ValueOrigin.OBSERVED,
+        extra_metadata={
+            "file_sha256": digest,
+            "numeric_timestamp_unit": "ms",
+            "quote_currency": "INR",
+            "timestamp_position": "bar_open",
+        },
+    ))
+    bars = load_registered_bars(store, spec, crypto_data_root=tmp_path)
+    assert list(bars) == ["BTCINR"]
+    assert bars["BTCINR"]["close"].iloc[-1] == 8030000
+
+    # A changed local file cannot silently reuse a stale provenance manifest.
+    source.write_text(source.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    try:
+        load_registered_bars(store, spec, crypto_data_root=tmp_path)
+    except ValueError as exc:
+        assert "checksum mismatch" in str(exc)
+    else:
+        raise AssertionError("modified crypto source was accepted")
+
+
+def test_crypto_loader_converts_usdt_using_prior_fx_close_only(tmp_path) -> None:
+    # The FX close at 01:00 is the first rate available to the 01:00 crypto bar open.
+    from research.platform.runners import load_registered_bars
+
+    exchange = tmp_path / "binance"
+    stamps = [
+        int(pd.Timestamp(f"2025-01-01T{hour:02d}:00:00Z").timestamp() * 1000)
+        for hour in range(4)
+    ]
+    asset_path = exchange / "BTCUSDT_1h.csv"
+    asset_hash = _write_crypto_csv(asset_path, timestamps=stamps, close=[100000, 101000, 102000, 103000])
+    fx_path = exchange / "USDTINR_1h.csv"
+    fx_hash = _write_crypto_csv(fx_path, timestamps=stamps, close=[84, 85, 86, 87])
+
+    spec = _crypto_spec("crypto-binance-btcusdt-1h")
+    store = ExperimentStore(tmp_path / "fx.sqlite3")
+    store.create_experiment(spec)
+    store.register_dataset(DatasetManifest(
+        dataset_id=spec.dataset_ids[0],
+        market=Market.CRYPTO,
+        provider="unit-test",
+        source="binance/BTCUSDT_1h.csv",
+        instrument="BTCUSDT",
+        exchange="binance",
+        category="ohlcv",
+        resolution=DataResolution.ONE_HOUR,
+        coverage_start=datetime(2025, 1, 1, tzinfo=UTC),
+        coverage_end=datetime(2025, 1, 1, 3, tzinfo=UTC),
+        timezone="UTC",
+        timestamp_convention="bar_open",
+        acquired_at=datetime(2026, 11, 8, tzinfo=UTC),
+        update_frequency="hourly",
+        license_status=LicenseStatus.APPROVED,
+        license_reference="synthetic-test-only",
+        value_origin=ValueOrigin.OBSERVED,
+        extra_metadata={
+            "file_sha256": asset_hash,
+            "numeric_timestamp_unit": "ms",
+            "quote_currency": "USDT",
+            "timestamp_position": "bar_open",
+            "fx_dataset_id": "fx-usdt-inr-v1",
+            "max_fx_staleness_seconds": 7200,
+        },
+    ))
+    store.register_dataset(DatasetManifest(
+        dataset_id="fx-usdt-inr-v1",
+        market=Market.CRYPTO,
+        provider="unit-test",
+        source="binance/USDTINR_1h.csv",
+        instrument="USDTINR",
+        exchange="binance",
+        category="fx",
+        resolution=DataResolution.ONE_HOUR,
+        coverage_start=datetime(2025, 1, 1, tzinfo=UTC),
+        coverage_end=datetime(2025, 1, 1, 3, tzinfo=UTC),
+        timezone="UTC",
+        timestamp_convention="bar_open",
+        acquired_at=datetime(2026, 11, 8, tzinfo=UTC),
+        update_frequency="hourly",
+        license_status=LicenseStatus.APPROVED,
+        license_reference="synthetic-test-only",
+        value_origin=ValueOrigin.OBSERVED,
+        extra_metadata={
+            "file_sha256": fx_hash,
+            "numeric_timestamp_unit": "ms",
+            "quote_currency": "INR",
+            "timestamp_position": "bar_open",
+            "base_currency": "USDT",
+        },
+    ))
+
+    bars = load_registered_bars(store, spec, crypto_data_root=tmp_path)
+    # First bar has no prior completed FX candle, so it is intentionally unavailable.
+    assert bars["BTCUSDT"].index[0] == pd.Timestamp("2025-01-01T01:00:00Z")
+    assert bars["BTCUSDT"]["open"].iloc[0] == 100000 * 85
+    assert bars["BTCUSDT"].attrs["fx_alignment"] == "backward_asof_no_future"
