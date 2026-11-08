@@ -694,6 +694,9 @@ def test_neuroevolution_worker_persists_mirrored_candidates_and_evaluates_oos(tm
         assert result["successful_train_candidates"] > 0
         assert len(result["validation_shortlist"]) == 2
         assert result["network"]["parameter_count"] > 0
+        assert result["compute"]["backend"] == "numpy"
+        assert result["compute"]["requested_backend"] == "numpy"
+        assert result["compute"]["inference_batch_size"] == 8
         assert result["out_of_sample"]["sample_count"] > 0
         assert result["final_holdout_accessed"] is False
 
