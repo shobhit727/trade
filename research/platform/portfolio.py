@@ -257,7 +257,8 @@ class PortfolioSimulator:
                 side = Side.BUY if difference > 0 else Side.SELL
                 requested = abs(difference)
                 reference = D(str(bars[symbol]["open"].iloc[row]))
-                available = D(str(bars[symbol]["volume"].iloc[row]))
+                # At the next open, only the previous completed bar's final volume is known.
+                available = D(str(bars[symbol]["volume"].iloc[row - 1]))
                 max_quantity = available * participation_cap
                 executable = min(requested, max_quantity)
                 if executable <= 0:
@@ -267,7 +268,8 @@ class PortfolioSimulator:
             # Unwind existing risk first to make proceeds available for new long positions.
             orders.sort(key=lambda item: (0 if item[1] is Side.SELL else 1, item[0]))
             for symbol, side, quantity, reference in orders:
-                available = D(str(bars[symbol]["volume"].iloc[row]))
+                # The order's participation and impact use the same lagged volume cap.
+                available = D(str(bars[symbol]["volume"].iloc[row - 1]))
                 price, participation, impact = self._execution_price(side, reference, quantity, available)
                 fee = self._fee(side, quantity, price)
                 if side is Side.BUY:
