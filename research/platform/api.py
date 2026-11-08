@@ -57,6 +57,7 @@ pre { overflow:auto; white-space:pre-wrap; word-break:break-word; color:#c4d3e4;
 <label>Research track</label><select id="track"></select>
 <label>Algorithm family</label><select id="family"></select>
 <label>Resolution</label><select id="resolution"></select>
+<label>Existing strategy (used when the family is existing_strategy)</label><select id="strategy-name"></select>
 <label>Dataset IDs (comma-separated)</label><input id="dataset-ids" value="example-dataset-v1" required>
 <label>Experiment ID</label><input id="experiment-id" required>
 <label>Git commit</label><input id="git-commit" placeholder="40-character commit SHA" required>
@@ -78,6 +79,12 @@ pre { overflow:auto; white-space:pre-wrap; word-break:break-word; color:#c4d3e4;
 <pre id="detail">Select an experiment row to inspect its stored specification.</pre>
 </section>
 </div>
+<section style="margin-top:16px">
+<h2>Existing strategy catalogue</h2>
+<p>Registered strategy implementations and their typed configuration spaces. Listing does not execute a strategy.</p>
+<table><thead><tr><th>Strategy</th><th>Implementation</th><th>Config</th><th>Searchable parameters</th><th>Held fixed</th></tr></thead><tbody id="strategy-rows"></tbody></table>
+<pre id="strategy-detail">Select a strategy to inspect its defaults and parameter bounds.</pre>
+</section>
 <section style="margin-top:16px">
 <h2>Data availability and provenance</h2>
 <p>Registered dataset manifests only. Registering metadata does not upload market data.</p>
@@ -143,6 +150,42 @@ async function refresh() {
     $("detail").textContent = JSON.stringify(await api("/api/experiments/" +
       encodeURIComponent(row.dataset.id)), null, 2);
   }));
+  const strategies = await api("/api/strategies?limit=500");
+  const strategySelect = $("strategy-name");
+  strategySelect.replaceChildren();
+  const strategyBody = $("strategy-rows");
+  strategyBody.replaceChildren();
+  strategies.strategies.forEach(item => {
+    // Render actual discovered catalogue metadata without injecting stored strings as HTML.
+    const option = document.createElement("option");
+    option.value = item.name;
+    option.textContent = item.name;
+    strategySelect.appendChild(option);
+    const row = document.createElement("tr");
+    [
+      item.name,
+      item.strategy_class,
+      item.config_class,
+      String(item.parameters.length),
+      String(item.held_fixed.length)
+    ].forEach(value => {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      row.appendChild(cell);
+    });
+    row.addEventListener("click", () => {
+      $("strategy-name").value = item.name;
+      $("strategy-detail").textContent = JSON.stringify(item, null, 2);
+    });
+    strategyBody.appendChild(row);
+  });
+  strategySelect.addEventListener("change", () => {
+    const selected = strategies.strategies.find(item => item.name === strategySelect.value);
+    $("strategy-detail").textContent = selected ? JSON.stringify(selected, null, 2) : "";
+  });
+  if (strategies.strategies.length) {
+    $("strategy-detail").textContent = JSON.stringify(strategies.strategies[0], null, 2);
+  }
   const catalogue = await api("/api/datasets");
   const datasetBody = $("dataset-rows");
   datasetBody.replaceChildren();
@@ -195,7 +238,7 @@ $("create-form").addEventListener("submit", async event => {
       objectives: value("objectives").split(",").map(x => x.trim()).filter(Boolean),
       compute_backend: "auto",
       compute_device: "unverified",
-      parameters: {}
+      parameters: value("family") === "existing_strategy" ? {strategy_name: value("strategy-name")} : {}
     };
     const result = await api("/api/experiments", {
       method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
