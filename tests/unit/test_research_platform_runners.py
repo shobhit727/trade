@@ -274,7 +274,8 @@ def test_crypto_loader_verifies_registered_source_hash_and_quote_currency(tmp_pa
     ))
     bars = load_registered_bars(store, spec, crypto_data_root=tmp_path)
     assert list(bars) == ["BTCINR"]
-    assert bars["BTCINR"]["close"].iloc[-1] == 8030000
+    assert bars["BTCINR"]["close"].iloc[-1] == 8020000
+    assert (bars["BTCINR"].index < spec.oos_end).all()
 
     # A changed local file cannot silently reuse a stale provenance manifest.
     source.write_text(source.read_text(encoding="utf-8") + "\n", encoding="utf-8")
@@ -366,6 +367,8 @@ def test_crypto_loader_converts_usdt_using_prior_fx_close_only(tmp_path) -> None
     bars = load_registered_bars(store, spec, crypto_data_root=tmp_path)
     # Each bar uses the close of the immediately preceding completed FX candle.
     assert bars["BTCUSDT"].index[0] == pd.Timestamp("2025-01-01T00:00:00Z")
+    assert len(bars["BTCUSDT"]) == 3
+    assert (bars["BTCUSDT"].index < spec.oos_end).all()
     assert bars["BTCUSDT"]["open"].iloc[0] == 100000 * 83
     assert bars["BTCUSDT"]["open"].iloc[1] == 101000 * 84
     assert bars["BTCUSDT"].attrs["fx_alignment"] == "backward_asof_no_future"
