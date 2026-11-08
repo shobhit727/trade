@@ -185,11 +185,16 @@ def optuna_tpe_search(
                 parameters[parameter.name] = trial.suggest_float(
                     parameter.name, float(parameter.low), float(parameter.high)
                 )
-        score = float(objective(parameters))
-        if not np.isfinite(score):
-            raise ValueError("objective returned a non-finite score")
         trial.set_user_attr("candidate_parameters", parameters)
-        return score
+        try:
+            score = float(objective(parameters))
+            if not np.isfinite(score):
+                raise ValueError("objective returned a non-finite score")
+            return score
+        except Exception as exc:
+            # Failed trials remain visible with a bounded diagnostic message.
+            trial.set_user_attr("failure_reason", f"{type(exc).__name__}: {exc}"[:300])
+            raise
 
     # Failed trials remain in the study and are copied into the returned failure log.
     study.optimize(
