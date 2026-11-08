@@ -438,12 +438,36 @@ def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
     if isinstance(raw_embargo, bool) or not isinstance(raw_embargo, int):
         raise ValueError("embargo_seconds must be an integer")
     algorithm_family = AlgorithmFamily(payload["algorithm_family"])
-    if algorithm_family is AlgorithmFamily.EXISTING_STRATEGY:
-        # Do not accept arbitrary names; the strategy must be registered in the repository.
+    supported_existing_families = {
+        AlgorithmFamily.EXISTING_STRATEGY,
+        AlgorithmFamily.RANDOM_SEARCH,
+        AlgorithmFamily.GRID_SEARCH,
+        AlgorithmFamily.DIFFERENTIAL_EVOLUTION,
+        AlgorithmFamily.BAYESIAN,
+    }
+    if algorithm_family in supported_existing_families:
+        # Never accept arbitrary strategy names; resolve against the repository catalogue.
         strategy_name = parameters.get("strategy_name")
         if not isinstance(strategy_name, str) or not strategy_name.strip():
-            raise ValueError("existing_strategy experiments require a registered strategy_name")
+            raise ValueError(
+                f"{algorithm_family.value} experiments require a registered strategy_name"
+            )
         ExistingStrategyRegistry().describe(strategy_name)
+    if algorithm_family in {
+        AlgorithmFamily.RANDOM_SEARCH,
+        AlgorithmFamily.GRID_SEARCH,
+        AlgorithmFamily.DIFFERENTIAL_EVOLUTION,
+        AlgorithmFamily.BAYESIAN,
+    }:
+        # Search budget and validation shortlist are first-class immutable experiment inputs.
+        optimization = parameters.get("optimization")
+        if not isinstance(optimization, dict):
+            raise ValueError("optimizer experiments require parameters.optimization")
+        required_optimization = {"budget", "validation_candidates", "objective"}
+        if not required_optimization.issubset(optimization):
+            raise ValueError(
+                f"parameters.optimization requires {sorted(required_optimization)}"
+            )
     return ExperimentSpec(
         experiment_id=str(payload["experiment_id"]),
         market=Market(payload["market"]),
@@ -560,8 +584,24 @@ class ResearchAPI:
                 if not isinstance(parameters, dict):
                     raise ValueError("job parameters must be a JSON object")
                 record = self.store.get_experiment(experiment_id)
-                if record["spec"]["algorithm_family"] != AlgorithmFamily.EXISTING_STRATEGY.value:
-                    raise ValueError("the registered evaluation runner currently supports existing_strategy only")
+                family = AlgorithmFamily(record["spec"]["algorithm_family"])
+                if family is AlgorithmFamily.EXISTING_STRATEGY:
+                    expected_runner = "existing_strategy_evaluation"
+                elif family in {
+                    AlgorithmFamily.RANDOM_SEARCH,
+                    AlgorithmFamily.GRID_SEARCH,
+                    AlgorithmFamily.DIFFERENTIAL_EVOLUTION,
+                    AlgorithmFamily.BAYESIAN,
+                }:
+                    expected_runner = "existing_strategy_optimization"
+                else:
+                    raise ValueError(
+                        "no job runner is registered for this algorithm family yet"
+                    )
+                if runner_name != expected_runner:
+                    raise ValueError(
+                        f"algorithm family {family.value} requires runner {expected_runner}"
+                    )
                 job_id = self.job_manager.submit(experiment_id, runner_name, parameters)
                 return self._response(start_response, HTTPStatus.ACCEPTED, {
                     "job_id": job_id,
