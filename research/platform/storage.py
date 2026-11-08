@@ -107,6 +107,39 @@ class ExperimentStore:
                 END;
                 CREATE INDEX IF NOT EXISTS idx_candidates_experiment
                     ON candidates(experiment_id, generation);
+                CREATE TABLE IF NOT EXISTS jobs (
+                    job_id TEXT PRIMARY KEY,
+                    experiment_id TEXT NOT NULL REFERENCES experiments(experiment_id),
+                    runner_name TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK (
+                        status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')
+                    ),
+                    created_at TEXT NOT NULL,
+                    started_at TEXT,
+                    completed_at TEXT,
+                    parameters_json TEXT NOT NULL,
+                    result_json TEXT,
+                    error_message TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_jobs_experiment
+                    ON jobs(experiment_id, created_at);
+                CREATE TABLE IF NOT EXISTS job_events (
+                    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    job_id TEXT NOT NULL REFERENCES jobs(job_id),
+                    event_type TEXT NOT NULL,
+                    occurred_at TEXT NOT NULL,
+                    payload_json TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_job_events_job
+                    ON job_events(job_id, event_id);
+                CREATE TRIGGER IF NOT EXISTS immutable_job_events_update
+                BEFORE UPDATE ON job_events BEGIN
+                    SELECT RAISE(ABORT, 'job events are append-only');
+                END;
+                CREATE TRIGGER IF NOT EXISTS immutable_job_events_delete
+                BEFORE DELETE ON job_events BEGIN
+                    SELECT RAISE(ABORT, 'job events are append-only');
+                END;
                 CREATE TRIGGER IF NOT EXISTS immutable_events_update
                 BEFORE UPDATE ON experiment_events BEGIN
                     SELECT RAISE(ABORT, 'experiment events are append-only');
@@ -324,3 +357,132 @@ class ExperimentStore:
             })
             output.append(item)
         return tuple(output)
+
+
+    def create_job(
+        self,
+        *,
+        job_id: str,
+        experiment_id: str,
+        runner_name: str,
+        parameters: dict[str, Any],
+    ) -> None:
+        """Persist a queued research job against an existing experiment."""
+        # Jobs reference a fixed runner name; no executable source is accepted.
+        if not job_id.strip() or not runner_name.strip():
+            raise ValueError("job_id and runner_name must be non-empty")
+        encoded = json.dumps(parameters, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        with self._connection() as connection:
+            connection.execute(
+                """INSERT INTO jobs
+                   (job_id, experiment_id, runner_name, status, created_at, parameters_json)
+                   VALUES (?, ?, ?, 'queued', ?, ?)""",
+                (job_id, experiment_id, runner_name, datetime.now(timezone.utc).isoformat(), encoded),
+            )
+
+    def update_job_status(
+        self,
+        job_id: str,
+        status: str,
+        *,
+        result: dict[str, Any] | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        """Apply a legal job-state transition and persist its terminal summary."""
+        # Reject status rewrites and impossible lifecycle transitions.
+        allowed = {
+            "queued": {"running", "failed", "cancelled"},
+            "running": {"succeeded", "failed", "cancelled"},
+            "succeeded": set(),
+            "failed": set(),
+            "cancelled": set(),
+        }
+        if status not in allowed:
+            raise ValueError(f"unknown job status: {status}")
+        encoded = None if result is None else json.dumps(
+            result, sort_keys=True, separators=(",", ":"), allow_nan=False
+        )
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT status FROM jobs WHERE job_id = ?", (job_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(job_id)
+            current = row["status"]
+            if status not in allowed[current]:
+                raise ValueError(f"invalid job transition: {current} -> {status}")
+            started_at = datetime.now(timezone.utc).isoformat() if status == "running" else None
+            completed_at = (
+                datetime.now(timezone.utc).isoformat()
+                if status in {"succeeded", "failed", "cancelled"} else None
+            )
+            connection.execute(
+                """UPDATE jobs
+                   SET status = ?,
+                       started_at = COALESCE(?, started_at),
+                       completed_at = COALESCE(?, completed_at),
+                       result_json = COALESCE(?, result_json),
+                       error_message = ?
+                   WHERE job_id = ?""",
+                (status, started_at, completed_at, encoded, error_message, job_id),
+            )
+
+    def append_job_event(self, job_id: str, event_type: str, payload: dict[str, Any]) -> int:
+        """Append a job lifecycle/progress event."""
+        # Events are immutable so failures and cancellation requests remain auditable.
+        if not event_type.strip():
+            raise ValueError("event_type must be non-empty")
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        with self._connection() as connection:
+            cursor = connection.execute(
+                """INSERT INTO job_events (job_id, event_type, occurred_at, payload_json)
+                   VALUES (?, ?, ?, ?)""",
+                (job_id, event_type, datetime.now(timezone.utc).isoformat(), encoded),
+            )
+            return int(cursor.lastrowid)
+
+    def get_job(self, job_id: str) -> dict[str, Any]:
+        """Return persisted job status, parameters, result and ordered events."""
+        with self._connection() as connection:
+            row = connection.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+            if row is None:
+                raise KeyError(job_id)
+            events = connection.execute(
+                "SELECT * FROM job_events WHERE job_id = ? ORDER BY event_id", (job_id,)
+            ).fetchall()
+        result = dict(row)
+        result["parameters"] = json.loads(result.pop("parameters_json"))
+        if result["result_json"] is not None:
+            result["result"] = json.loads(result.pop("result_json"))
+        else:
+            result.pop("result_json")
+            result["result"] = None
+        result["events"] = [
+            {**dict(event), "payload": json.loads(event["payload_json"])}
+            for event in events
+        ]
+        return result
+
+    def list_jobs(
+        self, *, experiment_id: str | None = None, limit: int = 100
+    ) -> tuple[dict[str, Any], ...]:
+        """List jobs without combining market P&L or portfolio state."""
+        # Keep API/dashboard listings bounded.
+        if not 1 <= limit <= 1000:
+            raise ValueError("limit must be between 1 and 1000")
+        with self._connection() as connection:
+            if experiment_id is None:
+                rows = connection.execute(
+                    """SELECT job_id, experiment_id, runner_name, status,
+                              created_at, started_at, completed_at, error_message
+                       FROM jobs ORDER BY created_at DESC LIMIT ?""",
+                    (limit,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """SELECT job_id, experiment_id, runner_name, status,
+                              created_at, started_at, completed_at, error_message
+                       FROM jobs WHERE experiment_id = ? ORDER BY created_at DESC LIMIT ?""",
+                    (experiment_id, limit),
+                ).fetchall()
+        return tuple(dict(row) for row in rows)
