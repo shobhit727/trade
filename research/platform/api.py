@@ -857,6 +857,7 @@ def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
         compute_backend=str(payload.get("compute_backend", "auto")),
         compute_device=str(payload.get("compute_device", "unverified")),
         parameters=parameters,
+        embargo_seconds=raw_embargo,
     )
 
 
