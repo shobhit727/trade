@@ -560,7 +560,19 @@ def test_nsga2_runs_generations_and_preserves_multiple_pareto_tradeoffs() -> Non
     assert len(first["population"]) == 16
     assert len(first["pareto_front"]) >= 2
     assert first["scalar_winner_selected"] is False
-    assert first["evaluations"] == second["evaluations"]
+    assert first["evaluations"] == second["evaluations"] == 16 * 6
+    assert len(first["candidate_archive"]) == first["evaluations"]
+    candidate_ids = {item["candidate_id"] for item in first["candidate_archive"]}
+    offspring = [
+        item for item in first["candidate_archive"]
+        if item["generation"] > 0 and item["status"] == "succeeded"
+    ]
+    assert offspring
+    assert all(item["lineage"]["parent_candidate_ids"] for item in offspring)
+    assert all(
+        set(item["lineage"]["parent_candidate_ids"]).issubset(candidate_ids)
+        for item in offspring
+    )
     assert [item["genome"] for item in first["population"]] == [
         item["genome"] for item in second["population"]
     ]
