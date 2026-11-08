@@ -486,8 +486,9 @@ def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
             )
         for integer_key in ("budget", "validation_candidates"):
             raw = optimization[integer_key]
-            if isinstance(raw, bool) or not isinstance(raw, int) or raw < 1:
-                raise ValueError(f"optimization.{integer_key} must be a positive integer")
+            minimum = 4 if integer_key == "budget" else 1
+            if isinstance(raw, bool) or not isinstance(raw, int) or raw < minimum:
+                raise ValueError(f"optimization.{integer_key} must be an integer >= {minimum}")
         objective_name = str(optimization["objective"])
         if objective_name not in {"sharpe", "sortino", "cagr", "calmar", "total_return"}:
             raise ValueError("optimization.objective must be sharpe, sortino, cagr, calmar or total_return")
@@ -496,6 +497,9 @@ def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
             if isinstance(points, bool) or not isinstance(points, int) or points < 2:
                 raise ValueError("grid_search requires points_per_numeric_dimension >= 2")
         elif algorithm_family is AlgorithmFamily.DIFFERENTIAL_EVOLUTION:
+            missing_de = {"population_size", "generations", "mutation", "crossover"} - set(optimization)
+            if missing_de:
+                raise ValueError(f"differential_evolution settings missing: {sorted(missing_de)}")
             population = optimization.get("population_size")
             generations = optimization.get("generations")
             if (
