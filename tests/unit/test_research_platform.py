@@ -384,7 +384,7 @@ def test_experiment_spec_records_and_enforces_partition_embargo() -> None:
         "training_end": datetime(2020, 1, 1, tzinfo=UTC),
         "validation_start": datetime(2020, 1, 1, 0, 1, tzinfo=UTC),
         "validation_end": datetime(2022, 1, 1, tzinfo=UTC),
-        "oos_start": datetime(2022, 1, 1, 0, 1, tzinfo=UTC),
+        "oos_start": datetime(2026, 10, 2, tzinfo=UTC),
         "oos_end": datetime(2026, 10, 16, tzinfo=UTC),
         "final_holdout_start": datetime(2026, 10, 16, 0, 1, tzinfo=UTC),
         "final_holdout_end": datetime(2026, 11, 8, tzinfo=UTC),
