@@ -313,6 +313,16 @@ def candidate_family_report_from_returns(
         "periods_per_year": int(periods_per_year),
         "sharpe_scale": "per_period",
     }
+    report["best_candidate_train_mean_return_bootstrap"] = moving_block_bootstrap(
+        vectors[best_index],
+        block_size=min(10, observations),
+        samples=1000,
+        confidence=0.95,
+        seed=42,
+    )
+    report["bootstrap_interpretation"] = (
+        "descriptive_train_only_mean_periodic_return_interval; not a future-profitability estimate"
+    )
     report["p_value_method"] = "one_minus_probabilistic_sharpe_ratio_vs_zero"
     report["dsr_shape_source"] = "best_candidate_by_observed_per_period_sharpe"
     return report
