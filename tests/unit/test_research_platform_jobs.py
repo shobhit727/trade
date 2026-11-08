@@ -173,3 +173,37 @@ def test_store_marks_queued_and_running_jobs_interrupted_after_restart(tmp_path)
     )
     # Recovery is idempotent; terminal jobs are not rewritten.
     assert store.recover_interrupted_jobs() == 0
+
+
+def test_job_manager_rejects_concurrent_duplicate_experiment_runner(tmp_path) -> None:
+    # Duplicate active runs could race immutable candidate and experiment-event writes.
+    import time
+
+    from threading import Event
+
+    started = Event()
+    release = Event()
+
+    def runner(context, experiment, parameters):
+        started.set()
+        while not release.is_set():
+            context.check_cancelled()
+            time.sleep(0.005)
+        return {"completed": True}
+
+    store, manager = _manager(tmp_path / "duplicate.sqlite3", max_workers=1)
+    manager.register_runner("slow_test", runner)
+    try:
+        first = manager.submit("job-manager-test", "slow_test")
+        assert started.wait(timeout=5)
+        with pytest.raises(RuntimeError, match="active job already exists"):
+            manager.submit("job-manager-test", "slow_test")
+        release.set()
+        assert manager.wait(first, timeout=5)["status"] == "succeeded"
+
+        # A new run is allowed after the original job reaches a terminal state.
+        second = manager.submit("job-manager-test", "slow_test")
+        assert manager.wait(second, timeout=5)["status"] == "succeeded"
+    finally:
+        release.set()
+        manager.shutdown(wait=True, cancel_pending=True)
