@@ -11,7 +11,6 @@ from typing import Any
 from urllib.parse import parse_qs
 from wsgiref.types import StartResponse
 
-from .data_catalog import DataAvailabilityCatalog
 from .domain import AlgorithmFamily, DataResolution, MARKET_SPECS, Market, ResearchTrack
 from .experiments import ExperimentSpec
 from .storage import ExperimentStore
