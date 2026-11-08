@@ -196,13 +196,16 @@ def nsga2_optimize(
             directions,
             size=min(population_size, len(candidates)),
         )
-        selected_ids = {item.candidate_id for item in selected}
+        selected_ids = [item.candidate_id for item in selected]
         by_id = {item.candidate_id: item for item in candidates}
         return [by_id[candidate_id] for candidate_id in selected_ids]
 
     for generation in range(1, generations + 1):
         offspring: list[NSGA2Individual] = []
-        while len(offspring) < population_size:
+        attempts = 0
+        max_attempts = population_size * 20
+        while len(offspring) < population_size and attempts < max_attempts:
+            attempts += 1
             # Parent selection samples from the current nondominated survivors.
             left = population[int(rng.integers(0, len(population)))]
             right = population[int(rng.integers(0, len(population)))]
@@ -218,8 +221,10 @@ def nsga2_optimize(
             if child is not None:
                 offspring.append(child)
             # Prevent a permanently failing operator from creating an infinite loop.
-            if len(failures) > evaluations and evaluations > population_size * 4:
-                raise RuntimeError("too many failed NSGA-II candidate/operator evaluations")
+        if len(offspring) < population_size:
+            raise RuntimeError(
+                f"NSGA-II produced only {len(offspring)} valid offspring after {attempts} attempts"
+            )
 
         population = select_survivors(population + offspring)
         fronts = non_dominated_fronts(
