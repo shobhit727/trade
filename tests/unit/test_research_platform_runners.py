@@ -16,6 +16,7 @@ from research.platform.jobs import ResearchJobManager
 from research.platform.runners import (
     ExistingStrategyJobRunner,
     ExistingStrategyOptimizerJobRunner,
+    GeneticProgrammingJobRunner,
     _build_portfolio_config,
     experiment_spec_from_record,
 )
@@ -543,5 +544,89 @@ def test_differential_evolution_optimizer_persists_resolvable_parent_lineage(tmp
             selected_validation["candidate_id"]
         ]
         assert result["final_holdout_accessed"] is False
+    finally:
+        manager.shutdown(wait=True, cancel_pending=True)
+
+
+
+def test_genetic_programming_worker_persists_lineage_selects_validation_and_evaluates_oos(tmp_path) -> None:
+    # The small GP population exercises the complete train-freeze-OOS lifecycle.
+    base = _spec()
+    parameters = dict(base.parameters)
+    parameters["genetic_programming"] = {
+        "population_size": 4,
+        "generations": 1,
+        "max_depth": 3,
+        "max_nodes": 15,
+        "mutation_rate": 0.25,
+        "validation_candidates": 2,
+        "objective": "sharpe",
+        "feature_windows": [3],
+    }
+    spec = replace(
+        base,
+        experiment_id="runner-genetic-programming",
+        algorithm_family=AlgorithmFamily.GENETIC_PROGRAMMING,
+        parameters=parameters,
+    )
+    store = _store(tmp_path / "gp-runner.sqlite3", spec)
+    manager = ResearchJobManager(store, max_workers=1, max_queued=1)
+    runner = GeneticProgrammingJobRunner(
+        bar_loader=lambda current_store, current_spec: _bars()
+    )
+    manager.register_runner("genetic_programming", runner)
+    try:
+        job_id = manager.submit(spec.experiment_id, "genetic_programming")
+        job = manager.wait(job_id, timeout=60)
+        assert job["status"] == "succeeded", job["error_message"]
+        result = job["result"]
+        assert result["algorithm_family"] == "genetic_programming"
+        assert result["candidate_count"] == 8
+        assert result["successful_train_candidates"] > 0
+        assert len(result["validation_shortlist"]) == 2
+        assert result["out_of_sample"]["sample_count"] > 0
+        assert result["final_holdout_accessed"] is False
+
+        candidates = store.candidates(spec.experiment_id)
+        assert len(candidates) == 8
+        assert all(item["family"] == "genetic_programming" for item in candidates)
+        assert any(
+            item["lineage"]["operator"] == "subtree_crossover"
+            or item["lineage"]["operator"] == "subtree_crossover_then_mutation"
+            for item in candidates
+        )
+        candidate_ids = {item["candidate_id"] for item in candidates}
+        for item in candidates:
+            for parent_id in item["lineage"]["parent_candidate_ids"]:
+                assert parent_id in candidate_ids
+        event_types = {event["event_type"] for event in store.events(spec.experiment_id)}
+        assert "genetic_programming_candidate_frozen" in event_types
+        assert "genetic_programming_oos_recorded" in event_types
+    finally:
+        manager.shutdown(wait=True, cancel_pending=True)
+
+
+def test_genetic_programming_worker_rejects_missing_model_settings(tmp_path) -> None:
+    # A GP experiment cannot fall back to arbitrary population or feature-window defaults.
+    base = _spec()
+    parameters = dict(base.parameters)
+    parameters["genetic_programming"] = {"population_size": 8}
+    spec = replace(
+        base,
+        experiment_id="runner-genetic-programming-invalid",
+        algorithm_family=AlgorithmFamily.GENETIC_PROGRAMMING,
+        parameters=parameters,
+    )
+    store = _store(tmp_path / "gp-invalid.sqlite3", spec)
+    manager = ResearchJobManager(store, max_workers=1, max_queued=1)
+    runner = GeneticProgrammingJobRunner(
+        bar_loader=lambda current_store, current_spec: _bars()
+    )
+    manager.register_runner("genetic_programming", runner)
+    try:
+        job_id = manager.submit(spec.experiment_id, "genetic_programming")
+        job = manager.wait(job_id, timeout=10)
+        assert job["status"] == "failed"
+        assert "genetic_programming requires" in job["error_message"]
     finally:
         manager.shutdown(wait=True, cancel_pending=True)
