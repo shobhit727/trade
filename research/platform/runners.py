@@ -1580,6 +1580,13 @@ class NeuroevolutionJobRunner:
             or len(set(windows)) != len(windows)
         ):
             raise ValueError("feature_windows must be unique integers >= 2")
+        inference_batch_size = settings.get("inference_batch_size", 8)
+        if (
+            isinstance(inference_batch_size, bool)
+            or not isinstance(inference_batch_size, int)
+            or not 1 <= inference_batch_size <= 256
+        ):
+            raise ValueError("neuroevolution.inference_batch_size must be in 1..256")
 
         manifests = [
             context.store.get_dataset(dataset_id)["manifest"]
@@ -1626,13 +1633,6 @@ class NeuroevolutionJobRunner:
         if requested_backend not in backend_aliases:
             raise ValueError("compute_backend must be auto, numpy, cpu or cupy")
         compute_engine = ComputeEngine(backend=backend_aliases[requested_backend])
-        inference_batch_size = settings.get("inference_batch_size", 8)
-        if (
-            isinstance(inference_batch_size, bool)
-            or not isinstance(inference_batch_size, int)
-            or not 1 <= inference_batch_size <= 256
-        ):
-            raise ValueError("neuroevolution.inference_batch_size must be in 1..256")
 
         def batch_predictor(
             matrix: np.ndarray, parameter_batch: np.ndarray
