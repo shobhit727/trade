@@ -6,7 +6,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Callable, Mapping
+from typing import Any, Callable, Mapping
 
 import pandas as pd
 
