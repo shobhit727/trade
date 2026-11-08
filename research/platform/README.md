@@ -32,6 +32,11 @@ any existing backtest engine.
   threshold below 20%; crypto does not inherit that NSE-specific limit. Quality checks are
   recorded as canonical JSON in manifest metadata; a full gap/universe quality grade is not
   inferred from these checks.
+- A materialize_non_holdout_partition ingestion helper writes a checksum-verified
+  non_holdout.csv copy ending before the final-holdout boundary and returns a new immutable
+  manifest. load_registered_bars prefers that copy and never opens the original source when
+  the manifest contains partition metadata. Set RESEARCH_PARTITION_DATA_ROOT to its root and
+  RESEARCH_REQUIRE_PARTITIONED_DATA=1 to reject legacy combined-source fallback.
 - Explicit quote-currency to INR conversion using backward-only FX alignment, maximum staleness
   limits and source provenance. Future or stale FX rates are rejected.
 - A causal trailing price/volume feature engine plus separately timestamped forward labels.
@@ -73,9 +78,12 @@ system, full NSE tax-lot/corporate-action portfolio simulator, crypto derivative
 liquidation engine, exchange arbitrage simulator, durable distributed worker cluster,
 secured process-isolated holdout service, or full dashboard telemetry/comparison suite.
 The job manager uses local threads and marks in-flight jobs interrupted after process
-restart; interrupted jobs must be resubmitted. GP, neural and composition policies are
-currently long/flat cash models over price/volume features; they do not yet use point-in-time
-fundamentals, macro, news, or order-book execution. NSGA-II presently evolves existing
+restart; interrupted jobs must be resubmitted. Without RESEARCH_REQUIRE_PARTITIONED_DATA=1,
+legacy source loading remains available and can parse a combined file before row clipping.
+The safe partition copy avoids that normal worker read, but local filesystem access is not
+an OS/process security boundary. GP, neural and composition policies are currently long/flat
+cash models over price/volume features; they do not yet use point-in-time fundamentals, macro,
+news, or order-book execution. NSGA-II presently evolves existing
 strategy parameters, not a unified mixed population of GP, neural and component genomes. The crypto adapter reads local files only. The market ledger and
 portfolio simulator are long-only INR cash models. There is no live brokerage connection
 or order placement.
