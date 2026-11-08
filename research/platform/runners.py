@@ -26,7 +26,10 @@ from .evaluation import (
 )
 from .experiments import ExperimentSpec
 from .fx import FXRateSeries, convert_ohlcv_to_inr
+from .features import PointInTimeFeatureEngine
+from .genetic_programming import GeneticProgrammer, Node
 from .jobs import JobContext
+from .model_evaluation import build_model_feature_panel, evaluate_model_scores
 from .optimizers import (
     Candidate as SearchCandidate,
     Parameter as SearchParameter,
@@ -924,6 +927,342 @@ class ExistingStrategyOptimizerJobRunner:
         }
 
 
+def _node_to_payload(node: Node) -> dict[str, Any]:
+    """Convert a closed GP AST to a canonical JSON-compatible tree."""
+    # The tree grammar contains no executable source, imports or dynamic object references.
+    return {
+        "operation": node.operation,
+        "feature_index": node.feature_index,
+        "constant": node.constant,
+        "children": [_node_to_payload(child) for child in node.children],
+    }
+
+
+def _prediction_digest(values: np.ndarray) -> str:
+    # Hash exact float64 prediction bytes for reproducible TRAIN fitness caching.
+    return hashlib.sha256(
+        np.ascontiguousarray(values, dtype=np.float64).tobytes()
+    ).hexdigest()
+
+
+class GeneticProgrammingJobRunner:
+    """Evolve a numerical long/flat policy on TRAIN, select on VALIDATION and freeze OOS."""
+
+    OBJECTIVES = frozenset({"sharpe", "sortino", "cagr", "calmar", "total_return"})
+
+    def __init__(
+        self,
+        *,
+        crypto_data_root: str | Path | None = None,
+        bar_loader: Callable[[ExperimentStore, ExperimentSpec], dict[str, pd.DataFrame]] | None = None,
+    ) -> None:
+        # Reuse the approved-manifest, checksum-verification and OOS-clipped data path.
+        self.crypto_data_root = crypto_data_root
+        self.bar_loader = bar_loader or (
+            lambda store, spec: load_registered_bars(
+                store, spec, crypto_data_root=self.crypto_data_root
+            )
+        )
+
+    def __call__(
+        self,
+        context: JobContext,
+        experiment_record: dict[str, Any],
+        parameters: dict[str, Any],
+    ) -> dict[str, Any]:
+        # All model settings are part of the immutable ExperimentSpec, not queue-time overrides.
+        if parameters:
+            raise ValueError("GP runner accepts no job-time overrides; update the experiment spec")
+        context.check_cancelled()
+        spec = experiment_spec_from_record(experiment_record)
+        if spec.algorithm_family is not AlgorithmFamily.GENETIC_PROGRAMMING:
+            raise ValueError("genetic_programming runner requires genetic_programming family")
+
+        settings = spec.parameters.get("genetic_programming")
+        required = {
+            "population_size", "generations", "max_depth", "max_nodes",
+            "mutation_rate", "validation_candidates", "objective", "feature_windows",
+        }
+        if not isinstance(settings, dict) or not required.issubset(settings):
+            raise ValueError(
+                f"parameters.genetic_programming requires {sorted(required)}"
+            )
+        integer_settings = (
+            "population_size", "generations", "max_depth",
+            "max_nodes", "validation_candidates",
+        )
+        for name in integer_settings:
+            value = settings[name]
+            minimum = 4 if name == "population_size" else 1 if name in {
+                "generations", "max_depth", "validation_candidates"
+            } else 3
+            if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+                raise ValueError(f"genetic_programming.{name} must be an integer >= {minimum}")
+        mutation_rate = settings["mutation_rate"]
+        if (
+            isinstance(mutation_rate, bool)
+            or not isinstance(mutation_rate, int | float)
+            or not np.isfinite(mutation_rate)
+            or not 0 <= mutation_rate <= 1
+        ):
+            raise ValueError("genetic_programming.mutation_rate must be between zero and one")
+        objective_name = str(settings["objective"])
+        if objective_name not in self.OBJECTIVES:
+            raise ValueError(f"objective must be one of {sorted(self.OBJECTIVES)}")
+        windows = settings["feature_windows"]
+        if (
+            not isinstance(windows, list)
+            or not windows
+            or any(isinstance(value, bool) or not isinstance(value, int) or value < 2 for value in windows)
+        ):
+            raise ValueError("feature_windows must be a non-empty array of integers >= 2")
+        if len(set(windows)) != len(windows):
+            raise ValueError("feature_windows must not contain duplicates")
+
+        manifests = [
+            context.store.get_dataset(dataset_id)["manifest"]
+            for dataset_id in spec.dataset_ids
+        ]
+        bars = self.bar_loader(context.store, spec)
+        config, periods_per_year = _build_portfolio_config(spec, manifests)
+        feature_engine = PointInTimeFeatureEngine(windows=tuple(windows))
+        train_panel = build_model_feature_panel(
+            bars, feature_engine, spec.track,
+            start=spec.training_start, end=spec.training_end,
+        )
+        context.log(
+            f"GP TRAIN start: population={settings['population_size']}, "
+            f"generations={settings['generations']}, samples={len(train_panel.features)}"
+        )
+
+        train_cache: dict[str, dict[str, float | int]] = {}
+
+        def train_fitness(predictions: np.ndarray) -> float:
+            # Every expression is measured only on the frozen TRAIN partition.
+            context.check_cancelled()
+            digest = _prediction_digest(predictions)
+            if digest not in train_cache:
+                result = evaluate_model_scores(
+                    train_panel, predictions, config,
+                    partition="train",
+                    start=spec.training_start, end=spec.training_end,
+                    periods_per_year=periods_per_year,
+                )
+                train_cache[digest] = result.metrics
+            value = float(train_cache[digest][objective_name])
+            if not np.isfinite(value):
+                raise ValueError("GP TRAIN objective is non-finite")
+            return value
+
+        programmer = GeneticProgrammer(
+            feature_count=train_panel.features.shape[1],
+            population_size=settings["population_size"],
+            generations=settings["generations"],
+            max_depth=settings["max_depth"],
+            max_nodes=settings["max_nodes"],
+            mutation_rate=float(mutation_rate),
+            seed=spec.random_seed,
+        )
+        trace = programmer.run(train_panel.features, train_fitness)
+        context.log(
+            f"GP TRAIN completed: {len(trace['candidate_archive'])} candidate evaluations"
+        )
+        bars_digest = _bars_fingerprint(bars)
+        archive = list(trace["candidate_archive"])
+        candidate_rows: list[dict[str, Any]] = []
+        candidate_id_map: dict[str, str] = {}
+
+        # Persist the complete generation trace so every parent ID resolves to a stored row.
+        for item in archive:
+            context.check_cancelled()
+            tree = item["tree"]
+            tree_payload = _node_to_payload(tree)
+            predictions = tree.evaluate(train_panel.features)
+            prediction_key = _prediction_digest(predictions)
+            metrics = train_cache.get(prediction_key)
+            succeeded = item["status"] == "succeeded" and metrics is not None
+            digest_payload = {
+                "experiment_fingerprint": spec.fingerprint,
+                "bars_sha256": bars_digest,
+                "tree": tree_payload,
+                "candidate_id": item["candidate_id"],
+                "generation": item["generation"],
+                "seed": spec.random_seed,
+                "feature_windows": windows,
+            }
+            candidate_digest = hashlib.sha256(
+                json.dumps(
+                    digest_payload, sort_keys=True, separators=(",", ":"), allow_nan=False
+                ).encode("utf-8")
+            ).hexdigest()
+            candidate_id = f"{spec.experiment_id}-{candidate_digest[:16]}"
+            candidate_id_map[str(item["candidate_id"])] = candidate_id
+            candidate_rows.append({
+                "source_candidate_id": item["candidate_id"],
+                "candidate_id": candidate_id,
+                "candidate_digest": candidate_digest,
+                "tree": tree,
+                "tree_payload": tree_payload,
+                "generation": int(item["generation"]),
+                "index": int(item["index"]),
+                "train_score": float(item["fitness"]) if succeeded else None,
+                "train_metrics": metrics or {},
+                "status": "succeeded" if succeeded else "failed",
+                "failure_reason": item.get("failure_reason"),
+                "lineage": dict(item["lineage"]),
+            })
+
+        for candidate in candidate_rows:
+            if context.store.has_candidate(spec.experiment_id, candidate["candidate_digest"]):
+                continue
+            lineage = dict(candidate["lineage"])
+            raw_parents = lineage.get("parent_candidate_ids", [])
+            lineage["parent_candidate_ids"] = [
+                candidate_id_map.get(str(parent), str(parent))
+                for parent in raw_parents
+            ] if isinstance(raw_parents, list) else []
+            lineage.update({
+                "origin": "bounded_numerical_genetic_programming",
+                "source_candidate_id": candidate["source_candidate_id"],
+                "feature_windows": windows,
+                "selection": "train_objective",
+            })
+            if candidate["status"] == "succeeded":
+                metric_payload = {
+                    "status": "succeeded",
+                    "train": candidate["train_metrics"],
+                    "train_fitness": candidate["train_score"],
+                }
+            else:
+                metric_payload = {
+                    "status": "failed",
+                    "failure_reason": candidate["failure_reason"] or "GP candidate evaluation failed",
+                }
+            context.store.append_candidate(
+                candidate_id=candidate["candidate_id"],
+                experiment_id=spec.experiment_id,
+                candidate_digest=candidate["candidate_digest"],
+                family=AlgorithmFamily.GENETIC_PROGRAMMING.value,
+                generation=candidate["generation"],
+                parameters={
+                    "expression": candidate["tree_payload"],
+                    "feature_windows": windows,
+                },
+                metrics=metric_payload,
+                lineage=lineage,
+            )
+
+        successful = [item for item in candidate_rows if item["status"] == "succeeded"]
+        if not successful:
+            raise RuntimeError("GP produced no valid TRAIN candidate")
+        final_ids = set(str(value) for value in trace["population_ids"])
+        final_population = [
+            item for item in successful if item["source_candidate_id"] in final_ids
+        ]
+        shortlist = sorted(
+            final_population,
+            key=lambda item: (-float(item["train_score"]), item["candidate_digest"]),
+        )[:min(settings["validation_candidates"], len(final_population))]
+        if not shortlist:
+            raise RuntimeError("GP final population has no valid candidate for VALIDATION")
+
+        # VALIDATION is used once to select from the final TRAIN-evolved population.
+        validation_panel = build_model_feature_panel(
+            bars, feature_engine, spec.track,
+            start=spec.validation_start, end=spec.validation_end,
+        )
+        validation_rows: list[dict[str, Any]] = []
+        for index, candidate in enumerate(shortlist, start=1):
+            context.check_cancelled()
+            context.log(f"GP VALIDATION candidate {index}/{len(shortlist)}")
+            predictions = candidate["tree"].evaluate(validation_panel.features)
+            result = evaluate_model_scores(
+                validation_panel, predictions, config,
+                partition="validation",
+                start=spec.validation_start, end=spec.validation_end,
+                periods_per_year=periods_per_year,
+            )
+            validation_rows.append({
+                "candidate_id": candidate["candidate_id"],
+                "candidate_digest": candidate["candidate_digest"],
+                "expression": candidate["tree_payload"],
+                "train_fitness": candidate["train_score"],
+                "validation_score": float(result.metrics[objective_name]),
+                "validation_metrics": result.metrics,
+            })
+        selected = max(
+            validation_rows,
+            key=lambda item: (
+                item["validation_score"], item["train_fitness"], item["candidate_digest"]
+            ),
+        )
+        context.store.append_event(
+            spec.experiment_id,
+            "genetic_programming_candidate_frozen",
+            {
+                "selected_candidate_id": selected["candidate_id"],
+                "selected_candidate_digest": selected["candidate_digest"],
+                "objective": objective_name,
+                "feature_windows": windows,
+                "population_size": settings["population_size"],
+                "generations": settings["generations"],
+                "candidate_count": len(candidate_rows),
+                "successful_train_candidates": len(successful),
+                "validation_shortlist_count": len(validation_rows),
+                "bars_sha256": bars_digest,
+                "final_holdout_accessed": False,
+            },
+        )
+        context.check_cancelled()
+
+        # OOS is evaluated once after selection; no final-holdout frame is created.
+        selected_tree = next(
+            item["tree"] for item in shortlist
+            if item["candidate_id"] == selected["candidate_id"]
+        )
+        oos_panel = build_model_feature_panel(
+            bars, feature_engine, spec.track,
+            start=spec.oos_start, end=spec.oos_end,
+        )
+        oos_predictions = selected_tree.evaluate(oos_panel.features)
+        oos_result = evaluate_model_scores(
+            oos_panel, oos_predictions, config,
+            partition="out_of_sample",
+            start=spec.oos_start, end=spec.oos_end,
+            periods_per_year=periods_per_year,
+        )
+        context.store.append_event(
+            spec.experiment_id,
+            "genetic_programming_oos_recorded",
+            {
+                "selected_candidate_id": selected["candidate_id"],
+                "selected_candidate_digest": selected["candidate_digest"],
+                "oos_metrics": oos_result.metrics,
+                "final_holdout_accessed": False,
+            },
+        )
+        return {
+            "experiment_id": spec.experiment_id,
+            "algorithm_family": AlgorithmFamily.GENETIC_PROGRAMMING.value,
+            "objective": objective_name,
+            "feature_windows": windows,
+            "population_size": settings["population_size"],
+            "generations": settings["generations"],
+            "candidate_count": len(candidate_rows),
+            "successful_train_candidates": len(successful),
+            "failed_candidates": len(candidate_rows) - len(successful),
+            "validation_shortlist": validation_rows,
+            "selected_candidate": selected,
+            "out_of_sample": {
+                "metrics": oos_result.metrics,
+                "portfolio": oos_result.result.to_dict(),
+                "sample_count": oos_result.sample_count,
+            },
+            "bars_sha256": bars_digest,
+            "final_holdout_accessed": False,
+        }
+
+
 def build_default_job_manager(
     store: ExperimentStore,
     *,
@@ -943,5 +1282,9 @@ def build_default_job_manager(
     manager.register_runner(
         "existing_strategy_optimization",
         ExistingStrategyOptimizerJobRunner(crypto_data_root=crypto_data_root),
+    )
+    manager.register_runner(
+        "genetic_programming",
+        GeneticProgrammingJobRunner(crypto_data_root=crypto_data_root),
     )
     return manager
