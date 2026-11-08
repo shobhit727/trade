@@ -154,6 +154,10 @@ def test_neuroevolution_runs_bounded_dense_network_candidates() -> None:
     assert np.isfinite(result.best_fitness)
     assert result.evaluations == 8 * 4
     assert len(result.generations) == 4
+    assert len(result.candidate_archive) == 8 * 4
+    assert all(item["status"] == "succeeded" for item in result.candidate_archive)
+    later = [item for item in result.candidate_archive if item["generation"] == 1]
+    assert later and all(item["lineage"]["parent_candidate_ids"] for item in later)
 
 
 def test_strategy_composition_requires_entry_exit_and_evolves_registry_components() -> None:
