@@ -51,9 +51,9 @@ def make_experiment(**overrides: object) -> ExperimentSpec:
         "training_end": datetime(2020, 1, 1, tzinfo=UTC),
         "validation_start": datetime(2020, 1, 1, tzinfo=UTC),
         "validation_end": datetime(2022, 1, 1, tzinfo=UTC),
-        "oos_start": datetime(2022, 1, 1, tzinfo=UTC),
-        "oos_end": datetime(2024, 1, 1, tzinfo=UTC),
-        "final_holdout_start": datetime(2026, 10, 2, tzinfo=UTC),
+        "oos_start": datetime(2026, 10, 2, tzinfo=UTC),
+        "oos_end": datetime(2026, 10, 16, tzinfo=UTC),
+        "final_holdout_start": datetime(2026, 10, 16, tzinfo=UTC),
         "final_holdout_end": datetime(2026, 11, 8, tzinfo=UTC),
         "cost_model_id": "nse-delivery-costs-v1",
         "execution_model_id": "daily-close-next-open-v1",
@@ -359,8 +359,10 @@ def test_nse_exposed_test_period_cannot_be_declared_final_holdout() -> None:
     # The old 2024-2026 test set has already been inspected and cannot be called pristine.
     with pytest.raises(ValueError, match="historical test window is exposed"):
         make_experiment(
-            final_holdout_start=datetime(2024, 1, 1, tzinfo=UTC),
-            final_holdout_end=datetime(2025, 1, 1, tzinfo=UTC),
+            oos_start=datetime(2024, 1, 1, tzinfo=UTC),
+            oos_end=datetime(2025, 1, 1, tzinfo=UTC),
+            final_holdout_start=datetime(2025, 1, 1, tzinfo=UTC),
+            final_holdout_end=datetime(2026, 1, 1, tzinfo=UTC),
         )
 
 
