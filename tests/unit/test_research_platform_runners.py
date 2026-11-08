@@ -479,3 +479,69 @@ def test_optimizer_runner_rejects_unsupported_or_missing_search_settings(tmp_pat
         assert "validation_candidates" in job["error_message"]
     finally:
         manager.shutdown(wait=True, cancel_pending=True)
+
+
+
+def test_differential_evolution_optimizer_persists_resolvable_parent_lineage(tmp_path) -> None:
+    # DE must persist each attempted genome and resolve offspring parent IDs to stored rows.
+    base = _spec()
+    optimizer_parameters = dict(base.parameters)
+    optimizer_parameters["optimization"] = {
+        "budget": 8,
+        "validation_candidates": 2,
+        "objective": "sharpe",
+        "population_size": 4,
+        "generations": 1,
+        "mutation": 0.7,
+        "crossover": 0.8,
+    }
+    spec = replace(
+        base,
+        experiment_id="runner-existing-strategy-differential-evolution",
+        algorithm_family=AlgorithmFamily.DIFFERENTIAL_EVOLUTION,
+        parameters=optimizer_parameters,
+    )
+    store = _store(tmp_path / "de-runner.sqlite3", spec)
+    manager = ResearchJobManager(store, max_workers=1, max_queued=1)
+    runner = ExistingStrategyOptimizerJobRunner(
+        bar_loader=lambda current_store, current_spec: _bars()
+    )
+    manager.register_runner("existing_strategy_optimization", runner)
+    try:
+        job_id = manager.submit(spec.experiment_id, "existing_strategy_optimization")
+        job = manager.wait(job_id, timeout=60)
+        assert job["status"] == "succeeded", job["error_message"]
+        result = job["result"]
+        assert result["search_method"] == "differential_evolution"
+        assert result["search_attempted_candidates"] == 8
+        assert result["successful_train_candidates"] <= 8
+        stored = store.candidates(spec.experiment_id)
+        de_rows = [row for row in stored if row["family"] == "differential_evolution"]
+        assert len(de_rows) == 8
+        candidate_ids = {row["candidate_id"] for row in de_rows}
+        offspring = [
+            row for row in de_rows
+            if row["lineage"].get("operator") == "differential_mutation_binomial_crossover"
+        ]
+        assert offspring
+        assert all(row["lineage"].get("accepted") in {True, False} for row in offspring)
+        for row in offspring:
+            parent_ids = row["lineage"]["parent_candidate_ids"]
+            assert len(parent_ids) == 4
+            assert set(parent_ids).issubset(candidate_ids)
+
+        selected_validation = next(
+            row for row in stored
+            if row["candidate_id"] == result["selected_candidate"]["candidate_id"]
+        )
+        selected_oos = next(
+            row for row in stored
+            if row["family"] == "differential_evolution_selected_oos"
+        )
+        assert selected_validation["lineage"]["parent_candidate_ids"]
+        assert selected_oos["lineage"]["parent_candidate_ids"] == [
+            selected_validation["candidate_id"]
+        ]
+        assert result["final_holdout_accessed"] is False
+    finally:
+        manager.shutdown(wait=True, cancel_pending=True)
