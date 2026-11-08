@@ -506,3 +506,54 @@ def test_candidate_family_report_rejects_misaligned_search_records() -> None:
             np.ones((2, 80)),
             observations=80,
         )
+
+
+
+def test_nsga2_runs_generations_and_preserves_multiple_pareto_tradeoffs() -> None:
+    # A two-objective problem has no single correct scalar winner.
+    from research.platform.pareto import nsga2_optimize
+
+    def initialize(rng):
+        return {"x": float(rng.uniform(0.0, 1.0))}
+
+    def evaluate(genome):
+        x = float(genome["x"])
+        return (x * x, (1.0 - x) * (1.0 - x))
+
+    def crossover(left, right, rng):
+        # Average two parent values to create a deterministic intermediate genome.
+        return {"x": (float(left["x"]) + float(right["x"])) / 2.0}
+
+    def mutate(genome, rng):
+        # Add a bounded Gaussian perturbation to preserve the search domain.
+        return {"x": float(np.clip(genome["x"] + rng.normal(0.0, 0.08), 0.0, 1.0)}
+
+    first = nsga2_optimize(
+        initialize, evaluate, crossover, mutate,
+        population_size=16, generations=5, directions=("min", "min"), seed=31,
+    )
+    second = nsga2_optimize(
+        initialize, evaluate, crossover, mutate,
+        population_size=16, generations=5, directions=("min", "min"), seed=31,
+    )
+    assert len(first["population"]) == 16
+    assert len(first["pareto_front"]) >= 2
+    assert first["scalar_winner_selected"] is False
+    assert first["evaluations"] == second["evaluations"]
+    assert [item["genome"] for item in first["population"]] == [
+        item["genome"] for item in second["population"]
+    ]
+
+
+def test_nsga2_rejects_invalid_initial_objective_population() -> None:
+    # Invalid/non-finite objectives cannot be converted into a favorable Pareto rank.
+    from research.platform.pareto import nsga2_optimize
+
+    with pytest.raises(RuntimeError, match="fewer than four"):
+        nsga2_optimize(
+            lambda rng: {"x": float(rng.random())},
+            lambda genome: (float("nan"), 1.0),
+            lambda left, right, rng: left,
+            lambda genome, rng: genome,
+            population_size=8, generations=2, directions=("min", "min"), seed=1,
+        )
