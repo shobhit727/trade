@@ -107,6 +107,7 @@ class EvolutionStrategy:
         *,
         initial_parameters: np.ndarray | None = None,
         batch_predictor: Callable[[np.ndarray, np.ndarray], np.ndarray] | None = None,
+        batch_size: int = 16,
     ) -> EvolutionTrace:
         """Evolve network parameters against the supplied training-only fitness function."""
         # Inputs are copied so caller mutation cannot modify an active search.
@@ -115,6 +116,8 @@ class EvolutionStrategy:
             raise ValueError("feature shape does not match network input_size")
         if not np.isfinite(matrix).all():
             raise ValueError("features must be finite")
+        if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size < 1:
+            raise ValueError("batch_size must be a positive integer")
         rng = np.random.default_rng(self.seed)
         dimension = self.network.parameter_count
         mean = (
@@ -144,59 +147,72 @@ class EvolutionStrategy:
                 self.weight_limit,
             )
             scores = np.full(self.population_size, -np.inf, dtype=np.float64)
-            batch_predictions = None
-            if batch_predictor is not None:
-                # One batched backend call replaces population_size individual forward passes.
-                batch_predictions = np.asarray(batch_predictor(matrix, population), dtype=np.float64)
-                expected_shape = (self.population_size, len(matrix), self.network.output_size)
-                if batch_predictions.shape != expected_shape or not np.isfinite(batch_predictions).all():
-                    raise ValueError(
-                        f"batch_predictor must return finite scores with shape {expected_shape}"
-                    )
             candidate_ids = [
                 f"es-g{generation:04d}-c{index:06d}"
                 for index in range(self.population_size)
             ]
-            for index, parameters in enumerate(population):
-                status = "succeeded"
-                failure_reason = None
-                try:
-                    predictions = (
-                        batch_predictions[index]
-                        if batch_predictions is not None
-                        else self.network.predict(matrix, parameters)
+            # Process network predictions in bounded chunks to cap host/device memory.
+            for batch_start in range(0, self.population_size, batch_size):
+                batch_end = min(batch_start + batch_size, self.population_size)
+                prediction_batch = None
+                if batch_predictor is not None:
+                    prediction_batch = np.asarray(
+                        batch_predictor(matrix, population[batch_start:batch_end]),
+                        dtype=np.float64,
                     )
-                    score = float(fitness(predictions))
-                    if not np.isfinite(score):
-                        raise ValueError("fitness returned a non-finite score")
-                    scores[index] = score
-                except Exception as exc:  # noqa: BLE001 - keep failed evaluations in the trace.
-                    status = "failed"
-                    failure_reason = (
-                        f"generation={generation},candidate={index}: {type(exc).__name__}: {exc}"
+                    expected_shape = (
+                        batch_end - batch_start, len(matrix), self.network.output_size
                     )
-                    failures.append(failure_reason)
-                lineage = {
-                    "operator": "mirrored_noise_evolution_strategy",
-                    "generation": generation,
-                    "parent_candidate_ids": list(mean_parent_ids),
-                    "noise_pair_index": index if index < half else index - half,
-                    "perturbation_sign": 1 if index < half else -1,
-                    "noise_std": self.noise_std,
-                    "learning_rate": self.learning_rate,
-                    "seed": self.seed,
-                }
-                candidate_archive.append({
-                    "candidate_id": candidate_ids[index],
-                    "generation": generation,
-                    "index": index,
-                    "parameters": parameters.copy(),
-                    "fitness": float(scores[index]),
-                    "status": status,
-                    "failure_reason": failure_reason,
-                    "lineage": lineage,
-                })
-                evaluations += 1
+                    if (
+                        prediction_batch.shape != expected_shape
+                        or not np.isfinite(prediction_batch).all()
+                    ):
+                        raise ValueError(
+                            f"batch_predictor must return finite scores with shape {expected_shape}"
+                        )
+                for index in range(batch_start, batch_end):
+                    parameters = population[index]
+                    status = "succeeded"
+                    failure_reason = None
+                    try:
+                        predictions = (
+                            prediction_batch[index - batch_start]
+                            if prediction_batch is not None
+                            else self.network.predict(matrix, parameters)
+                        )
+                        score = float(fitness(predictions))
+                        if not np.isfinite(score):
+                            raise ValueError("fitness returned a non-finite score")
+                        scores[index] = score
+                    except Exception as exc:  # noqa: BLE001 - keep failed evaluations in the trace.
+                        status = "failed"
+                        failure_reason = (
+                            f"generation={generation},candidate={index}: {type(exc).__name__}: {exc}"
+                        )
+                        failures.append(failure_reason)
+                    lineage = {
+                        "operator": "mirrored_noise_evolution_strategy",
+                        "generation": generation,
+                        "parent_candidate_ids": list(mean_parent_ids),
+                        "noise_pair_index": index if index < half else index - half,
+                        "perturbation_sign": 1 if index < half else -1,
+                        "noise_std": self.noise_std,
+                        "learning_rate": self.learning_rate,
+                        "seed": self.seed,
+                        "prediction_backend": "batch" if batch_predictor is not None else "scalar",
+                        "prediction_batch_index": batch_start // batch_size,
+                    }
+                    candidate_archive.append({
+                        "candidate_id": candidate_ids[index],
+                        "generation": generation,
+                        "index": index,
+                        "parameters": parameters.copy(),
+                        "fitness": float(scores[index]),
+                        "status": status,
+                        "failure_reason": failure_reason,
+                        "lineage": lineage,
+                    })
+                    evaluations += 1
 
             # Convert valid population scores into centred rank utilities.
             valid = np.flatnonzero(np.isfinite(scores))
