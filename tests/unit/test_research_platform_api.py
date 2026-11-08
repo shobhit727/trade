@@ -5,13 +5,9 @@ from __future__ import annotations
 import io
 import json
 from urllib.parse import urlsplit
-from datetime import datetime, timezone
 
 from research.platform.api import DASHBOARD_HTML, ResearchAPI
 from research.platform.storage import ExperimentStore
-
-
-UTC = timezone.utc
 
 
 def _payload(**updates: object) -> dict[str, object]:
