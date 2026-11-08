@@ -104,10 +104,16 @@ class NSELegacyAdapter:
             raise ValueError(f"NSE legacy loader does not support resolution {resolution.value}")
         return tuple(available_symbols(timeframe=timeframe, include_excluded=False))
 
-    def load(self, symbol: str, resolution: DataResolution = DataResolution.ONE_DAY) -> pd.DataFrame:
-        """Load an audited symbol history; return only observed rows."""
-        # Reuse the existing splitter and its current cleaning rules instead of duplicating them.
-        from research.optimize.splitter import FULL, bars
+    def load(
+        self,
+        symbol: str,
+        resolution: DataResolution = DataResolution.ONE_DAY,
+        *,
+        end: datetime | None = None,
+    ) -> pd.DataFrame:
+        """Load an audited symbol history, optionally clipped before a protected boundary."""
+        # Reuse the existing splitter and its cleaning rules; a caller may cap the end date.
+        from research.optimize.splitter import FULL, Window, bars
 
         timeframe = RESOLUTION_MAP.get(resolution)
         if timeframe is None:
@@ -115,12 +121,22 @@ class NSELegacyAdapter:
         available = self.available_symbols(resolution)
         if symbol not in available:
             raise KeyError(f"symbol {symbol!r} not in the local NSE data inventory")
-        frame = bars(symbol, window=FULL, timeframe=timeframe)
+        window = Window(FULL.start, end.isoformat()) if end is not None else FULL
+        frame = bars(symbol, window=window, timeframe=timeframe)
+        if end is not None:
+            # The end boundary is half-open; no observation at/after it enters the caller.
+            frame = frame.loc[frame.index < pd.Timestamp(end)]
         if frame.empty:
             raise ValueError(f"no usable {timeframe} bars for symbol {symbol}")
         return _normalise_ohlcv(frame.reset_index(), timezone_name=self.timezone_name)
 
-    def manifest(self, symbol: str, resolution: DataResolution = DataResolution.ONE_DAY) -> DatasetManifest:
+    def manifest(
+        self,
+        symbol: str,
+        resolution: DataResolution = DataResolution.ONE_DAY,
+        *,
+        end: datetime | None = None,
+    ) -> DatasetManifest:
         """Create an unapproved local-data manifest fingerprinted to source bytes."""
         # The adapter does not claim that the historical vendor licence permits reuse.
         from research.optimize import config as optimizer_config
@@ -132,7 +148,7 @@ class NSELegacyAdapter:
         if not path.is_file():
             raise FileNotFoundError(f"no local NSE source file for {symbol} at {timeframe}")
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        frame = self.load(symbol, resolution)
+        frame = self.load(symbol, resolution, end=end)
         return DatasetManifest(
             dataset_id=f"nse-local-{symbol}-{resolution.value}-{digest[:12]}",
             market=Market.NSE,
