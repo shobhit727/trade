@@ -495,3 +495,56 @@ def test_jobs_api_routes_pareto_search_to_registered_nsga2_worker(tmp_path) -> N
         assert "requires runner pareto_search" in rejected["error"]
     finally:
         app.shutdown()
+
+
+
+def test_jobs_api_routes_hybrid_search_to_existing_strategy_optimizer(tmp_path) -> None:
+    # Hybrid ensembles are optimizer jobs with their method list frozen in the spec.
+    base = _experiment()
+    parameters = dict(base.parameters)
+    parameters["execution_assumptions"] = {
+        "slippage_bps": 5,
+        "impact_coefficient_bps": 10,
+        "max_participation": 0.05,
+        "max_gross_exposure": 1.0,
+        "periods_per_year": 252,
+    }
+    parameters["hybrid_optimization"] = {
+        "methods": ["random_search", "differential_evolution"],
+        "budget_per_method": 8,
+        "validation_candidates": 3,
+        "objective": "sharpe",
+        "de_population_size": 4,
+        "de_generations": 1,
+        "de_mutation": 0.7,
+        "de_crossover": 0.8,
+    }
+    spec = replace(
+        base,
+        experiment_id="api-hybrid-search",
+        algorithm_family=AlgorithmFamily.HYBRID,
+        parameters=parameters,
+    )
+
+    def runner(context, experiment, parameters):
+        return {"family": experiment["spec"]["algorithm_family"]}
+
+    _, manager, app = _app(tmp_path, runner=runner, experiment=spec)
+    manager.register_runner("existing_strategy_optimization", runner)
+    try:
+        status, payload = _request(
+            app,
+            "POST",
+            "/api/jobs",
+            {
+                "experiment_id": spec.experiment_id,
+                "runner_name": "existing_strategy_optimization",
+                "parameters": {},
+            },
+        )
+        assert status == 202
+        job = manager.wait(payload["job_id"], timeout=5)
+        assert job["status"] == "succeeded"
+        assert job["result"]["family"] == "hybrid"
+    finally:
+        app.shutdown()
