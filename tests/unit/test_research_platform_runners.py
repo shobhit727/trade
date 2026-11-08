@@ -18,6 +18,7 @@ from research.platform.runners import (
     ExistingStrategyOptimizerJobRunner,
     GeneticProgrammingJobRunner,
     NeuroevolutionJobRunner,
+    ParetoStrategySearchJobRunner,
     StrategyCompositionJobRunner,
     _build_portfolio_config,
     experiment_spec_from_record,
@@ -826,5 +827,95 @@ def test_strategy_composition_worker_rejects_missing_component_settings(tmp_path
         job = manager.wait(job_id, timeout=10)
         assert job["status"] == "failed"
         assert "strategy_composition requires settings" in job["error_message"]
+    finally:
+        manager.shutdown(wait=True, cancel_pending=True)
+
+
+
+def test_pareto_search_worker_persists_nsga2_front_and_oos_evaluation(tmp_path) -> None:
+    # A small NSGA-II run validates the multi-objective train/validation/frozen-OOS pipeline.
+    base = _spec()
+    parameters = dict(base.parameters)
+    parameters["pareto_search"] = {
+        "population_size": 4,
+        "generations": 1,
+        "mutation_rate": 0.25,
+        "validation_candidates": 4,
+        "objectives": ["cagr", "max_drawdown", "turnover"],
+        "directions": ["max", "max", "min"],
+    }
+    spec = replace(
+        base,
+        experiment_id="runner-pareto-search",
+        algorithm_family=AlgorithmFamily.PARETO_SEARCH,
+        parameters=parameters,
+    )
+    store = _store(tmp_path / "pareto-runner.sqlite3", spec)
+    manager = ResearchJobManager(store, max_workers=1, max_queued=1)
+    runner = ParetoStrategySearchJobRunner(
+        bar_loader=lambda current_store, current_spec: _bars()
+    )
+    manager.register_runner("pareto_search", runner)
+    try:
+        job_id = manager.submit(spec.experiment_id, "pareto_search")
+        job = manager.wait(job_id, timeout=60)
+        assert job["status"] == "succeeded", job["error_message"]
+        result = job["result"]
+        assert result["algorithm_family"] == "pareto_search"
+        assert result["evaluations"] == 8
+        assert result["candidate_count"] == 8
+        assert result["objectives"] == ["cagr", "max_drawdown", "turnover"]
+        assert result["directions"] == ["max", "max", "min"]
+        assert result["train_pareto_front"]
+        assert result["validation_shortlist"]
+        assert result["selection_policy"] == "nsga2_crowding_within_validation_front"
+        assert result["final_evaluation"]["final_holdout_accessed"] is False
+
+        candidates = store.candidates(spec.experiment_id)
+        assert len(candidates) == 8
+        assert all(item["family"] == "pareto_search" for item in candidates)
+        candidate_ids = {item["candidate_id"] for item in candidates}
+        assert any(item["lineage"]["operator"] == "nsga2_crossover_mutation"
+                   for item in candidates)
+        for item in candidates:
+            for parent_id in item["lineage"]["parent_candidate_ids"]:
+                assert parent_id in candidate_ids
+        assert any(
+            event["event_type"] == "pareto_search_candidate_frozen"
+            for event in store.events(spec.experiment_id)
+        )
+    finally:
+        manager.shutdown(wait=True, cancel_pending=True)
+
+
+def test_pareto_search_worker_rejects_single_objective_settings(tmp_path) -> None:
+    # The multi-objective optimizer cannot silently degrade into a scalar search.
+    base = _spec()
+    parameters = dict(base.parameters)
+    parameters["pareto_search"] = {
+        "population_size": 4,
+        "generations": 1,
+        "mutation_rate": 0.25,
+        "validation_candidates": 2,
+        "objectives": ["cagr"],
+        "directions": ["max"],
+    }
+    spec = replace(
+        base,
+        experiment_id="runner-pareto-invalid",
+        algorithm_family=AlgorithmFamily.PARETO_SEARCH,
+        parameters=parameters,
+    )
+    store = _store(tmp_path / "pareto-invalid.sqlite3", spec)
+    manager = ResearchJobManager(store, max_workers=1, max_queued=1)
+    runner = ParetoStrategySearchJobRunner(
+        bar_loader=lambda current_store, current_spec: _bars()
+    )
+    manager.register_runner("pareto_search", runner)
+    try:
+        job_id = manager.submit(spec.experiment_id, "pareto_search")
+        job = manager.wait(job_id, timeout=10)
+        assert job["status"] == "failed"
+        assert "2+ unique objectives" in job["error_message"]
     finally:
         manager.shutdown(wait=True, cancel_pending=True)
