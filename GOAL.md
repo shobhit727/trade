@@ -1150,3 +1150,40 @@ is a bug in the *setup*, not a strategy.
 
 *Every claim in this file must be backed by a script in `research/` and a report in
 `reports/`. Numbers without a reproduction command are opinions.*
+
+---
+
+## Implementation status snapshot — 8 November 2026
+
+This branch now connects conventional parameter search, a multi-method search ensemble, bounded
+numerical genetic programming, dense-network neuroevolution, declarative strategy composition
+and NSGA-II Pareto search to the persistent experiment/job store. The evolutionary workers persist
+candidate ancestry and separate TRAIN, VALIDATION and frozen OOS candidate records. The Pareto
+worker is currently limited to existing-strategy parameter genomes; it does not yet co-evolve a
+single mixed population of GP, neural, composition and existing-strategy genomes.
+
+Neural policy inference can use bounded NumPy/CuPy batches with scalar-reference parity tests and
+a runtime NumPy fallback in automatic mode. This is an inference optimisation only: the realistic
+portfolio ledger, next-open fills, fees and execution simulation still run through the CPU
+portfolio simulator. No claim is made that the target NVIDIA hardware has been exercised or
+benchmarked.
+
+The TRAIN candidate-family diagnostic path reports PSR-derived p-values, BH FDR, DSR and CSCV/PBO.
+FDR/DSR use all successful TRAIN candidates; PBO uses at most 128 evenly spaced candidates.
+DSR's independent-Gaussian trial assumption is a simplifying approximation, particularly weak for
+correlated evolutionary candidates. All outputs are diagnostic only and do not alter selection.
+
+OHLCV ingestion now applies hard price, volume and open-range checks and records the quality
+summary in manifest metadata. The default <20% absolute close-return gate applies to NSE daily
+data only; it is not imposed on crypto. These checks are not a complete data-quality score or a
+substitute for point-in-time constituent history, corporate actions, missing-bar audits or licence
+review.
+
+The existing source adapters still may read/parse a complete local file before clipping rows at
+the OOS end boundary. This is disclosed in the architecture documentation and is not a secure
+final-holdout isolation boundary. A physically partitioned dataset store and process-isolated
+holdout service remain required before claiming secure final-holdout separation.
+
+No strategy profitability, deployability, live trading or hardware performance is implied by this
+implementation snapshot. Synthetic CI fixtures test software contracts; they are not market
+performance evidence.
