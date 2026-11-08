@@ -156,6 +156,7 @@ def evaluate_existing_strategy(
     periods_per_year: int,
     store: ExperimentStore | None = None,
     check_cancelled: Callable[[], None] | None = None,
+    progress_callback: Callable[[str, int, int], None] | None = None,
 ) -> ExistingStrategyEvaluation:
     """Evaluate a frozen existing strategy on TRAIN, VALIDATION and OOS only.
 
@@ -241,10 +242,12 @@ def evaluate_existing_strategy(
         ("out_of_sample", spec.oos_start, spec.oos_end),
     )
     evaluations_list: list[PartitionEvaluation] = []
-    for name, start, end in windows:
+    for index, (name, start, end) in enumerate(windows, start=1):
         # Give cooperative workers cancellation points between the isolated stages.
         if check_cancelled is not None:
             check_cancelled()
+        if progress_callback is not None:
+            progress_callback(name, index - 1, len(windows))
         evaluations_list.append(
             _partition_target_frame(
                 spec,
@@ -258,6 +261,8 @@ def evaluate_existing_strategy(
                 periods_per_year=periods_per_year,
             )
         )
+        if progress_callback is not None:
+            progress_callback(name, index, len(windows))
     evaluations = tuple(evaluations_list)
     result = ExistingStrategyEvaluation(
         experiment_id=spec.experiment_id,
