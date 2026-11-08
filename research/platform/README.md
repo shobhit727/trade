@@ -31,6 +31,8 @@ any existing backtest engine.
 - A long-only multi-asset cash simulator which decides on close t and executes on open t+1,
   with participation limits, adverse slippage, square-root impact and declared per-side fees.
 - Random search, capped grid search, differential evolution and seeded Optuna TPE.
+  A hybrid ensemble can run multiple methods with separate fixed seeds and equal per-method
+  budgets, merge their candidate traces and select from one shared VALIDATION shortlist.
   The separate Parzen-style approximation remains available as a heuristic baseline.
 - Bounded numerical genetic programming with a closed AST interpreter; generated Python
   is never executed. The worker evolves only on TRAIN, selects from the final population
@@ -47,8 +49,8 @@ any existing backtest engine.
 - Batched long/flat population fitness in NumPy or optional CuPy.
 - A loopback WSGI API and dashboard backed by SQLite manifests, experiments, jobs and
   candidate lineage. The dashboard can queue, inspect and cooperatively cancel the
-  allow-listed existing-strategy, parameter-search, GP, neuroevolution, composition and
-  Pareto workers.
+  allow-listed existing-strategy, parameter-search, hybrid search ensemble, GP,
+  neuroevolution, composition and Pareto workers.
 
 ## Explicit limitations
 
