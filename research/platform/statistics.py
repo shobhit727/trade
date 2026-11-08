@@ -230,8 +230,12 @@ def candidate_family_report_from_returns(
     ids = tuple(str(value) for value in candidate_ids)
     if not ids or len(set(ids)) != len(ids):
         raise ValueError("candidate_ids must be non-empty and unique")
-    if periods_per_year < 1:
-        raise ValueError("periods_per_year must be positive")
+    if (
+        isinstance(periods_per_year, bool)
+        or not isinstance(periods_per_year, int)
+        or periods_per_year < 1
+    ):
+        raise ValueError("periods_per_year must be a positive integer")
     if set(ids) - set(candidate_returns):
         raise ValueError("candidate return vectors are missing for one or more candidates")
 
@@ -332,8 +336,19 @@ def candidate_family_report(
         raise ValueError("candidate_returns must be a non-empty finite two-dimensional matrix")
     if returns.shape[1] != observations:
         raise ValueError("observations must match the candidate return-matrix width")
-    if isinstance(pbo_candidate_limit, bool) or pbo_candidate_limit < 2:
-        raise ValueError("pbo_candidate_limit must be at least two")
+    if (
+        isinstance(pbo_candidate_limit, bool)
+        or not isinstance(pbo_candidate_limit, int)
+        or pbo_candidate_limit < 2
+    ):
+        raise ValueError("pbo_candidate_limit must be an integer of at least two")
+    if (
+        isinstance(pbo_blocks, bool)
+        or not isinstance(pbo_blocks, int)
+        or pbo_blocks < 4
+        or pbo_blocks % 2
+    ):
+        raise ValueError("pbo_blocks must be an even integer of at least four")
     if pbo_candidate_indices is None:
         if returns.shape[0] != len(ids):
             raise ValueError("candidate_returns must have one row per candidate when indices are omitted")
