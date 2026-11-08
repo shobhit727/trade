@@ -160,6 +160,7 @@ def materialize_non_holdout_partition(
     *,
     root: str | Path,
     final_holdout_start: datetime,
+    max_abs_close_return: float | None = None,
 ) -> DatasetManifest:
     """Write a physical non-holdout CSV and return a manifest for that safe copy.
 
@@ -188,6 +189,14 @@ def materialize_non_holdout_partition(
     if frame.empty:
         raise ValueError("partition source is empty")
 
+    # Carry forward a configured source quality threshold when the caller already validated it.
+    source_quality = frame.attrs.get("quality_report", {})
+    quality_limit = (
+        max_abs_close_return
+        if max_abs_close_return is not None
+        else source_quality.get("max_abs_close_return_limit")
+    )
+
     # Apply a half-open boundary in UTC and discard every final-holdout row before serialization.
     boundary = pd.Timestamp(final_holdout_start).tz_convert("UTC")
     utc_index = frame.index.tz_convert("UTC")
@@ -196,6 +205,10 @@ def materialize_non_holdout_partition(
         raise ValueError("no non-holdout rows exist before final_holdout_start")
     if safe_frame.index.tz_convert("UTC").max() >= boundary:
         raise AssertionError("non-holdout partition contains a protected timestamp")
+    quality_report = validate_ohlcv_quality(
+        safe_frame,
+        max_abs_close_return=quality_limit,
+    )
 
     # Write beneath one dataset-specific directory and replace the file atomically.
     data_root = Path(root).resolve()
@@ -227,6 +240,9 @@ def materialize_non_holdout_partition(
         "research_partition_before": cutoff_iso,
         "research_partition_schema": "ohlcv-csv-v1",
         "research_partition_bars": str(len(safe_frame)),
+        "quality_report_json": json.dumps(
+            quality_report, sort_keys=True, separators=(",", ":"), allow_nan=False
+        ),
     })
     history = tuple(manifest.processing_history) + (
         f"materialized non-holdout partition before {cutoff_iso}",
@@ -242,19 +258,25 @@ def materialize_non_holdout_partition(
 
 
 def load_non_holdout_partition(
-    manifest: DatasetManifest,
+    manifest: DatasetManifest | dict[str, object],
     *,
     root: str | Path,
     final_holdout_start: datetime,
     end: datetime,
 ) -> pd.DataFrame:
     """Load only a checksum-verified pre-materialised non-holdout file."""
+    # Accept the immutable dataclass or the JSON mapping returned by ExperimentStore.
+    if isinstance(manifest, DatasetManifest):
+        metadata = manifest.extra_metadata
+        timezone_name = manifest.timezone
+    else:
+        metadata = dict(manifest["extra_metadata"])
+        timezone_name = str(manifest["timezone"])
     # No combined source-file fallback exists in this function.
     if final_holdout_start.tzinfo is None or final_holdout_start.utcoffset() is None:
         raise ValueError("final_holdout_start must be timezone-aware")
     if end.tzinfo is None or end.utcoffset() is None:
         raise ValueError("end must be timezone-aware")
-    metadata = manifest.extra_metadata
     relative = metadata.get("research_partition_path")
     expected_hash = metadata.get("research_partition_sha256")
     boundary_text = metadata.get("research_partition_before")
@@ -285,7 +307,7 @@ def load_non_holdout_partition(
 
     # Parse only the physically safe file and verify every materialised row is before the cut.
     frame = pd.read_csv(path)
-    frame = _normalise_ohlcv(frame, timezone_name=manifest.timezone)
+    frame = _normalise_ohlcv(frame, timezone_name=timezone_name)
     frame_utc = frame.index.tz_convert("UTC")
     if len(frame) != int(metadata.get("research_partition_bars", "-1")):
         raise ValueError("partition row count differs from the manifest")
