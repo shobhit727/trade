@@ -1,0 +1,316 @@
+"""Local research API backed by the immutable SQLite experiment store."""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime
+from http import HTTPStatus
+from typing import Any
+from urllib.parse import parse_qs
+from wsgiref.types import StartResponse
+
+from .data_catalog import DataAvailabilityCatalog
+from .domain import AlgorithmFamily, DataResolution, MARKET_SPECS, Market, ResearchTrack
+from .experiments import ExperimentSpec
+from .storage import ExperimentStore
+
+
+DASHBOARD_HTML = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quant Research Platform</title>
+<style>
+:root { color-scheme: dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+body { margin: 0; background: #10151d; color: #e5eaf1; }
+header { padding: 20px 26px; border-bottom: 1px solid #2a3442; }
+main { max-width: 1200px; margin: 0 auto; padding: 24px; }
+h1 { margin: 0 0 6px; font-size: 22px; }
+p, small { color: #a9b6c7; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap: 14px; }
+section { background: #171f2a; border: 1px solid #2c394a; border-radius: 10px; padding: 16px; }
+label { display:block; margin: 10px 0 5px; color:#a9b6c7; font-size: 13px; }
+input, select, button { width:100%; box-sizing:border-box; padding:10px; border-radius:6px; border:1px solid #39495d; background:#101923; color:#e5eaf1; }
+button { margin-top:14px; cursor:pointer; background:#234c78; border-color:#396b9e; }
+table { width:100%; border-collapse: collapse; margin-top:10px; }
+td, th { text-align:left; padding:9px 7px; border-bottom:1px solid #2c394a; font-size:13px; }
+.status { font-size:12px; color:#9bc3a7; }
+pre { overflow:auto; white-space:pre-wrap; word-break:break-word; color:#c4d3e4; }
+</style>
+</head>
+<body>
+<header><h1>Quantitative Research Platform</h1><p>Historical research and simulated portfolios only · No live trading</p></header>
+<main>
+<div class="grid">
+<section><h2>NSE environment</h2><p>Initial simulated capital</p><strong>₹21,00,000</strong><p id="nse-count">Loading experiments…</p></section>
+<section><h2>Crypto environment</h2><p>Initial simulated capital</p><strong>₹21,00,000</strong><p id="crypto-count">Loading experiments…</p></section>
+</div>
+<div class="grid" style="margin-top:16px">
+<section>
+<h2>Create experiment</h2>
+<p>Creates an immutable experiment record. It does not start a research worker.</p>
+<form id="create-form">
+<label>Market</label><select id="market"><option value="nse">NSE</option><option value="crypto">Crypto</option></select>
+<label>Research track</label><select id="track"></select>
+<label>Algorithm family</label><select id="family"></select>
+<label>Resolution</label><select id="resolution"></select>
+<label>Dataset IDs (comma-separated)</label><input id="dataset-ids" value="example-dataset-v1" required>
+<label>Experiment ID</label><input id="experiment-id" required>
+<label>Git commit</label><input id="git-commit" placeholder="40-character commit SHA" required>
+<label>Cost model ID</label><input id="cost-model" value="market-cost-v1" required>
+<label>Execution model ID</label><input id="execution-model" value="next-open-v1" required>
+<label>Seed</label><input id="seed" type="number" min="0" value="42" required>
+<label>Objectives (comma-separated)</label><input id="objectives" value="net_return,max_drawdown,turnover" required>
+<label>Training start / end (ISO timestamps)</label><input id="train-start" type="datetime-local" value="2016-01-01T00:00" required><input id="train-end" type="datetime-local" value="2020-01-01T00:00" required>
+<label>Validation start / end</label><input id="val-start" type="datetime-local" value="2020-01-01T00:00" required><input id="val-end" type="datetime-local" value="2022-01-01T00:00" required>
+<label>OOS start / end</label><input id="oos-start" type="datetime-local" value="2022-01-01T00:00" required><input id="oos-end" type="datetime-local" value="2024-01-01T00:00" required>
+<label>Final holdout start / end</label><input id="hold-start" type="datetime-local" value="2024-01-01T00:00" required><input id="hold-end" type="datetime-local" value="2025-01-01T00:00" required>
+<button type="submit">Create experiment record</button><p id="form-status" class="status"></p>
+</form>
+</section>
+<section>
+<h2>Experiment records</h2>
+<label>Environment</label><select id="filter-market"><option value="">All (separate sections)</option><option value="nse">NSE</option><option value="crypto">Crypto</option></select>
+<table><thead><tr><th>Experiment</th><th>Market / track</th><th>Created</th></tr></thead><tbody id="experiment-rows"></tbody></table>
+<pre id="detail">Select an experiment row to inspect its stored specification.</pre>
+</section>
+</div>
+</main>
+<script>
+const tracks = {
+  nse: ["nse_individual", "nse_portfolio"],
+  crypto: ["crypto_individual", "crypto_portfolio"]
+};
+const families = ["existing_strategy","random_search","grid_search","bayesian","differential_evolution","genetic_programming","neuroevolution","strategy_composition","hybrid"];
+const resolutions = ["tick","order_book_event","order_book_snapshot","1s","1m","5m","15m","30m","1h","4h","1d","1w","1mo"];
+const $ = id => document.getElementById(id);
+function refreshTrackOptions() {
+  // Keep the selected track consistent with the independently selected market.
+  $("track").innerHTML = tracks[$("market").value].map(x => '<option value="' + x + '">' + x + '</option>').join("");
+}
+function fillSelect(id, values) {
+  // Populate a controlled select from the server-supported vocabulary.
+  $(id).innerHTML = values.map(x => '<option value="' + x + '">' + x + '</option>').join("");
+}
+async function api(path, options) {
+  // All dashboard data comes from real API records, never embedded sample results.
+  const response = await fetch(path, options);
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || response.statusText);
+  return payload;
+}
+async function refresh() {
+  // Keep the two financial environments visibly separate.
+  const [nse, crypto] = await Promise.all([
+    api("/api/experiments?market=nse"), api("/api/experiments?market=crypto")
+  ]);
+  $("nse-count").textContent = nse.experiments.length + " stored research experiments";
+  $("crypto-count").textContent = crypto.experiments.length + " stored research experiments";
+  const filter = $("filter-market").value;
+  const rows = filter ? await api("/api/experiments?market=" + filter) : {experiments:[...nse.experiments,...crypto.experiments]};
+  $("experiment-rows").innerHTML = rows.experiments.map(item =>
+    '<tr data-id="' + item.experiment_id + '" data-market="' + item.market + '"><td>' +
+    item.experiment_id + '</td><td>' + item.market + ' / ' + item.track +
+    '</td><td>' + item.created_at + '</td></tr>'
+  ).join("");
+  document.querySelectorAll("#experiment-rows tr").forEach(row => row.addEventListener("click", async () => {
+    // A detail request remains scoped to the record selected by its market and ID.
+    $("detail").textContent = JSON.stringify(await api("/api/experiments/" +
+      encodeURIComponent(row.dataset.id)), null, 2);
+  }));
+}
+$("market").addEventListener("change", refreshTrackOptions);
+$("filter-market").addEventListener("change", refresh);
+$("create-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  $("form-status").textContent = "Saving…";
+  try {
+    const value = id => $(id).value;
+    const market = value("market");
+    const payload = {
+      experiment_id: value("experiment-id"),
+      market,
+      track: value("track"),
+      algorithm_family: value("family"),
+      resolution: value("resolution"),
+      dataset_ids: value("dataset-ids").split(",").map(x => x.trim()).filter(Boolean),
+      random_seed: Number(value("seed")),
+      git_commit: value("git-commit"),
+      code_version: "dashboard-api-v1",
+      training_start: value("train-start"),
+      training_end: value("train-end"),
+      validation_start: value("val-start"),
+      validation_end: value("val-end"),
+      oos_start: value("oos-start"),
+      oos_end: value("oos-end"),
+      final_holdout_start: value("hold-start"),
+      final_holdout_end: value("hold-end"),
+      cost_model_id: value("cost-model"),
+      execution_model_id: value("execution-model"),
+      objectives: value("objectives").split(",").map(x => x.trim()).filter(Boolean),
+      compute_backend: "auto",
+      compute_device: "unverified",
+      parameters: {}
+    };
+    const result = await api("/api/experiments", {
+      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
+    });
+    $("form-status").textContent = "Created " + result.experiment_id;
+    await refresh();
+  } catch (error) {
+    $("form-status").textContent = "Error: " + error.message;
+  }
+});
+fillSelect("family", families);
+fillSelect("resolution", resolutions);
+refreshTrackOptions();
+refresh().catch(error => $("form-status").textContent = "API error: " + error.message);
+</script>
+</body>
+</html>
+"""
+
+
+def _parse_time(value: str) -> datetime:
+    # Require an explicit timezone; dashboard local timestamps are interpreted as UTC.
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("all experiment timestamps must include a timezone offset")
+    return parsed
+
+
+def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
+    # Construct the immutable experiment definition from API input and validate all fields.
+    return ExperimentSpec(
+        experiment_id=str(payload["experiment_id"]),
+        market=Market(payload["market"]),
+        track=ResearchTrack(payload["track"]),
+        algorithm_family=AlgorithmFamily(payload["algorithm_family"]),
+        resolution=DataResolution(payload["resolution"]),
+        dataset_ids=tuple(str(item) for item in payload["dataset_ids"]),
+        random_seed=int(payload["random_seed"]),
+        git_commit=str(payload["git_commit"]),
+        code_version=str(payload["code_version"]),
+        training_start=_parse_time(payload["training_start"]),
+        training_end=_parse_time(payload["training_end"]),
+        validation_start=_parse_time(payload["validation_start"]),
+        validation_end=_parse_time(payload["validation_end"]),
+        oos_start=_parse_time(payload["oos_start"]),
+        oos_end=_parse_time(payload["oos_end"]),
+        final_holdout_start=_parse_time(payload["final_holdout_start"]),
+        final_holdout_end=_parse_time(payload["final_holdout_end"]),
+        cost_model_id=str(payload["cost_model_id"]),
+        execution_model_id=str(payload["execution_model_id"]),
+        objectives=tuple(str(item) for item in payload["objectives"]),
+        compute_backend=str(payload.get("compute_backend", "auto")),
+        compute_device=str(payload.get("compute_device", "unverified")),
+        parameters=dict(payload.get("parameters", {})),
+    )
+
+
+class ResearchAPI:
+    """Minimal local WSGI API for creating and inspecting actual experiment records."""
+
+    def __init__(self, store: ExperimentStore) -> None:
+        # The API operates on metadata only; workers/data vendors are separate services.
+        self.store = store
+
+    def _response(self, start_response: StartResponse, status: HTTPStatus, payload: object,
+                  content_type: str = "application/json; charset=utf-8") -> list[bytes]:
+        # Always return a finite body and explicit content length.
+        body = payload.encode("utf-8") if isinstance(payload, str) else json.dumps(
+            payload, sort_keys=True, allow_nan=False
+        ).encode("utf-8")
+        start_response(f"{status.value} {status.phrase}", [
+            ("Content-Type", content_type),
+            ("Content-Length", str(len(body))),
+            ("Cache-Control", "no-store"),
+            ("X-Content-Type-Options", "nosniff"),
+        ])
+        return [body]
+
+    def __call__(self, environ: dict[str, Any], start_response: StartResponse) -> list[bytes]:
+        # Catch expected validation/lookup failures and never leak tracebacks to the browser.
+        method = environ.get("REQUEST_METHOD", "GET").upper()
+        path = environ.get("PATH_INFO", "/")
+        try:
+            if method == "GET" and path == "/":
+                return self._response(start_response, HTTPStatus.OK, DASHBOARD_HTML,
+                                      "text/html; charset=utf-8")
+            if method == "GET" and path == "/api/health":
+                return self._response(start_response, HTTPStatus.OK, {"status": "ok"})
+            if method == "GET" and path == "/api/markets":
+                # Each environment gets its own capital response; no cross-market sum exists.
+                markets = [
+                    {
+                        "market": market.value,
+                        "base_currency": spec.base_currency,
+                        "initial_simulated_capital": str(spec.initial_simulated_capital),
+                        "account_scope": spec.account_scope,
+                    }
+                    for market, spec in MARKET_SPECS.items()
+                ]
+                return self._response(start_response, HTTPStatus.OK, {"markets": markets})
+            if method == "GET" and path == "/api/experiments":
+                # Restrict the list filter to one known environment if supplied.
+                query = parse_qs(environ.get("QUERY_STRING", ""))
+                market_values = query.get("market", [])
+                market = market_values[0] if market_values else None
+                limit_values = query.get("limit", ["100"])
+                rows = self.store.list_experiments(market=market, limit=int(limit_values[0]))
+                return self._response(start_response, HTTPStatus.OK, {"experiments": rows})
+            if method == "POST" and path == "/api/experiments":
+                # Bound input size and accept JSON only; no arbitrary file paths or code.
+                if environ.get("CONTENT_TYPE", "").split(";")[0].strip() != "application/json":
+                    return self._response(start_response, HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                                          {"error": "Content-Type must be application/json"})
+                length = int(environ.get("CONTENT_LENGTH") or "0")
+                if not 0 < length <= 1_000_000:
+                    return self._response(start_response, HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                                          {"error": "request body must be between 1 byte and 1 MB"})
+                payload = json.loads(environ["wsgi.input"].read(length))
+                if not isinstance(payload, dict):
+                    raise ValueError("request JSON must be an object")
+                spec = _create_spec(payload)
+                self.store.create_experiment(spec)
+                self.store.append_event(spec.experiment_id, "experiment_created", {
+                    "market": spec.market.value,
+                    "track": spec.track.value,
+                    "fingerprint": spec.fingerprint,
+                })
+                return self._response(start_response, HTTPStatus.CREATED, {
+                    "experiment_id": spec.experiment_id,
+                    "market": spec.market.value,
+                    "track": spec.track.value,
+                    "fingerprint": spec.fingerprint,
+                    "status": "created_not_started",
+                })
+            if method == "GET" and path.startswith("/api/experiments/"):
+                # Decode only the stable identifier segment; query never chooses a market ledger.
+                experiment_id = path.removeprefix("/api/experiments/").strip("/")
+                if not experiment_id or "/" in experiment_id:
+                    raise KeyError(experiment_id)
+                experiment = self.store.get_experiment(experiment_id)
+                return self._response(start_response, HTTPStatus.OK, {
+                    "experiment": experiment,
+                    "events": self.store.events(experiment_id),
+                    "candidates": self.store.candidates(experiment_id),
+                })
+            if method not in {"GET", "POST"}:
+                return self._response(start_response, HTTPStatus.METHOD_NOT_ALLOWED,
+                                      {"error": "method not allowed"})
+            return self._response(start_response, HTTPStatus.NOT_FOUND, {"error": "route not found"})
+        except KeyError as exc:
+            return self._response(start_response, HTTPStatus.NOT_FOUND, {"error": f"not found: {exc}"})
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            return self._response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+        except Exception as exc:  # noqa: BLE001 - hide internal tracebacks from HTTP clients.
+            return self._response(start_response, HTTPStatus.INTERNAL_SERVER_ERROR,
+                                  {"error": f"internal error: {type(exc).__name__}"})
+
+
+def create_app(database_path: str) -> ResearchAPI:
+    """Create an API instance against a dedicated research database."""
+    # Do not reuse cryptobot trading state databases for research records.
+    return ResearchAPI(ExperimentStore(database_path))
