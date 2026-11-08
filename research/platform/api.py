@@ -484,6 +484,40 @@ def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
             raise ValueError(
                 f"parameters.optimization requires {sorted(required_optimization)}"
             )
+        for integer_key in ("budget", "validation_candidates"):
+            raw = optimization[integer_key]
+            if isinstance(raw, bool) or not isinstance(raw, int) or raw < 1:
+                raise ValueError(f"optimization.{integer_key} must be a positive integer")
+        objective_name = str(optimization["objective"])
+        if objective_name not in {"sharpe", "sortino", "cagr", "calmar", "total_return"}:
+            raise ValueError("optimization.objective must be sharpe, sortino, cagr, calmar or total_return")
+        if algorithm_family is AlgorithmFamily.GRID_SEARCH:
+            points = optimization.get("points_per_numeric_dimension")
+            if isinstance(points, bool) or not isinstance(points, int) or points < 2:
+                raise ValueError("grid_search requires points_per_numeric_dimension >= 2")
+        elif algorithm_family is AlgorithmFamily.DIFFERENTIAL_EVOLUTION:
+            population = optimization.get("population_size")
+            generations = optimization.get("generations")
+            if (
+                isinstance(population, bool) or not isinstance(population, int) or population < 4
+                or isinstance(generations, bool) or not isinstance(generations, int) or generations < 1
+            ):
+                raise ValueError("differential_evolution requires population_size >= 4 and generations >= 1")
+            if optimization["budget"] != population * (generations + 1):
+                raise ValueError(
+                    "differential_evolution budget must equal population_size * (generations + 1)"
+                )
+            mutation = float(optimization.get("mutation", 0.7))
+            crossover = float(optimization.get("crossover", 0.8))
+            if not 0 < mutation <= 2 or not 0 <= crossover <= 1:
+                raise ValueError("differential_evolution mutation/crossover values are outside valid bounds")
+        elif algorithm_family is AlgorithmFamily.BAYESIAN:
+            startup = optimization.get("startup_trials")
+            fraction = optimization.get("good_fraction")
+            if isinstance(startup, bool) or not isinstance(startup, int) or not 1 <= startup < optimization["budget"]:
+                raise ValueError("bayesian search requires 1 <= startup_trials < budget")
+            if not isinstance(fraction, int | float) or isinstance(fraction, bool) or not 0 < fraction < 1:
+                raise ValueError("bayesian good_fraction must be between zero and one")
     return ExperimentSpec(
         experiment_id=str(payload["experiment_id"]),
         market=Market(payload["market"]),
