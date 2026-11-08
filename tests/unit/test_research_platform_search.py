@@ -391,3 +391,45 @@ def test_fx_conversion_rejects_future_stale_or_mismatched_rates() -> None:
         convert_ohlcv_to_inr(bars, stale_fx, source_quote_currency="USDT")
     with pytest.raises(ValueError, match="must match"):
         convert_ohlcv_to_inr(bars, stale_fx, source_quote_currency="USD")
+
+
+
+def test_point_in_time_features_are_invariant_to_future_price_changes() -> None:
+    # Mutating bars after a cutoff must not alter any features available before it.
+    from research.platform.features import PointInTimeFeatureEngine
+
+    dates = pd.date_range("2020-01-01", periods=100, freq="D", tz="UTC")
+    close = 100.0 + np.arange(100, dtype=np.float64) * 0.2 + np.sin(np.arange(100))
+    bars = pd.DataFrame(
+        {
+            "close": close,
+            "high": close * 1.01,
+            "low": close * 0.99,
+            "volume": 1000.0 + np.arange(100, dtype=np.float64) * 3.0,
+        },
+        index=dates,
+    )
+    engine = PointInTimeFeatureEngine(windows=(5, 20))
+    original = engine.build(bars)
+    changed = bars.copy()
+    changed.loc[dates[70]:, "close"] *= 1.5
+    changed.loc[dates[70]:, "high"] *= 1.5
+    changed.loc[dates[70]:, "low"] *= 1.5
+    revised = engine.build(changed)
+    pd.testing.assert_frame_equal(original.loc[:dates[69]], revised.loc[:dates[69]])
+    assert original.attrs["feature_metadata"]["uses_future_data"] is False
+    assert original.attrs["feature_metadata"]["max_lookback"] == 20
+
+
+def test_forward_labels_have_explicit_end_timestamps_and_are_separate() -> None:
+    # Forward labels are purposefully future-dependent and expose their label interval.
+    from research.platform.features import PointInTimeFeatureEngine
+
+    dates = pd.date_range("2024-01-01", periods=4, freq="D", tz="UTC")
+    bars = pd.DataFrame({"close": [100.0, 101.0, 99.0, 102.0]}, index=dates)
+    labels = PointInTimeFeatureEngine.build_next_bar_labels(bars)
+    assert labels.loc[dates[0], "forward_return_1"] == pytest.approx(0.01)
+    assert labels.loc[dates[0], "label_start_timestamp"] == dates[0]
+    assert labels.loc[dates[0], "label_end_timestamp"] == dates[1]
+    assert pd.isna(labels.loc[dates[-1], "forward_return_1"])
+    assert labels.attrs["uses_future_data"] is True
