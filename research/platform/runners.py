@@ -2097,18 +2097,20 @@ class ParetoStrategySearchJobRunner:
             or not 0 <= mutation_rate <= 1
         ):
             raise ValueError("pareto_search.mutation_rate must be between zero and one")
-        objectives = tuple(settings["objectives"])
-        directions = tuple(settings["directions"])
+        raw_objectives = settings["objectives"]
+        raw_directions = settings["directions"]
+        if not isinstance(raw_objectives, (list, tuple)) or not isinstance(raw_directions, (list, tuple)):
+            raise ValueError("Pareto objectives and directions must be arrays")
+        objectives = tuple(raw_objectives)
+        directions = tuple(raw_directions)
         if (
-            not objectives
+            len(objectives) < 2
             or len(objectives) != len(directions)
             or len(set(objectives)) != len(objectives)
             or any(name not in self.OBJECTIVES for name in objectives)
             or any(direction not in {"min", "max"} for direction in directions)
         ):
-            raise ValueError("Pareto objectives and directions must be unique and aligned")
-        if not objectives or "turnover" not in objectives and len(objectives) < 2:
-            raise ValueError("Pareto search requires at least two distinct objectives")
+            raise ValueError("Pareto search requires 2+ unique objectives with aligned min/max directions")
 
         manifests = [
             context.store.get_dataset(dataset_id)["manifest"]
