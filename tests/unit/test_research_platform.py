@@ -515,3 +515,73 @@ def test_neuroevolution_batched_inference_matches_scalar_trace() -> None:
         item["lineage"]["prediction_backend"] == "batch"
         for item in batched.candidate_archive
     )
+
+
+
+def test_compute_engine_auto_falls_back_after_runtime_gpu_failure() -> None:
+    # A simulated device failure after initialisation must transparently use NumPy in auto mode.
+    class BrokenCuda:
+        def Device(self, device_id):
+            # Return a context manager so failure occurs during the actual device operation.
+            return self
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+    class BrokenCuPy:
+        cuda = BrokenCuda()
+
+        def asarray(self, values):
+            # Simulate a late CUDA allocation/driver failure.
+            raise RuntimeError("simulated CUDA allocation failure")
+
+    rng = np.random.default_rng(9)
+    features = rng.normal(size=(12, 3))
+    network = DenseMLP(input_size=3, hidden_size=4, output_size=1)
+    weights = rng.normal(size=(5, network.parameter_count))
+    engine = ComputeEngine(backend="auto")
+    # Inject a failing CUDA namespace to exercise runtime fallback deterministically.
+    engine._cupy = BrokenCuPy()
+    engine._strict_backend = False
+
+    actual = engine.batch_dense_mlp_scores(
+        features, weights, hidden_size=network.hidden_size
+    )
+    expected = np.stack([network.predict(features, item) for item in weights])
+    np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
+    info = engine.info()
+    assert info.backend == "numpy"
+    assert "simulated CUDA allocation failure" in info.fallback_reason
+
+
+def test_compute_engine_explicit_cupy_mode_does_not_silently_fallback() -> None:
+    # An explicitly requested GPU backend must not report success after a runtime failure.
+    class BrokenCuda:
+        def Device(self, device_id):
+            return self
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+    class BrokenCuPy:
+        cuda = BrokenCuda()
+
+        def asarray(self, values):
+            raise RuntimeError("simulated explicit CUDA failure")
+
+    engine = ComputeEngine(backend="cpu")
+    engine._cupy = BrokenCuPy()
+    engine._strict_backend = True
+    network = DenseMLP(input_size=2, hidden_size=3, output_size=1)
+    with pytest.raises(RuntimeError, match="simulated explicit CUDA failure"):
+        engine.batch_dense_mlp_scores(
+            np.ones((4, 2)),
+            np.ones((2, network.parameter_count)),
+            hidden_size=network.hidden_size,
+        )
