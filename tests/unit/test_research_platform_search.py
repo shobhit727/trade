@@ -574,3 +574,36 @@ def test_optuna_tpe_search_respects_budget_and_seed_when_installed() -> None:
     assert len(first.candidates) + len(first.failures) == 24
     assert first.best.score == pytest.approx(second.best.score)
     assert first.best.parameters == second.best.parameters
+
+
+
+def test_portfolio_execution_volume_limit_uses_previous_completed_bar() -> None:
+    # The next bar's large final volume is unknown at its open and cannot justify a larger fill.
+    dates = pd.date_range("2025-02-01", periods=3, freq="D", tz="UTC")
+    bars = {
+        "LOW_LIQUIDITY": pd.DataFrame(
+            {
+                "open": [100.0, 100.0, 100.0],
+                "high": [101.0, 101.0, 101.0],
+                "low": [99.0, 99.0, 99.0],
+                "close": [100.0, 100.0, 100.0],
+                "volume": [10.0, 1_000_000.0, 1_000_000.0],
+            },
+            index=dates,
+        )
+    }
+    targets = pd.DataFrame({"LOW_LIQUIDITY": [1.0, 1.0, 1.0]}, index=dates)
+    result = PortfolioSimulator(PortfolioConfig(
+        market=Market.NSE,
+        fee_bps=Decimal("0"),
+        slippage_bps=Decimal("0"),
+        impact_coefficient_bps=Decimal("0"),
+        max_participation=Decimal("0.1"),
+        max_gross_exposure=Decimal("1.0"),
+        assumed_timezone="UTC",
+        cost_model_id="lagged-volume-test",
+    )).run(bars, targets)
+    first_fill = result.fills[0]
+    assert first_fill.fill.timestamp == dates[1].to_pydatetime()
+    assert first_fill.fill.quantity == Decimal("1.0")
+    assert first_fill.participation == Decimal("0.1")
