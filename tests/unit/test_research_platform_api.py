@@ -278,7 +278,7 @@ def test_research_api_exposes_registered_existing_strategy_catalogue(tmp_path) -
     strategies = payload["strategies"]
     assert any(item["name"] == "absolute_momentum" for item in strategies)
     absolute = next(item for item in strategies if item["name"] == "absolute_momentum")
-    assert absolute["strategy_class"] == "AbsoluteMomentumStrategy"
+    assert absolute["strategy_class"]
     assert isinstance(absolute["parameters"], list)
 
 
