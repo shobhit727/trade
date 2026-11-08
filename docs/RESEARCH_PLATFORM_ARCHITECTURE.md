@@ -82,17 +82,17 @@ The feature branch now contains the following additive modules:
 
 | Capability | Implementation | Limitation |
 |---|---|---|
-| Existing data adapters | `NSELegacyAdapter`, `CryptoLocalAdapter` | Local historical files only; licence review remains required |
+| Existing data adapters | `NSELegacyAdapter`, `CryptoLocalAdapter`; OHLCV open-range/price/volume checks and manifest quality JSON | Local historical files only; licence review remains required; full missing-bar and point-in-time universe scoring remains open |
 | Existing strategy discovery | `ExistingStrategyRegistry`, `ExistingStrategySignalAdapter` | Original classes stream bar by bar; only long/flat signals are adapted so far |
 | Cash portfolio simulation | `PortfolioSimulator` | Long-only, INR cash; no derivative margin/liquidation or corporate-action ledger |
 | Execution assumptions | Next-open, prior-completed-bar participation cap, slippage, square-root impact, injected market fee calculators | NSE uses existing itemised delivery cost model; crypto uses explicit venue maker/taker bps; historical fee schedules and intraday changes need sourcing |
 | Optimisation baselines | Random, capped grid, differential evolution, seeded Optuna TPE; hybrid ensemble combines multiple methods under equal per-method budgets | Separate Parzen-style approximation remains a heuristic baseline; hybrid does not yet mix GP/neural/component genome types |
 | Genetic programming | Bounded numerical AST interpreter, full candidate archive and TRAIN/VALIDATION/OOS worker | Numeric-only grammar; no Boolean/control-flow nodes yet |
-| Neuroevolution | Dense one-hidden-layer network, mirrored-noise candidate archive and TRAIN/VALIDATION/OOS worker | CPU implementation; topology evolution / GPU path not yet integrated |
+| Neuroevolution | Dense one-hidden-layer network, mirrored-noise candidate archive, persisted TRAIN/VALIDATION/OOS descendants and batched NumPy/CuPy inference | Topology evolution is not integrated; portfolio fitness uses the CPU cash simulator; CUDA device and throughput remain unverified |
 | Strategy composition | Closed causal component registry and TRAIN/VALIDATION/OOS evolution worker | Current entries/exits/filters are simple numerical rules; not yet adapters to all production strategy modules |
 | Multi-objective optimisation | NSGA-II worker over existing-strategy parameters; TRAIN Pareto front, VALIDATION re-ranking and frozen OOS run | Does not yet evolve a mixed population spanning GP/neural/component genomes |
-| Statistical diagnostics | BH FDR, PSR/DSR, moving-block bootstrap, CSCV PBO and label-interval purging | Diagnostic implementations still require independent methodological review |
-| Population compute | Batched linear and long/flat fitness, NumPy / optional CuPy | CuPy path and target GPU remain unverified |
+| Statistical diagnostics | TRAIN return-vector PSR-derived p-values, full-family BH FDR/DSR and bounded CSCV/PBO in optimiser, GP, neural, composition and Pareto workers; moving-block bootstrap and label-interval purging | DSR uses an independent-Gaussian trial-family approximation; CSCV uses at most 128 evenly spaced candidates; all diagnostics require independent methodological review and never drive selection |
+| Population compute | Batched linear, long/flat and dense-neural inference, NumPy / optional CuPy, runtime fallback and scalar/batch parity tests | CuPy path has not been exercised on the target GPU; simulator/ledger fitness remains CPU and end-to-end GPU acceleration is not claimed |
 | API and dashboard | Local WSGI API, experiment/data catalogue, strategy explorer, queue/inspect/cancel controls for existing-strategy, search, GP, neural, composition and Pareto workers | GPU telemetry, experiment comparison and full evolution monitoring remain incomplete |
 | Job lifecycle | Bounded local thread pool, SQLite status/events/results, cooperative cancellation and interrupted-job recovery | Jobs are not durable across process death; interrupted work is marked failed and must be resubmitted |
 
@@ -114,7 +114,7 @@ Experiment specifications persist an embargo in seconds and reject adjacent wind
 
 The runner requires NSE OOS to start after 1 October 2026 because the previous TRAIN/TEST research history is exposed through that date. The runner clips its returned data frames before the final holdout boundary, but current CSV/Parquet readers and legacy NSE loaders may parse the complete source file before filtering rows. This is not a strict storage/process security boundary: a future holdout service must physically isolate final-holdout files and expose only approved partitions to workers. The remaining post-2026 sample is currently very short and cannot support a robust strategy claim.
 
-The included BH, moving-block bootstrap and CSCV functions are diagnostics whose assumptions and outputs must be independently reviewed, especially for dependence structure and the actual trial family. They do not by themselves correct universe survivorship, data-quality, publication-time, cost or execution bias.
+The workers now attach TRAIN-only PSR/FDR/DSR/CSCV diagnostics to the full successful candidate family. FDR and DSR use all successful candidates; CSCV/PBO uses a deterministic evenly spaced subset capped at 128 candidates. DSR explicitly assumes independent Gaussian trial Sharpe estimates; this is not a realistic model for correlated strategy populations and requires sensitivity analysis. P-values are PSR-derived against a zero per-period Sharpe benchmark. None of these diagnostics affects candidate selection or corrects universe survivorship, publication-time leakage, data-quality, cost or execution bias.
 
 ## Remaining implementation priorities
 
