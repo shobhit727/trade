@@ -265,3 +265,40 @@ def test_research_api_rejects_cross_market_dataset_reference(tmp_path) -> None:
     )
     assert status == 400
     assert "cross-market dataset rejected" in json.loads(body)["error"]
+
+
+
+def test_research_api_exposes_registered_existing_strategy_catalogue(tmp_path) -> None:
+    # The dashboard receives actual strategy implementations and typed search metadata.
+    app = ResearchAPI(ExperimentStore(tmp_path / "research.sqlite3"))
+    status, _, body = _request(app, "GET", "/api/strategies?limit=500")
+    assert status == 200
+    payload = json.loads(body)
+    assert payload["strategy_count"] >= 1
+    strategies = payload["strategies"]
+    assert any(item["name"] == "absolute_momentum" for item in strategies)
+    absolute = next(item for item in strategies if item["name"] == "absolute_momentum")
+    assert absolute["strategy_class"] == "AbsoluteMomentumStrategy"
+    assert isinstance(absolute["parameters"], list)
+
+
+def test_research_api_validates_selected_existing_strategy_name(tmp_path) -> None:
+    # Existing-strategy experiment metadata must name a real registered catalogue entry.
+    app = ResearchAPI(ExperimentStore(tmp_path / "research.sqlite3"))
+    assert _request(app, "POST", "/api/datasets", _dataset_payload())[0] == 201
+    valid = _payload(
+        algorithm_family="existing_strategy",
+        parameters={"strategy_name": "absolute_momentum"},
+    )
+    status, _, body = _request(app, "POST", "/api/experiments", valid)
+    assert status == 201
+    assert json.loads(body)["status"] == "created_not_started"
+
+    invalid = _payload(
+        experiment_id="api-invalid-strategy",
+        algorithm_family="existing_strategy",
+        parameters={"strategy_name": "not-registered"},
+    )
+    status, _, body = _request(app, "POST", "/api/experiments", invalid)
+    assert status == 400
+    assert "unknown existing strategy" in json.loads(body)["error"]
