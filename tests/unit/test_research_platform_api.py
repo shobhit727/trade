@@ -490,3 +490,83 @@ def test_experiment_comparison_rejects_mixed_market_ids(tmp_path) -> None:
     )
     assert status == 400
     assert "cannot be compared in one financial view" in result["error"]
+
+
+
+def test_api_creates_validated_pareto_search_experiment(tmp_path) -> None:
+    # Pareto objectives and directions are part of the immutable experiment specification.
+    app = ResearchAPI(ExperimentStore(tmp_path / "pareto-api.sqlite3"))
+    status, _, _ = _request(app, "POST", "/api/datasets", _dataset_payload())
+    assert status == 201
+    parameters = {
+        "strategy_name": "absolute_momentum",
+        "strategy_parameters": {"period": 10, "threshold": 0.0},
+        "execution_assumptions": {
+            "slippage_bps": 5,
+            "impact_coefficient_bps": 10,
+            "max_participation": 0.05,
+            "max_gross_exposure": 1.0,
+            "periods_per_year": 252,
+        },
+        "pareto_search": {
+            "population_size": 4,
+            "generations": 1,
+            "mutation_rate": 0.2,
+            "validation_candidates": 3,
+            "objectives": ["cagr", "max_drawdown", "turnover"],
+            "directions": ["max", "max", "min"],
+        },
+    }
+    status, _, body = _request(
+        app,
+        "POST",
+        "/api/experiments",
+        _payload(
+            experiment_id="api-pareto-search",
+            algorithm_family="pareto_search",
+            parameters=parameters,
+        ),
+    )
+    assert status == 201
+    payload = json.loads(body)
+    assert payload["spec"]["algorithm_family"] == "pareto_search"
+    assert payload["spec"]["parameters"]["pareto_search"]["objectives"] == [
+        "cagr", "max_drawdown", "turnover"
+    ]
+
+
+def test_api_rejects_single_objective_pareto_experiment(tmp_path) -> None:
+    # The API refuses scalar optimisation disguised as Pareto search.
+    app = ResearchAPI(ExperimentStore(tmp_path / "pareto-invalid-api.sqlite3"))
+    status, _, _ = _request(app, "POST", "/api/datasets", _dataset_payload())
+    assert status == 201
+    parameters = {
+        "strategy_name": "absolute_momentum",
+        "execution_assumptions": {
+            "slippage_bps": 5,
+            "impact_coefficient_bps": 10,
+            "max_participation": 0.05,
+            "max_gross_exposure": 1.0,
+            "periods_per_year": 252,
+        },
+        "pareto_search": {
+            "population_size": 4,
+            "generations": 1,
+            "mutation_rate": 0.2,
+            "validation_candidates": 2,
+            "objectives": ["cagr"],
+            "directions": ["max"],
+        },
+    }
+    status, _, body = _request(
+        app,
+        "POST",
+        "/api/experiments",
+        _payload(
+            experiment_id="api-pareto-single-objective",
+            algorithm_family="pareto_search",
+            parameters=parameters,
+        ),
+    )
+    assert status == 400
+    assert "2+ unique objectives" in json.loads(body)["error"]
