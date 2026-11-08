@@ -12,9 +12,10 @@ any existing backtest engine.
   cross-market checks. Crypto derivatives/margin accounting is **not** implemented here.
 - Immutable dataset provenance manifests and a data availability catalogue.
 - Experiment specifications with code, dataset, cost-model, execution-model, seed,
-  resolution, objective and chronological-window provenance.
-- Chronological split definitions and an access lifecycle that separates optimisation,
-  model selection, OOS evaluation and one-time final-holdout access.
+  resolution, objective, embargo and chronological-window provenance.
+- Chronological split definitions, label-interval-aware purging, explicit embargo handling,
+  and an access lifecycle that separates optimisation, model selection, OOS evaluation
+  and one-time final-holdout access.
 - SQLite experiment/event/candidate persistence with append-only event and candidate
   records, including evolutionary lineage JSON.
 - Optional CuPy batch linear-population and long/flat fitness evaluation with NumPy CPU fallback.
@@ -39,17 +40,21 @@ any existing backtest engine.
   separately configured crypto maker/taker fee schedule.
 - Benjamini-Hochberg FDR, moving-block bootstrap and a CSCV PBO diagnostic.
 - Batched long/flat population fitness in NumPy or optional CuPy.
-- A loopback WSGI API and actual experiment-record dashboard. API creation persists a
-  record and explicitly does not start a research worker.
+- A loopback WSGI API and dashboard backed by SQLite manifests, experiments, jobs and
+  candidate lineage. The dashboard can queue, inspect and cooperatively cancel the
+  allow-listed existing-strategy evaluation worker.
 
 ## Explicit limitations
 
 This increment is not yet a complete point-in-time historical universe, live data-acquisition
-system, full NSE tax/corporate-action portfolio simulator, crypto derivatives/margin/
-liquidation engine, exchange arbitrage simulator, production job scheduler, secured
-distributed holdout service, or complete dashboard for job start/stop and GPU telemetry.
-The crypto adapter reads local files only. The market ledger and portfolio simulator are
-long-only INR cash models. There is no live brokerage connection or order placement.
+system, full NSE tax-lot/corporate-action portfolio simulator, crypto derivatives/margin/
+liquidation engine, exchange arbitrage simulator, durable distributed worker cluster,
+secured process-isolated holdout service, or full dashboard telemetry/comparison suite.
+The job manager uses local threads and marks in-flight jobs interrupted after process
+restart; interrupted jobs must be resubmitted. The default job runner currently supports
+existing strategies only. The crypto adapter reads local files only. The market ledger and
+portfolio simulator are long-only INR cash models. There is no live brokerage connection
+or order placement.
 
 The statistical helpers are diagnostic implementations and require independent
 methodological validation before being used as confirmatory evidence. No result from this
@@ -89,7 +94,10 @@ python -m pytest tests/unit/test_research_platform_search.py -q
 # Test the experiment API and dashboard routes.
 python -m pytest tests/unit/test_research_platform_api.py -q
 
-# Launch the local dashboard/API (default bind is loopback only).
+# Run all focused platform tests, including API, jobs, data loaders and evaluation.
+python -m pytest tests/unit/test_research_platform*.py -q
+
+# Launch the local dashboard/API and its allow-listed worker (default bind is loopback only).
 python -m research.platform.app --host 127.0.0.1 --port 8765
 ```
 
