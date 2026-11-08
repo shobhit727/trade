@@ -570,8 +570,10 @@ class ExistingStrategyOptimizerJobRunner:
             raise ValueError(f"objective must be one of {sorted(self.OBJECTIVES)}")
         budget = int(settings["budget"])
         validation_count = int(settings["validation_candidates"])
-        if budget < 4 or validation_count < 1:
-            raise ValueError("budget must be >= 4 and validation_candidates must be positive")
+        if not 4 <= budget <= 10000 or not 1 <= validation_count <= 1000:
+            raise ValueError(
+                "budget must be 4..10000 and validation_candidates must be 1..1000"
+            )
 
         manifests = [
             context.store.get_dataset(dataset_id)["manifest"]
@@ -999,8 +1001,15 @@ class GeneticProgrammingJobRunner:
             minimum = 4 if name == "population_size" else 1 if name in {
                 "generations", "max_depth", "validation_candidates"
             } else 3
-            if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
-                raise ValueError(f"genetic_programming.{name} must be an integer >= {minimum}")
+            maximum = 12 if name == "max_depth" else 8191 if name == "max_nodes" else 10000
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or not minimum <= value <= maximum
+            ):
+                raise ValueError(
+                    f"genetic_programming.{name} must be an integer from {minimum} to {maximum}"
+                )
         mutation_rate = settings["mutation_rate"]
         if (
             isinstance(mutation_rate, bool)
@@ -1401,6 +1410,8 @@ class NeuroevolutionJobRunner:
         evaluation_count = settings["population_size"] * settings["generations"]
         if evaluation_count > 10000:
             raise ValueError("neuroevolution candidate count exceeds the 10000 evaluation limit")
+        if settings["hidden_size"] > 512:
+            raise ValueError("neuroevolution.hidden_size exceeds the 512-unit worker limit")
         for name in ("learning_rate", "noise_std", "weight_limit"):
             value = settings[name]
             if (
@@ -1738,8 +1749,15 @@ class StrategyCompositionJobRunner:
         for name in ("population_size", "generations", "max_components", "validation_candidates"):
             value = settings[name]
             minimum = 4 if name == "population_size" else 2 if name == "max_components" else 1
-            if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
-                raise ValueError(f"strategy_composition.{name} must be an integer >= {minimum}")
+            maximum = 32 if name == "max_components" else 10000
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or not minimum <= value <= maximum
+            ):
+                raise ValueError(
+                    f"strategy_composition.{name} must be an integer from {minimum} to {maximum}"
+                )
         if settings["population_size"] * (settings["generations"] + 1) > 10000:
             raise ValueError("strategy_composition candidate count exceeds the 10000 evaluation limit")
         mutation = settings["mutation_rate"]
