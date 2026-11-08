@@ -173,7 +173,7 @@ def test_jobs_api_rejects_unknown_runner_and_non_object_parameters(tmp_path) -> 
             },
         )
         assert status == 400
-        assert "unknown research runner" in payload["error"]
+        assert "requires runner existing_strategy_evaluation" in payload["error"]
 
         status, payload = _request(
             app,
