@@ -28,6 +28,7 @@ from research.platform.validation import (
     SplitPlan,
     TimeWindow,
     ValidationLifecycle,
+    purged_walk_forward_split,
 )
 
 
@@ -392,3 +393,64 @@ def test_experiment_spec_records_and_enforces_partition_embargo() -> None:
     spec = make_experiment(**values)
     assert spec.to_dict()["embargo_seconds"] == 60
     assert make_experiment(embargo_seconds=0).fingerprint != spec.fingerprint
+
+
+
+def test_purged_walk_forward_split_removes_labels_crossing_validation() -> None:
+    # A training decision whose forward label reaches into validation must be purged.
+    days = [datetime(2026, 1, day, tzinfo=UTC) for day in range(1, 7)]
+    label_starts = list(days)
+    label_ends = [
+        datetime(2026, 1, 2, tzinfo=UTC),
+        datetime(2026, 1, 3, 1, tzinfo=UTC),
+        datetime(2026, 1, 5, tzinfo=UTC),
+        datetime(2026, 1, 5, tzinfo=UTC),
+        datetime(2026, 1, 6, tzinfo=UTC),
+        datetime(2026, 1, 7, tzinfo=UTC),
+    ]
+    validation = TimeWindow(days[3], days[4])
+    split = purged_walk_forward_split(days, label_starts, label_ends, validation)
+
+    assert split.training_indices == (0, 1)
+    assert split.validation_indices == (3,)
+    assert split.purged_indices == (2,)
+    assert split.excluded_indices == (4, 5)
+
+
+def test_purged_walk_forward_split_applies_embargo_around_validation() -> None:
+    # Embargo removes a second training sample whose label ends just after protected start.
+    days = [datetime(2026, 1, day, tzinfo=UTC) for day in range(1, 7)]
+    starts = list(days)
+    ends = [
+        datetime(2026, 1, 2, tzinfo=UTC),
+        datetime(2026, 1, 3, 1, tzinfo=UTC),
+        datetime(2026, 1, 5, tzinfo=UTC),
+        datetime(2026, 1, 5, tzinfo=UTC),
+        datetime(2026, 1, 6, tzinfo=UTC),
+        datetime(2026, 1, 7, tzinfo=UTC),
+    ]
+    split = purged_walk_forward_split(
+        days,
+        starts,
+        ends,
+        TimeWindow(days[3], days[4]),
+        embargo=timedelta(days=1),
+    )
+    assert split.training_indices == (0,)
+    assert split.purged_indices == (1, 2)
+    assert split.validation_indices == (3,)
+
+
+def test_purged_walk_forward_split_rejects_unaligned_or_naive_timestamps() -> None:
+    # Misaligned labels and naive event times are rejected before a split is returned.
+    days = [datetime(2026, 1, day, tzinfo=UTC) for day in range(1, 5)]
+    window = TimeWindow(days[2], days[3])
+    with pytest.raises(ValueError, match="equal length"):
+        purged_walk_forward_split(days, days[:-1], days, window)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        purged_walk_forward_split(
+            [datetime(2026, 1, day) for day in range(1, 5)],
+            days,
+            [datetime(2026, 1, day, tzinfo=UTC) for day in range(2, 6)],
+            window,
+        )
