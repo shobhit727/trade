@@ -17,12 +17,16 @@ any existing backtest engine.
   model selection, OOS evaluation and one-time final-holdout access.
 - SQLite experiment/event/candidate persistence with append-only event and candidate
   records, including evolutionary lineage JSON.
-- Optional CuPy batch linear-population evaluation with NumPy CPU fallback.
+- Optional CuPy batch linear-population and long/flat fitness evaluation with NumPy CPU fallback.
 
 ## Additional research capabilities
 
 - Local adapters for the legacy NSE splitter and exchange-scoped crypto CSV/Parquet files.
   They do not download market data. Imported datasets remain licence-review-required.
+- Explicit quote-currency to INR conversion using backward-only FX alignment, maximum staleness
+  limits and source provenance. Future or stale FX rates are rejected.
+- A causal trailing price/volume feature engine plus separately timestamped forward labels.
+  Feature outputs never use negative shifts or future rows.
 - A long-only multi-asset cash simulator which decides on close t and executes on open t+1,
   with participation limits, adverse slippage, square-root impact and declared per-side fees.
 - Random search, capped grid search, differential evolution and a clearly labelled
@@ -31,6 +35,8 @@ any existing backtest engine.
   is never executed.
 - A compact dense-network evolution strategy and declarative strategy-composition search.
 - Pareto non-dominated sorting / NSGA-II crowding selection.
+- Market-specific fee calculators: the existing itemised NSE delivery cost model and a
+  separately configured crypto maker/taker fee schedule.
 - Benjamini-Hochberg FDR, moving-block bootstrap and a CSCV PBO diagnostic.
 - Batched long/flat population fitness in NumPy or optional CuPy.
 - A loopback WSGI API and actual experiment-record dashboard. API creation persists a
@@ -65,10 +71,11 @@ compute = ComputeEngine(backend="auto")
 print(compute.info())
 ```
 
-The crypto cash ledger in this increment requires fills and marks denominated in INR.
-A future FX adapter must attach timestamped FX provenance before normalising non-INR
-quotes. Futures, perpetual swaps, short selling, margin and liquidation accounting require
-separate instrument-specific ledgers before those products can be simulated credibly.
+The crypto cash ledger and portfolio simulator require bars, fills and marks denominated in INR.
+Use `CryptoLocalAdapter.load_inr(...)` with an explicit `FXRateSeries` for non-INR quote data.
+The FX converter uses only a prior observation and rejects stale/missing rates. Futures,
+perpetual swaps, short selling, margin and liquidation accounting require separate
+instrument-specific ledgers before those products can be simulated credibly.
 
 Run the focused tests from the repository root:
 
