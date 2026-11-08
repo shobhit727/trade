@@ -86,14 +86,14 @@ The feature branch now contains the following additive modules:
 | Existing strategy discovery | `ExistingStrategyRegistry`, `ExistingStrategySignalAdapter` | Original classes stream bar by bar; only long/flat signals are adapted so far |
 | Cash portfolio simulation | `PortfolioSimulator` | Long-only, INR cash; no derivative margin/liquidation or corporate-action ledger |
 | Execution assumptions | Next-open, prior-completed-bar participation cap, slippage, square-root impact, injected market fee calculators | NSE uses existing itemised delivery cost model; crypto uses explicit venue maker/taker bps; historical fee schedules and intraday changes need sourcing |
-| Optimisation baselines | Random, capped grid, differential evolution, Parzen-style heuristic | Parzen method is explicitly not canonical Optuna TPE |
-| Genetic programming | Bounded numerical AST interpreter and evolution | No Boolean/control-flow grammar yet |
-| Neuroevolution | Dense one-hidden-layer network + mirrored-noise ES | CPU implementation; topology evolution / GPU path not yet integrated |
-| Strategy composition | Declarative component-genome evolution | Requires adapters to actual strategy component implementations |
-| Multi-objective optimisation | Non-dominated sorting and crowding selection | No full experiment scheduler integration yet |
+| Optimisation baselines | Random, capped grid, differential evolution, seeded Optuna TPE | Separate Parzen-style approximation is a heuristic baseline, not canonical TPE |
+| Genetic programming | Bounded numerical AST interpreter, full candidate archive and TRAIN/VALIDATION/OOS worker | Numeric-only grammar; no Boolean/control-flow nodes yet |
+| Neuroevolution | Dense one-hidden-layer network, mirrored-noise candidate archive and TRAIN/VALIDATION/OOS worker | CPU implementation; topology evolution / GPU path not yet integrated |
+| Strategy composition | Closed causal component registry and TRAIN/VALIDATION/OOS evolution worker | Current entries/exits/filters are simple numerical rules; not yet adapters to all production strategy modules |
+| Multi-objective optimisation | NSGA-II worker over existing-strategy parameters; TRAIN Pareto front, VALIDATION re-ranking and frozen OOS run | Does not yet evolve a mixed population spanning GP/neural/component genomes |
 | Statistical diagnostics | BH FDR, PSR/DSR, moving-block bootstrap, CSCV PBO and label-interval purging | Diagnostic implementations still require independent methodological review |
 | Population compute | Batched linear and long/flat fitness, NumPy / optional CuPy | CuPy path and target GPU remain unverified |
-| API and dashboard | Local WSGI API, experiment/data catalogue, strategy explorer, queue/inspect/cancel controls | Default worker runs existing strategies only; GPU telemetry, experiment comparison and full evolution monitoring remain incomplete |
+| API and dashboard | Local WSGI API, experiment/data catalogue, strategy explorer, queue/inspect/cancel controls for existing-strategy, search, GP, neural, composition and Pareto workers | GPU telemetry, experiment comparison and full evolution monitoring remain incomplete |
 | Job lifecycle | Bounded local thread pool, SQLite status/events/results, cooperative cancellation and interrupted-job recovery | Jobs are not durable across process death; interrupted work is marked failed and must be resubmitted |
 
 ## Execution and accounting limitations
@@ -123,7 +123,7 @@ The included BH, moving-block bootstrap and CSCV functions are diagnostics whose
 3. Add portfolio tax lots, corporate actions, dividends, crypto funding, borrow, margin and liquidation models.
 4. Add date-effective cost schedules, broker/venue fee tiers and execution calibration from tick/order-book data.
 5. Extend causal feature joins to publication-time fundamentals, news, macroeconomic and crypto on-chain sources.
-6. Add Boolean/control-flow genetic programming, topology evolution, multi-population hybrid selection and strategy-component adapters.
+6. Add Boolean/control-flow genetic programming, topology evolution, and a hybrid mixed-genome search that combines existing strategies, GP, neural and component candidates.
 7. Add multi-asset GPU simulation and CPU/GPU parity/throughput benchmarks on the actual target NVIDIA hardware.
 8. Audit DSR/PBO/FDR implementations against independent published fixtures and test dependence assumptions under candidate correlation.
 9. Add dashboard experiment comparisons, GPU/CPU telemetry, population monitoring and job-level artefacts.
