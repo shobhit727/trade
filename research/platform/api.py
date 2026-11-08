@@ -72,6 +72,7 @@ pre { overflow:auto; white-space:pre-wrap; word-break:break-word; color:#c4d3e4;
 <label>Genetic-programming settings JSON</label><textarea id="gp-settings" rows="4">{"population_size":16,"generations":5,"max_depth":4,"max_nodes":31,"mutation_rate":0.2,"validation_candidates":4,"objective":"sharpe","feature_windows":[5,20,60]}</textarea>
 <label>Neuroevolution settings JSON</label><textarea id="neuro-settings" rows="4">{"hidden_size":16,"population_size":16,"generations":5,"learning_rate":0.05,"noise_std":0.1,"weight_limit":8,"validation_candidates":4,"objective":"sharpe","feature_windows":[5,20,60]}</textarea>
 <label>Strategy-composition settings JSON</label><textarea id="composition-settings" rows="4">{"population_size":16,"generations":5,"max_components":8,"mutation_rate":0.25,"validation_candidates":4,"objective":"sharpe","feature_windows":[5,20,60]}</textarea>
+<label>Pareto / NSGA-II settings JSON</label><textarea id="pareto-settings" rows="4">{"population_size":16,"generations":5,"mutation_rate":0.2,"validation_candidates":8,"objectives":["cagr","max_drawdown","turnover"],"directions":["max","max","min"]}</textarea>
 <label>Execution assumptions JSON</label><textarea id="execution-assumptions" rows="4">{"slippage_bps":5,"impact_coefficient_bps":10,"max_participation":0.05,"max_gross_exposure":1.0,"periods_per_year":252}</textarea>
 <label>Crypto venue (single exchange)</label><input id="crypto-exchange" value="binance">
 <label>Crypto maker/taker fee schedule JSON</label><textarea id="fee-schedule" rows="2">{"maker_fee_bps":10,"taker_fee_bps":10}</textarea>
@@ -119,7 +120,7 @@ const tracks = {
   nse: ["nse_individual", "nse_portfolio"],
   crypto: ["crypto_individual", "crypto_portfolio"]
 };
-const families = ["existing_strategy","random_search","grid_search","bayesian","differential_evolution","genetic_programming","neuroevolution","strategy_composition","hybrid"];
+const families = ["existing_strategy","random_search","grid_search","bayesian","differential_evolution","genetic_programming","neuroevolution","strategy_composition","pareto_search","hybrid"];
 const resolutions = ["tick","order_book_event","order_book_snapshot","1s","1m","5m","15m","30m","1h","4h","1d","1w","1mo"];
 const $ = id => document.getElementById(id);
 let strategyCache = null;
@@ -392,6 +393,14 @@ $("create-form").addEventListener("submit", async event => {
         if (family === "strategy_composition") {
           return {...common, strategy_composition: parseObject("composition-settings")};
         }
+        if (family === "pareto_search") {
+          return {
+            ...common,
+            strategy_name: value("strategy-name"),
+            strategy_parameters: parseObject("strategy-parameters"),
+            pareto_search: parseObject("pareto-settings")
+          };
+        }
         return {};
       })()
     };
@@ -407,7 +416,8 @@ $("create-form").addEventListener("submit", async event => {
           ? "existing_strategy_optimization"
           : family === "genetic_programming" ? "genetic_programming"
             : family === "neuroevolution" ? "neuroevolution"
-            : family === "strategy_composition" ? "strategy_composition" : null;
+            : family === "strategy_composition" ? "strategy_composition"
+            : family === "pareto_search" ? "pareto_search" : null;
       if (!runnerName) {
         throw new Error("No connected worker exists for " + family + " yet.");
       }
