@@ -3,9 +3,100 @@
 from __future__ import annotations
 
 from itertools import combinations
+from statistics import NormalDist
 from typing import Sequence
 
 import numpy as np
+
+
+
+def probabilistic_sharpe_ratio(
+    observed_sharpe: float,
+    *,
+    observations: int,
+    skewness: float = 0.0,
+    kurtosis: float = 3.0,
+    benchmark_sharpe: float = 0.0,
+) -> float:
+    """Estimate the probability that true per-period Sharpe exceeds a benchmark.
+
+    Sharpe inputs are per-period, not annualised. Kurtosis uses the Pearson convention
+    (normal distribution = 3). This approximation assumes a sufficiently stationary
+    return sample and is not a substitute for resampling or leakage checks.
+    """
+    # Apply the finite-sample PSR variance correction for skew and kurtosis.
+    values = (observed_sharpe, skewness, kurtosis, benchmark_sharpe)
+    if not all(np.isfinite(value) for value in values):
+        raise ValueError("Sharpe inputs must be finite")
+    if observations < 2 or kurtosis <= 0:
+        raise ValueError("observations must be >= 2 and Pearson kurtosis must be positive")
+    variance_factor = (
+        1.0 - skewness * observed_sharpe
+        + ((kurtosis - 1.0) / 4.0) * observed_sharpe * observed_sharpe
+    )
+    if variance_factor <= 0:
+        raise ValueError("Sharpe variance correction is non-positive")
+    z_score = (
+        (observed_sharpe - benchmark_sharpe)
+        * np.sqrt(observations - 1)
+        / np.sqrt(variance_factor)
+    )
+    return float(NormalDist().cdf(float(z_score)))
+
+
+def deflated_sharpe_ratio(
+    observed_sharpe: float,
+    trial_sharpes: Sequence[float],
+    *,
+    observations: int,
+    skewness: float = 0.0,
+    kurtosis: float = 3.0,
+) -> dict[str, float | int | str]:
+    """Estimate DSR using the expected maximum Sharpe across the supplied trial family.
+
+    Trial Sharpe values must use the same sampling frequency and comparable validation
+    data. The expected maximum uses the Euler-constant approximation for independent
+    Gaussian estimates. Dependence between strategies reduces the effective trial count;
+    callers must report this assumption and should run sensitivity analysis.
+    """
+    # Validate the complete trial family instead of silently replacing invalid values.
+    trials = np.asarray(trial_sharpes, dtype=np.float64)
+    if trials.ndim != 1 or not len(trials) or not np.isfinite(trials).all():
+        raise ValueError("trial_sharpes must be a non-empty finite one-dimensional sequence")
+    if not np.isfinite(observed_sharpe) or observations < 2:
+        raise ValueError("observed_sharpe must be finite and observations must be >= 2")
+    trial_count = len(trials)
+    if trial_count <= 1:
+        expected_max = 0.0
+        trial_std = 0.0
+    else:
+        trial_std = float(np.std(trials, ddof=1))
+        euler_gamma = 0.5772156649015329
+        p1 = 1.0 - 1.0 / trial_count
+        p2 = 1.0 - 1.0 / (trial_count * np.e)
+        normal = NormalDist()
+        expected_max = trial_std * (
+            (1.0 - euler_gamma) * normal.inv_cdf(p1)
+            + euler_gamma * normal.inv_cdf(p2)
+        )
+    probability = probabilistic_sharpe_ratio(
+        observed_sharpe,
+        observations=observations,
+        skewness=skewness,
+        kurtosis=kurtosis,
+        benchmark_sharpe=expected_max,
+    )
+    return {
+        "deflated_sharpe_probability": probability,
+        "observed_sharpe_per_period": float(observed_sharpe),
+        "expected_max_sharpe_per_period": float(expected_max),
+        "trial_sharpe_std": float(trial_std),
+        "trial_count": int(trial_count),
+        "observations": int(observations),
+        "skewness": float(skewness),
+        "pearson_kurtosis": float(kurtosis),
+        "assumption": "independent_gaussian_trial_sharpes_approximation",
+    }
 
 
 def benjamini_hochberg(p_values: Sequence[float], alpha: float = 0.05) -> dict[str, object]:
