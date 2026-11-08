@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import StrEnum
+from typing import Sequence
 
 
 class Partition(StrEnum):
@@ -74,6 +75,99 @@ class SplitPlan:
                 raise ValueError("partitions overlap or do not respect the embargo")
         if not self.protocol_id.strip():
             raise ValueError("protocol_id is required")
+
+
+@dataclass(frozen=True, slots=True)
+class PurgedWalkForwardSplit:
+    """Index assignment for a forward-only validation fold."""
+
+    training_indices: tuple[int, ...]
+    validation_indices: tuple[int, ...]
+    purged_indices: tuple[int, ...]
+    excluded_indices: tuple[int, ...]
+    validation_window: TimeWindow
+    embargo: timedelta
+
+
+def purged_walk_forward_split(
+    decision_times: Sequence[datetime],
+    label_start_times: Sequence[datetime],
+    label_end_times: Sequence[datetime],
+    validation_window: TimeWindow,
+    *,
+    embargo: timedelta = timedelta(0),
+) -> PurgedWalkForwardSplit:
+    """Build a single forward-only fold while purging overlapping label intervals.
+
+    All input times are timezone-aware. Each label describes a half-open information
+    interval [label_start, label_end). Training samples must have their decision time
+    before validation and their entire label interval outside the validation interval
+    expanded by the embargo on both sides. Samples at or after validation.end are
+    excluded from this fold rather than being used to train a future-looking model.
+
+    This is an index splitter only: the caller remains responsible for point-in-time
+    features, data provenance, and keeping the final locked holdout out of discovery.
+    """
+    # Check aligned lengths and all interval metadata before assigning any row.
+    if len(decision_times) == 0:
+        raise ValueError("decision_times cannot be empty")
+    if not (
+        len(decision_times) == len(label_start_times) == len(label_end_times)
+    ):
+        raise ValueError("decision, label-start and label-end arrays must have equal length")
+    if embargo < timedelta(0):
+        raise ValueError("embargo cannot be negative")
+
+    def utc(value: datetime, name: str) -> datetime:
+        # Convert offset-aware timestamps to UTC so comparisons ignore local timezone labels.
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError(f"{name} timestamps must be timezone-aware")
+        return value.astimezone(timezone.utc)
+
+    decisions = tuple(utc(value, "decision") for value in decision_times)
+    starts = tuple(utc(value, "label-start") for value in label_start_times)
+    ends = tuple(utc(value, "label-end") for value in label_end_times)
+    if any(right <= left for left, right in zip(decisions, decisions[1:])):
+        raise ValueError("decision_times must be strictly increasing and unique")
+    for start, end in zip(starts, ends, strict=True):
+        if end <= start:
+            raise ValueError("every label interval must have positive duration")
+
+    validation_start = validation_window.start.astimezone(timezone.utc)
+    validation_end = validation_window.end.astimezone(timezone.utc)
+    protected_start = validation_start - embargo
+    protected_end = validation_end + embargo
+
+    training: list[int] = []
+    validation: list[int] = []
+    purged: list[int] = []
+    excluded: list[int] = []
+    for index, decision in enumerate(decisions):
+        # Validation uses decisions inside the requested half-open window.
+        if validation_start <= decision < validation_end:
+            validation.append(index)
+            continue
+        # This splitter is walk-forward: observations after validation are not train data.
+        if decision >= validation_end:
+            excluded.append(index)
+            continue
+        # A pre-validation label is purged if any part overlaps validation plus embargo.
+        overlaps = starts[index] < protected_end and ends[index] > protected_start
+        if overlaps:
+            purged.append(index)
+        else:
+            training.append(index)
+
+    if not training or not validation:
+        raise ValueError("purged fold must contain at least one training and validation sample")
+    return PurgedWalkForwardSplit(
+        training_indices=tuple(training),
+        validation_indices=tuple(validation),
+        purged_indices=tuple(purged),
+        excluded_indices=tuple(excluded),
+        validation_window=validation_window,
+        embargo=embargo,
+    )
 
 
 @dataclass(slots=True)
