@@ -122,7 +122,7 @@ Provide separate NSE and crypto views for simulated capital/cash/equity, positio
 
 Use a modular monolith initially; do not create microservices without evidence. Reuse existing Python orchestration and tested Rust hot paths where useful. Logical components: market/track boundaries; source adapters; point-in-time universe; raw/curated data; provenance/quality; feature pipeline; existing strategy adapter; GP/neuroevolution/composition; conventional optimisation; CPU/GPU kernels; simulation/portfolio; market-specific costs; statistical validation; job orchestration; immutable experiment store; API/UI and monitoring.
 
-### Reconnaissance assessment (main at `de7bf1348c5fb5dc9cb0162ae0ab7474a7734ad6))
+### Reconnaissance assessment (main at `de7bf1348c5fb5dc9cb0162ae0ab7474a7734ad6`)
 
 The inspected Git tree contains 1,107 entries. This repository is an established Python + Rust quantitative system, not a blank template:
 - `src/cryptobot/`: crypto-oriented strategy catalogue, event/backtest, market-data, funding/carry, order-book/microstructure, ML, portfolio/risk, execution simulation and Grafana monitoring.
