@@ -95,8 +95,8 @@ class MarketLedger:
             raise ValueError("initial capital must match the market's isolated budget")
         if self.cash_inr is None:
             self.cash_inr = self.initial_capital_inr
-        if self.cash_inr < ZERO:
-            raise ValueError("cash cannot be negative")
+        if self.cash_inr != self.initial_capital_inr:
+            raise ValueError("opening cash must equal the isolated market seed capital")
 
     def apply_fill(self, fill: Fill) -> None:
         """Apply a fill only when its market matches this ledger."""
