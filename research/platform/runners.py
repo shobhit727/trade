@@ -2676,6 +2676,7 @@ class ParetoStrategySearchJobRunner:
         defaults.update(base_parameters)
         bars_digest = _bars_fingerprint(bars)
         train_metrics: dict[str, dict[str, float | int]] = {}
+        train_return_vectors: dict[str, np.ndarray] = {}
         train_calls = 0
 
         def metrics_vector(genome: Mapping[str, Any]) -> tuple[float, ...]:
@@ -2700,6 +2701,9 @@ class ParetoStrategySearchJobRunner:
                 metrics = dict(partition.metrics)
                 metrics["turnover"] = float(partition.result.turnover)
                 train_metrics[key] = metrics
+                train_return_vectors[key] = (
+                    partition.result.equity_curve.pct_change().dropna().to_numpy(dtype=np.float64)
+                )
                 train_calls += 1
                 if train_calls % max(1, int(settings["population_size"])) == 0:
                     context.log(f"Pareto TRAIN distinct genome evaluations: {train_calls}")
@@ -2790,10 +2794,34 @@ class ParetoStrategySearchJobRunner:
                 "generation": int(item["generation"]),
                 "objectives": list(item["objectives"]) if succeeded else [],
                 "train_metrics": metrics or {},
+                "train_key": key,
                 "status": "succeeded" if succeeded else "failed",
                 "failure_reason": item.get("failure_reason"),
                 "lineage": dict(item["lineage"]),
             })
+
+        statistical_candidates = [
+            item for item in candidate_rows
+            if item["status"] == "succeeded" and item["train_key"] in train_return_vectors
+        ]
+        if statistical_candidates:
+            statistical_report = candidate_family_report_from_returns(
+                [item["candidate_id"] for item in statistical_candidates],
+                {
+                    item["candidate_id"]: train_return_vectors[item["train_key"]]
+                    for item in statistical_candidates
+                },
+                periods_per_year=periods_per_year,
+                pbo_blocks=8,
+                pbo_candidate_limit=128,
+            )
+            _record_train_family_diagnostics(context, spec, statistical_report)
+        else:
+            statistical_report = {
+                "classification": "not_computed",
+                "reason": "no successful Pareto candidate return vectors",
+                "candidate_family_size": 0,
+            }
 
         # Persist all tried candidates, not just the final nondominated set.
         for candidate in candidate_rows:
@@ -2967,6 +2995,7 @@ class ParetoStrategySearchJobRunner:
             "validation_pareto_front_size": len(validation_fronts[0]),
             "selection_policy": "nsga2_crowding_within_validation_front",
             "selected_candidate": selected,
+            "training_candidate_family_diagnostics": statistical_report,
             "final_evaluation": oos_evaluation.to_dict(),
             "final_holdout_accessed": False,
         }
