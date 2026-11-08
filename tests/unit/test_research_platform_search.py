@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -10,8 +10,15 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from research.platform.adapters import CryptoLocalAdapter, _normalise_ohlcv, validate_ohlcv_quality
+from research.platform.adapters import (
+    CryptoLocalAdapter,
+    _normalise_ohlcv,
+    load_non_holdout_partition,
+    materialize_non_holdout_partition,
+    validate_ohlcv_quality,
+)
 from research.platform.composition import Component, StrategyComposer
+from research.platform.data_catalog import DatasetManifest, LicenseStatus, ValueOrigin
 from research.platform.domain import DataResolution, Market
 from research.platform.genetic_programming import GeneticProgrammer, Node
 from research.platform.neuroevolution import DenseMLP, EvolutionStrategy
@@ -854,4 +861,124 @@ def test_candidate_family_report_from_returns_validates_pbo_configuration() -> N
             returns,
             periods_per_year=252,
             pbo_candidate_limit=True,
+        )
+
+
+
+def _partition_manifest() -> DatasetManifest:
+    # The manifest begins as a combined local source and becomes a safe-copy manifest.
+    return DatasetManifest(
+        dataset_id="partition-fixture-v1",
+        market=Market.NSE,
+        provider="unit-test",
+        source="synthetic OHLCV fixture",
+        instrument="TEST",
+        exchange="NSE",
+        category="ohlcv",
+        resolution=DataResolution.ONE_DAY,
+        coverage_start=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        coverage_end=datetime(2025, 1, 5, tzinfo=timezone.utc),
+        timezone="UTC",
+        timestamp_convention="UTC bar close",
+        acquired_at=datetime(2025, 1, 6, tzinfo=timezone.utc),
+        update_frequency="daily",
+        license_status=LicenseStatus.REVIEW_REQUIRED,
+        license_reference="synthetic test data",
+        value_origin=ValueOrigin.OBSERVED,
+    )
+
+
+def test_materialized_partition_contains_no_final_holdout_rows(tmp_path: Path) -> None:
+    # The output file physically ends before the protected final-holdout boundary.
+    index = pd.date_range("2025-01-01", periods=5, freq="D", tz="UTC")
+    step = np.arange(5, dtype=float)
+    close = 100.0 + step
+    frame = pd.DataFrame(
+        {
+            "open": close - 0.2,
+            "high": close + 0.5,
+            "low": close - 0.5,
+            "close": close,
+            "volume": np.full(5, 1000.0),
+        },
+        index=index,
+    )
+    final_holdout_start = datetime(2025, 1, 4, tzinfo=timezone.utc)
+    safe_manifest = materialize_non_holdout_partition(
+        _partition_manifest(),
+        frame,
+        root=tmp_path / "partition-store",
+        final_holdout_start=final_holdout_start,
+    )
+    assert safe_manifest.coverage_end == index[2].to_pydatetime()
+    assert safe_manifest.extra_metadata["research_partition_bars"] == "3"
+
+    safe_frame = load_non_holdout_partition(
+        safe_manifest,
+        root=tmp_path / "partition-store",
+        final_holdout_start=final_holdout_start,
+        end=datetime(2025, 1, 4, tzinfo=timezone.utc),
+    )
+    assert len(safe_frame) == 3
+    assert safe_frame.index.max() == index[2]
+    assert safe_frame.attrs["final_holdout_accessed"] is False
+
+
+def test_non_holdout_partition_reader_rejects_checksum_tampering(tmp_path: Path) -> None:
+    # A modified safe-copy file is rejected before any frame enters a worker.
+    index = pd.date_range("2025-01-01", periods=4, freq="D", tz="UTC")
+    close = np.asarray([100.0, 101.0, 102.0, 103.0])
+    frame = pd.DataFrame(
+        {
+            "open": close - 0.2,
+            "high": close + 0.5,
+            "low": close - 0.5,
+            "close": close,
+            "volume": np.full(4, 1000.0),
+        },
+        index=index,
+    )
+    root = tmp_path / "partition-store"
+    cutoff = datetime(2025, 1, 4, tzinfo=timezone.utc)
+    manifest = materialize_non_holdout_partition(
+        _partition_manifest(), frame, root=root, final_holdout_start=cutoff
+    )
+    path = root / manifest.extra_metadata["research_partition_path"]
+    with path.open("a", encoding="utf-8") as output:
+        output.write("2025-01-04T00:00:00+0000,999,1000,998,999,1\n")
+    with pytest.raises(ValueError, match="checksum does not match"):
+        load_non_holdout_partition(
+            manifest,
+            root=root,
+            final_holdout_start=cutoff,
+            end=cutoff,
+        )
+
+
+def test_partition_materializer_rejects_naive_or_empty_cutoff(tmp_path: Path) -> None:
+    # A timezone-naive boundary cannot be interpreted safely across market calendars.
+    index = pd.date_range("2025-01-01", periods=2, freq="D", tz="UTC")
+    frame = pd.DataFrame(
+        {
+            "open": [100.0, 101.0],
+            "high": [101.0, 102.0],
+            "low": [99.0, 100.0],
+            "close": [100.5, 101.5],
+            "volume": [1000.0, 1000.0],
+        },
+        index=index,
+    )
+    with pytest.raises(ValueError, match="timezone-aware"):
+        materialize_non_holdout_partition(
+            _partition_manifest(),
+            frame,
+            root=tmp_path,
+            final_holdout_start=datetime(2025, 1, 2),
+        )
+    with pytest.raises(ValueError, match="no non-holdout rows"):
+        materialize_non_holdout_partition(
+            _partition_manifest(),
+            frame,
+            root=tmp_path,
+            final_holdout_start=datetime(2025, 1, 1, tzinfo=timezone.utc),
         )
