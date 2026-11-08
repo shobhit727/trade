@@ -153,12 +153,7 @@ class NSELegacyAdapter:
             value_origin=ValueOrigin.OBSERVED,
             quality_score=None,
             processing_history=("research.optimize.splitter.bars", "OHLCV schema validation"),
-            extra_metadata={
-                "file_sha256": digest,
-                "numeric_timestamp_unit": self.numeric_timestamp_unit or "",
-                "quote_currency": self.quote_currency or "",
-                "fx_dataset_id": self.fx_dataset_id or "",
-            },
+            extra_metadata={"file_sha256": digest, "numeric_timestamp_unit": "ms"},
         )
 
 
@@ -271,7 +266,12 @@ class CryptoLocalAdapter:
             license_reference="source licence must be reviewed before use",
             value_origin=ValueOrigin.OBSERVED,
             processing_history=("local CSV/Parquet import", "OHLCV schema validation"),
-            extra_metadata={"file_sha256": digest},
+            extra_metadata={
+                "file_sha256": digest,
+                "numeric_timestamp_unit": self.numeric_timestamp_unit or "",
+                "quote_currency": self.quote_currency or "",
+                "fx_dataset_id": self.fx_dataset_id or "",
+            },
         )
 
 
