@@ -914,7 +914,9 @@ def test_materialized_partition_contains_no_final_holdout_rows(tmp_path: Path) -
         root=tmp_path / "partition-store",
         final_holdout_start=final_holdout_start,
     )
-    assert safe_manifest.coverage_end == index[2].to_pydatetime()
+    # Source coverage remains intact for experiment eligibility checks; safe-copy coverage is separate.
+    assert safe_manifest.coverage_end == index[4].to_pydatetime()
+    assert safe_manifest.extra_metadata["research_partition_coverage_end"] == index[2].isoformat()
     assert safe_manifest.extra_metadata["research_partition_bars"] == "3"
 
     safe_frame = load_non_holdout_partition(
@@ -1011,10 +1013,11 @@ def test_non_holdout_partition_reader_rejects_coverage_metadata_drift(tmp_path: 
     manifest = materialize_non_holdout_partition(
         _partition_manifest(), frame, root=root, final_holdout_start=cutoff
     )
-    tampered = replace(
-        manifest,
-        coverage_end=manifest.coverage_end + timedelta(days=1),
-    )
+    extra = dict(manifest.extra_metadata)
+    extra["research_partition_coverage_end"] = (
+        manifest.coverage_end + timedelta(days=1)
+    ).isoformat()
+    tampered = replace(manifest, extra_metadata=extra)
     with pytest.raises(ValueError, match="timestamps differ from manifest coverage"):
         load_non_holdout_partition(
             tampered,
