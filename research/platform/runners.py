@@ -782,14 +782,60 @@ class ExistingStrategyOptimizerJobRunner:
                 periods_per_year=periods_per_year,
             )
             validation_score = float(partition.metrics[objective_name])
+            validation_definition = {
+                "experiment_fingerprint": spec.fingerprint,
+                "train_candidate_digest": candidate["candidate_digest"],
+                "strategy_name": strategy_name,
+                "strategy_parameters": candidate["parameters"],
+                "validation_metrics": partition.metrics,
+                "validation_objective": validation_score,
+                "bars_sha256": bars_digest,
+            }
+            validation_digest = hashlib.sha256(
+                json.dumps(
+                    validation_definition,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    default=str,
+                ).encode("utf-8")
+            ).hexdigest()
+            validation_candidate_id = f"{spec.experiment_id}-validation-{validation_digest[:16]}"
             validation_rows.append({
-                "candidate_digest": candidate["candidate_digest"],
-                "candidate_id": candidate["candidate_id"],
+                "candidate_digest": validation_digest,
+                "candidate_id": validation_candidate_id,
+                "train_candidate_digest": candidate["candidate_digest"],
+                "train_candidate_id": candidate["candidate_id"],
                 "parameters": candidate["parameters"],
                 "train_score": candidate["train_score"],
                 "validation_score": validation_score,
                 "validation_metrics": partition.metrics,
             })
+            # The validation-selected candidate is a child of its TRAIN-ranked parent.
+            if not context.store.has_candidate(spec.experiment_id, validation_digest):
+                context.store.append_candidate(
+                    candidate_id=validation_candidate_id,
+                    experiment_id=spec.experiment_id,
+                    candidate_digest=validation_digest,
+                    family=f"{spec.algorithm_family.value}_validation",
+                    generation=1,
+                    parameters={
+                        "strategy_name": strategy_name,
+                        "strategy_parameters": candidate["parameters"],
+                    },
+                    metrics={
+                        "train": candidate["train_metrics"],
+                        "validation": partition.metrics,
+                        "validation_objective": validation_score,
+                    },
+                    lineage={
+                        "origin": "validation_shortlist",
+                        "parent_candidate_ids": [candidate["candidate_id"]],
+                        "mutation": None,
+                        "crossover": None,
+                        "selection": "validation_objective",
+                        "train_candidate_digest": candidate["candidate_digest"],
+                    },
+                )
 
         if not validation_rows:
             raise RuntimeError("no candidate survived TRAIN/VALIDATION evaluation")
@@ -818,6 +864,8 @@ class ExistingStrategyOptimizerJobRunner:
                 "objective": objective_name,
                 "selected_candidate_id": selected["candidate_id"],
                 "selected_candidate_digest": selected["candidate_digest"],
+                "train_parent_candidate_id": selected["train_candidate_id"],
+                "train_parent_candidate_digest": selected["train_candidate_digest"],
                 "train_score": selected["train_score"],
                 "validation_score": selected["validation_score"],
                 "bars_sha256": bars_digest,
@@ -843,6 +891,13 @@ class ExistingStrategyOptimizerJobRunner:
             progress_callback=lambda stage, completed, total: context.log(
                 f"frozen candidate {stage}: {completed}/{total}"
             ),
+            candidate_family=f"{spec.algorithm_family.value}_selected_oos",
+            lineage_metadata={
+                "origin": "frozen_after_validation",
+                "parent_candidate_ids": [selected["candidate_id"]],
+                "selection": "validation_objective",
+                "train_parent_candidate_id": selected["train_candidate_id"],
+            },
         )
         return {
             "experiment_id": spec.experiment_id,
