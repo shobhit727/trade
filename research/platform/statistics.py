@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from itertools import combinations
 from statistics import NormalDist
-from typing import Sequence
+from typing import Mapping, Sequence
 
 import numpy as np
 
@@ -224,6 +224,7 @@ def candidate_family_report(
     kurtosis: float = 3.0,
     pbo_blocks: int = 8,
     pbo_candidate_limit: int = 128,
+    pbo_candidate_indices: Sequence[int] | None = None,
 ) -> dict[str, object]:
     """Combine FDR, DSR and CSCV PBO diagnostics for one declared search family.
 
@@ -240,12 +241,31 @@ def candidate_family_report(
     if len(p_values) != len(ids) or len(trial_sharpes) != len(ids):
         raise ValueError("candidate IDs, p-values and trial Sharpes must have equal length")
     returns = np.asarray(candidate_returns, dtype=np.float64)
-    if returns.ndim != 2 or returns.shape[0] != len(ids):
-        raise ValueError("candidate_returns must have one row per candidate")
+    if returns.ndim != 2 or returns.shape[0] < 1 or not np.isfinite(returns).all():
+        raise ValueError("candidate_returns must be a non-empty finite two-dimensional matrix")
     if returns.shape[1] != observations:
         raise ValueError("observations must match the candidate return-matrix width")
     if isinstance(pbo_candidate_limit, bool) or pbo_candidate_limit < 2:
         raise ValueError("pbo_candidate_limit must be at least two")
+    if pbo_candidate_indices is None:
+        if returns.shape[0] != len(ids):
+            raise ValueError("candidate_returns must have one row per candidate when indices are omitted")
+        mapped_indices = np.arange(len(ids), dtype=np.int64)
+    else:
+        mapped_indices = np.asarray(pbo_candidate_indices, dtype=np.int64)
+        if (
+            mapped_indices.ndim != 1
+            or len(mapped_indices) != returns.shape[0]
+            or len(set(mapped_indices.tolist())) != len(mapped_indices)
+            or np.any(mapped_indices < 0)
+            or np.any(mapped_indices >= len(ids))
+        ):
+            raise ValueError("pbo_candidate_indices must uniquely map each return row to a candidate")
+    if returns.shape[0] < 2 and observations >= pbo_blocks:
+        # One series cannot produce cross-strategy ranking reversals; the other tests remain valid.
+        pbo_available = False
+    else:
+        pbo_available = True
 
     # Apply FDR/DSR to the complete family; bound only the more expensive CSCV diagnostic.
     fdr = benjamini_hochberg(p_values, alpha=alpha)
@@ -260,7 +280,7 @@ def candidate_family_report(
         skewness=skewness,
         kurtosis=kurtosis,
     )
-    if len(ids) < 2 or observations < pbo_blocks:
+    if not pbo_available or observations < pbo_blocks:
         pbo: dict[str, object] = {
             "status": "not_computed",
             "reason": (
@@ -274,18 +294,20 @@ def candidate_family_report(
         }
     else:
         # Use evenly spaced input-order candidates, not score-ranked candidates, for bounded CSCV.
-        subset_indices = (
-            np.linspace(0, len(ids) - 1, num=pbo_candidate_limit, dtype=np.int64)
-            if len(ids) > pbo_candidate_limit
-            else np.arange(len(ids), dtype=np.int64)
+        subset_positions = (
+            np.linspace(0, len(mapped_indices) - 1, num=pbo_candidate_limit, dtype=np.int64)
+            if len(mapped_indices) > pbo_candidate_limit
+            else np.arange(len(mapped_indices), dtype=np.int64)
         )
-        pbo = dict(pbo_cscv(returns[subset_indices], blocks=pbo_blocks))
+        subset_matrix = returns[subset_positions]
+        subset_ids = mapped_indices[subset_positions]
+        pbo = dict(pbo_cscv(subset_matrix, blocks=pbo_blocks))
         pbo.update({
             "status": "computed",
             "candidate_family_size": len(ids),
-            "candidate_subset_size": len(subset_indices),
+            "candidate_subset_size": len(subset_positions),
             "candidate_subset_policy": "evenly_spaced_input_order",
-            "candidate_ids": [ids[int(index)] for index in subset_indices],
+            "candidate_ids": [ids[int(index)] for index in subset_ids],
         })
     adjusted = fdr["adjusted_p_values"]
     rejected = fdr["reject"]
