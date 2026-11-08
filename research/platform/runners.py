@@ -2236,6 +2236,7 @@ class StrategyCompositionJobRunner:
             seed=spec.random_seed,
         )
         train_cache: dict[str, dict[str, float | int]] = {}
+        train_return_cache: dict[str, np.ndarray] = {}
 
         def train_fitness(composition: Composition) -> float:
             # The callback receives TRAIN only; component IDs resolve through the closed registry.
@@ -2251,6 +2252,9 @@ class StrategyCompositionJobRunner:
                     periods_per_year=periods_per_year,
                 )
                 train_cache[key] = result.metrics
+                train_return_cache[key] = (
+                    result.result.equity_curve.pct_change().dropna().to_numpy(dtype=np.float64)
+                )
             score = float(train_cache[key][objective_name])
             if not np.isfinite(score):
                 raise ValueError("strategy-composition TRAIN objective is non-finite")
@@ -2300,10 +2304,34 @@ class StrategyCompositionJobRunner:
                 "index": int(item["index"]),
                 "train_score": float(item["fitness"]) if succeeded else None,
                 "train_metrics": metrics or {},
+                "train_key": key,
                 "status": "succeeded" if succeeded else "failed",
                 "failure_reason": item.get("failure_reason"),
                 "lineage": dict(item["lineage"]),
             })
+
+        statistical_candidates = [
+            item for item in candidate_rows
+            if item["status"] == "succeeded" and item["train_key"] in train_return_cache
+        ]
+        if statistical_candidates:
+            statistical_report = candidate_family_report_from_returns(
+                [item["candidate_id"] for item in statistical_candidates],
+                {
+                    item["candidate_id"]: train_return_cache[item["train_key"]]
+                    for item in statistical_candidates
+                },
+                periods_per_year=periods_per_year,
+                pbo_blocks=8,
+                pbo_candidate_limit=128,
+            )
+            _record_train_family_diagnostics(context, spec, statistical_report)
+        else:
+            statistical_report = {
+                "classification": "not_computed",
+                "reason": "no successful composition candidate return vectors",
+                "candidate_family_size": 0,
+            }
 
         for candidate in candidate_rows:
             if context.store.has_candidate(spec.experiment_id, candidate["candidate_digest"]):
@@ -2537,6 +2565,7 @@ class StrategyCompositionJobRunner:
             "failed_candidates": len(candidate_rows) - len(successful),
             "validation_shortlist": validation_rows,
             "selected_candidate": selected,
+            "training_candidate_family_diagnostics": statistical_report,
             "out_of_sample_candidate_id": oos_candidate_id,
             "out_of_sample": {
                 "metrics": oos_result.metrics,
