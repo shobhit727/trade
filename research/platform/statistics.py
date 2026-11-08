@@ -236,6 +236,21 @@ def candidate_family_report_from_returns(
         or periods_per_year < 1
     ):
         raise ValueError("periods_per_year must be a positive integer")
+    if (
+        isinstance(pbo_blocks, bool)
+        or not isinstance(pbo_blocks, int)
+        or pbo_blocks < 4
+        or pbo_blocks % 2
+    ):
+        raise ValueError("pbo_blocks must be an even integer of at least four")
+    if (
+        isinstance(pbo_candidate_limit, bool)
+        or not isinstance(pbo_candidate_limit, int)
+        or pbo_candidate_limit < 2
+    ):
+        raise ValueError("pbo_candidate_limit must be an integer of at least two")
+    if not 0 < alpha < 1:
+        raise ValueError("alpha must be between zero and one")
     if set(ids) - set(candidate_returns):
         raise ValueError("candidate return vectors are missing for one or more candidates")
 
