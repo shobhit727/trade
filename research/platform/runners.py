@@ -30,6 +30,7 @@ from .features import PointInTimeFeatureEngine
 from .genetic_programming import GeneticProgrammer, Node
 from .jobs import JobContext
 from .model_evaluation import build_model_feature_panel, evaluate_model_scores
+from .neuroevolution import DenseMLP, EvolutionStrategy
 from .optimizers import (
     Candidate as SearchCandidate,
     Parameter as SearchParameter,
@@ -1263,6 +1264,339 @@ class GeneticProgrammingJobRunner:
         }
 
 
+class NeuroevolutionJobRunner:
+    """Evolve a bounded dense policy on TRAIN, select on VALIDATION and freeze OOS."""
+
+    OBJECTIVES = frozenset({"sharpe", "sortino", "cagr", "calmar", "total_return"})
+
+    def __init__(
+        self,
+        *,
+        crypto_data_root: str | Path | None = None,
+        bar_loader: Callable[[ExperimentStore, ExperimentSpec], dict[str, pd.DataFrame]] | None = None,
+    ) -> None:
+        # Reuse approved manifests and checksum-verified, OOS-clipped local bars.
+        self.crypto_data_root = crypto_data_root
+        self.bar_loader = bar_loader or (
+            lambda store, spec: load_registered_bars(
+                store, spec, crypto_data_root=self.crypto_data_root
+            )
+        )
+
+    def __call__(
+        self,
+        context: JobContext,
+        experiment_record: dict[str, Any],
+        parameters: dict[str, Any],
+    ) -> dict[str, Any]:
+        # All evolutionary hyperparameters are frozen into the experiment spec.
+        if parameters:
+            raise ValueError("neuroevolution runner accepts no job-time overrides")
+        context.check_cancelled()
+        spec = experiment_spec_from_record(experiment_record)
+        if spec.algorithm_family is not AlgorithmFamily.NEUROEVOLUTION:
+            raise ValueError("neuroevolution runner requires neuroevolution family")
+
+        settings = spec.parameters.get("neuroevolution")
+        required = {
+            "hidden_size", "population_size", "generations", "learning_rate",
+            "noise_std", "weight_limit", "validation_candidates", "objective",
+            "feature_windows",
+        }
+        if not isinstance(settings, dict) or not required.issubset(settings):
+            raise ValueError(f"parameters.neuroevolution requires {sorted(required)}")
+        for name in ("hidden_size", "population_size", "generations", "validation_candidates"):
+            value = settings[name]
+            minimum = 4 if name == "population_size" else 1
+            if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+                raise ValueError(f"neuroevolution.{name} must be an integer >= {minimum}")
+        if settings["population_size"] % 2:
+            raise ValueError("neuroevolution.population_size must be even")
+        evaluation_count = settings["population_size"] * settings["generations"]
+        if evaluation_count > 10000:
+            raise ValueError("neuroevolution candidate count exceeds the 10000 evaluation limit")
+        for name in ("learning_rate", "noise_std", "weight_limit"):
+            value = settings[name]
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int | float)
+                or not np.isfinite(value)
+                or value <= 0
+            ):
+                raise ValueError(f"neuroevolution.{name} must be finite and positive")
+        objective_name = str(settings["objective"])
+        if objective_name not in self.OBJECTIVES:
+            raise ValueError(f"objective must be one of {sorted(self.OBJECTIVES)}")
+        windows = settings["feature_windows"]
+        if (
+            not isinstance(windows, list)
+            or not windows
+            or any(isinstance(value, bool) or not isinstance(value, int) or value < 2 for value in windows)
+            or len(set(windows)) != len(windows)
+        ):
+            raise ValueError("feature_windows must be unique integers >= 2")
+
+        manifests = [
+            context.store.get_dataset(dataset_id)["manifest"]
+            for dataset_id in spec.dataset_ids
+        ]
+        bars = self.bar_loader(context.store, spec)
+        config, periods_per_year = _build_portfolio_config(spec, manifests)
+        feature_engine = PointInTimeFeatureEngine(windows=tuple(windows))
+        train_panel = build_model_feature_panel(
+            bars, feature_engine, spec.track,
+            start=spec.training_start, end=spec.training_end,
+        )
+        network = DenseMLP(
+            input_size=train_panel.features.shape[1],
+            hidden_size=settings["hidden_size"],
+            output_size=1,
+        )
+        context.log(
+            f"neuroevolution TRAIN start: population={settings['population_size']}, "
+            f"generations={settings['generations']}, parameters={network.parameter_count}"
+        )
+        train_cache: dict[str, dict[str, float | int]] = {}
+
+        def train_fitness(predictions: np.ndarray) -> float:
+            # Fitness sees TRAIN feature rows only and routes through the shared cash simulator.
+            context.check_cancelled()
+            digest = _prediction_digest(predictions)
+            if digest not in train_cache:
+                result = evaluate_model_scores(
+                    train_panel, predictions, config,
+                    partition="train",
+                    start=spec.training_start, end=spec.training_end,
+                    periods_per_year=periods_per_year,
+                )
+                train_cache[digest] = result.metrics
+            score = float(train_cache[digest][objective_name])
+            if not np.isfinite(score):
+                raise ValueError("neuroevolution TRAIN objective is non-finite")
+            return score
+
+        evolution = EvolutionStrategy(
+            network,
+            population_size=settings["population_size"],
+            generations=settings["generations"],
+            learning_rate=float(settings["learning_rate"]),
+            noise_std=float(settings["noise_std"]),
+            seed=spec.random_seed,
+            weight_limit=float(settings["weight_limit"]),
+        )
+        trace = evolution.run(train_panel.features, train_fitness)
+        bars_digest = _bars_fingerprint(bars)
+        candidate_rows: list[dict[str, Any]] = []
+        candidate_id_map: dict[str, str] = {}
+        archive = list(trace.candidate_archive)
+
+        # Store every mirrored-noise candidate; the archive retains parent references.
+        for item in archive:
+            context.check_cancelled()
+            theta = np.asarray(item["parameters"], dtype=np.float64)
+            weights = theta.tolist()
+            predictions = network.predict(train_panel.features, theta)
+            metrics = train_cache.get(_prediction_digest(predictions))
+            succeeded = item["status"] == "succeeded" and metrics is not None
+            digest_payload = {
+                "experiment_fingerprint": spec.fingerprint,
+                "bars_sha256": bars_digest,
+                "network": {
+                    "input_size": network.input_size,
+                    "hidden_size": network.hidden_size,
+                    "output_size": network.output_size,
+                },
+                "weights": weights,
+                "candidate_id": item["candidate_id"],
+                "generation": item["generation"],
+                "seed": spec.random_seed,
+                "feature_windows": windows,
+            }
+            candidate_digest = hashlib.sha256(
+                json.dumps(
+                    digest_payload, sort_keys=True, separators=(",", ":"), allow_nan=False
+                ).encode("utf-8")
+            ).hexdigest()
+            candidate_id = f"{spec.experiment_id}-{candidate_digest[:16]}"
+            candidate_id_map[str(item["candidate_id"])] = candidate_id
+            candidate_rows.append({
+                "source_candidate_id": item["candidate_id"],
+                "candidate_id": candidate_id,
+                "candidate_digest": candidate_digest,
+                "weights": weights,
+                "generation": int(item["generation"]),
+                "index": int(item["index"]),
+                "train_score": float(item["fitness"]) if succeeded else None,
+                "train_metrics": metrics or {},
+                "status": "succeeded" if succeeded else "failed",
+                "failure_reason": item.get("failure_reason"),
+                "lineage": dict(item["lineage"]),
+            })
+
+        for candidate in candidate_rows:
+            if context.store.has_candidate(spec.experiment_id, candidate["candidate_digest"]):
+                continue
+            lineage = dict(candidate["lineage"])
+            raw_parents = lineage.get("parent_candidate_ids", [])
+            lineage["parent_candidate_ids"] = [
+                candidate_id_map.get(str(parent), str(parent))
+                for parent in raw_parents
+            ] if isinstance(raw_parents, list) else []
+            lineage.update({
+                "origin": "mirrored_noise_neuroevolution",
+                "source_candidate_id": candidate["source_candidate_id"],
+                "feature_windows": windows,
+                "selection": "train_objective",
+            })
+            if candidate["status"] == "succeeded":
+                metric_payload = {
+                    "status": "succeeded",
+                    "train": candidate["train_metrics"],
+                    "train_fitness": candidate["train_score"],
+                }
+            else:
+                metric_payload = {
+                    "status": "failed",
+                    "failure_reason": candidate["failure_reason"] or "neuroevolution candidate failed",
+                }
+            context.store.append_candidate(
+                candidate_id=candidate["candidate_id"],
+                experiment_id=spec.experiment_id,
+                candidate_digest=candidate["candidate_digest"],
+                family=AlgorithmFamily.NEUROEVOLUTION.value,
+                generation=candidate["generation"],
+                parameters={
+                    "network": {
+                        "input_size": network.input_size,
+                        "hidden_size": network.hidden_size,
+                        "output_size": network.output_size,
+                    },
+                    "weights": candidate["weights"],
+                    "feature_windows": windows,
+                },
+                metrics=metric_payload,
+                lineage=lineage,
+            )
+
+        successful = [item for item in candidate_rows if item["status"] == "succeeded"]
+        if not successful:
+            raise RuntimeError("neuroevolution produced no valid TRAIN candidate")
+        final_generation = settings["generations"] - 1
+        final_population = [
+            item for item in successful if item["generation"] == final_generation
+        ]
+        shortlist = sorted(
+            final_population,
+            key=lambda item: (-float(item["train_score"]), item["candidate_digest"]),
+        )[:min(settings["validation_candidates"], len(final_population))]
+        if not shortlist:
+            raise RuntimeError("neuroevolution final population has no valid VALIDATION candidate")
+
+        validation_panel = build_model_feature_panel(
+            bars, feature_engine, spec.track,
+            start=spec.validation_start, end=spec.validation_end,
+        )
+        validation_rows: list[dict[str, Any]] = []
+        for index, candidate in enumerate(shortlist, start=1):
+            context.check_cancelled()
+            context.log(f"neuroevolution VALIDATION candidate {index}/{len(shortlist)}")
+            predictions = network.predict(
+                validation_panel.features,
+                np.asarray(candidate["weights"], dtype=np.float64),
+            )
+            result = evaluate_model_scores(
+                validation_panel, predictions, config,
+                partition="validation",
+                start=spec.validation_start, end=spec.validation_end,
+                periods_per_year=periods_per_year,
+            )
+            validation_rows.append({
+                "candidate_id": candidate["candidate_id"],
+                "candidate_digest": candidate["candidate_digest"],
+                "weights": candidate["weights"],
+                "train_fitness": candidate["train_score"],
+                "validation_score": float(result.metrics[objective_name]),
+                "validation_metrics": result.metrics,
+            })
+        selected = max(
+            validation_rows,
+            key=lambda item: (
+                item["validation_score"], item["train_fitness"], item["candidate_digest"]
+            ),
+        )
+        context.store.append_event(
+            spec.experiment_id,
+            "neuroevolution_candidate_frozen",
+            {
+                "selected_candidate_id": selected["candidate_id"],
+                "selected_candidate_digest": selected["candidate_digest"],
+                "objective": objective_name,
+                "feature_windows": windows,
+                "hidden_size": settings["hidden_size"],
+                "population_size": settings["population_size"],
+                "generations": settings["generations"],
+                "candidate_count": len(candidate_rows),
+                "successful_train_candidates": len(successful),
+                "validation_shortlist_count": len(validation_rows),
+                "bars_sha256": bars_digest,
+                "final_holdout_accessed": False,
+            },
+        )
+        context.check_cancelled()
+
+        # The selected frozen weight vector is evaluated once on OOS; no final holdout is loaded.
+        oos_panel = build_model_feature_panel(
+            bars, feature_engine, spec.track,
+            start=spec.oos_start, end=spec.oos_end,
+        )
+        oos_predictions = network.predict(
+            oos_panel.features,
+            np.asarray(selected["weights"], dtype=np.float64),
+        )
+        oos_result = evaluate_model_scores(
+            oos_panel, oos_predictions, config,
+            partition="out_of_sample",
+            start=spec.oos_start, end=spec.oos_end,
+            periods_per_year=periods_per_year,
+        )
+        context.store.append_event(
+            spec.experiment_id,
+            "neuroevolution_oos_recorded",
+            {
+                "selected_candidate_id": selected["candidate_id"],
+                "selected_candidate_digest": selected["candidate_digest"],
+                "oos_metrics": oos_result.metrics,
+                "final_holdout_accessed": False,
+            },
+        )
+        return {
+            "experiment_id": spec.experiment_id,
+            "algorithm_family": AlgorithmFamily.NEUROEVOLUTION.value,
+            "objective": objective_name,
+            "feature_windows": windows,
+            "network": {
+                "input_size": network.input_size,
+                "hidden_size": network.hidden_size,
+                "output_size": network.output_size,
+                "parameter_count": network.parameter_count,
+            },
+            "population_size": settings["population_size"],
+            "generations": settings["generations"],
+            "candidate_count": len(candidate_rows),
+            "successful_train_candidates": len(successful),
+            "failed_candidates": len(candidate_rows) - len(successful),
+            "validation_shortlist": validation_rows,
+            "selected_candidate": selected,
+            "out_of_sample": {
+                "metrics": oos_result.metrics,
+                "portfolio": oos_result.result.to_dict(),
+                "sample_count": oos_result.sample_count,
+            },
+            "bars_sha256": bars_digest,
+            "final_holdout_accessed": False,
+        }
+
+
 def build_default_job_manager(
     store: ExperimentStore,
     *,
@@ -1286,5 +1620,9 @@ def build_default_job_manager(
     manager.register_runner(
         "genetic_programming",
         GeneticProgrammingJobRunner(crypto_data_root=crypto_data_root),
+    )
+    manager.register_runner(
+        "neuroevolution",
+        NeuroevolutionJobRunner(crypto_data_root=crypto_data_root),
     )
     return manager
