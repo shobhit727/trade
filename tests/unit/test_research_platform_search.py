@@ -69,6 +69,11 @@ def test_differential_evolution_does_not_replay_objective() -> None:
     assert calls == 8 * 5
     assert len(result.candidates) == calls
     assert result.best.score >= -0.2
+    offspring = result.candidates[8]
+    assert offspring.lineage["operator"] == "differential_mutation_binomial_crossover"
+    assert len(offspring.lineage["parent_candidate_ids"]) == 4
+    assert offspring.lineage["generation"] == 1
+    assert "accepted" in offspring.lineage
 
 
 def test_optimizer_records_failures_without_silent_candidate_loss() -> None:
