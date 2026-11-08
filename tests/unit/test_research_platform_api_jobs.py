@@ -267,3 +267,62 @@ def test_jobs_api_routes_optimizer_family_to_optimizer_runner_only(tmp_path) -> 
         assert "requires runner existing_strategy_optimization" in result["error"]
     finally:
         app.shutdown()
+
+
+
+def test_jobs_api_routes_genetic_programming_to_registered_gp_runner(tmp_path) -> None:
+    # A GP experiment must invoke the dedicated bounded expression-evolution worker.
+    base = _experiment()
+    gp_parameters = dict(base.parameters)
+    gp_parameters["genetic_programming"] = {
+        "population_size": 4,
+        "generations": 1,
+        "max_depth": 3,
+        "max_nodes": 15,
+        "mutation_rate": 0.2,
+        "validation_candidates": 2,
+        "objective": "sharpe",
+        "feature_windows": [3],
+    }
+    spec = replace(
+        base,
+        experiment_id="api-gp-experiment",
+        algorithm_family=AlgorithmFamily.GENETIC_PROGRAMMING,
+        parameters=gp_parameters,
+    )
+
+    def runner(context, experiment, parameters):
+        return {"algorithm_family": experiment["spec"]["algorithm_family"]}
+
+    store, manager, app = _app(tmp_path, runner=runner, experiment=spec)
+    manager.register_runner("genetic_programming", runner)
+    try:
+        status, payload = _request(
+            app,
+            "POST",
+            "/api/jobs",
+            {
+                "experiment_id": spec.experiment_id,
+                "runner_name": "genetic_programming",
+                "parameters": {},
+            },
+        )
+        assert status == 202
+        job = manager.wait(payload["job_id"], timeout=5)
+        assert job["status"] == "succeeded"
+        assert job["result"]["algorithm_family"] == "genetic_programming"
+
+        status, rejected = _request(
+            app,
+            "POST",
+            "/api/jobs",
+            {
+                "experiment_id": spec.experiment_id,
+                "runner_name": "existing_strategy_optimization",
+                "parameters": {},
+            },
+        )
+        assert status == 400
+        assert "requires runner genetic_programming" in rejected["error"]
+    finally:
+        app.shutdown()
