@@ -114,6 +114,7 @@ def _verified_crypto_raw_frame(
     *,
     data_root: Path,
     resolution: DataResolution,
+    max_time: datetime,
 ) -> tuple[pd.DataFrame, CryptoLocalAdapter]:
     # Resolve the registered instrument against its exchange folder and verify its hash.
     adapter = _crypto_adapter(manifest, data_root)
@@ -136,7 +137,12 @@ def _verified_crypto_raw_frame(
         raise ValueError(
             f"crypto source checksum mismatch for {manifest['exchange']}:{instrument}"
         )
-    return adapter.load(instrument, resolution), adapter
+    frame = adapter.load(instrument, resolution)
+    # The runner never receives rows at or beyond the OOS end/locked holdout boundary.
+    frame = frame.loc[pd.DatetimeIndex(frame.index).tz_convert("UTC") < max_time]
+    if frame.empty:
+        raise ValueError(f"no observations before OOS boundary for {instrument}")
+    return frame, adapter
 
 
 def _verified_crypto_frame(
@@ -145,8 +151,9 @@ def _verified_crypto_frame(
     *,
     data_root: Path,
     resolution: DataResolution,
+    max_time: datetime,
 ) -> pd.DataFrame:
-    """Load an INR-normalised crypto frame, optionally using a registered FX dataset."""
+    """Load an INR-normalised crypto frame, clipped before the protected OOS boundary."""
     # Only spot OHLCV data is handled; derivatives require their own margin accounting.
     metadata = manifest["extra_metadata"]
     quote_currency = str(metadata.get("quote_currency") or "").upper()
@@ -163,6 +170,7 @@ def _verified_crypto_frame(
         manifest,
         data_root=data_root,
         resolution=resolution,
+        max_time=max_time,
     )
     if quote_currency == "INR":
         return raw_frame
@@ -195,6 +203,7 @@ def _verified_crypto_frame(
         fx_manifest,
         data_root=data_root,
         resolution=resolution,
+        max_time=max_time,
     )
     rates = fx_frame["close"].copy()
     if fx_position == "bar_open":
@@ -256,7 +265,7 @@ def load_registered_bars(
             if not path.is_file() or not expected_hash or _sha256(path) != expected_hash:
                 raise ValueError(f"NSE source missing or checksum mismatch for {instrument}")
             frame = NSELegacyAdapter(timezone_name=manifest["timezone"]).load(
-                instrument, spec.resolution
+                instrument, spec.resolution, end=spec.oos_end
             )
         else:
             frame = _verified_crypto_frame(
@@ -264,6 +273,7 @@ def load_registered_bars(
                 manifest,
                 data_root=root,
                 resolution=spec.resolution,
+                max_time=spec.oos_end,
             )
         if frame.empty:
             raise ValueError(f"dataset {dataset_id} has no usable OHLCV rows")
