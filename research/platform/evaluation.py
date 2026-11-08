@@ -6,7 +6,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Mapping
+from typing import Callable, Mapping
 
 import pandas as pd
 
@@ -155,6 +155,7 @@ def evaluate_existing_strategy(
     *,
     periods_per_year: int,
     store: ExperimentStore | None = None,
+    check_cancelled: Callable[[], None] | None = None,
 ) -> ExistingStrategyEvaluation:
     """Evaluate a frozen existing strategy on TRAIN, VALIDATION and OOS only.
 
@@ -239,20 +240,25 @@ def evaluate_existing_strategy(
         ("validation", spec.validation_start, spec.validation_end),
         ("out_of_sample", spec.oos_start, spec.oos_end),
     )
-    evaluations = tuple(
-        _partition_target_frame(
-            spec,
-            strategy_name,
-            strategy_parameters,
-            bars_by_symbol,
-            portfolio_config,
-            partition_name=name,
-            start=start,
-            end=end,
-            periods_per_year=periods_per_year,
+    evaluations_list: list[PartitionEvaluation] = []
+    for name, start, end in windows:
+        # Give cooperative workers cancellation points between the isolated stages.
+        if check_cancelled is not None:
+            check_cancelled()
+        evaluations_list.append(
+            _partition_target_frame(
+                spec,
+                strategy_name,
+                strategy_parameters,
+                bars_by_symbol,
+                portfolio_config,
+                partition_name=name,
+                start=start,
+                end=end,
+                periods_per_year=periods_per_year,
+            )
         )
-        for name, start, end in windows
-    )
+    evaluations = tuple(evaluations_list)
     result = ExistingStrategyEvaluation(
         experiment_id=spec.experiment_id,
         strategy_name=strategy_name,
