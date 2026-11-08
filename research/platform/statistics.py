@@ -209,3 +209,73 @@ def pbo_cscv(
         "strategies": int(matrix.shape[0]),
         "blocks": int(blocks),
     }
+
+
+
+def candidate_family_report(
+    candidate_ids: Sequence[str],
+    p_values: Sequence[float],
+    trial_sharpes: Sequence[float],
+    candidate_returns: Sequence[Sequence[float]],
+    *,
+    observations: int,
+    alpha: float = 0.05,
+    skewness: float = 0.0,
+    kurtosis: float = 3.0,
+    pbo_blocks: int = 8,
+) -> dict[str, object]:
+    """Combine FDR, DSR and CSCV PBO diagnostics for one declared search family.
+
+    Each candidate ID must appear once, p-values and per-period Sharpe values must be
+    aligned to that order, and candidate_returns must contain one row per candidate.
+    This function reports diagnostics only; it does not declare a strategy deployable.
+    """
+    # Reject family misalignment rather than allowing a correction to use the wrong trial count.
+    ids = tuple(str(candidate_id) for candidate_id in candidate_ids)
+    if not ids or any(not candidate_id.strip() for candidate_id in ids):
+        raise ValueError("candidate_ids must be non-empty strings")
+    if len(set(ids)) != len(ids):
+        raise ValueError("candidate_ids must be unique within a search family")
+    if len(p_values) != len(ids) or len(trial_sharpes) != len(ids):
+        raise ValueError("candidate IDs, p-values and trial Sharpes must have equal length")
+    returns = np.asarray(candidate_returns, dtype=np.float64)
+    if returns.ndim != 2 or returns.shape[0] != len(ids):
+        raise ValueError("candidate_returns must have one row per candidate")
+    if returns.shape[1] != observations:
+        raise ValueError("observations must match the candidate return-matrix width")
+
+    # Apply multiple-testing controls to exactly this family and record the actual count.
+    fdr = benjamini_hochberg(p_values, alpha=alpha)
+    sharpes = np.asarray(trial_sharpes, dtype=np.float64)
+    if not np.isfinite(sharpes).all():
+        raise ValueError("trial Sharpes must be finite")
+    best_index = int(np.argmax(sharpes))
+    dsr = deflated_sharpe_ratio(
+        float(sharpes[best_index]),
+        sharpes,
+        observations=observations,
+        skewness=skewness,
+        kurtosis=kurtosis,
+    )
+    pbo = pbo_cscv(returns, blocks=pbo_blocks)
+    adjusted = fdr["adjusted_p_values"]
+    rejected = fdr["reject"]
+    candidate_rows = [
+        {
+            "candidate_id": candidate_id,
+            "p_value": float(p_values[index]),
+            "adjusted_p_value": float(adjusted[index]),
+            "fdr_rejected": bool(rejected[index]),
+            "sharpe_per_period": float(sharpes[index]),
+        }
+        for index, candidate_id in enumerate(ids)
+    ]
+    return {
+        "candidate_family_size": len(ids),
+        "candidate_rows": candidate_rows,
+        "fdr": fdr,
+        "deflated_sharpe": dsr,
+        "pbo_cscv": pbo,
+        "best_candidate_by_observed_sharpe": ids[best_index],
+        "classification": "diagnostic_only_requires_methodological_review",
+    }
