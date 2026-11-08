@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from research.platform.compute import ComputeEngine
+from research.platform.neuroevolution import DenseMLP, EvolutionStrategy
 from research.platform.data_catalog import (
     DataAvailabilityCatalog,
     DatasetManifest,
@@ -462,3 +463,55 @@ def test_experiment_spec_rejects_fractional_embargo_seconds() -> None:
         make_experiment(embargo_seconds=1.5)
     with pytest.raises(ValueError, match="embargo_seconds must be an integer"):
         make_experiment(embargo_seconds=True)
+
+
+
+def test_compute_engine_batched_dense_predictions_match_scalar_networks() -> None:
+    # Batched W1/b1/W2/b2 inference must match each scalar DenseMLP forward pass.
+    rng = np.random.default_rng(123)
+    features = rng.normal(size=(23, 5))
+    network = DenseMLP(input_size=5, hidden_size=4, output_size=1)
+    population = rng.normal(0.0, 0.2, size=(7, network.parameter_count))
+    engine = ComputeEngine(backend="cpu")
+    actual = engine.batch_dense_mlp_scores(
+        features,
+        population,
+        hidden_size=network.hidden_size,
+        output_size=network.output_size,
+    )
+    expected = np.stack([network.predict(features, parameters) for parameters in population])
+    np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
+    assert actual.shape == (7, 23, 1)
+
+
+def test_neuroevolution_batched_inference_matches_scalar_trace() -> None:
+    # Fixed seeds and identical fitness callbacks make scalar and batched ES deterministic.
+    rng = np.random.default_rng(81)
+    features = rng.normal(size=(32, 3))
+    network = DenseMLP(input_size=3, hidden_size=5, output_size=1)
+    scalar = EvolutionStrategy(
+        network, population_size=8, generations=3, seed=7, weight_limit=3.0
+    ).run(features, lambda prediction: -float(np.mean(prediction ** 2)))
+    engine = ComputeEngine(backend="cpu")
+    batched = EvolutionStrategy(
+        network, population_size=8, generations=3, seed=7, weight_limit=3.0
+    ).run(
+        features,
+        lambda prediction: -float(np.mean(prediction ** 2)),
+        batch_predictor=lambda matrix, parameters: engine.batch_dense_mlp_scores(
+            matrix,
+            parameters,
+            hidden_size=network.hidden_size,
+            output_size=network.output_size,
+        ),
+        batch_size=3,
+    )
+    np.testing.assert_allclose(
+        batched.best_parameters, scalar.best_parameters, rtol=1e-12, atol=1e-12
+    )
+    assert batched.best_fitness == pytest.approx(scalar.best_fitness, abs=1e-12)
+    assert batched.evaluations == scalar.evaluations == 24
+    assert all(
+        item["lineage"]["prediction_backend"] == "batch"
+        for item in batched.candidate_archive
+    )
