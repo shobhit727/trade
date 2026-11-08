@@ -1,3 +1,179 @@
+# GOAL.md — GPU-Accelerated Hybrid Evolutionary Quantitative Research Platform
+
+> **Authoritative v2 specification** — 8 November 2026  
+> **Repository:** `shobhit727/trade`  
+> **Branch:** `feature/hybrid-evolution-research`  
+> **Status:** Specification update. This describes the intended platform; it does not claim that its capabilities have been implemented.
+
+## 0. Authority, preservation and research standard
+
+This v2 specification governs new platform work. The complete previous NSE-only GOAL document is retained verbatim below this section as historical v1 context. Its results, research tables, assumptions, bug reports, warnings and NO DEPLOY decision must not be deleted or rewritten as v2 results.
+
+The previous research record includes 84 catalog strategies evaluated across 48 stocks (4,032 strategy-stock pairs), a current historical NSE result around 9.52% CAGR and 0.32 Sharpe, and a NO DEPLOY conclusion. These are historical measurements, not results of the new platform. The old 2016–2023 TRAIN / 2024–2026 TEST protocol has been widely exposed by prior selection and research. Do not describe that TEST period as a pristine final holdout.
+
+The objective is credible, reproducible research into whether robust strategies exist after realistic costs and validation. A negative or inconclusive result is valid. A high in-sample return is not success. No performance target is guaranteed or required.
+
+The new runtime is for research, historical simulation and paper portfolios only. Do not add real-money trading, live order placement, live brokerage/exchange execution, fund transfers, financial account access or automated investment decisioning. Legacy modules may remain for compatibility but must not be invoked by new research job paths.
+
+## 1. Mission
+
+Build a modular, auditable, reproducible quantitative research platform that can:
+1. Optimise existing repository strategies and compare results with shipped defaults.
+2. Discover new mathematical, rule-based, neural and composite strategies.
+3. Compare evolutionary methods with conventional optimisation under equivalent budgets.
+4. Research individual assets and multi-asset portfolios at multiple resolutions.
+5. Measure incremental value from price, volume, fundamentals, news, sentiment, macro and crypto on-chain/microstructure features.
+6. Simulate market-specific portfolios, costs, liquidity, execution and risk.
+7. Control leakage, survivorship bias, multiple testing, selection bias and backtest overfitting.
+8. Record every experiment, candidate, failure, configuration and result with sufficient provenance for reproduction.
+
+## 2. Independent financial environments
+
+Create two separate research environments. They may share non-financial libraries, infrastructure, compute scheduling, logging, APIs and dashboard components. They must never share capital, cash, positions, margin, allocation, P&L, returns, performance history, taxes, transaction-cost assumptions or portfolio risk.
+
+| Environment | Initial simulated capital | Base currency |
+|---|---:|---|
+| NSE | ₹21,00,000 | INR |
+| Cryptocurrency | ₹21,00,000 | INR |
+
+No combined financial portfolio, equity curve, return, Sharpe, drawdown or cross-market financial aggregate is permitted. Infrastructure health may be displayed across both environments, but financial views must always be market-scoped. Every dataset, experiment, job, ledger, position, candidate and result must carry an explicit market identifier.
+
+The legacy per-stock optimiser assigns ₹21 lakh to each stock experiment. Preserve this historical behaviour for reproduction only; v2 portfolio simulation uses ₹21 lakh as the total seed capital for each market environment.
+
+## 3. Four research tracks
+
+1. NSE individual securities.
+2. NSE multi-security portfolios.
+3. Crypto individual asset × exchange × instrument type.
+4. Crypto multi-asset / multi-exchange portfolios.
+
+All relevant strategy families should be available across tracks. Market-specific trading calendars, instrument rules, liquidity, fees, tax, funding, borrow, execution and data quality remain separate. Cross-exchange arbitrage hypotheses require fees, depth, latency, settlement, transfer and venue-failure assumptions; a quoted price difference is not automatically executable arbitrage.
+
+NSE universe research must seek historical constituents, symbol changes, delistings, corporate actions and broad listed-security coverage. A current-index constituent backfill is not point-in-time universe history. Crypto research must distinguish spot, perpetual swaps and dated futures; preserve historical listings/delistings, venue-specific rules, funding, open interest, liquidations, liquidity and exchange outages. Disclose missing and incomplete historical coverage.
+
+## 4. Data acquisition and provenance
+
+Support, where legally and reliably available: tick trades; order-book events and snapshots/depth; 1-second, 1-minute, 5-minute, 15-minute, 30-minute, hourly, 4-hour, daily, weekly and monthly data. Maintain a data-availability matrix by market, provider, exchange, instrument, category, resolution and time range. Do not claim a resolution exists for every instrument.
+
+NSE categories include OHLCV, intraday/trades/quotes/depth, corporate actions, dividends, point-in-time constituents, delisted securities, sector classifications, financial statements, results, valuation, shareholding, institutional activity and other documented market data.
+
+Crypto categories include OHLCV, trades, spreads, order books, funding, open interest, liquidations, long/short metrics, exchange fees/rules, historical listings/delistings, supply/market capitalisation, token unlocks, on-chain activity, network metrics, stablecoin and venue data.
+
+Investigate news, announcements, earnings calls, sentiment, economic calendars, interest rates, inflation, FX, commodities and geopolitical/macro series only where legal terms and timestamp quality permit. Respect provider licences and rate limits; public accessibility does not imply redistribution rights.
+
+Every dataset requires an immutable manifest recording stable ID/checksum, provider/source, market, venue, instrument/universe, category, resolution, coverage, timezone, timestamp convention, acquisition/update time, licensing status/reference, known gaps, quality, observed/adjusted/derived/reconstructed/estimated/interpolated origin, adjustment method and processing history. Never silently fill missing observations. Preserve publication/availability time for news, financial statements and macroeconomic revisions; point-in-time joins must use when information was actually available.
+
+## 5. Multi-source research
+
+Run controlled, comparable feature-ablation experiments: price-only; price plus volume; technical/statistical features; fundamentals; news; sentiment; macro; crypto on-chain/microstructure; and combinations. Measure incremental out-of-sample contribution. More data must not be assumed to improve prediction. Enforce point-in-time availability and record feature provenance, transformations, missingness and lookback windows.
+
+## 6. Strategy and evolutionary architecture
+
+Support at least three independent evolutionary families:
+- **Genetic programming:** bounded, type-safe expression trees or equivalent representations with defined operators, indicators, comparisons, conditional logic, complexity penalties and deterministic evaluation.
+- **Neuroevolution:** weight and topology evolution, evolution strategies, population-based and hybrid evolutionary/gradient methods where suitable. Compare small and simple models against larger architectures.
+- **Strategy composition:** evolve entry/exit conditions, filters, regime models, sizing, risk constraints, allocation, rebalance and execution components.
+
+Support hybrid, cooperative, co-evolutionary, multi-population and ensemble experiments where justified. Record genomes, populations, generations, parents, children, mutation/crossover, selection, fitness, diversity, Pareto fronts and stopping rules. Bound expression complexity, CPU, RAM, VRAM and evaluation time. Do not execute arbitrary generated Python.
+
+## 7. Existing and conventional optimisation
+
+Optimise every compatible existing catalog strategy: parameters, thresholds, stops, holding periods, position sizing, allocations, rebalancing and composition. Preserve `research/optimize/catalog.py` registration/config semantics and baseline defaults. Compare shipped defaults with optimised candidates.
+
+Compare evolutionary methods with random search, grid search where tractable, Bayesian optimisation, differential evolution and other suitable baselines. Equalise data access, objective, validation protocol and declared evaluation budget. Record runtime, throughput, convergence, diversity, failures and candidate counts. Use multi-objective optimisation for return, risk, drawdown, downside risk, turnover, costs, liquidity, robustness, stability and complexity; preserve Pareto sets rather than hiding trade-offs in one opaque score.
+
+## 8. GPU and compute policy
+
+Inventory the actual NVIDIA model, VRAM, driver, compute capability, CUDA runtime compatibility, host RAM/CPU and installed frameworks on the target machine before selecting production dependencies. Do not infer the model from the RTX product family.
+
+Evaluate CUDA and suitable libraries such as PyTorch, JAX, CuPy, Numba CUDA or RAPIDS only where workload and compatibility justify them. GPU candidates include batched feature/indicator computation, population fitness, neural evolution, vectorised simulation, parameter sweeps and Monte Carlo. Profile utilisation, memory, data transfer, throughput and precision. Retain a CPU fallback. Compare CPU/GPU outputs on identical fixtures within declared numerical tolerances. GPU use is not assumed to be faster; publish benchmarks only when measured on the actual target hardware.
+
+## 9. Simulation, accounting and execution
+
+Support single-instrument and portfolio simulation: multiple positions, cash, position sizing, allocation, rebalancing, partial fills, fees, bid/ask, slippage, liquidity, market impact, execution delay, order constraints, funding/borrow, corporate actions and venue rules as supported by data.
+
+NSE models must itemise brokerage, STT, exchange transaction charges, GST, stamp duty, SEBI charges, DP and other applicable fees/taxes. Crypto models must itemise maker/taker fees, spread, slippage, funding, borrowing, liquidity, market impact and venue-specific rules. Use historically valid schedules where known; otherwise label assumptions and run sensitivities. Never apply present-day costs to all historical periods without justification.
+
+Do not assume a fill at an unavailable price. Model decision-time versus execution-time correctly, including partial fills and capacity constraints. Preserve existing engines as baselines and add adapters rather than silently changing established accounting semantics. Use Decimal for money where existing accounting contracts require it. Add cash/position/equity reconciliation tests.
+
+## 10. Validation and anti-overfitting controls
+
+Use distinct TRAIN/discovery, VALIDATION/model selection, OOS evaluation and FINAL LOCKED HOLDOUT stages. Preserve historical split semantics and results. The historical 2016–2023 TRAIN and 2024–2026 TEST must be treated as exposed because prior research used that test extensively. Do not reuse it as a new untouched final holdout. Reserve genuinely independent future or separately licensed/controlled data once sufficient data exists; document any protocol redesign.
+
+Use expanding/rolling walk-forward, nested selection, purging and embargo where label overlap or feature lookback requires it. Optimisers must structurally receive only permitted training data. Freeze a candidate before OOS evaluation; do not feed OOS results back into search. Final holdout access must be restricted and auditable.
+
+Track the full family of experiments and candidate counts. Use appropriate FDR controls, Deflated Sharpe Ratio, Probability of Backtest Overfitting/CSCV, reality-check-style methods where assumptions fit, block/bootstrap confidence intervals, null/timing controls and parameter stability. Audit existing Rust statistical implementations against independent fixtures before relying on them. Correct statistics cannot repair bad data, leakage, survivorship or unrealistic fills.
+
+Evaluate bull/bear/sideways regimes, high/low volatility and liquidity, assets, sectors, exchanges, resolutions, cost stresses and nearby parameter settings. Candidate classifications must distinguish failed, inconclusive, overfit, training-only, validation success, historical OOS success, robust research candidate and requires independent confirmation. None means real-money suitability.
+
+## 11. Experiment tracking and reproducibility
+
+Persist immutable experiment definitions, stage events and candidate history. Record experiment ID; timestamps; Git commit/dirty state; code/config/schema versions; market and track; venue/universe; dataset IDs/checksums; resolution/timezone; feature/publication-time policy; split IDs; algorithm family and representation; parameters; seeds; evaluation budget; objectives; CPU/GPU model, driver/runtime, precision and workers; execution/cost model versions; runtime and resource use; candidate/generation counts; metrics by stage; multiple-testing family/corrections; warnings, logs, errors and final classification.
+
+Retain candidate genomes/configs and parent-child mutation/crossover/selection lineage. Never overwrite experiments. A result is reproducible only when code, data, seed, parameters, execution assumptions and validation protocol are recoverable.
+
+## 12. Research dashboard
+
+Extend existing Grafana/Prometheus monitoring where appropriate, but provide an interactive research interface backed by actual persisted records and real API operations. Do not ship mock data or inert controls.
+
+Provide separate NSE and crypto views for simulated capital/cash/equity, positions, experiment/job counts, data coverage and candidate classifications. Required views: experiment overview; evolutionary generation/population fitness/diversity/lineage; GPU/CPU/RAM/storage/workers/throughput; strategy/expression/neural explorer; metrics separated by train/validation/OOS/holdout; portfolio allocation/risk/correlation/turnover; data quality/provenance/coverage; experiment creation/cancellation/logs/export; and controlled experiment comparisons. Financial data must remain market-scoped. Mark unavailable data and incomplete validation explicitly.
+
+## 13. Architecture and repository compatibility
+
+Use a modular monolith initially; do not create microservices without evidence. Reuse existing Python orchestration and tested Rust hot paths where useful. Logical components: market/track boundaries; source adapters; point-in-time universe; raw/curated data; provenance/quality; feature pipeline; existing strategy adapter; GP/neuroevolution/composition; conventional optimisation; CPU/GPU kernels; simulation/portfolio; market-specific costs; statistical validation; job orchestration; immutable experiment store; API/UI and monitoring.
+
+### Reconnaissance assessment (main at `de7bf1348c5fb5dc9cb0162ae0ab7474a7734ad6))
+
+The inspected Git tree contains 1,107 entries. This repository is an established Python + Rust quantitative system, not a blank template:
+- `src/cryptobot/`: crypto-oriented strategy catalogue, event/backtest, market-data, funding/carry, order-book/microstructure, ML, portfolio/risk, execution simulation and Grafana monitoring.
+- `src/nsealgo/`: NSE data loader, factors, cost model, cross-sectional backtest, walk-forward and provenance.
+- `research/optimize/`: 84-strategy catalogue discovery, typed parameter specification, per-stock long/flat backtest, TRAIN/TEST splitter, metrics, null tests, resumable optimiser and FDR analysis.
+- `crates/`: seven Rust crates with PyO3; Rust stats include Deflated Sharpe, PBO, Monte Carlo, sensitivity and walk-forward modules. Audit correctness and integration before relying on them.
+- Storage interfaces include SQLite, Parquet and TimescaleDB. Existing Grafana dashboards and Prometheus are monitoring infrastructure, not a full research frontend.
+- Existing Python unit/strategy/integration tests and Rust tests should be extended, not replaced.
+
+Confirmed constraints from the inspected tree: no GPU/CUDA implementation or GPU dependencies were found; no TypeScript/React/Vue/Svelte frontend was found; existing NSE data is survivor-biased/current constituent history with documented corrupt symbols/columns and short intraday coverage; existing NSE optimizer is single-stock long/flat; existing cryptobot paths include live venue adapters and must not be called by new research jobs; Rust modules require correctness and integration audits. The old 21L-per-stock sweep capital assumption cannot be reused for market-level portfolios.
+
+## 14. Research protocol
+
+For each research direction, record hypothesis, rationale, baseline, source/data versions, search budget, feature set, cost/execution assumptions, partitions, metrics, statistical family, expected falsification and stop condition before execution. Preserve failed and negative results. Report all attempts, not only winners.
+
+## 15. Engineering quality and tests
+
+Add unit, integration, financial invariant, leakage and CPU/GPU parity tests. Cover indicators/features, strategy typing, GP operators, neural evolution, optimisers, portfolio accounting, taxes/fees/funding, fill rules, corporate actions, validation, dataset provenance, job lifecycle, persistence, API and UI. Test future-price/feature leakage, timestamp shifts, publication-time joins, overlapping labels, test-set access and survivorship. Test GPU empty/small/large batches, numerical tolerance, determinism where supported, memory pressure, CPU fallback and error recovery. Use deterministic fixtures so ordinary CI does not depend on external data services.
+
+## 16. Implementation milestones
+
+0. Reconnaissance, architecture assessment and this specification commit on the feature branch.
+1. Market isolation, four track contracts, data/experiment schemas, experiment registry and legacy adapters.
+2. Data-source interfaces, point-in-time universe, normalisation, quality and availability matrix.
+3. Portfolio simulation, accounting, market-specific costs and execution realism.
+4. Conventional optimisers, existing-strategy optimisation, GP, neuroevolution, strategy composition and multi-objective evolution.
+5. GPU kernels, CPU fallback, profiling and CPU/GPU parity.
+6. Walk-forward/nested validation, PBO/DSR/FDR/multiple-testing controls and locked-holdout access.
+7. Experiment API, real dashboard, job controls, logs and comparisons.
+8. End-to-end verification across all four tracks and documented evidence.
+
+Commit logical increments. Do not start implementation on the default branch. A phase is complete only with code, tests, documentation and evidence.
+
+## 17. Hardware inventory (machine-side prerequisite)
+
+Before GPU Phase 5, record exact `nvidia-smi` output, GPU model/VRAM/compute capability, driver and CUDA runtime compatibility, host RAM/CPU, OS/kernel, Python and selected framework versions, benchmark commands, Git revision and measured results. The repository integration cannot inspect the user's local machine.
+
+## 18. Scope, security and legal limits
+
+No live order placement, brokerage execution, financial account access, fund movement or exchange trading keys. Data credentials, if required for licensed historical feeds, belong in environment/secret management and must never enter source, logs or dashboard responses. Respect data terms, privacy and redistribution restrictions. Treat imported data and evolved expressions as untrusted inputs with parser, resource and time limits.
+
+## 19. Definition of completion and final report
+
+Completion requires four working research tracks; independent market ledgers; auditable multi-resolution data coverage; existing and new strategy optimisation/discovery; GP, neuroevolution and composition; conventional baselines; tested GPU acceleration and CPU fallback; individual and portfolio simulation; market-specific cost/execution assumptions; multiple-testing/overfit controls; reproducible experiment/lineage storage; a functional data-backed dashboard; automated tests; architecture/methodology documents; and end-to-end evidence. Explicitly list anything unavailable or incomplete.
+
+Final report must state branch/commits/files; architecture; per-track status; data sources integrated and unavailable; resolution coverage; GPU model/driver and measured CPU/GPU benchmarks; backtesting and costs; statistical methods; dashboard status; test commands/results; representative experiment IDs; known bugs/limitations; incomplete requirements and next priorities. Label every item implemented, tested, partial, designed-only, unavailable or blocked. Never invent coverage, benchmark improvements or statistical success.
+
+---
+
+# Historical v1 specification and research record (preserved verbatim)
+
 # GOAL.md — NSE NIFTY-50 Systematic Trading · ₹21,00,000
 
 > **Status:** v1.0 — constitution for this repo. Every design decision, risk limit, and
