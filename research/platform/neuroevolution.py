@@ -106,6 +106,7 @@ class EvolutionStrategy:
         fitness: Callable[[np.ndarray], float],
         *,
         initial_parameters: np.ndarray | None = None,
+        batch_predictor: Callable[[np.ndarray, np.ndarray], np.ndarray] | None = None,
     ) -> EvolutionTrace:
         """Evolve network parameters against the supplied training-only fitness function."""
         # Inputs are copied so caller mutation cannot modify an active search.
@@ -143,6 +144,15 @@ class EvolutionStrategy:
                 self.weight_limit,
             )
             scores = np.full(self.population_size, -np.inf, dtype=np.float64)
+            batch_predictions = None
+            if batch_predictor is not None:
+                # One batched backend call replaces population_size individual forward passes.
+                batch_predictions = np.asarray(batch_predictor(matrix, population), dtype=np.float64)
+                expected_shape = (self.population_size, len(matrix), self.network.output_size)
+                if batch_predictions.shape != expected_shape or not np.isfinite(batch_predictions).all():
+                    raise ValueError(
+                        f"batch_predictor must return finite scores with shape {expected_shape}"
+                    )
             candidate_ids = [
                 f"es-g{generation:04d}-c{index:06d}"
                 for index in range(self.population_size)
@@ -151,7 +161,11 @@ class EvolutionStrategy:
                 status = "succeeded"
                 failure_reason = None
                 try:
-                    predictions = self.network.predict(matrix, parameters)
+                    predictions = (
+                        batch_predictions[index]
+                        if batch_predictions is not None
+                        else self.network.predict(matrix, parameters)
+                    )
                     score = float(fitness(predictions))
                     if not np.isfinite(score):
                         raise ValueError("fitness returned a non-finite score")
