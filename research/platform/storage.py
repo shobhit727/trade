@@ -353,11 +353,23 @@ class ExperimentStore:
             # Surface metadata already registered with the immutable dataset manifest.
             item = dict(row)
             manifest = json.loads(item.pop("manifest_json"))
+            # Expose the source coverage and the actual worker-visible partition separately.
+            extra = manifest.get("extra_metadata", {})
+            partitioned = bool(extra.get("research_partition_path"))
             item.update({
                 "provider": manifest["provider"],
                 "source": manifest["source"],
                 "coverage_start": manifest["coverage_start"],
                 "coverage_end": manifest["coverage_end"],
+                "worker_coverage_start": (
+                    extra.get("research_partition_coverage_start")
+                    if partitioned else manifest["coverage_start"]
+                ),
+                "worker_coverage_end": (
+                    extra.get("research_partition_coverage_end")
+                    if partitioned else manifest["coverage_end"]
+                ),
+                "partitioned_non_holdout": partitioned,
                 "timezone": manifest["timezone"],
                 "license_status": manifest["license_status"],
                 "license_reference": manifest["license_reference"],
