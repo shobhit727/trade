@@ -38,6 +38,8 @@ class PortfolioConfig:
         # Enforce long-only exposure and bounded participation for the cash simulator.
         if self.fee_bps < 0 or self.slippage_bps < 0 or self.impact_coefficient_bps < 0:
             raise ValueError("cost assumptions cannot be negative")
+        if self.fee_bps + self.slippage_bps + self.impact_coefficient_bps >= D("10000"):
+            raise ValueError("maximum fee, slippage and impact assumptions must stay below 10000 bps")
         if not D("0") < self.max_participation <= D("1"):
             raise ValueError("max_participation must be in (0, 1]")
         if not D("0") < self.max_gross_exposure <= D("1"):
