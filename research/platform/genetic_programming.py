@@ -205,8 +205,19 @@ class GeneticProgrammer:
         population = [self._new_individual() for _ in range(self.population_size)]
         history: list[dict[str, object]] = []
         failures: list[str] = []
+        # Every evolved tree receives a stable per-generation identity and ancestry record.
+        population_ids = [f"gp-g0-{index:06d}" for index in range(self.population_size)]
+        population_lineage = [
+            {
+                "operator": "random_initialisation",
+                "generation": 0,
+                "parent_candidate_ids": [],
+                "seed": self.seed,
+            }
+            for _ in population
+        ]
 
-        def score(tree: Node, generation: int, index: int) -> float:
+        def score(tree: Node, generation: int, index: int, candidate_id: str) -> float:
             # Penalise expression size to discourage unnecessarily complex formulas.
             try:
                 output = tree._evaluate(matrix)
@@ -214,7 +225,7 @@ class GeneticProgrammer:
                 if not np.isfinite(value):
                     raise ValueError("fitness returned non-finite score")
                 history.append({
-                    "generation": generation, "index": index,
+                    "generation": generation, "index": index, "candidate_id": candidate_id,
                     "fitness": value, "tree_size": tree.size, "tree_depth": tree.depth,
                 })
                 return value
@@ -222,31 +233,63 @@ class GeneticProgrammer:
                 failures.append(f"generation={generation},candidate={index}: {type(exc).__name__}: {exc}")
                 return -np.inf
 
-        scores = [score(tree, 0, index) for index, tree in enumerate(population)]
+        scores = [
+            score(tree, 0, index, population_ids[index])
+            for index, tree in enumerate(population)
+        ]
         for generation in range(1, self.generations + 1):
             # Elitism retains the best current expression in the next generation.
             elite = int(np.argmax(scores))
             next_population = [population[elite]]
+            next_ids = [f"gp-g{generation:04d}-000000"]
+            next_lineage = [{
+                "operator": "elitism",
+                "generation": generation,
+                "parent_candidate_ids": [population_ids[elite]],
+                "seed": self.seed,
+            }]
             while len(next_population) < self.population_size:
-                # Tournament selection uses only the current TRAIN fitness scores.
-                def tournament() -> Node:
+                # Tournament selection uses only current TRAIN fitness scores.
+                def tournament() -> tuple[int, Node]:
                     indices = self.rng.integers(0, len(population), size=3)
-                    winner = max(indices, key=lambda item: scores[int(item)])
-                    return population[int(winner)]
+                    winner = int(max(indices, key=lambda item: scores[int(item)]))
+                    return winner, population[winner]
 
-                left, right = tournament(), tournament()
+                left_index, left = tournament()
+                right_index, right = tournament()
                 child = self._crossover(left, right)
-                if self.rng.random() < self.mutation_rate:
+                mutated = self.rng.random() < self.mutation_rate
+                if mutated:
                     child = self._mutate(child)
+                child_index = len(next_population)
                 next_population.append(child)
+                next_ids.append(f"gp-g{generation:04d}-{child_index:06d}")
+                next_lineage.append({
+                    "operator": "subtree_crossover_then_mutation" if mutated else "subtree_crossover",
+                    "generation": generation,
+                    "parent_candidate_ids": [
+                        population_ids[left_index],
+                        population_ids[right_index],
+                    ],
+                    "mutation_probability": self.mutation_rate,
+                    "mutation_applied": mutated,
+                    "seed": self.seed,
+                })
             population = next_population
-            scores = [score(tree, generation, index) for index, tree in enumerate(population)]
+            population_ids = next_ids
+            population_lineage = next_lineage
+            scores = [
+                score(tree, generation, index, population_ids[index])
+                for index, tree in enumerate(population)
+            ]
         best_index = int(np.argmax(scores))
         return {
             "seed": self.seed,
             "best_expression": population[best_index],
             "best_fitness": float(scores[best_index]),
             "population": tuple(population),
+            "population_ids": tuple(population_ids),
+            "population_lineage": tuple(population_lineage),
             "fitness": tuple(float(value) for value in scores),
             "history": tuple(history),
             "failures": tuple(failures),
