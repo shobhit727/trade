@@ -62,9 +62,9 @@ def convert_ohlcv_to_inr(
         raise ValueError("OHLC columns are required for FX conversion")
 
     # Merge as-of uses only the latest FX timestamp <= the price-bar timestamp.
-    left = pd.DataFrame({"bar_timestamp": index}).sort_values("bar_timestamp")
+    left = pd.DataFrame({"bar_timestamp": index.tz_convert("UTC")}).sort_values("bar_timestamp")
     right = pd.DataFrame({
-        "fx_timestamp": fx_index,
+        "fx_timestamp": fx_index.tz_convert("UTC"),
         "inr_per_quote": fx.rates.to_numpy(dtype=np.float64),
     }).sort_values("fx_timestamp")
     aligned = pd.merge_asof(
@@ -82,6 +82,10 @@ def convert_ohlcv_to_inr(
     if (aligned["fx_timestamp"] > aligned["bar_timestamp"]).any():
         raise RuntimeError("future FX observation was joined to a price bar")
 
+    # Reject corrupt source prices before applying the point-in-time FX conversion.
+    source_prices = result[["open", "high", "low", "close"]].to_numpy(dtype=np.float64)
+    if not np.isfinite(source_prices).all() or (source_prices <= 0).any():
+        raise ValueError("source OHLC values must be finite and positive")
     # Convert only prices; volume remains denominated in the exchange's traded units.
     factor = aligned["inr_per_quote"].to_numpy(dtype=np.float64)
     for column in ("open", "high", "low", "close"):
