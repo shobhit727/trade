@@ -63,6 +63,7 @@ class AlgorithmFamily(StrEnum):
     GENETIC_PROGRAMMING = "genetic_programming"
     NEUROEVOLUTION = "neuroevolution"
     STRATEGY_COMPOSITION = "strategy_composition"
+    PARETO_SEARCH = "pareto_search"
     HYBRID = "hybrid"
 
 
