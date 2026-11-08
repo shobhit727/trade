@@ -512,6 +512,7 @@ def test_candidate_family_report_records_fdr_dsr_and_pbo_together() -> None:
     assert report["fdr"]["hypotheses"] == 6
     assert report["deflated_sharpe"]["trial_count"] == 6
     assert report["pbo_cscv"]["strategies"] == 6
+    assert report["pbo_cscv"]["candidate_subset_size"] == 6
     assert report["classification"] == "diagnostic_only_requires_methodological_review"
 
 
@@ -744,3 +745,43 @@ def test_crypto_adapter_does_not_apply_nse_twenty_percent_return_cap(tmp_path: P
     loaded = adapter.load("BTCUSDT", DataResolution.ONE_DAY)
     assert loaded["close"].tolist() == [100.0, 125.0, 160.0]
     assert loaded.attrs["quality_report"]["close_return_outliers"] == 0
+
+
+
+def test_candidate_family_report_uses_bounded_unranked_pbo_subset() -> None:
+    # FDR/DSR retain all tests while CSCV uses a deterministic subset to cap work.
+    from research.platform.statistics import candidate_family_report
+
+    rng = np.random.default_rng(208)
+    count, observations = 300, 160
+    returns = rng.normal(0.0001, 0.01, size=(count, observations))
+    report = candidate_family_report(
+        [f"candidate-{index:04d}" for index in range(count)],
+        np.linspace(0.001, 0.95, count),
+        rng.normal(0.01, 0.02, size=count),
+        returns,
+        observations=observations,
+        pbo_blocks=8,
+        pbo_candidate_limit=32,
+    )
+    assert report["candidate_family_size"] == count
+    assert report["fdr"]["hypotheses"] == count
+    assert report["deflated_sharpe"]["trial_count"] == count
+    assert report["pbo_cscv"]["candidate_subset_size"] == 32
+    assert report["pbo_cscv"]["candidate_subset_policy"] == "evenly_spaced_input_order"
+    assert len(report["pbo_cscv"]["candidate_ids"]) == 32
+
+
+def test_candidate_family_report_skips_pbo_for_short_return_history() -> None:
+    # Short samples still receive FDR/DSR diagnostics but cannot claim a CSCV estimate.
+    from research.platform.statistics import candidate_family_report
+
+    returns = np.asarray([[0.01, -0.01, 0.02], [-0.01, 0.01, 0.0]])
+    report = candidate_family_report(
+        ["candidate-a", "candidate-b"],
+        [0.1, 0.2],
+        [0.01, -0.01],
+        returns,
+        observations=3,
+    )
+    assert report["pbo_cscv"]["status"] == "not_computed"
