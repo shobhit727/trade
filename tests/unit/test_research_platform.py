@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -585,3 +586,34 @@ def test_compute_engine_explicit_cupy_mode_does_not_silently_fallback() -> None:
             np.ones((2, network.parameter_count)),
             hidden_size=network.hidden_size,
         )
+
+
+
+def test_dataset_catalog_distinguishes_source_and_worker_partition_coverage(tmp_path) -> None:
+    # The catalogue must show full source history separately from the safe worker copy.
+    base = make_manifest()
+    partitioned = replace(
+        base,
+        extra_metadata={
+            "research_partition_path": "nse-eod-v2/non_holdout.csv",
+            "research_partition_sha256": "a" * 64,
+            "research_partition_before": "2026-10-16T00:00:00+00:00",
+            "research_partition_coverage_start": "2016-01-01T00:00:00+00:00",
+            "research_partition_coverage_end": "2026-10-15T00:00:00+00:00",
+            "research_partition_schema": "ohlcv-csv-v1",
+            "research_partition_bars": "3950",
+        },
+    )
+    legacy = make_manifest(dataset_id="nse-eod-legacy-v1")
+    store = ExperimentStore(tmp_path / "catalog-partitions.sqlite3")
+    store.register_dataset(partitioned)
+    store.register_dataset(legacy)
+
+    rows = {item["dataset_id"]: item for item in store.list_datasets()}
+    safe = rows[partitioned.dataset_id]
+    old = rows[legacy.dataset_id]
+    assert safe["coverage_end"] == partitioned.coverage_end.isoformat()
+    assert safe["worker_coverage_end"] == "2026-10-15T00:00:00+00:00"
+    assert safe["partitioned_non_holdout"] is True
+    assert old["worker_coverage_end"] == old["coverage_end"]
+    assert old["partitioned_non_holdout"] is False
