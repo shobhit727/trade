@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import sqlite3
 from datetime import datetime
 from http import HTTPStatus
 from typing import Any
 from urllib.parse import parse_qs
 from wsgiref.types import StartResponse
 
+from .data_catalog import DatasetManifest, LicenseStatus, TimeGap, ValueOrigin
 from .domain import AlgorithmFamily, DataResolution, MARKET_SPECS, Market, ResearchTrack
 from .experiments import ExperimentSpec
 from .storage import ExperimentStore
@@ -198,6 +198,73 @@ def _parse_time(value: str) -> datetime:
     return parsed
 
 
+def _manifest_from_payload(payload: dict[str, Any]) -> DatasetManifest:
+    """Validate and construct an immutable dataset manifest from JSON metadata."""
+    # Coverage timestamps and known gaps must carry explicit timezone offsets.
+    gaps = tuple(
+        TimeGap(
+            start=_parse_time(item["start"]),
+            end=_parse_time(item["end"]),
+            reason=str(item["reason"]),
+        )
+        for item in payload.get("known_gaps", [])
+    )
+    return DatasetManifest(
+        dataset_id=str(payload["dataset_id"]),
+        market=Market(payload["market"]),
+        provider=str(payload["provider"]),
+        source=str(payload["source"]),
+        instrument=str(payload["instrument"]),
+        exchange=str(payload["exchange"]),
+        category=str(payload["category"]),
+        resolution=DataResolution(payload["resolution"]),
+        coverage_start=_parse_time(payload["coverage_start"]),
+        coverage_end=_parse_time(payload["coverage_end"]),
+        timezone=str(payload["timezone"]),
+        timestamp_convention=str(payload["timestamp_convention"]),
+        acquired_at=_parse_time(payload["acquired_at"]),
+        update_frequency=str(payload["update_frequency"]),
+        license_status=LicenseStatus(payload["license_status"]),
+        license_reference=str(payload["license_reference"]),
+        value_origin=ValueOrigin(payload.get("value_origin", "observed")),
+        quality_score=payload.get("quality_score"),
+        known_gaps=gaps,
+        adjustment_method=str(payload.get("adjustment_method", "none")),
+        processing_history=tuple(str(item) for item in payload.get("processing_history", [])),
+        schema_version=str(payload.get("schema_version", "1")),
+        extra_metadata=dict(payload.get("extra_metadata", {})),
+    )
+
+
+def _validate_dataset_coverage(store: ExperimentStore, spec: ExperimentSpec) -> None:
+    """Require approved, same-market datasets covering every experiment partition."""
+    # Historical coverage is checked before the experiment record can be created.
+    windows = (
+        (spec.training_start, spec.training_end),
+        (spec.validation_start, spec.validation_end),
+        (spec.oos_start, spec.oos_end),
+        (spec.final_holdout_start, spec.final_holdout_end),
+    )
+    for dataset_id in spec.dataset_ids:
+        row = store.get_dataset(dataset_id)
+        manifest = row["manifest"]
+        if row["market"] != spec.market.value:
+            raise ValueError(
+                f"cross-market dataset rejected: {dataset_id} belongs to {row['market']}, not {spec.market.value}"
+            )
+        if manifest["license_status"] != LicenseStatus.APPROVED.value:
+            raise ValueError(
+                f"dataset {dataset_id} licence must be approved before research use"
+            )
+        coverage_start = _parse_time(manifest["coverage_start"])
+        coverage_end = _parse_time(manifest["coverage_end"])
+        for start, end in windows:
+            if coverage_start > start or coverage_end < end:
+                raise ValueError(
+                    f"dataset {dataset_id} does not cover requested window {start.isoformat()}..{end.isoformat()}"
+                )
+
+
 def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
     # Construct the immutable experiment definition from API input and validate all fields.
     return ExperimentSpec(
@@ -270,6 +337,14 @@ class ResearchAPI:
                     for market, spec in MARKET_SPECS.items()
                 ]
                 return self._response(start_response, HTTPStatus.OK, {"markets": markets})
+            if method == "GET" and path == "/api/datasets":
+                # Data coverage is returned as dataset metadata, not as combined financial performance.
+                query = parse_qs(environ.get("QUERY_STRING", ""))
+                market_values = query.get("market", [])
+                market = market_values[0] if market_values else None
+                limit_values = query.get("limit", ["1000"])
+                rows = self.store.list_datasets(market=market, limit=int(limit_values[0]))
+                return self._response(start_response, HTTPStatus.OK, {"datasets": rows})
             if method == "GET" and path == "/api/experiments":
                 # Restrict the list filter to one known environment if supplied.
                 query = parse_qs(environ.get("QUERY_STRING", ""))
@@ -278,6 +353,27 @@ class ResearchAPI:
                 limit_values = query.get("limit", ["100"])
                 rows = self.store.list_experiments(market=market, limit=int(limit_values[0]))
                 return self._response(start_response, HTTPStatus.OK, {"experiments": rows})
+            if method == "POST" and path == "/api/datasets":
+                # Register immutable provenance only; the local source file is not uploaded.
+                if environ.get("CONTENT_TYPE", "").split(";")[0].strip() != "application/json":
+                    return self._response(start_response, HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                                          {"error": "Content-Type must be application/json"})
+                length = int(environ.get("CONTENT_LENGTH") or "0")
+                if not 0 < length <= 1_000_000:
+                    return self._response(start_response, HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                                          {"error": "request body must be between 1 byte and 1 MB"})
+                payload = json.loads(environ["wsgi.input"].read(length))
+                if not isinstance(payload, dict):
+                    raise ValueError("request JSON must be an object")
+                manifest = _manifest_from_payload(payload)
+                self.store.register_dataset(manifest)
+                return self._response(start_response, HTTPStatus.CREATED, {
+                    "dataset_id": manifest.dataset_id,
+                    "market": manifest.market.value,
+                    "fingerprint": manifest.fingerprint,
+                    "license_status": manifest.license_status.value,
+                    "status": "manifest_registered_not_data_uploaded",
+                })
             if method == "POST" and path == "/api/experiments":
                 # Bound input size and accept JSON only; no arbitrary file paths or code.
                 if environ.get("CONTENT_TYPE", "").split(";")[0].strip() != "application/json":
@@ -291,6 +387,7 @@ class ResearchAPI:
                 if not isinstance(payload, dict):
                     raise ValueError("request JSON must be an object")
                 spec = _create_spec(payload)
+                _validate_dataset_coverage(self.store, spec)
                 self.store.create_experiment(spec)
                 self.store.append_event(spec.experiment_id, "experiment_created", {
                     "market": spec.market.value,
