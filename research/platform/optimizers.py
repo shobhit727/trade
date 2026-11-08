@@ -60,6 +60,7 @@ class SearchResult:
     seed: int
     candidates: tuple[Candidate, ...]
     failures: tuple[str, ...] = ()
+    attempts: tuple[Candidate, ...] = ()
 
     @property
     def best(self) -> Candidate:
@@ -77,22 +78,34 @@ def _evaluate(
 ) -> SearchResult:
     # Keep one result row per attempted config and record failures explicitly.
     candidates: list[Candidate] = []
+    attempts: list[Candidate] = []
     failures: list[str] = []
     for index, configuration in enumerate(configurations):
+        lineage = {"operator": method, "seed": seed, "evaluation_index": index}
         try:
             score = float(objective(configuration))
             if not np.isfinite(score):
                 raise ValueError("objective returned a non-finite score")
-            candidates.append(Candidate(
+            candidate = Candidate(
                 f"{method}-{index:08d}",
                 dict(configuration),
                 score,
                 index,
-                {"operator": method, "seed": seed, "evaluation_index": index},
+                lineage,
+            )
+            candidates.append(candidate)
+            attempts.append(candidate)
+        except Exception as exc:  # noqa: BLE001 - every failed trial is retained explicitly.
+            reason = f"{type(exc).__name__}: {exc}"
+            failures.append(f"candidate={index}: {reason}")
+            attempts.append(Candidate(
+                f"{method}-{index:08d}",
+                dict(configuration),
+                -np.inf,
+                index,
+                {**lineage, "evaluation_failed": True, "failure_reason": reason[:300]},
             ))
-        except Exception as exc:  # noqa: BLE001 - a failed candidate must not vanish.
-            failures.append(f"candidate={index}: {type(exc).__name__}: {exc}")
-    return SearchResult(method, seed, tuple(candidates), tuple(failures))
+    return SearchResult(method, seed, tuple(candidates), tuple(failures), tuple(attempts))
 
 
 def random_search(
@@ -211,10 +224,11 @@ def optuna_tpe_search(
         show_progress_bar=False,
     )
     candidates: list[Candidate] = []
+    attempts: list[Candidate] = []
     failures: list[str] = []
     for trial in study.trials:
         if trial.state.name == "COMPLETE" and trial.value is not None:
-            candidates.append(Candidate(
+            candidate = Candidate(
                 f"optuna-tpe-{trial.number:08d}",
                 dict(trial.params),
                 float(trial.value),
@@ -225,13 +239,28 @@ def optuna_tpe_search(
                     "seed": seed,
                     "trial_number": int(trial.number),
                 },
-            ))
-        else:
-            failures.append(
-                f"trial={trial.number}: {trial.state.name}: "
-                f"{trial.user_attrs.get('failure_reason', 'objective failed')}"
             )
-    return SearchResult("optuna_tpe", seed, tuple(candidates), tuple(failures))
+            candidates.append(candidate)
+            attempts.append(candidate)
+        else:
+            reason = trial.user_attrs.get("failure_reason", "objective failed")
+            failures.append(f"trial={trial.number}: {trial.state.name}: {reason}")
+            parameters = trial.user_attrs.get("candidate_parameters", dict(trial.params))
+            attempts.append(Candidate(
+                f"optuna-tpe-{trial.number:08d}",
+                dict(parameters),
+                -np.inf,
+                int(trial.number),
+                {
+                    "operator": "optuna_tpe",
+                    "sampler": "TPESampler",
+                    "seed": seed,
+                    "trial_number": int(trial.number),
+                    "evaluation_failed": True,
+                    "failure_reason": str(reason)[:300],
+                },
+            ))
+    return SearchResult("optuna_tpe", seed, tuple(candidates), tuple(failures), tuple(attempts))
 
 
 def differential_evolution(
@@ -363,7 +392,14 @@ def differential_evolution(
                 population_scores[target] = trial_score
                 population_candidate_ids[target] = trial_id
 
-    return SearchResult("differential_evolution", seed, tuple(history), tuple(failures))
+    successful = tuple(candidate for candidate in history if np.isfinite(candidate.score))
+    return SearchResult(
+        "differential_evolution",
+        seed,
+        successful,
+        tuple(failures),
+        tuple(history),
+    )
 
 
 def parzen_heuristic_search(
@@ -416,9 +452,20 @@ def parzen_heuristic_search(
         except Exception as exc:  # noqa: BLE001
             failures.append(f"candidate={index}: {type(exc).__name__}: {exc}")
             scores.append(-np.inf)
-    candidates = tuple(
-        Candidate(f"parzen-{index:08d}", configuration, float(score), index)
+    attempts = tuple(
+        Candidate(
+            f"parzen-{index:08d}",
+            configuration,
+            float(score),
+            index,
+            {
+                "operator": "parzen_heuristic",
+                "seed": seed,
+                "evaluation_index": index,
+                **({"evaluation_failed": True} if not np.isfinite(score) else {}),
+            },
+        )
         for index, (configuration, score) in enumerate(zip(configurations, scores, strict=True))
-        if np.isfinite(score)
     )
-    return SearchResult("parzen_heuristic", seed, candidates, tuple(failures))
+    candidates = tuple(candidate for candidate in attempts if np.isfinite(candidate.score))
+    return SearchResult("parzen_heuristic", seed, candidates, tuple(failures), attempts)
