@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+from urllib.parse import urlsplit
 from datetime import datetime, timezone
 
 from research.platform.api import DASHBOARD_HTML, ResearchAPI
@@ -47,10 +48,11 @@ def _payload(**updates: object) -> dict[str, object]:
 def _request(app: ResearchAPI, method: str, path: str, payload: object | None = None):
     # Call the WSGI app directly without binding a network socket in the test suite.
     body = b"" if payload is None else json.dumps(payload).encode("utf-8")
+    parsed_path = urlsplit(path)
     environ = {
         "REQUEST_METHOD": method,
-        "PATH_INFO": path,
-        "QUERY_STRING": "",
+        "PATH_INFO": parsed_path.path,
+        "QUERY_STRING": parsed_path.query,
         "CONTENT_TYPE": "application/json" if payload is not None else "",
         "CONTENT_LENGTH": str(len(body)),
         "wsgi.input": io.BytesIO(body),
@@ -120,6 +122,10 @@ def test_research_api_market_filter_and_cross_market_rejection(tmp_path) -> None
     assert len(json.loads(body)["experiments"]) == 1
 
     status, _, body = _request(app, "GET", "/api/experiments?market=crypto")
+    assert status == 200
+    assert json.loads(body)["experiments"] == []
+
+    status, _, body = _request(app, "GET", "/api/experiments?market=invalid")
     assert status == 400
     assert "market must be" in json.loads(body)["error"]
 
