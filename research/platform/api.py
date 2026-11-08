@@ -546,8 +546,15 @@ def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
         for key in ("population_size", "generations", "max_depth", "max_nodes", "validation_candidates"):
             value = gp[key]
             minimum = 4 if key == "population_size" else 3 if key == "max_nodes" else 1
-            if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
-                raise ValueError(f"genetic_programming.{key} must be an integer >= {minimum}")
+            maximum = 12 if key == "max_depth" else 8191 if key == "max_nodes" else 10000
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or not minimum <= value <= maximum
+            ):
+                raise ValueError(
+                    f"genetic_programming.{key} must be an integer from {minimum} to {maximum}"
+                )
         evaluation_count = gp["population_size"] * (gp["generations"] + 1)
         if evaluation_count > 10000:
             raise ValueError("genetic_programming candidate count exceeds the 10000 evaluation limit")
@@ -583,8 +590,15 @@ def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
         for key in ("population_size", "generations", "max_components", "validation_candidates"):
             value = composition[key]
             minimum = 4 if key == "population_size" else 2 if key == "max_components" else 1
-            if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
-                raise ValueError(f"strategy_composition.{key} must be an integer >= {minimum}")
+            maximum = 32 if key == "max_components" else 10000
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or not minimum <= value <= maximum
+            ):
+                raise ValueError(
+                    f"strategy_composition.{key} must be an integer from {minimum} to {maximum}"
+                )
         if composition["population_size"] * (composition["generations"] + 1) > 10000:
             raise ValueError("strategy_composition candidate count exceeds the 10000 evaluation limit")
         mutation = composition["mutation_rate"]
@@ -617,8 +631,15 @@ def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
         for key in ("hidden_size", "population_size", "generations", "validation_candidates"):
             value = neural[key]
             minimum = 4 if key == "population_size" else 1
-            if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
-                raise ValueError(f"neuroevolution.{key} must be an integer >= {minimum}")
+            maximum = 512 if key == "hidden_size" else 10000
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or not minimum <= value <= maximum
+            ):
+                raise ValueError(
+                    f"neuroevolution.{key} must be an integer from {minimum} to {maximum}"
+                )
         if neural["population_size"] % 2:
             raise ValueError("neuroevolution.population_size must be even")
         if neural["population_size"] * neural["generations"] > 10000:
@@ -660,8 +681,15 @@ def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
         for integer_key in ("budget", "validation_candidates"):
             raw = optimization[integer_key]
             minimum = 4 if integer_key == "budget" else 1
-            if isinstance(raw, bool) or not isinstance(raw, int) or raw < minimum:
-                raise ValueError(f"optimization.{integer_key} must be an integer >= {minimum}")
+            maximum = 10000 if integer_key == "budget" else 1000
+            if (
+                isinstance(raw, bool)
+                or not isinstance(raw, int)
+                or not minimum <= raw <= maximum
+            ):
+                raise ValueError(
+                    f"optimization.{integer_key} must be an integer from {minimum} to {maximum}"
+                )
         objective_name = str(optimization["objective"])
         if objective_name not in {"sharpe", "sortino", "cagr", "calmar", "total_return"}:
             raise ValueError("optimization.objective must be sharpe, sortino, cagr, calmar or total_return")
