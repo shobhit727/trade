@@ -7,7 +7,7 @@ exchange connections; fitness must be computed from permitted training partition
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Sequence
+from typing import Callable
 
 import numpy as np
 
