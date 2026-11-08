@@ -70,6 +70,7 @@ class EvolutionTrace:
     generations: tuple[dict[str, float], ...]
     failures: tuple[str, ...]
     evaluations: int
+    candidate_archive: tuple[dict[str, object], ...] = ()
 
 
 class EvolutionStrategy:
@@ -127,8 +128,10 @@ class EvolutionStrategy:
         best_fitness = -np.inf
         traces: list[dict[str, float]] = []
         failures: list[str] = []
+        candidate_archive: list[dict[str, object]] = []
         evaluations = 0
         half = self.population_size // 2
+        mean_parent_ids: list[str] = []
 
         for generation in range(self.generations):
             # Antithetic perturbations reduce variance of the search-direction estimate.
@@ -140,7 +143,13 @@ class EvolutionStrategy:
                 self.weight_limit,
             )
             scores = np.full(self.population_size, -np.inf, dtype=np.float64)
+            candidate_ids = [
+                f"es-g{generation:04d}-c{index:06d}"
+                for index in range(self.population_size)
+            ]
             for index, parameters in enumerate(population):
+                status = "succeeded"
+                failure_reason = None
                 try:
                     predictions = self.network.predict(matrix, parameters)
                     score = float(fitness(predictions))
@@ -148,15 +157,39 @@ class EvolutionStrategy:
                         raise ValueError("fitness returned a non-finite score")
                     scores[index] = score
                 except Exception as exc:  # noqa: BLE001 - keep failed evaluations in the trace.
-                    failures.append(
+                    status = "failed"
+                    failure_reason = (
                         f"generation={generation},candidate={index}: {type(exc).__name__}: {exc}"
                     )
+                    failures.append(failure_reason)
+                lineage = {
+                    "operator": "mirrored_noise_evolution_strategy",
+                    "generation": generation,
+                    "parent_candidate_ids": list(mean_parent_ids),
+                    "noise_pair_index": index if index < half else index - half,
+                    "perturbation_sign": 1 if index < half else -1,
+                    "noise_std": self.noise_std,
+                    "learning_rate": self.learning_rate,
+                    "seed": self.seed,
+                }
+                candidate_archive.append({
+                    "candidate_id": candidate_ids[index],
+                    "generation": generation,
+                    "index": index,
+                    "parameters": parameters.copy(),
+                    "fitness": float(scores[index]),
+                    "status": status,
+                    "failure_reason": failure_reason,
+                    "lineage": lineage,
+                })
                 evaluations += 1
 
             # Convert valid population scores into centred rank utilities.
             valid = np.flatnonzero(np.isfinite(scores))
             if len(valid):
                 ordered = valid[np.argsort(scores[valid], kind="stable")]
+                # The next mean is a function of the full valid ranked population.
+                mean_parent_ids = [candidate_ids[int(index)] for index in ordered]
                 utilities = np.zeros(self.population_size, dtype=np.float64)
                 utilities[ordered] = np.linspace(-0.5, 0.5, len(ordered))
                 utilities[valid] -= float(np.mean(utilities[valid]))
@@ -194,6 +227,7 @@ class EvolutionStrategy:
             generations=tuple(traces),
             failures=tuple(failures),
             evaluations=evaluations,
+            candidate_archive=tuple(candidate_archive),
         )
 
 
