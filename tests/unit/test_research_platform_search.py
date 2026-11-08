@@ -785,3 +785,44 @@ def test_candidate_family_report_skips_pbo_for_short_return_history() -> None:
         observations=3,
     )
     assert report["pbo_cscv"]["status"] == "not_computed"
+
+
+
+def test_candidate_family_report_from_returns_derives_per_period_psr_and_multiple_tests() -> None:
+    # The report derives candidate hypotheses from equal-length training return histories.
+    from research.platform.statistics import candidate_family_report_from_returns
+
+    rng = np.random.default_rng(605)
+    ids = [f"candidate-{index}" for index in range(20)]
+    returns = {
+        candidate_id: rng.normal(0.0004 + index * 0.00001, 0.01, size=128)
+        for index, candidate_id in enumerate(ids)
+    }
+    report = candidate_family_report_from_returns(
+        ids,
+        returns,
+        periods_per_year=252,
+        pbo_blocks=8,
+        pbo_candidate_limit=8,
+    )
+    assert report["candidate_family_size"] == 20
+    assert report["fdr"]["hypotheses"] == 20
+    assert report["deflated_sharpe"]["trial_count"] == 20
+    assert report["pbo_cscv"]["candidate_subset_size"] == 8
+    assert report["sampling_frequency"]["periods_per_year"] == 252
+    assert report["p_value_method"] == "one_minus_probabilistic_sharpe_ratio_vs_zero"
+
+
+def test_candidate_family_report_from_returns_rejects_misaligned_series() -> None:
+    # Statistical corrections cannot silently compare candidates over different dates.
+    from research.platform.statistics import candidate_family_report_from_returns
+
+    with pytest.raises(ValueError, match="equal lengths"):
+        candidate_family_report_from_returns(
+            ["candidate-a", "candidate-b"],
+            {
+                "candidate-a": [0.01, -0.02, 0.03],
+                "candidate-b": [0.02, -0.01],
+            },
+            periods_per_year=252,
+        )
