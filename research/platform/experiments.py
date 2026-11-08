@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .data_catalog import DataAvailabilityCatalog
@@ -39,6 +39,7 @@ class ExperimentSpec:
     compute_backend: str = "numpy"
     compute_device: str = "unknown"
     parameters: dict[str, Any] = field(default_factory=dict)
+    embargo_seconds: int = 0
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self) -> None:
@@ -53,6 +54,8 @@ class ExperimentSpec:
             raise ValueError("dataset identifiers must be unique")
         if self.random_seed < 0:
             raise ValueError("random_seed must be non-negative")
+        if self.embargo_seconds < 0:
+            raise ValueError("embargo_seconds must be non-negative")
         if not self.objectives or any(not item.strip() for item in self.objectives):
             raise ValueError("at least one explicitly named objective is required")
         if not self.cost_model_id.strip() or not self.execution_model_id.strip():
@@ -71,12 +74,15 @@ class ExperimentSpec:
                 raise ValueError("experiment window timestamps must be timezone-aware")
             if end <= start:
                 raise ValueError("each experiment window must have positive duration")
+        embargo = timedelta(seconds=self.embargo_seconds)
         if not (
-            self.training_end <= self.validation_start
-            and self.validation_end <= self.oos_start
-            and self.oos_end <= self.final_holdout_start
+            self.training_end + embargo <= self.validation_start
+            and self.validation_end + embargo <= self.oos_start
+            and self.oos_end + embargo <= self.final_holdout_start
         ):
-            raise ValueError("experiment partitions must be chronological and non-overlapping")
+            raise ValueError(
+                "experiment partitions must be chronological, non-overlapping and respect embargo"
+            )
 
         # The old NSE 2024-2026 test set was exposed to prior strategy selection.
         # It cannot be relabelled as an untouched final holdout in the new platform.
@@ -126,6 +132,7 @@ class ExperimentSpec:
             "compute_device": self.compute_device,
             "objectives": list(self.objectives),
             "parameters": self.parameters,
+            "embargo_seconds": self.embargo_seconds,
             "created_at": self.created_at.astimezone(timezone.utc).isoformat(),
         }
 
