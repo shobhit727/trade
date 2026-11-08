@@ -30,8 +30,79 @@ RESOLUTION_MAP = {
 }
 
 
+def validate_ohlcv_quality(
+    frame: pd.DataFrame,
+    *,
+    max_abs_close_return: float | None = None,
+) -> dict[str, float | int | None]:
+    """Apply hard OHLCV assertions and return a small provenance-ready quality summary."""
+    # Caller supplies an already timestamp-normalised frame; no repair or interpolation occurs.
+    required = {"open", "high", "low", "close", "volume"}
+    if not required.issubset(frame.columns):
+        raise ValueError(f"OHLCV source missing columns: {sorted(required - set(frame.columns))}")
+    prices = frame[["open", "high", "low", "close"]].to_numpy(dtype="float64")
+    volume = frame["volume"].to_numpy(dtype="float64")
+    if not np.isfinite(prices).all() or not np.isfinite(volume).all():
+        raise ValueError("OHLCV source has missing or non-finite values")
+    if (prices <= 0).any() or (volume < 0).any():
+        raise ValueError("prices must be positive and volume non-negative")
+
+    # Assert the open lies inside the observed intrabar range.
+    open_values = frame["open"].to_numpy(dtype="float64")
+    high_values = frame["high"].to_numpy(dtype="float64")
+    low_values = frame["low"].to_numpy(dtype="float64")
+    open_violations = int(((open_values < low_values) | (open_values > high_values)).sum())
+    if open_violations:
+        raise ValueError(f"OHLCV open is outside [low, high] on {open_violations} bars")
+
+    if (high_values < np.maximum.reduce([
+        open_values,
+        frame["close"].to_numpy(dtype="float64"),
+        low_values,
+    ])).any():
+        raise ValueError("high is below an OHLC value")
+    if (low_values > np.minimum.reduce([
+        open_values,
+        frame["close"].to_numpy(dtype="float64"),
+        high_values,
+    ])).any():
+        raise ValueError("low is above an OHLC value")
+
+    # The close-return guard is market/resolution-specific; crypto can legitimately move >20%.
+    close_returns = frame["close"].pct_change().dropna().abs()
+    max_observed = float(close_returns.max()) if not close_returns.empty else 0.0
+    outliers = 0
+    if max_abs_close_return is not None:
+        if (
+            isinstance(max_abs_close_return, bool)
+            or not np.isfinite(max_abs_close_return)
+            or not 0 < max_abs_close_return < 1
+        ):
+            raise ValueError("max_abs_close_return must be between zero and one")
+        outliers = int((close_returns >= max_abs_close_return).sum())
+        if outliers:
+            first_bad = close_returns[close_returns >= max_abs_close_return].index[0]
+            raise ValueError(
+                f"absolute close return must be < {max_abs_close_return:.1%}; "
+                f"{outliers} bars failed, first at {first_bad.isoformat()}"
+            )
+
+    return {
+        "bars_checked": int(len(frame)),
+        "open_range_violations": open_violations,
+        "close_return_outliers": outliers,
+        "max_abs_close_return": max_observed,
+        "max_abs_close_return_limit": max_abs_close_return,
+        "negative_volume_count": 0,
+    }
+
+
 def _normalise_ohlcv(
-    frame: pd.DataFrame, *, timezone_name: str, numeric_timestamp_unit: str | None = None
+    frame: pd.DataFrame,
+    *,
+    timezone_name: str,
+    numeric_timestamp_unit: str | None = None,
+    max_abs_close_return: float | None = None,
 ) -> pd.DataFrame:
     # Standardise schema without filling gaps or fabricating observations.
     result = frame.copy()
@@ -70,29 +141,32 @@ def _normalise_ohlcv(
     for column in ("open", "high", "low", "close", "volume"):
         if column in result:
             result[column] = pd.to_numeric(result[column], errors="coerce")
-    required = {"open", "high", "low", "close", "volume"}
-    if not required.issubset(result.columns):
-        raise ValueError(f"OHLCV source missing columns: {sorted(required - set(result.columns))}")
-    prices = result[["open", "high", "low", "close"]].to_numpy(dtype="float64")
-    volume = result["volume"].to_numpy(dtype="float64")
-    # Reject corruption; do not coerce missing values into synthetic prices.
-    if not np.isfinite(prices).all() or not np.isfinite(volume).all():
-        raise ValueError("OHLCV source has missing or non-finite values")
-    if (prices <= 0).any() or (volume < 0).any():
-        raise ValueError("prices must be positive and volume non-negative")
-    if (result["high"] < result[["open", "close", "low"]].max(axis=1)).any():
-        raise ValueError("high is below an OHLC value")
-    if (result["low"] > result[["open", "close", "high"]].min(axis=1)).any():
-        raise ValueError("low is above an OHLC value")
+    quality_report = validate_ohlcv_quality(
+        result,
+        max_abs_close_return=max_abs_close_return,
+    )
+    # Keep the checks performed with the imported rows for downstream immutable manifests.
+    result.attrs["quality_report"] = quality_report
     return result
 
 
 class NSELegacyAdapter:
     """Read NSE symbol histories through the repository's audited optimizer splitter."""
 
-    def __init__(self, *, timezone_name: str = "Asia/Kolkata") -> None:
-        # The existing splitter uses the audited per-symbol loader and cleaning policy.
+    def __init__(
+        self,
+        *,
+        timezone_name: str = "Asia/Kolkata",
+        max_daily_close_return: float | None = 0.20,
+    ) -> None:
+        # The daily NSE guard rejects suspicious split-adjustment jumps without dropping rows.
+        if (
+            max_daily_close_return is not None
+            and (not np.isfinite(max_daily_close_return) or not 0 < max_daily_close_return < 1)
+        ):
+            raise ValueError("max_daily_close_return must be between zero and one or None")
         self.timezone_name = timezone_name
+        self.max_daily_close_return = max_daily_close_return
 
     def available_symbols(self, resolution: DataResolution = DataResolution.ONE_DAY) -> tuple[str, ...]:
         """List local symbols available to the legacy NSE data loader."""
@@ -128,7 +202,14 @@ class NSELegacyAdapter:
             frame = frame.loc[frame.index < pd.Timestamp(end)]
         if frame.empty:
             raise ValueError(f"no usable {timeframe} bars for symbol {symbol}")
-        return _normalise_ohlcv(frame.reset_index(), timezone_name=self.timezone_name)
+        return _normalise_ohlcv(
+            frame.reset_index(),
+            timezone_name=self.timezone_name,
+            max_abs_close_return=(
+                self.max_daily_close_return
+                if resolution is DataResolution.ONE_DAY else None
+            ),
+        )
 
     def manifest(
         self,
@@ -168,8 +249,16 @@ class NSELegacyAdapter:
             license_reference="legacy data licence must be reviewed before use",
             value_origin=ValueOrigin.OBSERVED,
             quality_score=None,
-            processing_history=("research.optimize.splitter.bars", "OHLCV schema validation"),
-            extra_metadata={"file_sha256": digest, "numeric_timestamp_unit": "ms"},
+            processing_history=(
+                "research.optimize.splitter.bars",
+                "OHLCV schema/positive-price/open-range assertions",
+                "daily absolute close return < 20% or configured override",
+            ),
+            extra_metadata={
+                "file_sha256": digest,
+                "numeric_timestamp_unit": "ms",
+                "quality_report": str(frame.attrs.get("quality_report", {})),
+            },
         )
 
 
