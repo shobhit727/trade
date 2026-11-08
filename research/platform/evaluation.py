@@ -136,6 +136,18 @@ def _partition_target_frame(
     return PartitionEvaluation(partition_name, start, end, result, metrics)
 
 
+def _bars_fingerprint(bars_by_symbol: Mapping[str, pd.DataFrame]) -> str:
+    """Hash the exact in-memory OHLCV panels supplied to the evaluator."""
+    # Stable symbol/column ordering binds results to actual rows and timestamp indices.
+    digest = hashlib.sha256()
+    for symbol in sorted(bars_by_symbol):
+        frame = bars_by_symbol[symbol]
+        normalized = frame.reindex(sorted(frame.columns), axis=1)
+        digest.update(symbol.encode("utf-8"))
+        digest.update(pd.util.hash_pandas_object(normalized, index=True).to_numpy(dtype="uint64").tobytes())
+    return digest.hexdigest()
+
+
 def evaluate_existing_strategy(
     spec: ExperimentSpec,
     bars_by_symbol: Mapping[str, pd.DataFrame],
@@ -200,9 +212,11 @@ def evaluate_existing_strategy(
     # Validate parameter field names against the authoritative existing catalogue.
     adapter = ExistingStrategySignalAdapter()
     adapter.registry.validate_parameter_payload(strategy_name, strategy_parameters)
+    bars_digest = _bars_fingerprint(bars_by_symbol)
     candidate_definition = {
         "experiment_id": spec.experiment_id,
         "strategy_name": strategy_name,
+        "bars_sha256": bars_digest,
         "strategy_parameters": strategy_parameters,
         "dataset_ids": list(spec.dataset_ids),
         "code_version": spec.code_version,
@@ -272,6 +286,7 @@ def evaluate_existing_strategy(
             "existing_strategy_evaluated",
             {
                 "candidate_digest": candidate_digest,
+                "bars_sha256": bars_digest,
                 "partitions": [item.partition for item in evaluations],
                 "final_holdout_accessed": False,
                 "cost_model_id": spec.cost_model_id,
