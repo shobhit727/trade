@@ -830,3 +830,28 @@ def test_candidate_family_report_from_returns_rejects_misaligned_series() -> Non
             },
             periods_per_year=252,
         )
+
+
+
+def test_candidate_family_report_from_returns_validates_pbo_configuration() -> None:
+    # Invalid CSCV limits must fail before the helper computes an index subset.
+    from research.platform.statistics import candidate_family_report_from_returns
+
+    returns = {
+        "candidate-a": np.linspace(-0.01, 0.02, 32),
+        "candidate-b": np.linspace(0.01, -0.02, 32),
+    }
+    with pytest.raises(ValueError, match="pbo_blocks must be an even integer"):
+        candidate_family_report_from_returns(
+            ["candidate-a", "candidate-b"],
+            returns,
+            periods_per_year=252,
+            pbo_blocks=7,
+        )
+    with pytest.raises(ValueError, match="pbo_candidate_limit must be an integer"):
+        candidate_family_report_from_returns(
+            ["candidate-a", "candidate-b"],
+            returns,
+            periods_per_year=252,
+            pbo_candidate_limit=True,
+        )
