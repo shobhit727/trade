@@ -295,6 +295,10 @@ def test_crypto_local_adapter_records_licence_review_and_file_hash(tmp_path: Pat
     assert manifest.market is Market.CRYPTO
     assert manifest.license_status.value == "review_required"
     assert manifest.extra_metadata["file_sha256"]
+    import json
+    quality = json.loads(manifest.extra_metadata["quality_report_json"])
+    assert quality["bars_checked"] == len(frame)
+    assert quality["open_range_violations"] == 0
 
 
 
