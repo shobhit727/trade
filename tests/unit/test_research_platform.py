@@ -53,8 +53,8 @@ def make_experiment(**overrides: object) -> ExperimentSpec:
         "validation_end": datetime(2022, 1, 1, tzinfo=UTC),
         "oos_start": datetime(2022, 1, 1, tzinfo=UTC),
         "oos_end": datetime(2024, 1, 1, tzinfo=UTC),
-        "final_holdout_start": datetime(2024, 1, 1, tzinfo=UTC),
-        "final_holdout_end": datetime(2025, 1, 1, tzinfo=UTC),
+        "final_holdout_start": datetime(2026, 10, 2, tzinfo=UTC),
+        "final_holdout_end": datetime(2026, 11, 8, tzinfo=UTC),
         "cost_model_id": "nse-delivery-costs-v1",
         "execution_model_id": "daily-close-next-open-v1",
         "objectives": ("net_return", "max_drawdown", "turnover"),
@@ -78,7 +78,7 @@ def make_manifest(**overrides: object) -> DatasetManifest:
         "category": "ohlcv",
         "resolution": DataResolution.ONE_DAY,
         "coverage_start": datetime(2016, 1, 1, tzinfo=UTC),
-        "coverage_end": datetime(2025, 1, 1, tzinfo=UTC),
+        "coverage_end": datetime(2026, 11, 9, tzinfo=UTC),
         "timezone": "Asia/Kolkata",
         "timestamp_convention": "bar-close-time",
         "acquired_at": datetime(2026, 11, 8, tzinfo=UTC),
@@ -352,3 +352,13 @@ def test_compute_engine_auto_backend_is_consistent() -> None:
     result = engine.batch_linear_scores(features, weights)
     np.testing.assert_allclose(result, weights @ features.T, rtol=1e-10, atol=1e-10)
     assert engine.info().backend in {"numpy", "cupy"}
+
+
+
+def test_nse_exposed_test_period_cannot_be_declared_final_holdout() -> None:
+    # The old 2024-2026 test set has already been inspected and cannot be called pristine.
+    with pytest.raises(ValueError, match="historical test window is exposed"):
+        make_experiment(
+            final_holdout_start=datetime(2024, 1, 1, tzinfo=UTC),
+            final_holdout_end=datetime(2025, 1, 1, tzinfo=UTC),
+        )
