@@ -205,6 +205,7 @@ class GeneticProgrammer:
         population = [self._new_individual() for _ in range(self.population_size)]
         history: list[dict[str, object]] = []
         failures: list[str] = []
+        candidate_archive: list[dict[str, object]] = []
         # Every evolved tree receives a stable per-generation identity and ancestry record.
         population_ids = [f"gp-g0-{index:06d}" for index in range(self.population_size)]
         population_lineage = [
@@ -217,7 +218,13 @@ class GeneticProgrammer:
             for _ in population
         ]
 
-        def score(tree: Node, generation: int, index: int, candidate_id: str) -> float:
+        def score(
+            tree: Node,
+            generation: int,
+            index: int,
+            candidate_id: str,
+            lineage: dict[str, object],
+        ) -> float:
             # Penalise expression size to discourage unnecessarily complex formulas.
             try:
                 output = tree._evaluate(matrix)
@@ -228,13 +235,33 @@ class GeneticProgrammer:
                     "generation": generation, "index": index, "candidate_id": candidate_id,
                     "fitness": value, "tree_size": tree.size, "tree_depth": tree.depth,
                 })
+                candidate_archive.append({
+                    "candidate_id": candidate_id,
+                    "generation": generation,
+                    "index": index,
+                    "tree": tree,
+                    "fitness": value,
+                    "status": "succeeded",
+                    "lineage": dict(lineage),
+                })
                 return value
             except Exception as exc:  # noqa: BLE001 - retain failed candidate context.
-                failures.append(f"generation={generation},candidate={index}: {type(exc).__name__}: {exc}")
+                failure = f"generation={generation},candidate={index}: {type(exc).__name__}: {exc}"
+                failures.append(failure)
+                candidate_archive.append({
+                    "candidate_id": candidate_id,
+                    "generation": generation,
+                    "index": index,
+                    "tree": tree,
+                    "fitness": -np.inf,
+                    "status": "failed",
+                    "failure_reason": failure,
+                    "lineage": dict(lineage),
+                })
                 return -np.inf
 
         scores = [
-            score(tree, 0, index, population_ids[index])
+            score(tree, 0, index, population_ids[index], population_lineage[index])
             for index, tree in enumerate(population)
         ]
         for generation in range(1, self.generations + 1):
@@ -279,7 +306,13 @@ class GeneticProgrammer:
             population_ids = next_ids
             population_lineage = next_lineage
             scores = [
-                score(tree, generation, index, population_ids[index])
+                score(
+                    tree,
+                    generation,
+                    index,
+                    population_ids[index],
+                    population_lineage[index],
+                )
                 for index, tree in enumerate(population)
             ]
         best_index = int(np.argmax(scores))
@@ -290,6 +323,7 @@ class GeneticProgrammer:
             "population": tuple(population),
             "population_ids": tuple(population_ids),
             "population_lineage": tuple(population_lineage),
+            "candidate_archive": tuple(candidate_archive),
             "fitness": tuple(float(value) for value in scores),
             "history": tuple(history),
             "failures": tuple(failures),
