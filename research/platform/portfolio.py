@@ -222,7 +222,7 @@ class PortfolioSimulator:
                                / float(prior_marks[symbol])))
                 for symbol in symbols
             }
-            orders: list[tuple[str, Side, Decimal, Decimal, Decimal]] = []
+            orders: list[tuple[str, Side, Decimal, Decimal]] = []
 
             # Compute orders against the next open; sell orders are processed first.
             for symbol in symbols:
