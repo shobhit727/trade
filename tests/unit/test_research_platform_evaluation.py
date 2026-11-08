@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from research.platform.data_catalog import DatasetManifest, LicenseStatus, ValueOrigin
 from research.platform.domain import AlgorithmFamily, DataResolution, Market, ResearchTrack
 from research.platform.experiments import ExperimentSpec
 from research.platform.evaluation import evaluate_existing_strategy
@@ -68,11 +69,38 @@ def _bars() -> dict[str, pd.DataFrame]:
     return {"TEST": frame}
 
 
+def _registered_store(path, spec: ExperimentSpec) -> ExperimentStore:
+    # The persisted dataset manifest covers all experiment windows but remains synthetic.
+    store = ExperimentStore(path)
+    store.create_experiment(spec)
+    store.register_dataset(DatasetManifest(
+        dataset_id="synthetic-nse-eod",
+        market=Market.NSE,
+        provider="unit-test",
+        source="synthetic-bars-only",
+        instrument="TEST",
+        exchange="NSE",
+        category="ohlcv",
+        resolution=DataResolution.ONE_DAY,
+        coverage_start=datetime(2015, 1, 1, tzinfo=UTC),
+        coverage_end=datetime(2026, 11, 9, tzinfo=UTC),
+        timezone="Asia/Kolkata",
+        timestamp_convention="bar-close-time",
+        acquired_at=datetime(2026, 11, 8, tzinfo=UTC),
+        update_frequency="daily",
+        license_status=LicenseStatus.APPROVED,
+        license_reference="synthetic-test-only",
+        value_origin=ValueOrigin.OBSERVED,
+        quality_score=1.0,
+        processing_history=("synthetic test fixture",),
+    ))
+    return store
+
+
 def test_existing_strategy_runner_evaluates_three_stages_without_holdout(tmp_path) -> None:
     # The same strategy candidate is evaluated with a fresh capital ledger for each stage.
     spec = _experiment()
-    store = ExperimentStore(tmp_path / "experiment.sqlite3")
-    store.create_experiment(spec)
+    store = _registered_store(tmp_path / "experiment.sqlite3", spec)
     config = PortfolioConfig(
         market=Market.NSE,
         fee_bps=Decimal("0"),
@@ -82,6 +110,7 @@ def test_existing_strategy_runner_evaluates_three_stages_without_holdout(tmp_pat
         max_gross_exposure=Decimal("1.0"),
         assumed_timezone="Asia/Kolkata",
         cost_model_id=spec.cost_model_id,
+        execution_model_id=spec.execution_model_id,
     )
     result = evaluate_existing_strategy(
         spec,
@@ -115,12 +144,13 @@ def test_existing_strategy_runner_requires_matching_cost_model_and_track_scope()
         market=Market.CRYPTO,
         fee_bps=Decimal("0"),
         cost_model_id=spec.cost_model_id,
+        execution_model_id=spec.execution_model_id,
     )
     with pytest.raises(ValueError, match="market"):
         evaluate_existing_strategy(spec, _bars(), wrong_market, periods_per_year=252)
 
 
-def test_existing_strategy_runner_refuses_multi_symbol_individual_track() -> None:
+def test_existing_strategy_runner_refuses_multi_symbol_individual_track(tmp_path) -> None:
     # An individual-asset experiment cannot accidentally turn into a portfolio.
     spec = _experiment()
     bars = _bars()
@@ -130,5 +160,27 @@ def test_existing_strategy_runner_refuses_multi_symbol_individual_track() -> Non
         fee_bps=Decimal("0"),
         cost_model_id=spec.cost_model_id,
     )
+    store = _registered_store(tmp_path / "multi-symbol.sqlite3", spec)
     with pytest.raises(ValueError, match="exactly one"):
-        evaluate_existing_strategy(spec, bars, config, periods_per_year=252)
+        evaluate_existing_strategy(
+            spec, bars, config, periods_per_year=252, store=store
+        )
+
+
+def test_existing_strategy_runner_requires_matching_execution_model(tmp_path) -> None:
+    # The fill assumptions are part of the immutable experiment identity.
+    spec = _experiment()
+    config = PortfolioConfig(
+        market=Market.NSE,
+        fee_bps=Decimal("0"),
+        cost_model_id=spec.cost_model_id,
+        execution_model_id="different-fill-model",
+    )
+    with pytest.raises(ValueError, match="execution model id"):
+        evaluate_existing_strategy(
+            spec,
+            _bars(),
+            config,
+            periods_per_year=252,
+            store=_registered_store(tmp_path / "execution-mismatch.sqlite3", spec),
+        )
