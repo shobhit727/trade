@@ -113,7 +113,7 @@ pre { overflow:auto; white-space:pre-wrap; word-break:break-word; color:#c4d3e4;
 <section style="margin-top:16px">
 <h2>Data availability and provenance</h2>
 <p>Registered dataset manifests only. Registering metadata does not upload market data.</p>
-<table><thead><tr><th>Dataset</th><th>Market / exchange</th><th>Category / resolution</th><th>Coverage</th><th>Licence / quality</th><th>Fingerprint</th></tr></thead><tbody id="dataset-rows"></tbody></table>
+<table><thead><tr><th>Dataset</th><th>Market / exchange</th><th>Category / resolution</th><th>Source coverage</th><th>Worker-visible coverage / partition</th><th>Licence / quality</th><th>Fingerprint</th></tr></thead><tbody id="dataset-rows"></tbody></table>
 </section>
 </main>
 <script>
@@ -264,6 +264,8 @@ async function refresh() {
       item.market + " / " + item.exchange,
       item.category + " / " + item.resolution,
       item.coverage_start + " → " + item.coverage_end,
+      item.worker_coverage_start + " → " + item.worker_coverage_end +
+        (item.partitioned_non_holdout ? " / physical safe copy" : " / legacy source"),
       item.license_status + " / " + (item.quality_score === null ? "ungraded" : item.quality_score),
       item.fingerprint.slice(0, 12)
     ].forEach(value => {
