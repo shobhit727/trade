@@ -632,6 +632,7 @@ class ExistingStrategyOptimizerJobRunner:
             parameters=shipped_defaults,
             score=shipped_score,
             evaluation_index=-2,
+            lineage={"operator": "shipped_default", "parent_candidate_ids": []},
         )
         user_baseline_score = train_objective({})
         user_baseline = SearchCandidate(
@@ -639,29 +640,41 @@ class ExistingStrategyOptimizerJobRunner:
             parameters=defaults,
             score=user_baseline_score,
             evaluation_index=-1,
+            lineage={"operator": "user_configured_baseline", "parent_candidate_ids": []},
         )
         search_candidates = (shipped_baseline, user_baseline, *search.candidates)
 
-        # Merge partial genomes with the original Config defaults and deduplicate exact configs.
-        unique: dict[str, tuple[dict[str, Any], float, int]] = {}
-        for candidate in search_candidates:
-            merged = dict(defaults)
-            merged.update(candidate.parameters)
-            key = self._config_key(merged)
-            if key not in unique or candidate.score > unique[key][1]:
-                unique[key] = (merged, float(candidate.score), int(candidate.evaluation_index))
-
-        # Persist every evaluated TRAIN candidate once, including failures in the search event.
+        # Prepare all attempted candidates before writing lineage so parent IDs can be resolved.
         candidate_rows: list[dict[str, Any]] = []
-        for index, (key, (candidate_config, score, evaluation_index)) in enumerate(unique.items()):
+        candidate_id_map: dict[str, str] = {}
+        failure_by_index: dict[int, str] = {}
+        for failure in search.failures:
+            # Random/grid/Optuna failure messages identify their attempted trial index.
+            prefix = failure.split(":", 1)[0]
+            for label in ("candidate=", "trial=", "evaluation="):
+                if prefix.startswith(label):
+                    try:
+                        failure_by_index[int(prefix.removeprefix(label))] = failure
+                    except ValueError:
+                        pass
+                    break
+
+        for candidate in search_candidates:
             context.check_cancelled()
+            candidate_config = dict(defaults)
+            candidate_config.update(candidate.parameters)
+            key = self._config_key(candidate_config)
+            metrics = train_metrics.get(key)
+            succeeded = metrics is not None and np.isfinite(candidate.score)
             digest_payload = {
                 "experiment_fingerprint": spec.fingerprint,
                 "bars_sha256": bars_digest,
                 "strategy_name": strategy_name,
                 "strategy_parameters": candidate_config,
                 "search_family": spec.algorithm_family.value,
-                "evaluation_index": evaluation_index,
+                "source_candidate_id": candidate.candidate_id,
+                "evaluation_index": candidate.evaluation_index,
+                "status": "succeeded" if succeeded else "failed",
             }
             candidate_digest = hashlib.sha256(
                 json.dumps(
@@ -671,40 +684,70 @@ class ExistingStrategyOptimizerJobRunner:
                     default=str,
                 ).encode("utf-8")
             ).hexdigest()
-            metrics = train_metrics.get(key)
-            if metrics is None:
-                raise RuntimeError("missing TRAIN metrics for evaluated candidate")
             candidate_id = f"{spec.experiment_id}-{candidate_digest[:16]}"
+            candidate_id_map[candidate.candidate_id] = candidate_id
             candidate_rows.append({
+                "source_candidate_id": candidate.candidate_id,
                 "candidate_id": candidate_id,
                 "candidate_digest": candidate_digest,
                 "parameters": candidate_config,
-                "train_score": score,
-                "train_metrics": metrics,
-                "evaluation_index": evaluation_index,
+                "train_score": float(candidate.score) if succeeded else None,
+                "train_metrics": metrics or {},
+                "status": "succeeded" if succeeded else "failed",
+                "evaluation_index": candidate.evaluation_index,
+                "lineage": dict(candidate.lineage),
+                "failure_reason": failure_by_index.get(candidate.evaluation_index),
             })
-            if not context.store.has_candidate(spec.experiment_id, candidate_digest):
-                context.store.append_candidate(
-                    candidate_id=candidate_id,
-                    experiment_id=spec.experiment_id,
-                    candidate_digest=candidate_digest,
-                    family=spec.algorithm_family.value,
-                    generation=max(evaluation_index, 0),
-                    parameters={
-                        "strategy_name": strategy_name,
-                        "strategy_parameters": candidate_config,
-                        "search_family": spec.algorithm_family.value,
-                    },
-                    metrics={"train": metrics, "train_objective": score},
-                    lineage={
-                        "origin": "existing_strategy_parameter_search",
-                        "parent_candidate_ids": [],
-                        "mutation": None,
-                        "crossover": None,
-                        "selection": "train_objective",
-                    },
-                )
 
+        # Persist every attempted DE genome (including failed offspring) and every successful
+        # random/grid/TPE evaluation. Parent candidate references are resolved to SQLite IDs.
+        for candidate in candidate_rows:
+            if context.store.has_candidate(spec.experiment_id, candidate["candidate_digest"]):
+                continue
+            lineage = dict(candidate["lineage"])
+            raw_parents = lineage.get("parent_candidate_ids", [])
+            mapped_parents = [
+                candidate_id_map.get(str(parent), str(parent))
+                for parent in raw_parents
+            ] if isinstance(raw_parents, list) else []
+            lineage.update({
+                "origin": "existing_strategy_parameter_search",
+                "parent_candidate_ids": mapped_parents,
+                "source_candidate_id": candidate["source_candidate_id"],
+                "selection": "train_objective",
+            })
+            if candidate["status"] == "succeeded":
+                metric_payload = {
+                    "status": "succeeded",
+                    "train": candidate["train_metrics"],
+                    "train_objective": candidate["train_score"],
+                }
+            else:
+                metric_payload = {
+                    "status": "failed",
+                    "failure_reason": candidate["failure_reason"] or "candidate evaluation failed",
+                }
+            context.store.append_candidate(
+                candidate_id=candidate["candidate_id"],
+                experiment_id=spec.experiment_id,
+                candidate_digest=candidate["candidate_digest"],
+                family=spec.algorithm_family.value,
+                generation=max(int(lineage.get("generation", 0)), 0),
+                parameters={
+                    "strategy_name": strategy_name,
+                    "strategy_parameters": candidate["parameters"],
+                    "search_family": spec.algorithm_family.value,
+                },
+                metrics=metric_payload,
+                lineage=lineage,
+            )
+
+        successful_candidates = [
+            candidate for candidate in candidate_rows
+            if candidate["status"] == "succeeded"
+        ]
+        if not successful_candidates:
+            raise RuntimeError("no valid baseline or search candidate completed TRAIN")
         # Validation may select only a bounded TRAIN shortlist; it never feeds back into search.
         shortlist = sorted(
             candidate_rows,
