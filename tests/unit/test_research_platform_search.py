@@ -267,3 +267,34 @@ def test_crypto_local_adapter_records_licence_review_and_file_hash(tmp_path: Pat
     assert manifest.market is Market.CRYPTO
     assert manifest.license_status.value == "review_required"
     assert manifest.extra_metadata["file_sha256"]
+
+
+
+def test_batch_population_fitness_matches_manual_long_flat_accounting() -> None:
+    # A tiny feature panel makes one-step decisions and per-transition costs explicit.
+    from research.platform.compute import ComputeEngine
+
+    features = np.asarray([[1.0], [-1.0], [2.0], [0.5]], dtype=np.float64)
+    weights = np.asarray([[1.0], [-1.0]], dtype=np.float64)
+    forward = np.asarray([0.10, -0.20, 0.05, 0.00], dtype=np.float64)
+    result = ComputeEngine(backend="cpu").batch_long_flat_fitness(
+        features, weights, forward, fee_bps=10.0, periods_per_year=4
+    )
+    # Candidate zero is long on rows 0, 2 and 3, paying entry, exit and re-entry.
+    expected = (1.0 + 0.099) * (1.0 - 0.001) * (1.0 + 0.049) - 1.0
+    assert result["total_return"].shape == (2,)
+    assert result["total_return"][0] == pytest.approx(expected)
+    assert result["trade_transitions"][0] == pytest.approx(3.0)
+    assert result["mean_turnover"][0] == pytest.approx(0.75)
+    assert np.isfinite(result["sharpe"]).all()
+
+
+def test_batch_population_fitness_rejects_misaligned_forward_returns() -> None:
+    # Future return labels must align exactly with the decision-time feature rows.
+    from research.platform.compute import ComputeEngine
+
+    engine = ComputeEngine(backend="cpu")
+    with pytest.raises(ValueError, match="one value per feature row"):
+        engine.batch_long_flat_fitness(
+            np.ones((4, 2)), np.ones((3, 2)), np.ones(3)
+        )
