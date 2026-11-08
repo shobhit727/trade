@@ -362,3 +362,9 @@ def test_nse_exposed_test_period_cannot_be_declared_final_holdout() -> None:
             final_holdout_start=datetime(2024, 1, 1, tzinfo=UTC),
             final_holdout_end=datetime(2025, 1, 1, tzinfo=UTC),
         )
+
+
+def test_market_ledger_rejects_non_seed_opening_cash() -> None:
+    # A caller cannot silently create extra capital in either isolated account.
+    with pytest.raises(ValueError, match="opening cash"):
+        MarketLedger(Market.NSE, cash_inr=Decimal("3000000"))
