@@ -14,6 +14,8 @@ from research.platform.model_evaluation import (
     build_model_feature_panel,
     evaluate_model_scores,
 )
+from research.platform.composition import Composition
+from research.platform.composition_policy import composition_scores, default_component_registry
 from research.platform.portfolio import PortfolioConfig
 
 
@@ -129,3 +131,23 @@ def test_model_feature_panel_rejects_misaligned_multi_asset_calendars() -> None:
             start=datetime(2025, 1, 5, tzinfo=UTC),
             end=datetime(2025, 1, 15, tzinfo=UTC),
         )
+
+
+
+def test_allow_listed_composition_components_produce_causal_long_flat_scores() -> None:
+    # A declarative entry/exit/filter composition maps to finite signed model scores.
+    index = pd.date_range("2025-01-01", periods=40, freq="D", tz=UTC)
+    bars = {"AAA": _bars(index)}
+    panel = build_model_feature_panel(
+        bars,
+        PointInTimeFeatureEngine(windows=(3,)),
+        ResearchTrack.NSE_INDIVIDUAL,
+        start=datetime(2025, 1, 10, tzinfo=UTC),
+        end=datetime(2025, 2, 5, tzinfo=UTC),
+    )
+    registry = default_component_registry((3,))
+    composition = Composition((registry[0], registry[2], registry[4]))
+    scores = composition_scores(composition, panel, (3,))
+    assert scores.shape == (len(panel.features),)
+    assert np.isfinite(scores).all()
+    assert set(np.unique(scores)).issubset({-1.0, 1.0})
