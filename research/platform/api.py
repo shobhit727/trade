@@ -68,6 +68,7 @@ pre { overflow:auto; white-space:pre-wrap; word-break:break-word; color:#c4d3e4;
 <label>Objectives (comma-separated)</label><input id="objectives" value="net_return,max_drawdown,turnover" required>
 <label>Strategy parameters JSON</label><textarea id="strategy-parameters" rows="3">{}</textarea>
 <label>Execution assumptions JSON</label><textarea id="execution-assumptions" rows="4">{"slippage_bps":5,"impact_coefficient_bps":10,"max_participation":0.05,"max_gross_exposure":1.0,"periods_per_year":252}</textarea>
+<label>Crypto venue (single exchange)</label><input id="crypto-exchange" value="binance">
 <label>Crypto maker/taker fee schedule JSON</label><textarea id="fee-schedule" rows="2">{"maker_fee_bps":10,"taker_fee_bps":10}</textarea>
 <label>Training start / end (ISO timestamps)</label><input id="train-start" type="datetime-local" value="2016-01-01T00:00" required><input id="train-end" type="datetime-local" value="2020-01-01T00:00" required>
 <label>Validation start / end</label><input id="val-start" type="datetime-local" value="2020-01-01T00:00" required><input id="val-end" type="datetime-local" value="2022-01-01T00:00" required>
@@ -258,7 +259,16 @@ async function refresh() {
     datasetBody.appendChild(row);
   });
 }
-$("market").addEventListener("change", refreshTrackOptions);
+$("market").addEventListener("change", () => {
+  // Set the sampling calendar explicitly when switching independent markets.
+  refreshTrackOptions();
+  const assumptions = JSON.parse($("execution-assumptions").value);
+  assumptions.periods_per_year = $("market").value === "crypto" ? 365 : 252;
+  $("execution-assumptions").value = JSON.stringify(assumptions, null, 2);
+  if ($("market").value === "nse") {
+    $("cost-model").value = "nse-delivery-cost-model";
+  }
+});
 $("filter-market").addEventListener("change", refresh);
 $("create-form").addEventListener("submit", async event => {
   event.preventDefault();
@@ -275,6 +285,11 @@ $("create-form").addEventListener("submit", async event => {
       return parsed;
     };
     const market = value("market");
+    const feeSchedule = market === "crypto" ? parseObject("fee-schedule") : null;
+    const costModelId = market === "crypto"
+      ? "crypto-" + value("crypto-exchange").toLowerCase() + "-taker-maker" +
+        feeSchedule.maker_fee_bps + "-taker" + feeSchedule.taker_fee_bps
+      : value("cost-model");
     const payload = {
       experiment_id: value("experiment-id"),
       market,
@@ -293,7 +308,7 @@ $("create-form").addEventListener("submit", async event => {
       oos_end: utc("oos-end"),
       final_holdout_start: utc("hold-start"),
       final_holdout_end: utc("hold-end"),
-      cost_model_id: value("cost-model"),
+      cost_model_id: costModelId,
       execution_model_id: value("execution-model"),
       objectives: value("objectives").split(",").map(x => x.trim()).filter(Boolean),
       compute_backend: "auto",
@@ -302,7 +317,7 @@ $("create-form").addEventListener("submit", async event => {
         strategy_name: value("strategy-name"),
         strategy_parameters: parseObject("strategy-parameters"),
         execution_assumptions: parseObject("execution-assumptions"),
-        ...(market === "crypto" ? {fee_schedule: parseObject("fee-schedule")} : {})
+        ...(market === "crypto" ? {fee_schedule: feeSchedule} : {})
       } : {}
     };
     const result = await api("/api/experiments", {
