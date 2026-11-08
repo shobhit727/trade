@@ -395,13 +395,18 @@ class CryptoLocalAdapter:
             license_status=LicenseStatus.REVIEW_REQUIRED,
             license_reference="source licence must be reviewed before use",
             value_origin=ValueOrigin.OBSERVED,
-            processing_history=("local CSV/Parquet import", "OHLCV schema validation"),
+            processing_history=(
+                "local CSV/Parquet import",
+                "OHLCV schema/positive-price/open-range assertions",
+                "no universal crypto close-return ceiling applied",
+            ),
             extra_metadata={
                 "file_sha256": digest,
                 "numeric_timestamp_unit": self.numeric_timestamp_unit or "",
                 "quote_currency": self.quote_currency or "",
                 "fx_dataset_id": self.fx_dataset_id or "",
                 "timestamp_position": self.timestamp_position or "",
+                "quality_report": str(frame.attrs.get("quality_report", {})),
             },
         )
 
