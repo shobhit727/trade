@@ -74,7 +74,7 @@ def _app(tmp_path, *, runner, experiment: ExperimentSpec | None = None):
     store = ExperimentStore(tmp_path / "jobs.sqlite3")
     store.create_experiment(experiment or _experiment())
     manager = ResearchJobManager(store, max_workers=1, max_queued=2)
-    manager.register_runner("test_evaluation", runner)
+    manager.register_runner("existing_strategy_evaluation", runner)
     return store, manager, ResearchAPI(store, manager)
 
 
@@ -89,7 +89,7 @@ def test_jobs_api_lists_runners_queues_jobs_and_returns_details(tmp_path) -> Non
     try:
         status, payload = _request(app, "GET", "/api/runners")
         assert status == 200
-        assert payload["runners"] == ["test_evaluation"]
+        assert payload["runners"] == ["existing_strategy_evaluation"]
 
         status, payload = _request(
             app,
@@ -97,7 +97,7 @@ def test_jobs_api_lists_runners_queues_jobs_and_returns_details(tmp_path) -> Non
             "/api/jobs",
             {
                 "experiment_id": "api-job-experiment",
-                "runner_name": "test_evaluation",
+                "runner_name": "existing_strategy_evaluation",
                 "parameters": {"value": 41},
             },
         )
@@ -139,7 +139,7 @@ def test_jobs_api_cancellation_route_requests_cooperative_stop(tmp_path) -> None
             "/api/jobs",
             {
                 "experiment_id": "api-job-experiment",
-                "runner_name": "test_evaluation",
+                "runner_name": "existing_strategy_evaluation",
                 "parameters": {},
             },
         )
@@ -181,7 +181,7 @@ def test_jobs_api_rejects_unknown_runner_and_non_object_parameters(tmp_path) -> 
             "/api/jobs",
             {
                 "experiment_id": "api-job-experiment",
-                "runner_name": "test_evaluation",
+                "runner_name": "existing_strategy_evaluation",
                 "parameters": [],
             },
         )
@@ -200,7 +200,7 @@ def test_jobs_api_returns_service_unavailable_without_manager(tmp_path) -> None:
         "/api/jobs",
         {
             "experiment_id": "api-job-experiment",
-            "runner_name": "test_evaluation",
+            "runner_name": "existing_strategy_evaluation",
             "parameters": {},
         },
     )
