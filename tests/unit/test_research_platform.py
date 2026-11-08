@@ -59,6 +59,7 @@ def make_experiment(**overrides: object) -> ExperimentSpec:
         "execution_model_id": "daily-close-next-open-v1",
         "objectives": ("net_return", "max_drawdown", "turnover"),
         "parameters": {"population_size": 64, "max_depth": 5},
+        "embargo_seconds": 0,
         "created_at": datetime(2026, 11, 8, tzinfo=UTC),
     }
     values.update(overrides)
@@ -370,3 +371,24 @@ def test_market_ledger_rejects_non_seed_opening_cash() -> None:
     # A caller cannot silently create extra capital in either isolated account.
     with pytest.raises(ValueError, match="opening cash"):
         MarketLedger(Market.NSE, cash_inr=Decimal("3000000"))
+
+
+def test_experiment_spec_records_and_enforces_partition_embargo() -> None:
+    # Equal window boundaries violate any positive embargo rather than silently ignoring it.
+    with pytest.raises(ValueError, match="respect embargo"):
+        make_experiment(embargo_seconds=60)
+
+    # A one-minute gap is sufficient when the declared embargo is one minute.
+    values = {
+        "training_end": datetime(2020, 1, 1, tzinfo=UTC),
+        "validation_start": datetime(2020, 1, 1, 0, 1, tzinfo=UTC),
+        "validation_end": datetime(2022, 1, 1, tzinfo=UTC),
+        "oos_start": datetime(2022, 1, 1, 0, 1, tzinfo=UTC),
+        "oos_end": datetime(2026, 10, 16, tzinfo=UTC),
+        "final_holdout_start": datetime(2026, 10, 16, 0, 1, tzinfo=UTC),
+        "final_holdout_end": datetime(2026, 11, 8, tzinfo=UTC),
+        "embargo_seconds": 60,
+    }
+    spec = make_experiment(**values)
+    assert spec.to_dict()["embargo_seconds"] == 60
+    assert make_experiment(embargo_seconds=0).fingerprint != spec.fingerprint
