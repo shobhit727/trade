@@ -122,11 +122,23 @@ def select_nsga2(
 class NSGA2Individual:
     """One NSGA-II genome paired with its immutable objective vector."""
 
-    def __init__(self, candidate_id: str, genome: object, objectives: tuple[float, ...]) -> None:
-        # Keep the candidate representation separate from objective ranking metadata.
+    def __init__(
+        self,
+        candidate_id: str,
+        genome: object,
+        objectives: tuple[float, ...],
+        *,
+        generation: int = 0,
+        parent_candidate_ids: tuple[str, ...] = (),
+        operator: str = "initialisation",
+    ) -> None:
+        # Keep candidate genome, ancestry and objective ranking metadata separate.
         self.candidate_id = candidate_id
         self.genome = genome
         self.objectives = objectives
+        self.generation = generation
+        self.parent_candidate_ids = parent_candidate_ids
+        self.operator = operator
         self.pareto_candidate = ParetoCandidate(candidate_id, objectives)
 
 
@@ -160,28 +172,63 @@ def nsga2_optimize(
     evaluations = 0
     sequence = 0
     failures: list[str] = []
+    candidate_archive: list[dict[str, object]] = []
 
-    def evaluate_genome(genome: object, generation: int) -> NSGA2Individual | None:
-        # Record failed candidates instead of silently shrinking the search family.
+    def evaluate_genome(
+        genome: object,
+        generation: int,
+        parent_candidate_ids: tuple[str, ...] = (),
+        operator: str = "initialisation",
+    ) -> NSGA2Individual | None:
+        # Record every candidate including failed fitness with exact genome and ancestry.
         nonlocal evaluations, sequence
         candidate_id = f"nsga2-{generation:05d}-{sequence:08d}"
         sequence += 1
         evaluations += 1
+        lineage = {
+            "operator": operator,
+            "generation": generation,
+            "parent_candidate_ids": list(parent_candidate_ids),
+            "seed": seed,
+        }
         try:
             values = tuple(float(value) for value in evaluator(genome))
             if len(values) != len(directions) or not np.isfinite(values).all():
                 raise ValueError("evaluator returned wrong objective count or non-finite values")
-            return NSGA2Individual(candidate_id, genome, values)
+            candidate_archive.append({
+                "candidate_id": candidate_id,
+                "generation": generation,
+                "genome": deepcopy(genome),
+                "objectives": values,
+                "status": "succeeded",
+                "lineage": lineage,
+            })
+            return NSGA2Individual(
+                candidate_id, genome, values,
+                generation=generation,
+                parent_candidate_ids=parent_candidate_ids,
+                operator=operator,
+            )
         except Exception as exc:  # noqa: BLE001 - preserve candidate-level failures.
-            failures.append(
+            failure = (
                 f"generation={generation},candidate={candidate_id}: {type(exc).__name__}: {exc}"
             )
+            failures.append(failure)
+            candidate_archive.append({
+                "candidate_id": candidate_id,
+                "generation": generation,
+                "genome": deepcopy(genome),
+                "objectives": None,
+                "status": "failed",
+                "failure_reason": failure,
+                "lineage": lineage,
+            })
             return None
 
     # Initialise and score one complete population.
     population: list[NSGA2Individual] = []
     for _ in range(population_size):
-        individual = evaluate_genome(initializer(rng), generation=0)
+        individual = evaluate_genome(initializer(rng), generation=0, operator="random_initialisation")
         if individual is not None:
             population.append(individual)
     if len(population) < 4:
@@ -217,7 +264,12 @@ def nsga2_optimize(
                     f"generation={generation},operator: {type(exc).__name__}: {exc}"
                 )
                 continue
-            child = evaluate_genome(child_genome, generation)
+            child = evaluate_genome(
+                child_genome,
+                generation,
+                parent_candidate_ids=(left.candidate_id, right.candidate_id),
+                operator="nsga2_crossover_mutation",
+            )
             if child is not None:
                 offspring.append(child)
             # Prevent a permanently failing operator from creating an infinite loop.
@@ -252,6 +304,9 @@ def nsga2_optimize(
         "candidate_id": item.candidate_id,
         "genome": item.genome,
         "objectives": item.objectives,
+        "generation": item.generation,
+        "parent_candidate_ids": item.parent_candidate_ids,
+        "operator": item.operator,
     }
     return {
         "seed": seed,
@@ -260,6 +315,7 @@ def nsga2_optimize(
         "history": tuple(history),
         "failures": tuple(failures),
         "evaluations": evaluations,
+        "candidate_archive": tuple(candidate_archive),
         "objective_directions": directions,
         "scalar_winner_selected": False,
     }
