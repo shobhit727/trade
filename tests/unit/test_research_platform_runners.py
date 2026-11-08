@@ -414,8 +414,21 @@ def test_existing_strategy_optimizer_searches_train_selects_validation_then_eval
         assert [row["partition"] for row in result["final_evaluation"]["partitions"]] == [
             "train", "validation", "out_of_sample"
         ]
-        families = {candidate["family"] for candidate in store.candidates(spec.experiment_id)}
+        stored_candidates = store.candidates(spec.experiment_id)
+        families = {candidate["family"] for candidate in stored_candidates}
         assert "random_search" in families
+        search_candidates = [
+            candidate for candidate in stored_candidates
+            if candidate["family"] == "random_search"
+        ]
+        assert search_candidates
+        assert all(
+            candidate["lineage"]["operator"] == "random"
+            and candidate["lineage"]["origin"] == "existing_strategy_parameter_search"
+            for candidate in search_candidates
+        )
+        assert result["total_train_evaluations"] == result["budget"] + 2
+        assert result["successful_train_candidates"] == result["budget"]
         assert any(
             event["event_type"] == "existing_strategy_optimization_selected"
             for event in store.events(spec.experiment_id)
