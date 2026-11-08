@@ -68,6 +68,7 @@ pre { overflow:auto; white-space:pre-wrap; word-break:break-word; color:#c4d3e4;
 <label>Purging embargo (seconds)</label><input id="embargo-seconds" type="number" min="0" step="1" value="0" required>
 <label>Objectives (comma-separated)</label><input id="objectives" value="net_return,max_drawdown,turnover" required>
 <label>Strategy parameters JSON</label><textarea id="strategy-parameters" rows="3">{}</textarea>
+<label>Optimisation settings JSON (random/grid/DE/Parzen)</label><textarea id="optimization" rows="4">{"budget":24,"validation_candidates":6,"objective":"sharpe","points_per_numeric_dimension":2,"population_size":6,"generations":3,"mutation":0.7,"crossover":0.8,"startup_trials":8,"good_fraction":0.2}</textarea>
 <label>Execution assumptions JSON</label><textarea id="execution-assumptions" rows="4">{"slippage_bps":5,"impact_coefficient_bps":10,"max_participation":0.05,"max_gross_exposure":1.0,"periods_per_year":252}</textarea>
 <label>Crypto venue (single exchange)</label><input id="crypto-exchange" value="binance">
 <label>Crypto maker/taker fee schedule JSON</label><textarea id="fee-schedule" rows="2">{"maker_fee_bps":10,"taker_fee_bps":10}</textarea>
@@ -315,27 +316,42 @@ $("create-form").addEventListener("submit", async event => {
       objectives: value("objectives").split(",").map(x => x.trim()).filter(Boolean),
       compute_backend: "auto",
       compute_device: "unverified",
-      parameters: value("family") === "existing_strategy" ? {
-        strategy_name: value("strategy-name"),
-        strategy_parameters: parseObject("strategy-parameters"),
-        execution_assumptions: parseObject("execution-assumptions"),
-        ...(market === "crypto" ? {fee_schedule: feeSchedule} : {})
-      } : {}
+      parameters: (() => {
+        // Bind algorithm-specific settings to the immutable experiment fingerprint.
+        const family = value("family");
+        const supportedExisting = ["existing_strategy","random_search","grid_search",
+          "differential_evolution","bayesian"];
+        if (!supportedExisting.includes(family)) return {};
+        const result = {
+          strategy_name: value("strategy-name"),
+          strategy_parameters: parseObject("strategy-parameters"),
+          execution_assumptions: parseObject("execution-assumptions"),
+          ...(market === "crypto" ? {fee_schedule: feeSchedule} : {})
+        };
+        if (family !== "existing_strategy") result.optimization = parseObject("optimization");
+        return result;
+      })()
     };
     const result = await api("/api/experiments", {
       method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
     });
     $("form-status").textContent = "Created " + result.experiment_id;
     if (action === "queue") {
-      if (value("family") !== "existing_strategy") {
-        throw new Error("The connected worker currently supports existing_strategy only.");
+      const family = value("family");
+      const runnerName = family === "existing_strategy"
+        ? "existing_strategy_evaluation"
+        : ["random_search","grid_search","differential_evolution","bayesian"].includes(family)
+          ? "existing_strategy_optimization"
+          : null;
+      if (!runnerName) {
+        throw new Error("No connected worker exists for " + family + " yet.");
       }
       const queued = await api("/api/jobs", {
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
           experiment_id: result.experiment_id,
-          runner_name: "existing_strategy_evaluation",
+          runner_name: runnerName,
           parameters: {}
         })
       });
