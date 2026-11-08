@@ -59,6 +59,7 @@ class CompositionResult:
     best_fitness: float
     history: tuple[dict[str, float], ...]
     failures: tuple[str, ...]
+    candidate_archive: tuple[dict[str, object], ...] = ()
 
 
 class StrategyComposer:
@@ -149,33 +150,102 @@ class StrategyComposer:
         population = [self._initial() for _ in range(self.population_size)]
         failures: list[str] = []
         history: list[dict[str, float]] = []
+        candidate_archive: list[dict[str, object]] = []
+        population_ids = [f"composition-g0-{index:06d}" for index in range(self.population_size)]
+        population_lineage = [
+            {
+                "operator": "random_initialisation",
+                "generation": 0,
+                "parent_candidate_ids": [],
+                "seed": self.seed,
+            }
+            for _ in population
+        ]
 
-        def evaluate(genome: Composition, generation: int, index: int) -> float:
-            # Penalise complexity to discourage gratuitous component accumulation.
+        def evaluate(
+            genome: Composition,
+            generation: int,
+            index: int,
+            candidate_id: str,
+            lineage: dict[str, object],
+        ) -> float:
+            # Penalise complexity and retain the complete candidate/ancestry record.
             try:
                 value = float(fitness(genome)) - 1e-4 * genome.complexity
                 if not np.isfinite(value):
                     raise ValueError("fitness returned non-finite value")
+                candidate_archive.append({
+                    "candidate_id": candidate_id,
+                    "generation": generation,
+                    "index": index,
+                    "composition": genome,
+                    "fitness": value,
+                    "status": "succeeded",
+                    "lineage": dict(lineage),
+                })
                 return value
             except Exception as exc:  # noqa: BLE001 - retain fitness failures.
-                failures.append(f"generation={generation},candidate={index}: {type(exc).__name__}: {exc}")
+                failure = f"generation={generation},candidate={index}: {type(exc).__name__}: {exc}"
+                failures.append(failure)
+                candidate_archive.append({
+                    "candidate_id": candidate_id,
+                    "generation": generation,
+                    "index": index,
+                    "composition": genome,
+                    "fitness": -np.inf,
+                    "status": "failed",
+                    "failure_reason": failure,
+                    "lineage": dict(lineage),
+                })
                 return -np.inf
 
-        scores = [evaluate(genome, 0, i) for i, genome in enumerate(population)]
+        scores = [
+            evaluate(genome, 0, index, population_ids[index], population_lineage[index])
+            for index, genome in enumerate(population)
+        ]
         for generation in range(1, self.generations + 1):
             # Keep the best genome; breed the rest from three-member tournaments.
             elite = int(np.argmax(scores))
             next_population = [population[elite]]
+            next_ids = [f"composition-g{generation:04d}-000000"]
+            next_lineage = [{
+                "operator": "elitism",
+                "generation": generation,
+                "parent_candidate_ids": [population_ids[elite]],
+                "seed": self.seed,
+            }]
             while len(next_population) < self.population_size:
-                def tournament() -> Composition:
+                def tournament() -> tuple[int, Composition]:
                     indices = self.rng.integers(0, len(population), size=3)
-                    return population[int(max(indices, key=lambda idx: scores[int(idx)]))]
-                child = self._crossover(tournament(), tournament())
-                if self.rng.random() < self.mutation_rate:
+                    winner = int(max(indices, key=lambda idx: scores[int(idx)]))
+                    return winner, population[winner]
+                left_index, left = tournament()
+                right_index, right = tournament()
+                child = self._crossover(left, right)
+                mutated = self.rng.random() < self.mutation_rate
+                if mutated:
                     child = self._mutate(child)
+                child_index = len(next_population)
                 next_population.append(child)
+                next_ids.append(f"composition-g{generation:04d}-{child_index:06d}")
+                next_lineage.append({
+                    "operator": "component_crossover_then_mutation" if mutated else "component_crossover",
+                    "generation": generation,
+                    "parent_candidate_ids": [
+                        population_ids[left_index],
+                        population_ids[right_index],
+                    ],
+                    "mutation_probability": self.mutation_rate,
+                    "mutation_applied": mutated,
+                    "seed": self.seed,
+                })
             population = next_population
-            scores = [evaluate(genome, generation, i) for i, genome in enumerate(population)]
+            population_ids = next_ids
+            population_lineage = next_lineage
+            scores = [
+                evaluate(genome, generation, index, population_ids[index], population_lineage[index])
+                for index, genome in enumerate(population)
+            ]
             valid = np.asarray([score for score in scores if np.isfinite(score)])
             history.append({
                 "generation": float(generation),
@@ -186,5 +256,10 @@ class StrategyComposer:
         best_index = int(np.argmax(scores))
         if not np.isfinite(scores[best_index]):
             raise RuntimeError("strategy composition evolution produced no valid candidate")
-        return CompositionResult(population[best_index], float(scores[best_index]),
-                                 tuple(history), tuple(failures))
+        return CompositionResult(
+            population[best_index],
+            float(scores[best_index]),
+            tuple(history),
+            tuple(failures),
+            tuple(candidate_archive),
+        )
