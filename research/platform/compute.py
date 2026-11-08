@@ -204,59 +204,81 @@ class ComputeEngine:
         if not 0.0 <= fee_bps < 10000.0 or periods_per_year < 1:
             raise ValueError("fee_bps or periods_per_year is invalid")
 
-        # Select one numerical namespace so the same formula runs on CPU and CUDA.
-        xp = self._cupy if self._cupy is not None else np
-        if self._cupy is None:
-            x, weights, future = feature_array, weight_array, return_array
-        else:
-            with self._cupy.cuda.Device(self._device_id):
-                x = self._cupy.asarray(feature_array)
-                weights = self._cupy.asarray(weight_array)
-                future = self._cupy.asarray(return_array)
+        # Wrap the complete CUDA path, including allocation and synchronisation.
+        try:
+            # Select one numerical namespace so the same formula runs on CPU and CUDA.
+            xp = self._cupy if self._cupy is not None else np
+            if self._cupy is None:
+                x, weights, future = feature_array, weight_array, return_array
+            else:
+                with self._cupy.cuda.Device(self._device_id):
+                    x = self._cupy.asarray(feature_array)
+                    weights = self._cupy.asarray(weight_array)
+                    future = self._cupy.asarray(return_array)
 
-        # Compute all candidate signals with one matrix multiplication.
-        scores = weights @ x.T
-        positions = (scores > threshold).astype(xp.float64)
-        previous = xp.concatenate(
-            (xp.zeros((positions.shape[0], 1), dtype=xp.float64), positions[:, :-1]),
-            axis=1,
-        )
-        turnover = xp.abs(positions - previous)
-        cost_rate = fee_bps / 10000.0
-        net_returns = positions * future[None, :] - turnover * cost_rate
+            # Compute all candidate signals with one matrix multiplication.
+            scores = weights @ x.T
+            positions = (scores > threshold).astype(xp.float64)
+            previous = xp.concatenate(
+                (xp.zeros((positions.shape[0], 1), dtype=xp.float64), positions[:, :-1]),
+                axis=1,
+            )
+            turnover = xp.abs(positions - previous)
+            cost_rate = fee_bps / 10000.0
+            net_returns = positions * future[None, :] - turnover * cost_rate
 
-        # Build equity with an initial unit of capital so first-period drawdown is valid.
-        equity = xp.cumprod(1.0 + net_returns, axis=1)
-        equity_with_start = xp.concatenate(
-            (xp.ones((equity.shape[0], 1), dtype=xp.float64), equity), axis=1
-        )
-        peaks = xp.maximum.accumulate(equity_with_start, axis=1)
-        drawdowns = equity_with_start / xp.maximum(peaks, 1e-300) - 1.0
-        total_return = equity[:, -1] - 1.0
-        mean_return = xp.mean(net_returns, axis=1)
-        deviation = xp.std(net_returns, axis=1, ddof=1) if net_returns.shape[1] > 1 else xp.zeros_like(mean_return)
-        sharpe = xp.where(
-            deviation > 0,
-            mean_return / xp.maximum(deviation, 1e-300) * xp.sqrt(periods_per_year),
-            0.0,
-        )
-        annualised = xp.power(xp.maximum(1.0 + total_return, 0.0),
-                              periods_per_year / net_returns.shape[1]) - 1.0
-        max_drawdown = xp.min(drawdowns[:, 1:], axis=1)
-        results = {
-            "total_return": total_return,
-            "annualised_return": annualised,
-            "sharpe": sharpe,
-            "max_drawdown": max_drawdown,
-            "mean_turnover": xp.mean(turnover, axis=1),
-            "trade_transitions": xp.sum(turnover, axis=1),
-        }
+            # Build equity with an initial unit of capital so first-period drawdown is valid.
+            equity = xp.cumprod(1.0 + net_returns, axis=1)
+            equity_with_start = xp.concatenate(
+                (xp.ones((equity.shape[0], 1), dtype=xp.float64), equity), axis=1
+            )
+            peaks = xp.maximum.accumulate(equity_with_start, axis=1)
+            drawdowns = equity_with_start / xp.maximum(peaks, 1e-300) - 1.0
+            total_return = equity[:, -1] - 1.0
+            mean_return = xp.mean(net_returns, axis=1)
+            deviation = (
+                xp.std(net_returns, axis=1, ddof=1)
+                if net_returns.shape[1] > 1
+                else xp.zeros_like(mean_return)
+            )
+            sharpe = xp.where(
+                deviation > 0,
+                mean_return / xp.maximum(deviation, 1e-300) * xp.sqrt(periods_per_year),
+                0.0,
+            )
+            annualised = xp.power(
+                xp.maximum(1.0 + total_return, 0.0),
+                periods_per_year / net_returns.shape[1],
+            ) - 1.0
+            max_drawdown = xp.min(drawdowns[:, 1:], axis=1)
+            results = {
+                "total_return": total_return,
+                "annualised_return": annualised,
+                "sharpe": sharpe,
+                "max_drawdown": max_drawdown,
+                "mean_turnover": xp.mean(turnover, axis=1),
+                "trade_transitions": xp.sum(turnover, axis=1),
+            }
 
-        # Synchronise once and return host arrays so the caller can persist results.
-        if self._cupy is not None:
-            self._cupy.cuda.get_current_stream().synchronize()
-            return {key: self._cupy.asnumpy(value) for key, value in results.items()}
-        return {key: np.asarray(value) for key, value in results.items()}
+            # Synchronise once and return host arrays so the caller can persist results.
+            if self._cupy is not None:
+                self._cupy.cuda.get_current_stream().synchronize()
+                return {key: self._cupy.asnumpy(value) for key, value in results.items()}
+            return {key: np.asarray(value) for key, value in results.items()}
+        except Exception as exc:  # noqa: BLE001 - keep runtime GPU failures recoverable.
+            # CPU-side input validation errors must not be hidden by backend fallback.
+            if self._cupy is None:
+                raise
+            self._fallback_after_gpu_error(exc)
+            # Auto mode has disabled CuPy; recompute the exact batch on the NumPy backend.
+            return self.batch_long_flat_fitness(
+                feature_array,
+                weight_array,
+                return_array,
+                threshold=threshold,
+                fee_bps=fee_bps,
+                periods_per_year=periods_per_year,
+            )
 
     def benchmark_linear_scores(
         self,

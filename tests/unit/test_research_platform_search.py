@@ -328,6 +328,50 @@ def test_batch_population_fitness_matches_manual_long_flat_accounting() -> None:
     assert np.isfinite(result["sharpe"]).all()
 
 
+def test_batch_population_fitness_falls_back_after_cuda_allocation_failure() -> None:
+    # A fake CuPy namespace simulates an allocation failure after CUDA discovery.
+    from research.platform.compute import ComputeEngine
+
+    class DeviceContext:
+        # Provide a context manager matching CuPy's device-selection interface.
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+    class FailingCuda:
+        # Return a valid context so the failure occurs during device-buffer allocation.
+        def Device(self, device_id: int):
+            return DeviceContext()
+
+    class FailingCuPy:
+        # Raise during allocation to exercise the runtime-error fallback path.
+        cuda = FailingCuda()
+
+        @staticmethod
+        def asarray(values):
+            raise RuntimeError("simulated CUDA allocation failure")
+
+    features = np.asarray([[1.0], [-1.0], [2.0], [0.5]], dtype=np.float64)
+    weights = np.asarray([[1.0], [-1.0]], dtype=np.float64)
+    forward = np.asarray([0.10, -0.20, 0.05, 0.00], dtype=np.float64)
+    engine = ComputeEngine(backend="cpu")
+    engine._cupy = FailingCuPy()
+
+    # The fallback must preserve numerical output and report why CUDA was abandoned.
+    actual = engine.batch_long_flat_fitness(
+        features, weights, forward, fee_bps=10.0, periods_per_year=4
+    )
+    expected = ComputeEngine(backend="cpu").batch_long_flat_fitness(
+        features, weights, forward, fee_bps=10.0, periods_per_year=4
+    )
+    assert engine.backend == "numpy"
+    assert "simulated CUDA allocation failure" in engine.info().fallback_reason
+    for metric in expected:
+        np.testing.assert_allclose(actual[metric], expected[metric])
+
+
 def test_batch_population_fitness_rejects_misaligned_forward_returns() -> None:
     # Future return labels must align exactly with the decision-time feature rows.
     from research.platform.compute import ComputeEngine
