@@ -137,9 +137,8 @@ def _verified_crypto_raw_frame(
         raise ValueError(
             f"crypto source checksum mismatch for {manifest['exchange']}:{instrument}"
         )
-    frame = adapter.load(instrument, resolution)
-    # The runner never receives rows at or beyond the OOS end/locked holdout boundary.
-    frame = frame.loc[pd.DatetimeIndex(frame.index).tz_convert("UTC") < max_time]
+    # The adapter returns a half-open panel ending before the locked OOS boundary.
+    frame = adapter.load(instrument, resolution, end=max_time)
     if frame.empty:
         raise ValueError(f"no observations before OOS boundary for {instrument}")
     return frame, adapter
