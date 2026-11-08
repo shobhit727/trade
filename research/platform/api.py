@@ -69,6 +69,7 @@ pre { overflow:auto; white-space:pre-wrap; word-break:break-word; color:#c4d3e4;
 <label>Objectives (comma-separated)</label><input id="objectives" value="net_return,max_drawdown,turnover" required>
 <label>Strategy parameters JSON</label><textarea id="strategy-parameters" rows="3">{}</textarea>
 <label>Optimisation settings JSON (random/grid/DE/Optuna TPE)</label><textarea id="optimization" rows="4">{"budget":24,"validation_candidates":6,"objective":"sharpe","points_per_numeric_dimension":2,"population_size":6,"generations":3,"mutation":0.7,"crossover":0.8,"startup_trials":8}</textarea>
+<label>Hybrid search ensemble settings JSON</label><textarea id="hybrid-settings" rows="4">{"methods":["random_search","differential_evolution","bayesian"],"budget_per_method":8,"validation_candidates":6,"objective":"sharpe","de_population_size":4,"de_generations":1,"de_mutation":0.7,"de_crossover":0.8,"tpe_startup_trials":3}</textarea>
 <label>Genetic-programming settings JSON</label><textarea id="gp-settings" rows="4">{"population_size":16,"generations":5,"max_depth":4,"max_nodes":31,"mutation_rate":0.2,"validation_candidates":4,"objective":"sharpe","feature_windows":[5,20,60]}</textarea>
 <label>Neuroevolution settings JSON</label><textarea id="neuro-settings" rows="4">{"hidden_size":16,"population_size":16,"generations":5,"learning_rate":0.05,"noise_std":0.1,"weight_limit":8,"validation_candidates":4,"objective":"sharpe","feature_windows":[5,20,60]}</textarea>
 <label>Strategy-composition settings JSON</label><textarea id="composition-settings" rows="4">{"population_size":16,"generations":5,"max_components":8,"mutation_rate":0.25,"validation_candidates":4,"objective":"sharpe","feature_windows":[5,20,60]}</textarea>
@@ -381,7 +382,11 @@ $("create-form").addEventListener("submit", async event => {
             strategy_name: value("strategy-name"),
             strategy_parameters: parseObject("strategy-parameters")
           };
-          if (family !== "existing_strategy") result.optimization = parseObject("optimization");
+          if (family === "hybrid") {
+            result.hybrid_optimization = parseObject("hybrid-settings");
+          } else if (family !== "existing_strategy") {
+            result.optimization = parseObject("optimization");
+          }
           return result;
         }
         if (family === "genetic_programming") {
@@ -412,7 +417,7 @@ $("create-form").addEventListener("submit", async event => {
       const family = value("family");
       const runnerName = family === "existing_strategy"
         ? "existing_strategy_evaluation"
-        : ["random_search","grid_search","differential_evolution","bayesian"].includes(family)
+        : ["random_search","grid_search","differential_evolution","bayesian","hybrid"].includes(family)
           ? "existing_strategy_optimization"
           : family === "genetic_programming" ? "genetic_programming"
             : family === "neuroevolution" ? "neuroevolution"
@@ -986,6 +991,7 @@ class ResearchAPI:
                     AlgorithmFamily.GRID_SEARCH,
                     AlgorithmFamily.DIFFERENTIAL_EVOLUTION,
                     AlgorithmFamily.BAYESIAN,
+                    AlgorithmFamily.HYBRID,
                 }:
                     expected_runner = "existing_strategy_optimization"
                 elif family is AlgorithmFamily.GENETIC_PROGRAMMING:
