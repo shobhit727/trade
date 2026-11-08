@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from research.platform.adapters import materialize_non_holdout_partition
 from research.platform.data_catalog import DatasetManifest, LicenseStatus, ValueOrigin
 from research.platform.domain import AlgorithmFamily, DataResolution, Market, ResearchTrack
 from research.platform.experiments import ExperimentSpec
@@ -1178,3 +1179,65 @@ def test_hybrid_runner_rejects_missing_method_or_incorrect_de_budget(tmp_path) -
         assert "must equal" in job["error_message"]
     finally:
         manager.shutdown(wait=True, cancel_pending=True)
+
+
+
+def test_registered_loader_uses_physical_non_holdout_copy_only(tmp_path) -> None:
+    # Workers should read the pre-materialised file instead of reopening the combined source.
+    spec = _spec()
+    source_frame = _bars()["TEST"]
+    root = tmp_path / "partition-store"
+    manifest = DatasetManifest(
+        dataset_id=spec.dataset_ids[0],
+        market=Market.NSE,
+        provider="unit-test",
+        source="synthetic-combined-source-not-market-data",
+        instrument="TEST",
+        exchange="NSE",
+        category="ohlcv",
+        resolution=DataResolution.ONE_DAY,
+        coverage_start=source_frame.index[0].to_pydatetime(),
+        coverage_end=source_frame.index[-1].to_pydatetime(),
+        timezone="Asia/Kolkata",
+        timestamp_convention="synthetic-daily-bar-index",
+        acquired_at=datetime(2026, 11, 8, tzinfo=UTC),
+        update_frequency="daily",
+        license_status=LicenseStatus.APPROVED,
+        license_reference="synthetic-test-fixture-only",
+        value_origin=ValueOrigin.OBSERVED,
+    )
+    safe_manifest = materialize_non_holdout_partition(
+        manifest,
+        source_frame,
+        root=root,
+        final_holdout_start=spec.final_holdout_start,
+        max_abs_close_return=0.20,
+    )
+    store = ExperimentStore(tmp_path / "partition-loader.sqlite3")
+    store.create_experiment(spec)
+    store.register_dataset(safe_manifest)
+
+    loaded = load_registered_bars(
+        store,
+        spec,
+        partition_data_root=root,
+        require_partitioned=True,
+    )
+    frame = loaded["TEST"]
+    assert frame.attrs["data_access_mode"] == "pre_materialised_non_holdout_partition"
+    assert frame.attrs["final_holdout_accessed"] is False
+    assert frame.index.tz_convert("UTC").max() < spec.final_holdout_start
+    assert frame.index.tz_convert("UTC").max() < spec.oos_end
+
+
+def test_registered_loader_strict_mode_rejects_combined_source_manifests(tmp_path) -> None:
+    # Strict mode cannot silently fall back to the original combined data file.
+    spec = _spec()
+    store = _store(tmp_path / "strict-partition-loader.sqlite3", spec)
+    with np.testing.assert_raises_regex(ValueError, "no physical non-holdout partition"):
+        load_registered_bars(
+            store,
+            spec,
+            partition_data_root=tmp_path / "missing-partitions",
+            require_partitioned=True,
+        )
