@@ -17,7 +17,7 @@ from .data_catalog import LicenseStatus
 from .domain import AlgorithmFamily, DataResolution, Market, ResearchTrack
 from .evaluation import ExistingStrategyEvaluation, evaluate_existing_strategy
 from .experiments import ExperimentSpec
-from .fx import FXRateSeries
+from .fx import FXRateSeries, convert_ohlcv_to_inr
 from .jobs import JobContext
 from .portfolio import PortfolioConfig
 from .storage import ExperimentStore
@@ -219,10 +219,10 @@ def _verified_crypto_frame(
         max_staleness=timedelta(seconds=float(staleness_seconds)),
     )
     # Backward-as-of alignment prevents future FX values from entering the crypto price panel.
-    return adapter.load_inr(
-        str(manifest["instrument"]),
-        resolution,
-        fx_rates=fx_rates,
+    # Convert the already-clipped price frame; do not reload rows from the locked holdout.
+    return convert_ohlcv_to_inr(
+        raw_frame,
+        fx_rates,
         source_quote_currency=quote_currency,
     )
 
