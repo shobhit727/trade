@@ -36,9 +36,9 @@ def _experiment() -> ExperimentSpec:
         training_end=datetime(2018, 1, 1, tzinfo=UTC),
         validation_start=datetime(2018, 1, 1, tzinfo=UTC),
         validation_end=datetime(2020, 1, 1, tzinfo=UTC),
-        oos_start=datetime(2020, 1, 1, tzinfo=UTC),
-        oos_end=datetime(2022, 1, 1, tzinfo=UTC),
-        final_holdout_start=datetime(2026, 10, 2, tzinfo=UTC),
+        oos_start=datetime(2026, 10, 2, tzinfo=UTC),
+        oos_end=datetime(2026, 10, 16, tzinfo=UTC),
+        final_holdout_start=datetime(2026, 10, 16, tzinfo=UTC),
         final_holdout_end=datetime(2026, 11, 8, tzinfo=UTC),
         cost_model_id="nse-test-cost-v1",
         execution_model_id="next-open-test-v1",
@@ -53,7 +53,7 @@ def _experiment() -> ExperimentSpec:
 
 def _bars() -> dict[str, pd.DataFrame]:
     # Use sufficient pre-window history so indicators can warm up before TRAIN begins.
-    index = pd.date_range("2015-01-01", "2022-01-01", freq="D", tz="Asia/Kolkata")
+    index = pd.date_range("2015-01-01", "2026-11-09", freq="D", tz="Asia/Kolkata")
     steps = np.arange(len(index), dtype=np.float64)
     close = 100.0 + 0.01 * steps + 2.0 * np.sin(steps / 11.0)
     frame = pd.DataFrame(
