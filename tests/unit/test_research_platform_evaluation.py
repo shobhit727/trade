@@ -162,7 +162,7 @@ def test_existing_strategy_runner_refuses_multi_symbol_individual_track(tmp_path
         execution_model_id=spec.execution_model_id,
     )
     store = _registered_store(tmp_path / "multi-symbol.sqlite3", spec)
-    with pytest.raises(ValueError, match="exactly one"):
+    with pytest.raises(ValueError, match="bar symbols must exactly match registered dataset instruments"):
         evaluate_existing_strategy(
             spec, bars, config, periods_per_year=252, store=store
         )
