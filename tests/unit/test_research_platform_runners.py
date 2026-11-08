@@ -23,6 +23,7 @@ from research.platform.runners import (
     StrategyCompositionJobRunner,
     _build_portfolio_config,
     experiment_spec_from_record,
+    load_registered_bars,
 )
 from research.platform.storage import ExperimentStore
 
