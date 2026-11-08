@@ -699,6 +699,10 @@ def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
                 raise ValueError(
                     f"neuroevolution.{key} must be an integer from {minimum} to {maximum}"
                 )
+        if "inference_batch_size" in neural:
+            batch_size = neural["inference_batch_size"]
+            if isinstance(batch_size, bool) or not isinstance(batch_size, int) or not 1 <= batch_size <= 256:
+                raise ValueError("neuroevolution.inference_batch_size must be in 1..256")
         if neural["population_size"] % 2:
             raise ValueError("neuroevolution.population_size must be even")
         if neural["population_size"] * neural["generations"] > 10000:
