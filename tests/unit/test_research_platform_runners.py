@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from research.platform.experiments import ExperimentSpec
 from research.platform.jobs import ResearchJobManager
 from research.platform.runners import (
     ExistingStrategyJobRunner,
+    ExistingStrategyOptimizerJobRunner,
     _build_portfolio_config,
     experiment_spec_from_record,
 )
@@ -372,3 +374,77 @@ def test_crypto_loader_converts_usdt_using_prior_fx_close_only(tmp_path) -> None
     assert bars["BTCUSDT"]["open"].iloc[0] == 100000 * 83
     assert bars["BTCUSDT"]["open"].iloc[1] == 101000 * 84
     assert bars["BTCUSDT"].attrs["fx_alignment"] == "backward_asof_no_future"
+
+
+
+def test_existing_strategy_optimizer_searches_train_selects_validation_then_evaluates_oos(tmp_path) -> None:
+    # A small fixed-seed search demonstrates the full no-holdout optimization sequence.
+    base = _spec()
+    optimizer_parameters = dict(base.parameters)
+    optimizer_parameters["optimization"] = {
+        "budget": 6,
+        "validation_candidates": 2,
+        "objective": "sharpe",
+    }
+    spec = replace(
+        base,
+        experiment_id="runner-existing-strategy-random-search",
+        algorithm_family=AlgorithmFamily.RANDOM_SEARCH,
+        parameters=optimizer_parameters,
+    )
+    store = _store(tmp_path / "optimizer-runner.sqlite3", spec)
+    manager = ResearchJobManager(store, max_workers=1, max_queued=1)
+    runner = ExistingStrategyOptimizerJobRunner(
+        bar_loader=lambda current_store, current_spec: _bars()
+    )
+    manager.register_runner("existing_strategy_optimization", runner)
+    try:
+        job_id = manager.submit(spec.experiment_id, "existing_strategy_optimization")
+        job = manager.wait(job_id, timeout=60)
+        assert job["status"] == "succeeded", job["error_message"]
+        result = job["result"]
+        assert result["search_family"] == "random_search"
+        assert result["search_method"] == "random"
+        assert result["candidate_count"] >= 3
+        assert result["successful_train_candidates"] == 6
+        assert len(result["validation_shortlist"]) == 2
+        assert result["selected_candidate"]["validation_score"] is not None
+        assert result["final_holdout_accessed"] is False
+        assert result["final_evaluation"]["final_holdout_accessed"] is False
+        assert [row["partition"] for row in result["final_evaluation"]["partitions"]] == [
+            "train", "validation", "out_of_sample"
+        ]
+        families = {candidate["family"] for candidate in store.candidates(spec.experiment_id)}
+        assert "random_search" in families
+        assert any(
+            event["event_type"] == "existing_strategy_optimization_selected"
+            for event in store.events(spec.experiment_id)
+        )
+    finally:
+        manager.shutdown(wait=True, cancel_pending=True)
+
+
+def test_optimizer_runner_rejects_unsupported_or_missing_search_settings(tmp_path) -> None:
+    # The experiment must explicitly identify a supported method and a finite budget.
+    base = _spec()
+    bad_parameters = dict(base.parameters)
+    bad_parameters["optimization"] = {"budget": 8}
+    spec = replace(
+        base,
+        experiment_id="runner-invalid-optimizer-spec",
+        algorithm_family=AlgorithmFamily.GRID_SEARCH,
+        parameters=bad_parameters,
+    )
+    store = _store(tmp_path / "invalid-optimizer.sqlite3", spec)
+    manager = ResearchJobManager(store, max_workers=1, max_queued=1)
+    runner = ExistingStrategyOptimizerJobRunner(
+        bar_loader=lambda current_store, current_spec: _bars()
+    )
+    manager.register_runner("existing_strategy_optimization", runner)
+    try:
+        job_id = manager.submit(spec.experiment_id, "existing_strategy_optimization")
+        job = manager.wait(job_id, timeout=10)
+        assert job["status"] == "failed"
+        assert "validation_candidates" in job["error_message"]
+    finally:
+        manager.shutdown(wait=True, cancel_pending=True)
