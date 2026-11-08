@@ -88,6 +88,14 @@ pre { overflow:auto; white-space:pre-wrap; word-break:break-word; color:#c4d3e4;
 </section>
 </div>
 <section style="margin-top:16px">
+<h2>Experiment comparison</h2>
+<p>Compare two to ten experiments from one market. TRAIN, VALIDATION and OOS remain separate.</p>
+<label>Experiment IDs (comma-separated)</label><input id="compare-ids" placeholder="experiment-a,experiment-b">
+<button type="button" id="compare-button">Compare experiments</button>
+<p id="compare-status" class="status"></p>
+<table><thead><tr><th>Experiment</th><th>Candidate</th><th>Family</th><th>TRAIN Sharpe</th><th>VALIDATION Sharpe</th><th>OOS Sharpe</th></tr></thead><tbody id="comparison-rows"></tbody></table>
+</section>
+<section style="margin-top:16px">
 <h2>Research jobs</h2>
 <p>Persisted worker status and cooperative cancellation between partitions.</p>
 <table><thead><tr><th>Job</th><th>Experiment</th><th>Runner</th><th>Status</th><th>Created</th><th>Action</th></tr></thead><tbody id="job-rows"></tbody></table>
@@ -273,6 +281,44 @@ $("market").addEventListener("change", () => {
   }
 });
 $("filter-market").addEventListener("change", refresh);
+$("compare-button").addEventListener("click", async () => {
+  // Submit explicit experiment IDs; the server rejects mixed-market comparisons.
+  const ids = $("compare-ids").value.split(",").map(value => value.trim()).filter(Boolean);
+  $("compare-status").textContent = "Loading comparison…";
+  const body = $("comparison-rows");
+  body.replaceChildren();
+  try {
+    const query = ids.map(id => "experiment_id=" + encodeURIComponent(id)).join("&");
+    const result = await api("/api/compare?" + query);
+    result.candidates.forEach(candidate => {
+      // Display stage metrics separately; never compute a combined market return.
+      const metrics = candidate.metrics || {};
+      const train = metrics.train || {};
+      const validation = metrics.validation || {};
+      const oos = metrics.out_of_sample || {};
+      const values = [
+        candidate.experiment_id,
+        candidate.candidate_id,
+        candidate.family,
+        train.sharpe ?? metrics.train_objective ?? "—",
+        validation.sharpe ?? "—",
+        oos.sharpe ?? "—"
+      ];
+      const row = document.createElement("tr");
+      values.forEach(value => {
+        const cell = document.createElement("td");
+        cell.textContent = String(value);
+        row.appendChild(cell);
+      });
+      body.appendChild(row);
+    });
+    $("compare-status").textContent =
+      "Compared " + result.experiment_ids.length + " " + result.market.toUpperCase() +
+      " experiments; no cross-market aggregation.";
+  } catch (error) {
+    $("compare-status").textContent = "Comparison error: " + error.message;
+  }
+});
 $("create-form").addEventListener("submit", async event => {
   event.preventDefault();
   const action = event.submitter ? event.submitter.value : "create";
@@ -648,6 +694,40 @@ class ResearchAPI:
                 # Expose only server-registered trusted runner identifiers.
                 names = self.job_manager.runner_names() if self.job_manager is not None else ()
                 return self._response(start_response, HTTPStatus.OK, {"runners": list(names)})
+            if method == "GET" and path == "/api/compare":
+                # Only compare experiments within one financial environment.
+                query = parse_qs(environ.get("QUERY_STRING", ""))
+                experiment_ids = query.get("experiment_id", [])
+                if not 2 <= len(experiment_ids) <= 10:
+                    raise ValueError("comparison requires between 2 and 10 experiment_id values")
+                if len(set(experiment_ids)) != len(experiment_ids):
+                    raise ValueError("comparison experiment IDs must be unique")
+                records = [self.store.get_experiment(experiment_id) for experiment_id in experiment_ids]
+                markets = {record["market"] for record in records}
+                if len(markets) != 1:
+                    raise ValueError("NSE and crypto experiments cannot be compared in one financial view")
+                candidate_rows = []
+                for record in records:
+                    for candidate in self.store.candidates(record["experiment_id"]):
+                        candidate_rows.append({
+                            "experiment_id": record["experiment_id"],
+                            "market": record["market"],
+                            "track": record["track"],
+                            "candidate_id": candidate["candidate_id"],
+                            "candidate_digest": candidate["candidate_digest"],
+                            "family": candidate["family"],
+                            "generation": candidate["generation"],
+                            "parameters": candidate["parameters"],
+                            "metrics": candidate["metrics"],
+                            "lineage": candidate["lineage"],
+                        })
+                return self._response(start_response, HTTPStatus.OK, {
+                    "market": next(iter(markets)),
+                    "experiment_ids": experiment_ids,
+                    "candidate_count": len(candidate_rows),
+                    "candidates": candidate_rows,
+                    "aggregation": "none; candidate metrics remain partitioned and market-isolated",
+                })
             if method == "GET" and path == "/api/jobs":
                 # Jobs retain experiment references; no financial results are aggregated here.
                 query = parse_qs(environ.get("QUERY_STRING", ""))
