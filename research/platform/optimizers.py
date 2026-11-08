@@ -146,6 +146,76 @@ def grid_search(
     return _evaluate("grid", objective, configs, seed)
 
 
+def optuna_tpe_search(
+    space: tuple[Parameter, ...],
+    objective: Callable[[Mapping[str, object]], float],
+    *,
+    budget: int,
+    seed: int = 42,
+    startup_trials: int = 20,
+) -> SearchResult:
+    """Run seeded Optuna Tree-structured Parzen Estimator search when installed."""
+    # Keep Optuna optional so the CPU-only base installation remains lightweight.
+    if budget < 1 or not space:
+        raise ValueError("TPE search needs a positive budget and non-empty search space")
+    try:
+        import optuna
+        from optuna.samplers import TPESampler
+    except ImportError as exc:
+        raise RuntimeError(
+            "Optuna is optional; install the research extra to use TPE search"
+        ) from exc
+
+    sampler = TPESampler(seed=seed, n_startup_trials=max(1, startup_trials))
+    study = optuna.create_study(direction="maximize", sampler=sampler)
+
+    def objective_fn(trial):
+        # Suggest every dimension using the declared type and bounds.
+        parameters: dict[str, object] = {}
+        for parameter in space:
+            if parameter.kind == "categorical":
+                parameters[parameter.name] = trial.suggest_categorical(
+                    parameter.name, list(parameter.choices)
+                )
+            elif parameter.kind == "int":
+                parameters[parameter.name] = trial.suggest_int(
+                    parameter.name, int(parameter.low), int(parameter.high)
+                )
+            else:
+                parameters[parameter.name] = trial.suggest_float(
+                    parameter.name, float(parameter.low), float(parameter.high)
+                )
+        score = float(objective(parameters))
+        if not np.isfinite(score):
+            raise ValueError("objective returned a non-finite score")
+        trial.set_user_attr("candidate_parameters", parameters)
+        return score
+
+    # Failed trials remain in the study and are copied into the returned failure log.
+    study.optimize(
+        objective_fn,
+        n_trials=budget,
+        catch=(Exception,),
+        show_progress_bar=False,
+    )
+    candidates: list[Candidate] = []
+    failures: list[str] = []
+    for trial in study.trials:
+        if trial.state.name == "COMPLETE" and trial.value is not None:
+            candidates.append(Candidate(
+                f"optuna-tpe-{trial.number:08d}",
+                dict(trial.params),
+                float(trial.value),
+                int(trial.number),
+            ))
+        else:
+            failures.append(
+                f"trial={trial.number}: {trial.state.name}: "
+                f"{trial.user_attrs.get('failure_reason', 'objective failed')}"
+            )
+    return SearchResult("optuna_tpe", seed, tuple(candidates), tuple(failures))
+
+
 def differential_evolution(
     space: tuple[Parameter, ...],
     objective: Callable[[Mapping[str, object]], float],
