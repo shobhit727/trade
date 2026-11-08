@@ -446,11 +446,12 @@ def test_experiment_comparison_is_market_scoped_and_keeps_partition_metrics_sepa
             lineage={"parent_candidate_ids": []},
         )
 
-    status, result = _request(
+    status, _, body = _request(
         app,
         "GET",
         f"/api/compare?experiment_id={first['experiment_id']}&experiment_id={second['experiment_id']}",
     )
+    result = json.loads(body)
     assert status == 200
     assert result["market"] == "nse"
     assert result["candidate_count"] == 2
@@ -485,11 +486,12 @@ def test_experiment_comparison_rejects_mixed_market_ids(tmp_path) -> None:
     assert _request(app, "POST", "/api/experiments", nse)[0] == 201
     assert _request(app, "POST", "/api/experiments", crypto)[0] == 201
 
-    status, result = _request(
+    status, _, body = _request(
         app,
         "GET",
         f"/api/compare?experiment_id={nse['experiment_id']}&experiment_id={crypto['experiment_id']}",
     )
+    result = json.loads(body)
     assert status == 400
     assert "cannot be compared in one financial view" in result["error"]
 
