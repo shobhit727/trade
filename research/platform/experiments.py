@@ -81,7 +81,13 @@ class ExperimentSpec:
         # The old NSE 2024-2026 test set was exposed to prior strategy selection.
         # It cannot be relabelled as an untouched final holdout in the new platform.
         if self.market is Market.NSE:
+            # The repository's prior protocol exposed TRAIN through 2023 and TEST through 2026-10-01.
+            # No date inside either historical window may be relabelled as new OOS evidence.
             exposed_end = datetime(2026, 10, 1, 23, 59, 59, tzinfo=timezone.utc)
+            if self.oos_start.astimezone(timezone.utc) <= exposed_end:
+                raise ValueError(
+                    "NSE OOS must begin after 2026-10-01; the historical TEST window is exposed"
+                )
             if self.final_holdout_start.astimezone(timezone.utc) <= exposed_end:
                 raise ValueError(
                     "NSE final holdout must begin after 2026-10-01; the historical test window is exposed"
