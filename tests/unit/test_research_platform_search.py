@@ -298,3 +298,32 @@ def test_batch_population_fitness_rejects_misaligned_forward_returns() -> None:
         engine.batch_long_flat_fitness(
             np.ones((4, 2)), np.ones((3, 2)), np.ones(3)
         )
+
+
+
+def test_market_specific_fee_calculators_keep_nse_and_crypto_costs_separate() -> None:
+    # NSE delegates to the repository's itemised statutory model.
+    from research.platform.costs import CryptoVenueFeeCalculator, NSEDeliveryFeeCalculator
+    from research.platform.market import Side
+
+    nse_fees = NSEDeliveryFeeCalculator()
+    nse_charge = nse_fees.fee(Side.BUY, Decimal("10"), Decimal("100"))
+    assert nse_charge > 0
+    assert nse_fees.market is Market.NSE
+
+    crypto_fees = CryptoVenueFeeCalculator(
+        exchange="binance",
+        maker_fee_bps=Decimal("1"),
+        taker_fee_bps=Decimal("5"),
+    )
+    assert crypto_fees.fee(Side.BUY, Decimal("2"), Decimal("100")) == Decimal("0.10")
+    assert crypto_fees.market is Market.CRYPTO
+
+    # A venue fee calculator must not be attached to the other market's account.
+    with pytest.raises(ValueError, match="different market"):
+        PortfolioConfig(
+            market=Market.CRYPTO,
+            fee_bps=Decimal("0"),
+            fee_calculator=nse_fees,
+            cost_model_id=nse_fees.model_id,
+        )
