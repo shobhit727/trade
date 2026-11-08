@@ -185,3 +185,21 @@ def test_existing_strategy_runner_requires_matching_execution_model(tmp_path) ->
             periods_per_year=252,
             store=_registered_store(tmp_path / "execution-mismatch.sqlite3", spec),
         )
+
+
+def test_existing_strategy_runner_rejects_unregistered_extra_bar_symbols(tmp_path) -> None:
+    # Every portfolio asset must resolve to one registered, approved dataset manifest.
+    spec = _experiment()
+    bars = _bars()
+    bars["UNREGISTERED"] = bars["TEST"].copy()
+    store = _registered_store(tmp_path / "unregistered-bars.sqlite3", spec)
+    config = PortfolioConfig(
+        market=Market.NSE,
+        fee_bps=Decimal("0"),
+        cost_model_id=spec.cost_model_id,
+        execution_model_id=spec.execution_model_id,
+    )
+    with pytest.raises(ValueError, match="exactly match registered dataset instruments"):
+        evaluate_existing_strategy(
+            spec, bars, config, periods_per_year=252, store=store
+        )
