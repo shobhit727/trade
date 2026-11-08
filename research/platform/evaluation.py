@@ -157,6 +157,8 @@ def evaluate_existing_strategy(
     store: ExperimentStore | None = None,
     check_cancelled: Callable[[], None] | None = None,
     progress_callback: Callable[[str, int, int], None] | None = None,
+    candidate_family: str = "existing_strategy",
+    lineage_metadata: dict[str, Any] | None = None,
 ) -> ExistingStrategyEvaluation:
     """Evaluate a frozen existing strategy on TRAIN, VALIDATION and OOS only.
 
@@ -223,6 +225,8 @@ def evaluate_existing_strategy(
     candidate_definition = {
         "experiment_id": spec.experiment_id,
         "strategy_name": strategy_name,
+        "candidate_family": candidate_family,
+        "lineage_metadata": lineage_metadata or {},
         "bars_sha256": bars_digest,
         "strategy_parameters": strategy_parameters,
         "dataset_ids": list(spec.dataset_ids),
@@ -286,17 +290,17 @@ def evaluate_existing_strategy(
                 candidate_id=f"{spec.experiment_id}-{candidate_digest[:16]}",
                 experiment_id=spec.experiment_id,
                 candidate_digest=candidate_digest,
-                family="existing_strategy",
+                family=candidate_family,
                 generation=0,
                 parameters=candidate_definition,
                 metrics=stage_metrics,
                 lineage={
-                    "parent_candidate_ids": [],
-                    "origin": "existing_catalogue",
+                    "parent_candidate_ids": list((lineage_metadata or {}).get("parent_candidate_ids", [])),
+                    "origin": (lineage_metadata or {}).get("origin", "existing_catalogue"),
                     "strategy_name": strategy_name,
                     "mutation": None,
                     "crossover": None,
-                    "selection": "frozen_experiment_spec",
+                    "selection": (lineage_metadata or {}).get("selection", "frozen_experiment_spec"),
                 },
             )
         store.append_event(
@@ -304,6 +308,8 @@ def evaluate_existing_strategy(
             "existing_strategy_evaluated",
             {
                 "candidate_digest": candidate_digest,
+                "candidate_family": candidate_family,
+                "lineage_metadata": lineage_metadata or {},
                 "bars_sha256": bars_digest,
                 "partitions": [item.partition for item in evaluations],
                 "final_holdout_accessed": False,
