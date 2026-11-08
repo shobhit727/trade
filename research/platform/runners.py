@@ -1271,6 +1271,7 @@ class GeneticProgrammingJobRunner:
         )
 
         train_cache: dict[str, dict[str, float | int]] = {}
+        train_return_cache: dict[str, np.ndarray] = {}
 
         def train_fitness(predictions: np.ndarray) -> float:
             # Every expression is measured only on the frozen TRAIN partition.
@@ -1284,6 +1285,9 @@ class GeneticProgrammingJobRunner:
                     periods_per_year=periods_per_year,
                 )
                 train_cache[digest] = result.metrics
+                train_return_cache[digest] = (
+                    result.result.equity_curve.pct_change().dropna().to_numpy(dtype=np.float64)
+                )
             value = float(train_cache[digest][objective_name])
             if not np.isfinite(value):
                 raise ValueError("GP TRAIN objective is non-finite")
@@ -1342,6 +1346,7 @@ class GeneticProgrammingJobRunner:
                 "index": int(item["index"]),
                 "train_score": float(item["fitness"]) if succeeded else None,
                 "train_metrics": metrics or {},
+                "prediction_key": prediction_key,
                 "status": "succeeded" if succeeded else "failed",
                 "failure_reason": item.get("failure_reason"),
                 "lineage": dict(item["lineage"]),
@@ -1388,6 +1393,27 @@ class GeneticProgrammingJobRunner:
             )
 
         successful = [item for item in candidate_rows if item["status"] == "succeeded"]
+        statistical_candidates = [
+            item for item in successful if item["prediction_key"] in train_return_cache
+        ]
+        if statistical_candidates:
+            statistical_report = candidate_family_report_from_returns(
+                [item["candidate_id"] for item in statistical_candidates],
+                {
+                    item["candidate_id"]: train_return_cache[item["prediction_key"]]
+                    for item in statistical_candidates
+                },
+                periods_per_year=periods_per_year,
+                pbo_blocks=8,
+                pbo_candidate_limit=128,
+            )
+            _record_train_family_diagnostics(context, spec, statistical_report)
+        else:
+            statistical_report = {
+                "classification": "not_computed",
+                "reason": "no successful GP candidate return vectors",
+                "candidate_family_size": 0,
+            }
         if not successful:
             raise RuntimeError("GP produced no valid TRAIN candidate")
         final_ids = set(str(value) for value in trace["population_ids"])
@@ -1571,6 +1597,7 @@ class GeneticProgrammingJobRunner:
             "failed_candidates": len(candidate_rows) - len(successful),
             "validation_shortlist": validation_rows,
             "selected_candidate": selected,
+            "training_candidate_family_diagnostics": statistical_report,
             "out_of_sample_candidate_id": oos_candidate_id,
             "out_of_sample": {
                 "metrics": oos_result.metrics,
