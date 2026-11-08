@@ -553,7 +553,7 @@ def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
         try:
             ExistingStrategyRegistry().describe(strategy_name)
         except KeyError as exc:
-            raise ValueError(f"strategy_name is not registered: {strategy_name}") from exc
+            raise ValueError(f"unknown existing strategy: {strategy_name}") from exc
     if algorithm_family is AlgorithmFamily.GENETIC_PROGRAMMING:
         # GP limits and feature windows are immutable inputs to the experiment fingerprint.
         gp = parameters.get("genetic_programming")
