@@ -431,3 +431,67 @@ def test_jobs_api_routes_strategy_composition_to_registered_composition_runner(t
         assert job["result"]["family"] == "strategy_composition"
     finally:
         app.shutdown()
+
+
+
+def test_jobs_api_routes_pareto_search_to_registered_nsga2_worker(tmp_path) -> None:
+    # Pareto experiments require the dedicated NSGA-II runner, not a scalar optimizer.
+    base = _experiment()
+    parameters = dict(base.parameters)
+    parameters["execution_assumptions"] = {
+        "slippage_bps": 5,
+        "impact_coefficient_bps": 10,
+        "max_participation": 0.05,
+        "max_gross_exposure": 1.0,
+        "periods_per_year": 252,
+    }
+    parameters["pareto_search"] = {
+        "population_size": 4,
+        "generations": 1,
+        "mutation_rate": 0.2,
+        "validation_candidates": 3,
+        "objectives": ["cagr", "max_drawdown"],
+        "directions": ["max", "max"],
+    }
+    spec = replace(
+        base,
+        experiment_id="api-pareto-search",
+        algorithm_family=AlgorithmFamily.PARETO_SEARCH,
+        parameters=parameters,
+    )
+
+    def runner(context, experiment, parameters):
+        return {"family": experiment["spec"]["algorithm_family"]}
+
+    _, manager, app = _app(tmp_path, runner=runner, experiment=spec)
+    manager.register_runner("pareto_search", runner)
+    try:
+        status, payload = _request(
+            app,
+            "POST",
+            "/api/jobs",
+            {
+                "experiment_id": spec.experiment_id,
+                "runner_name": "pareto_search",
+                "parameters": {},
+            },
+        )
+        assert status == 202
+        job = manager.wait(payload["job_id"], timeout=5)
+        assert job["status"] == "succeeded"
+        assert job["result"]["family"] == "pareto_search"
+
+        status, rejected = _request(
+            app,
+            "POST",
+            "/api/jobs",
+            {
+                "experiment_id": spec.experiment_id,
+                "runner_name": "existing_strategy_optimization",
+                "parameters": {},
+            },
+        )
+        assert status == 400
+        assert "requires runner pareto_search" in rejected["error"]
+    finally:
+        app.shutdown()
