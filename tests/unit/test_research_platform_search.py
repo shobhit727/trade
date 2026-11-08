@@ -327,3 +327,67 @@ def test_market_specific_fee_calculators_keep_nse_and_crypto_costs_separate() ->
             fee_calculator=nse_fees,
             cost_model_id=nse_fees.model_id,
         )
+
+
+
+def test_fx_conversion_uses_only_prior_rates_and_normalises_timezones() -> None:
+    # Bars in Asia/Kolkata align to UTC FX observations without using future data.
+    from datetime import timedelta
+
+    from research.platform.fx import FXRateSeries, convert_ohlcv_to_inr
+
+    fx_index = pd.date_range("2025-01-01T00:00:00Z", periods=2, freq="1h")
+    rates = pd.Series([85.0, 86.0], index=fx_index)
+    fx = FXRateSeries(
+        rates=rates,
+        quote_currency="USDT",
+        source_id="test-fx-feed-v1",
+        max_staleness=timedelta(minutes=20),
+    )
+    bar_index = pd.DatetimeIndex([
+        pd.Timestamp("2025-01-01T05:35:00", tz="Asia/Kolkata"),
+        pd.Timestamp("2025-01-01T06:35:00", tz="Asia/Kolkata"),
+    ])
+    bars = pd.DataFrame(
+        {
+            "open": [100.0, 200.0],
+            "high": [101.0, 201.0],
+            "low": [99.0, 199.0],
+            "close": [100.5, 200.5],
+            "volume": [10.0, 20.0],
+        },
+        index=bar_index,
+    )
+    converted = convert_ohlcv_to_inr(bars, fx, source_quote_currency="USDT")
+    assert converted["open"].tolist() == [8500.0, 17200.0]
+    assert converted["volume"].tolist() == [10.0, 20.0]
+    assert converted.attrs["fx_source_id"] == "test-fx-feed-v1"
+    assert converted.attrs["fx_alignment"] == "backward_asof_no_future"
+
+
+def test_fx_conversion_rejects_future_stale_or_mismatched_rates() -> None:
+    # A price bar cannot consume future FX information or rates older than the declared cap.
+    from datetime import timedelta
+
+    from research.platform.fx import FXRateSeries, convert_ohlcv_to_inr
+
+    bar_index = pd.date_range("2025-01-01T00:20:00Z", periods=1, freq="1min")
+    bars = pd.DataFrame(
+        {"open": [1.0], "high": [1.1], "low": [0.9], "close": [1.0], "volume": [1.0]},
+        index=bar_index,
+    )
+    future_fx = FXRateSeries(
+        pd.Series([80.0], index=pd.date_range("2025-01-01T00:30:00Z", periods=1)),
+        "USDT", "future-rate", timedelta(minutes=15),
+    )
+    with pytest.raises(ValueError, match="no sufficiently recent prior FX"):
+        convert_ohlcv_to_inr(bars, future_fx, source_quote_currency="USDT")
+
+    stale_fx = FXRateSeries(
+        pd.Series([80.0], index=pd.date_range("2025-01-01T00:00:00Z", periods=1)),
+        "USDT", "stale-rate", timedelta(minutes=15),
+    )
+    with pytest.raises(ValueError, match="no sufficiently recent prior FX"):
+        convert_ohlcv_to_inr(bars, stale_fx, source_quote_currency="USDT")
+    with pytest.raises(ValueError, match="must match"):
+        convert_ohlcv_to_inr(bars, stale_fx, source_quote_currency="USD")
