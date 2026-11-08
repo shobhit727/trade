@@ -101,6 +101,22 @@ class PortfolioResult:
         # Calculate simple return without combining other market environments.
         return self.equity_curve.iloc[-1] / self.initial_capital_inr - D("1")
 
+    def performance_metrics(
+        self,
+        *,
+        periods_per_year: int,
+        annual_risk_free_rate: float = 0.0,
+    ) -> dict[str, float | int]:
+        """Return metrics using an explicit market/resolution annualisation assumption."""
+        # Frequency is mandatory to avoid silently treating crypto as an NSE trading calendar.
+        from .metrics import compute_portfolio_metrics
+
+        return compute_portfolio_metrics(
+            self.equity_curve,
+            periods_per_year=periods_per_year,
+            annual_risk_free_rate=annual_risk_free_rate,
+        ).to_dict()
+
     def to_dict(self) -> dict[str, object]:
         # Results expose this market only; no cross-market aggregator is provided.
         return {
