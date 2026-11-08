@@ -71,6 +71,7 @@ pre { overflow:auto; white-space:pre-wrap; word-break:break-word; color:#c4d3e4;
 <label>Optimisation settings JSON (random/grid/DE/Optuna TPE)</label><textarea id="optimization" rows="4">{"budget":24,"validation_candidates":6,"objective":"sharpe","points_per_numeric_dimension":2,"population_size":6,"generations":3,"mutation":0.7,"crossover":0.8,"startup_trials":8}</textarea>
 <label>Genetic-programming settings JSON</label><textarea id="gp-settings" rows="4">{"population_size":16,"generations":5,"max_depth":4,"max_nodes":31,"mutation_rate":0.2,"validation_candidates":4,"objective":"sharpe","feature_windows":[5,20,60]}</textarea>
 <label>Neuroevolution settings JSON</label><textarea id="neuro-settings" rows="4">{"hidden_size":16,"population_size":16,"generations":5,"learning_rate":0.05,"noise_std":0.1,"weight_limit":8,"validation_candidates":4,"objective":"sharpe","feature_windows":[5,20,60]}</textarea>
+<label>Strategy-composition settings JSON</label><textarea id="composition-settings" rows="4">{"population_size":16,"generations":5,"max_components":8,"mutation_rate":0.25,"validation_candidates":4,"objective":"sharpe","feature_windows":[5,20,60]}</textarea>
 <label>Execution assumptions JSON</label><textarea id="execution-assumptions" rows="4">{"slippage_bps":5,"impact_coefficient_bps":10,"max_participation":0.05,"max_gross_exposure":1.0,"periods_per_year":252}</textarea>
 <label>Crypto venue (single exchange)</label><input id="crypto-exchange" value="binance">
 <label>Crypto maker/taker fee schedule JSON</label><textarea id="fee-schedule" rows="2">{"maker_fee_bps":10,"taker_fee_bps":10}</textarea>
@@ -388,6 +389,9 @@ $("create-form").addEventListener("submit", async event => {
         if (family === "neuroevolution") {
           return {...common, neuroevolution: parseObject("neuro-settings")};
         }
+        if (family === "strategy_composition") {
+          return {...common, strategy_composition: parseObject("composition-settings")};
+        }
         return {};
       })()
     };
@@ -402,7 +406,8 @@ $("create-form").addEventListener("submit", async event => {
         : ["random_search","grid_search","differential_evolution","bayesian"].includes(family)
           ? "existing_strategy_optimization"
           : family === "genetic_programming" ? "genetic_programming"
-            : family === "neuroevolution" ? "neuroevolution" : null;
+            : family === "neuroevolution" ? "neuroevolution"
+            : family === "strategy_composition" ? "strategy_composition" : null;
       if (!runnerName) {
         throw new Error("No connected worker exists for " + family + " yet.");
       }
