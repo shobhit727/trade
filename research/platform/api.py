@@ -65,7 +65,7 @@ pre { overflow:auto; white-space:pre-wrap; word-break:break-word; color:#c4d3e4;
 <label>Cost model ID</label><input id="cost-model" value="nse-delivery-cost-model" required>
 <label>Execution model ID</label><input id="execution-model" value="next-open-participation-impact-v1" required>
 <label>Seed</label><input id="seed" type="number" min="0" value="42" required>
-<label>Purging embargo (seconds)</label><input id="embargo-seconds" type="number" min="0" value="0" required>
+<label>Purging embargo (seconds)</label><input id="embargo-seconds" type="number" min="0" step="1" value="0" required>
 <label>Objectives (comma-separated)</label><input id="objectives" value="net_return,max_drawdown,turnover" required>
 <label>Strategy parameters JSON</label><textarea id="strategy-parameters" rows="3">{}</textarea>
 <label>Execution assumptions JSON</label><textarea id="execution-assumptions" rows="4">{"slippage_bps":5,"impact_coefficient_bps":10,"max_participation":0.05,"max_gross_exposure":1.0,"periods_per_year":252}</textarea>
@@ -434,6 +434,9 @@ def _validate_dataset_coverage(store: ExperimentStore, spec: ExperimentSpec) -> 
 def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
     # Construct the immutable experiment definition from API input and validate all fields.
     parameters = dict(payload.get("parameters", {}))
+    raw_embargo = payload.get("embargo_seconds", 0)
+    if isinstance(raw_embargo, bool) or not isinstance(raw_embargo, int):
+        raise ValueError("embargo_seconds must be an integer")
     algorithm_family = AlgorithmFamily(payload["algorithm_family"])
     if algorithm_family is AlgorithmFamily.EXISTING_STRATEGY:
         # Do not accept arbitrary names; the strategy must be registered in the repository.
