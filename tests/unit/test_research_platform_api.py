@@ -340,3 +340,75 @@ def test_research_api_rejects_embargo_that_partitions_do_not_respect(tmp_path) -
     )
     assert status == 400
     assert "respect embargo" in json.loads(body)["error"]
+
+
+
+def test_api_creates_validated_genetic_programming_experiment(tmp_path) -> None:
+    # GP settings are stored with the experiment and protected by its immutable fingerprint.
+    app = ResearchAPI(ExperimentStore(tmp_path / "gp-api.sqlite3"))
+    status, _, _ = _request(app, "POST", "/api/datasets", _dataset_payload())
+    assert status == 201
+    parameters = {
+        "execution_assumptions": {
+            "slippage_bps": 5,
+            "impact_coefficient_bps": 10,
+            "max_participation": 0.05,
+            "max_gross_exposure": 1.0,
+            "periods_per_year": 252,
+        },
+        "genetic_programming": {
+            "population_size": 4,
+            "generations": 1,
+            "max_depth": 3,
+            "max_nodes": 15,
+            "mutation_rate": 0.2,
+            "validation_candidates": 2,
+            "objective": "sharpe",
+            "feature_windows": [3, 5],
+        },
+    }
+    status, _, body = _request(
+        app,
+        "POST",
+        "/api/experiments",
+        _payload(
+            experiment_id="api-genetic-programming",
+            algorithm_family="genetic_programming",
+            parameters=parameters,
+        ),
+    )
+    assert status == 201
+    payload = json.loads(body)
+    assert payload["spec"]["algorithm_family"] == "genetic_programming"
+    assert payload["spec"]["parameters"]["genetic_programming"]["feature_windows"] == [3, 5]
+
+
+def test_api_rejects_unbounded_genetic_programming_budget(tmp_path) -> None:
+    # Candidate count is bounded before a worker can allocate an excessive GP population.
+    app = ResearchAPI(ExperimentStore(tmp_path / "gp-budget-api.sqlite3"))
+    status, _, _ = _request(app, "POST", "/api/datasets", _dataset_payload())
+    assert status == 201
+    parameters = {
+        "genetic_programming": {
+            "population_size": 1000,
+            "generations": 20,
+            "max_depth": 3,
+            "max_nodes": 15,
+            "mutation_rate": 0.2,
+            "validation_candidates": 2,
+            "objective": "sharpe",
+            "feature_windows": [3],
+        }
+    }
+    status, _, body = _request(
+        app,
+        "POST",
+        "/api/experiments",
+        _payload(
+            experiment_id="api-genetic-programming-too-large",
+            algorithm_family="genetic_programming",
+            parameters=parameters,
+        ),
+    )
+    assert status == 400
+    assert "10000 evaluation limit" in json.loads(body)["error"]
