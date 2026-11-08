@@ -54,6 +54,8 @@ class ExperimentSpec:
             raise ValueError("dataset identifiers must be unique")
         if self.random_seed < 0:
             raise ValueError("random_seed must be non-negative")
+        if isinstance(self.embargo_seconds, bool) or not isinstance(self.embargo_seconds, int):
+            raise ValueError("embargo_seconds must be an integer")
         if self.embargo_seconds < 0:
             raise ValueError("embargo_seconds must be non-negative")
         if not self.objectives or any(not item.strip() for item in self.objectives):
