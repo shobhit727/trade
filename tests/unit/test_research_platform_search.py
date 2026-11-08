@@ -822,6 +822,10 @@ def test_candidate_family_report_from_returns_derives_per_period_psr_and_multipl
     assert report["pbo_cscv"]["candidate_subset_size"] == 8
     assert report["sampling_frequency"]["periods_per_year"] == 252
     assert report["p_value_method"] == "one_minus_probabilistic_sharpe_ratio_vs_zero"
+    bootstrap = report["best_candidate_train_mean_return_bootstrap"]
+    assert bootstrap["samples"] == 1000
+    assert bootstrap["ci_low"] <= bootstrap["ci_high"]
+    assert report["bootstrap_interpretation"].startswith("descriptive_train_only")
 
 
 def test_candidate_family_report_from_returns_rejects_misaligned_series() -> None:
