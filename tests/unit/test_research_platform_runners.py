@@ -18,6 +18,7 @@ from research.platform.runners import (
     ExistingStrategyOptimizerJobRunner,
     GeneticProgrammingJobRunner,
     NeuroevolutionJobRunner,
+    StrategyCompositionJobRunner,
     _build_portfolio_config,
     experiment_spec_from_record,
 )
@@ -745,5 +746,85 @@ def test_neuroevolution_worker_rejects_odd_or_unbounded_population(tmp_path) -> 
         job = manager.wait(job_id, timeout=10)
         assert job["status"] == "failed"
         assert "population_size must be even" in job["error_message"]
+    finally:
+        manager.shutdown(wait=True, cancel_pending=True)
+
+
+
+def test_strategy_composition_worker_evolves_registered_components_and_evaluates_oos(tmp_path) -> None:
+    # The composition worker can use only the local declarative feature-component catalogue.
+    base = _spec()
+    parameters = dict(base.parameters)
+    parameters["strategy_composition"] = {
+        "population_size": 4,
+        "generations": 2,
+        "max_components": 6,
+        "mutation_rate": 0.25,
+        "validation_candidates": 2,
+        "objective": "sharpe",
+        "feature_windows": [3],
+    }
+    spec = replace(
+        base,
+        experiment_id="runner-strategy-composition",
+        algorithm_family=AlgorithmFamily.STRATEGY_COMPOSITION,
+        parameters=parameters,
+    )
+    store = _store(tmp_path / "composition-runner.sqlite3", spec)
+    manager = ResearchJobManager(store, max_workers=1, max_queued=1)
+    runner = StrategyCompositionJobRunner(
+        bar_loader=lambda current_store, current_spec: _bars()
+    )
+    manager.register_runner("strategy_composition", runner)
+    try:
+        job_id = manager.submit(spec.experiment_id, "strategy_composition")
+        job = manager.wait(job_id, timeout=60)
+        assert job["status"] == "succeeded", job["error_message"]
+        result = job["result"]
+        assert result["algorithm_family"] == "strategy_composition"
+        assert result["candidate_count"] == 12
+        assert result["successful_train_candidates"] > 0
+        assert len(result["validation_shortlist"]) == 2
+        assert result["registry_component_count"] >= 6
+        assert result["out_of_sample"]["sample_count"] > 0
+        assert result["final_holdout_accessed"] is False
+
+        candidates = store.candidates(spec.experiment_id)
+        assert len(candidates) == 12
+        assert all(item["family"] == "strategy_composition" for item in candidates)
+        candidate_ids = {item["candidate_id"] for item in candidates}
+        for item in candidates:
+            assert item["parameters"]["composition"]
+            for parent_id in item["lineage"]["parent_candidate_ids"]:
+                assert parent_id in candidate_ids
+        event_types = {event["event_type"] for event in store.events(spec.experiment_id)}
+        assert "strategy_composition_candidate_frozen" in event_types
+        assert "strategy_composition_oos_recorded" in event_types
+    finally:
+        manager.shutdown(wait=True, cancel_pending=True)
+
+
+def test_strategy_composition_worker_rejects_missing_component_settings(tmp_path) -> None:
+    # Population and feature defaults must be explicitly frozen in the experiment.
+    base = _spec()
+    parameters = dict(base.parameters)
+    parameters["strategy_composition"] = {"population_size": 8}
+    spec = replace(
+        base,
+        experiment_id="runner-composition-invalid",
+        algorithm_family=AlgorithmFamily.STRATEGY_COMPOSITION,
+        parameters=parameters,
+    )
+    store = _store(tmp_path / "composition-invalid.sqlite3", spec)
+    manager = ResearchJobManager(store, max_workers=1, max_queued=1)
+    runner = StrategyCompositionJobRunner(
+        bar_loader=lambda current_store, current_spec: _bars()
+    )
+    manager.register_runner("strategy_composition", runner)
+    try:
+        job_id = manager.submit(spec.experiment_id, "strategy_composition")
+        job = manager.wait(job_id, timeout=10)
+        assert job["status"] == "failed"
+        assert "strategy_composition requires settings" in job["error_message"]
     finally:
         manager.shutdown(wait=True, cancel_pending=True)
