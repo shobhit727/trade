@@ -65,6 +65,7 @@ pre { overflow:auto; white-space:pre-wrap; word-break:break-word; color:#c4d3e4;
 <label>Cost model ID</label><input id="cost-model" value="nse-delivery-cost-model" required>
 <label>Execution model ID</label><input id="execution-model" value="next-open-participation-impact-v1" required>
 <label>Seed</label><input id="seed" type="number" min="0" value="42" required>
+<label>Purging embargo (seconds)</label><input id="embargo-seconds" type="number" min="0" value="0" required>
 <label>Objectives (comma-separated)</label><input id="objectives" value="net_return,max_drawdown,turnover" required>
 <label>Strategy parameters JSON</label><textarea id="strategy-parameters" rows="3">{}</textarea>
 <label>Execution assumptions JSON</label><textarea id="execution-assumptions" rows="4">{"slippage_bps":5,"impact_coefficient_bps":10,"max_participation":0.05,"max_gross_exposure":1.0,"periods_per_year":252}</textarea>
@@ -298,6 +299,7 @@ $("create-form").addEventListener("submit", async event => {
       resolution: value("resolution"),
       dataset_ids: value("dataset-ids").split(",").map(x => x.trim()).filter(Boolean),
       random_seed: Number(value("seed")),
+      embargo_seconds: Number(value("embargo-seconds")),
       git_commit: value("git-commit"),
       code_version: "dashboard-api-v1",
       training_start: utc("train-start"),
