@@ -14,7 +14,12 @@ from typing import Any, Callable, Mapping
 import numpy as np
 import pandas as pd
 
-from .adapters import CryptoLocalAdapter, NSELegacyAdapter, RESOLUTION_MAP
+from .adapters import (
+    CryptoLocalAdapter,
+    NSELegacyAdapter,
+    RESOLUTION_MAP,
+    load_non_holdout_partition,
+)
 from .composition import Composition, StrategyComposer
 from .compute import ComputeEngine
 from .composition_policy import composition_scores, default_component_registry
@@ -259,12 +264,23 @@ def load_registered_bars(
     spec: ExperimentSpec,
     *,
     crypto_data_root: str | Path | None = None,
+    partition_data_root: str | Path | None = None,
+    require_partitioned: bool | None = None,
 ) -> dict[str, pd.DataFrame]:
-    """Load approved registered sources and verify their checksums before evaluation."""
-    # Each dataset must be same-market, same-resolution and locally available.
+    """Load approved OHLCV and prefer physically isolated non-holdout dataset copies."""
+    # Strict mode makes legacy combined-source loading an explicit opt-in only.
     root = Path(
         crypto_data_root or os.getenv("RESEARCH_CRYPTO_DATA_ROOT", "data/crypto")
     ).resolve()
+    partition_root = Path(
+        partition_data_root
+        or os.getenv("RESEARCH_PARTITION_DATA_ROOT", "data/research-partitions")
+    ).resolve()
+    if require_partitioned is None:
+        require_partitioned = os.getenv("RESEARCH_REQUIRE_PARTITIONED_DATA", "0").lower() in {
+            "1", "true", "yes", "on"
+        }
+
     output: dict[str, pd.DataFrame] = {}
     for dataset_id in spec.dataset_ids:
         row = store.get_dataset(dataset_id)
@@ -281,27 +297,46 @@ def load_registered_bars(
         if instrument in output:
             raise ValueError(f"duplicate instrument dataset in experiment: {instrument}")
 
-        if spec.market is Market.NSE:
-            from research.optimize import config as optimizer_config
-
-            timeframe = RESOLUTION_MAP.get(spec.resolution)
-            if timeframe is None:
-                raise ValueError(f"NSE adapter does not support {spec.resolution.value}")
-            path = optimizer_config.DATA_DIR / f"{instrument}_{timeframe}.csv"
-            expected_hash = manifest["extra_metadata"].get("file_sha256")
-            if not path.is_file() or not expected_hash or _sha256(path) != expected_hash:
-                raise ValueError(f"NSE source missing or checksum mismatch for {instrument}")
-            frame = NSELegacyAdapter(timezone_name=manifest["timezone"]).load(
-                instrument, spec.resolution, end=spec.oos_end
-            )
-        else:
-            frame = _verified_crypto_frame(
-                store,
+        extra = manifest.get("extra_metadata", {})
+        if extra.get("research_partition_path"):
+            # This branch opens only the pre-materialised safe copy, never the original source.
+            frame = load_non_holdout_partition(
                 manifest,
-                data_root=root,
-                resolution=spec.resolution,
-                max_time=spec.oos_end,
+                root=partition_root,
+                final_holdout_start=spec.final_holdout_start,
+                end=spec.oos_end,
             )
+            frame.attrs["data_access_mode"] = "pre_materialised_non_holdout_partition"
+        else:
+            if require_partitioned:
+                raise ValueError(
+                    f"dataset {dataset_id} has no physical non-holdout partition; "
+                    "legacy combined-source reads are disabled"
+                )
+            # Compatibility path for exploratory work; this may parse rows beyond OOS end.
+            if spec.market is Market.NSE:
+                from research.optimize import config as optimizer_config
+
+                timeframe = RESOLUTION_MAP.get(spec.resolution)
+                if timeframe is None:
+                    raise ValueError(f"NSE adapter does not support {spec.resolution.value}")
+                path = optimizer_config.DATA_DIR / f"{instrument}_{timeframe}.csv"
+                expected_hash = extra.get("file_sha256")
+                if not path.is_file() or not expected_hash or _sha256(path) != expected_hash:
+                    raise ValueError(f"NSE source missing or checksum mismatch for {instrument}")
+                frame = NSELegacyAdapter(timezone_name=manifest["timezone"]).load(
+                    instrument, spec.resolution, end=spec.oos_end
+                )
+            else:
+                frame = _verified_crypto_frame(
+                    store,
+                    manifest,
+                    data_root=root,
+                    resolution=spec.resolution,
+                    max_time=spec.oos_end,
+                )
+            frame.attrs["data_access_mode"] = "legacy_combined_source_clipped_after_read"
+
         if frame.empty:
             raise ValueError(f"dataset {dataset_id} has no usable OHLCV rows")
         output[instrument] = frame
@@ -309,7 +344,6 @@ def load_registered_bars(
     if not output:
         raise ValueError("experiment has no loadable registered OHLCV datasets")
     return output
-
 
 def _build_portfolio_config(
     spec: ExperimentSpec,
