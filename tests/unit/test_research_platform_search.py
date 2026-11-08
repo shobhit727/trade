@@ -116,6 +116,14 @@ def test_genetic_programming_interpreter_and_bounded_evolution() -> None:
     assert result["best_expression"].depth <= 4
     assert result["best_expression"].size <= 31
     assert len(result["population"]) == 12
+    assert len(result["candidate_archive"]) == 12 * 4
+    final_lineage = result["population_lineage"]
+    assert len(final_lineage) == 12
+    assert any(
+        item["operator"] in {"subtree_crossover", "subtree_crossover_then_mutation"}
+        and len(item["parent_candidate_ids"]) == 2
+        for item in final_lineage
+    )
 
 
 def test_genetic_programming_rejects_unknown_or_invalid_feature_nodes() -> None:
