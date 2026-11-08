@@ -68,7 +68,8 @@ pre { overflow:auto; white-space:pre-wrap; word-break:break-word; color:#c4d3e4;
 <label>Purging embargo (seconds)</label><input id="embargo-seconds" type="number" min="0" step="1" value="0" required>
 <label>Objectives (comma-separated)</label><input id="objectives" value="net_return,max_drawdown,turnover" required>
 <label>Strategy parameters JSON</label><textarea id="strategy-parameters" rows="3">{}</textarea>
-<label>Optimisation settings JSON (random/grid/DE/Parzen)</label><textarea id="optimization" rows="4">{"budget":24,"validation_candidates":6,"objective":"sharpe","points_per_numeric_dimension":2,"population_size":6,"generations":3,"mutation":0.7,"crossover":0.8,"startup_trials":8}</textarea>
+<label>Optimisation settings JSON (random/grid/DE/Optuna TPE)</label><textarea id="optimization" rows="4">{"budget":24,"validation_candidates":6,"objective":"sharpe","points_per_numeric_dimension":2,"population_size":6,"generations":3,"mutation":0.7,"crossover":0.8,"startup_trials":8}</textarea>
+<label>Genetic-programming settings JSON</label><textarea id="gp-settings" rows="4">{"population_size":16,"generations":5,"max_depth":4,"max_nodes":31,"mutation_rate":0.2,"validation_candidates":4,"objective":"sharpe","feature_windows":[5,20,60]}</textarea>
 <label>Execution assumptions JSON</label><textarea id="execution-assumptions" rows="4">{"slippage_bps":5,"impact_coefficient_bps":10,"max_participation":0.05,"max_gross_exposure":1.0,"periods_per_year":252}</textarea>
 <label>Crypto venue (single exchange)</label><input id="crypto-exchange" value="binance">
 <label>Crypto maker/taker fee schedule JSON</label><textarea id="fee-schedule" rows="2">{"maker_fee_bps":10,"taker_fee_bps":10}</textarea>
@@ -317,19 +318,27 @@ $("create-form").addEventListener("submit", async event => {
       compute_backend: "auto",
       compute_device: "unverified",
       parameters: (() => {
-        // Bind algorithm-specific settings to the immutable experiment fingerprint.
+        // Bind the selected model family and its bounded search settings to the spec fingerprint.
         const family = value("family");
-        const supportedExisting = ["existing_strategy","random_search","grid_search",
-          "differential_evolution","bayesian"];
-        if (!supportedExisting.includes(family)) return {};
-        const result = {
-          strategy_name: value("strategy-name"),
-          strategy_parameters: parseObject("strategy-parameters"),
+        const common = {
           execution_assumptions: parseObject("execution-assumptions"),
           ...(market === "crypto" ? {fee_schedule: feeSchedule} : {})
         };
-        if (family !== "existing_strategy") result.optimization = parseObject("optimization");
-        return result;
+        const supportedExisting = ["existing_strategy","random_search","grid_search",
+          "differential_evolution","bayesian"];
+        if (supportedExisting.includes(family)) {
+          const result = {
+            ...common,
+            strategy_name: value("strategy-name"),
+            strategy_parameters: parseObject("strategy-parameters")
+          };
+          if (family !== "existing_strategy") result.optimization = parseObject("optimization");
+          return result;
+        }
+        if (family === "genetic_programming") {
+          return {...common, genetic_programming: parseObject("gp-settings")};
+        }
+        return {};
       })()
     };
     const result = await api("/api/experiments", {
@@ -342,7 +351,7 @@ $("create-form").addEventListener("submit", async event => {
         ? "existing_strategy_evaluation"
         : ["random_search","grid_search","differential_evolution","bayesian"].includes(family)
           ? "existing_strategy_optimization"
-          : null;
+          : family === "genetic_programming" ? "genetic_programming" : null;
       if (!runnerName) {
         throw new Error("No connected worker exists for " + family + " yet.");
       }
