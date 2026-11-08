@@ -114,6 +114,7 @@ def test_research_api_health_markets_and_dashboard(tmp_path) -> None:
     assert status == 200
     assert "text/html" in headers["Content-Type"]
     assert b"Create experiment" in body
+    assert "Purging embargo (seconds)" in DASHBOARD_HTML
     assert "Loading experiments" in DASHBOARD_HTML
 
 
@@ -302,3 +303,18 @@ def test_research_api_validates_selected_existing_strategy_name(tmp_path) -> Non
     status, _, body = _request(app, "POST", "/api/experiments", invalid)
     assert status == 400
     assert "unknown existing strategy" in json.loads(body)["error"]
+
+
+
+def test_research_api_rejects_embargo_that_partitions_do_not_respect(tmp_path) -> None:
+    # API callers cannot declare an embargo that the chronological partition dates violate.
+    app = ResearchAPI(ExperimentStore(tmp_path / "research.sqlite3"))
+    assert _request(app, "POST", "/api/datasets", _dataset_payload())[0] == 201
+    status, _, body = _request(
+        app,
+        "POST",
+        "/api/experiments",
+        _payload(embargo_seconds=60),
+    )
+    assert status == 400
+    assert "respect embargo" in json.loads(body)["error"]
