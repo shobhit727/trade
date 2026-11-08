@@ -701,16 +701,31 @@ def test_neuroevolution_worker_persists_mirrored_candidates_and_evaluates_oos(tm
         assert result["final_holdout_accessed"] is False
 
         candidates = store.candidates(spec.experiment_id)
-        assert len(candidates) == 8
-        assert all(item["family"] == "neuroevolution" for item in candidates)
-        assert all(len(item["parameters"]["weights"]) == result["network"]["parameter_count"]
-                   for item in candidates)
+        train_candidates = [item for item in candidates if item["family"] == "neuroevolution"]
+        validation_candidates = [
+            item for item in candidates if item["family"] == "neuroevolution_validation"
+        ]
+        oos_candidates = [
+            item for item in candidates if item["family"] == "neuroevolution_selected_oos"
+        ]
+        assert len(train_candidates) == 8
+        assert len(validation_candidates) == 2
+        assert len(oos_candidates) == 1
+        assert result["out_of_sample_candidate_id"] == oos_candidates[0]["candidate_id"]
+        assert all(
+            len(item["parameters"]["weights"]) == result["network"]["parameter_count"]
+            for item in train_candidates + validation_candidates + oos_candidates
+        )
         candidate_ids = {item["candidate_id"] for item in candidates}
-        later_generation = [item for item in candidates if item["generation"] == 1]
+        later_generation = [
+            item for item in train_candidates if item["generation"] == 1
+        ]
         assert later_generation
         assert all(item["lineage"]["parent_candidate_ids"] for item in later_generation)
-        for item in later_generation:
+        for item in later_generation + validation_candidates + oos_candidates:
             assert set(item["lineage"]["parent_candidate_ids"]).issubset(candidate_ids)
+        assert all(item["lineage"]["parent_candidate_ids"] for item in validation_candidates)
+        assert all(item["lineage"]["parent_candidate_ids"] for item in oos_candidates)
         event_types = {event["event_type"] for event in store.events(spec.experiment_id)}
         assert "neuroevolution_candidate_frozen" in event_types
         assert "neuroevolution_oos_recorded" in event_types
@@ -794,13 +809,26 @@ def test_strategy_composition_worker_evolves_registered_components_and_evaluates
         assert result["final_holdout_accessed"] is False
 
         candidates = store.candidates(spec.experiment_id)
-        assert len(candidates) == 12
-        assert all(item["family"] == "strategy_composition" for item in candidates)
+        train_candidates = [
+            item for item in candidates if item["family"] == "strategy_composition"
+        ]
+        validation_candidates = [
+            item for item in candidates if item["family"] == "strategy_composition_validation"
+        ]
+        oos_candidates = [
+            item for item in candidates if item["family"] == "strategy_composition_selected_oos"
+        ]
+        assert len(train_candidates) == 12
+        assert len(validation_candidates) == 2
+        assert len(oos_candidates) == 1
+        assert result["out_of_sample_candidate_id"] == oos_candidates[0]["candidate_id"]
         candidate_ids = {item["candidate_id"] for item in candidates}
         for item in candidates:
             assert item["parameters"]["composition"]
             for parent_id in item["lineage"]["parent_candidate_ids"]:
                 assert parent_id in candidate_ids
+        assert all(item["lineage"]["parent_candidate_ids"] for item in validation_candidates)
+        assert all(item["lineage"]["parent_candidate_ids"] for item in oos_candidates)
         event_types = {event["event_type"] for event in store.events(spec.experiment_id)}
         assert "strategy_composition_candidate_frozen" in event_types
         assert "strategy_composition_oos_recorded" in event_types
