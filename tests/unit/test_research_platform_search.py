@@ -462,3 +462,40 @@ def test_sharpe_diagnostics_reject_invalid_sampling_inputs() -> None:
         probabilistic_sharpe_ratio(0.2, observations=1)
     with pytest.raises(ValueError, match="finite"):
         deflated_sharpe_ratio(0.2, [0.1, float("nan")], observations=100)
+
+
+
+def test_candidate_family_report_records_fdr_dsr_and_pbo_together() -> None:
+    # The report binds every correction to the same explicitly named search family.
+    from research.platform.statistics import candidate_family_report
+
+    rng = np.random.default_rng(99)
+    returns = rng.normal(0.0002, 0.01, size=(6, 160))
+    report = candidate_family_report(
+        [f"candidate-{index}" for index in range(6)],
+        [0.001, 0.01, 0.02, 0.2, 0.4, 0.8],
+        [0.02, 0.01, 0.03, -0.01, 0.0, 0.01],
+        returns,
+        observations=160,
+        pbo_blocks=8,
+    )
+    assert report["candidate_family_size"] == 6
+    assert len(report["candidate_rows"]) == 6
+    assert report["fdr"]["hypotheses"] == 6
+    assert report["deflated_sharpe"]["trial_count"] == 6
+    assert report["pbo_cscv"]["strategies"] == 6
+    assert report["classification"] == "diagnostic_only_requires_methodological_review"
+
+
+def test_candidate_family_report_rejects_misaligned_search_records() -> None:
+    # Missing candidate results must never shrink the multiple-testing family silently.
+    from research.platform.statistics import candidate_family_report
+
+    with pytest.raises(ValueError, match="equal length"):
+        candidate_family_report(
+            ["candidate-a", "candidate-b"],
+            [0.01],
+            [0.1, 0.2],
+            np.ones((2, 80)),
+            observations=80,
+        )
