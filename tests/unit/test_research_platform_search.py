@@ -222,6 +222,10 @@ def test_portfolio_simulator_executes_next_open_with_costs_and_separate_capital(
         cost_model_id="nse-test-costs",
     ))
     result = simulator.run(bars, targets)
+    repeated = simulator.run(bars, targets)
+    pd.testing.assert_series_equal(result.equity_curve, repeated.equity_curve)
+    pd.testing.assert_series_equal(result.cash_curve, repeated.cash_curve)
+    assert result.fees_paid_inr == repeated.fees_paid_inr
     assert result.initial_capital_inr == Decimal("2100000.00")
     assert result.market is Market.NSE
     assert len(result.fills) >= 1
