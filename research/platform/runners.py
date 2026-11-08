@@ -16,6 +16,7 @@ import pandas as pd
 
 from .adapters import CryptoLocalAdapter, NSELegacyAdapter, RESOLUTION_MAP
 from .composition import Composition, StrategyComposer
+from .compute import ComputeEngine
 from .composition_policy import composition_scores, default_component_registry
 from .costs import CryptoVenueFeeCalculator, NSEDeliveryFeeCalculator
 from .data_catalog import LicenseStatus
@@ -1619,6 +1620,37 @@ class NeuroevolutionJobRunner:
                 raise ValueError("neuroevolution TRAIN objective is non-finite")
             return score
 
+        # Select the requested backend once and report the actual device/fallback status.
+        requested_backend = spec.compute_backend.lower()
+        backend_aliases = {"numpy": "cpu", "cpu": "cpu", "auto": "auto", "cupy": "cupy"}
+        if requested_backend not in backend_aliases:
+            raise ValueError("compute_backend must be auto, numpy, cpu or cupy")
+        compute_engine = ComputeEngine(backend=backend_aliases[requested_backend])
+        inference_batch_size = settings.get("inference_batch_size", 8)
+        if (
+            isinstance(inference_batch_size, bool)
+            or not isinstance(inference_batch_size, int)
+            or not 1 <= inference_batch_size <= 256
+        ):
+            raise ValueError("neuroevolution.inference_batch_size must be in 1..256")
+
+        def batch_predictor(
+            matrix: np.ndarray, parameter_batch: np.ndarray
+        ) -> np.ndarray:
+            # A population chunk is transferred once and evaluated by the selected backend.
+            return compute_engine.batch_dense_mlp_scores(
+                matrix,
+                parameter_batch,
+                hidden_size=network.hidden_size,
+                output_size=network.output_size,
+            )
+
+        compute_snapshot = compute_engine.info()
+        context.log(
+            f"neuroevolution inference backend: {compute_snapshot.backend}; "
+            f"device={compute_snapshot.device_name or 'CPU'}; "
+            f"fallback={compute_snapshot.fallback_reason or 'none'}"
+        )
         evolution = EvolutionStrategy(
             network,
             population_size=settings["population_size"],
@@ -1628,7 +1660,21 @@ class NeuroevolutionJobRunner:
             seed=spec.random_seed,
             weight_limit=float(settings["weight_limit"]),
         )
-        trace = evolution.run(train_panel.features, train_fitness)
+        trace = evolution.run(
+            train_panel.features,
+            train_fitness,
+            batch_predictor=batch_predictor,
+            batch_size=inference_batch_size,
+        )
+        compute_snapshot = compute_engine.info()
+        compute_payload = {
+            "backend": compute_snapshot.backend,
+            "device_name": compute_snapshot.device_name,
+            "total_memory_bytes": compute_snapshot.total_memory_bytes,
+            "fallback_reason": compute_snapshot.fallback_reason,
+            "requested_backend": requested_backend,
+            "inference_batch_size": inference_batch_size,
+        }
         bars_digest = _bars_fingerprint(bars)
         candidate_rows: list[dict[str, Any]] = []
         candidate_id_map: dict[str, str] = {}
@@ -1783,6 +1829,7 @@ class NeuroevolutionJobRunner:
                 "successful_train_candidates": len(successful),
                 "validation_shortlist_count": len(validation_rows),
                 "bars_sha256": bars_digest,
+                "compute": compute_payload,
                 "final_holdout_accessed": False,
             },
         )
@@ -1837,6 +1884,7 @@ class NeuroevolutionJobRunner:
                 "sample_count": oos_result.sample_count,
             },
             "bars_sha256": bars_digest,
+            "compute": compute_payload,
             "final_holdout_accessed": False,
         }
 
