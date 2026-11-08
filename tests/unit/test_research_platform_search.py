@@ -86,6 +86,9 @@ def test_optimizer_records_failures_without_silent_candidate_loss() -> None:
     )
     assert not result.candidates
     assert len(result.failures) == 5
+    assert len(result.attempts) == 5
+    assert all(item.lineage["evaluation_failed"] for item in result.attempts)
+    assert all(not np.isfinite(item.score) for item in result.attempts)
     with pytest.raises(RuntimeError, match="no valid candidates"):
         _ = result.best
 
@@ -612,3 +615,19 @@ def test_portfolio_execution_volume_limit_uses_previous_completed_bar() -> None:
     assert first_fill.fill.timestamp == dates[1].to_pydatetime()
     assert first_fill.fill.quantity == Decimal("1.0")
     assert first_fill.participation == Decimal("0.1")
+
+
+def test_differential_evolution_keeps_failed_trials_in_attempt_ledger() -> None:
+    # Every attempted DE genome is recorded, but failed genomes cannot become winners.
+    result = differential_evolution(
+        (Parameter("x", -1.0, 1.0),),
+        lambda config: float("nan"),
+        population_size=4,
+        generations=2,
+        seed=5,
+    )
+    assert result.candidates == ()
+    assert len(result.attempts) == 12
+    assert len(result.failures) == 12
+    assert all(item.lineage.get("evaluation_failed") is True for item in result.attempts)
+    assert all(item.lineage.get("operator") for item in result.attempts)
