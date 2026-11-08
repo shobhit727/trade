@@ -748,11 +748,24 @@ class ExistingStrategyOptimizerJobRunner:
         ]
         if not successful_candidates:
             raise RuntimeError("no valid baseline or search candidate completed TRAIN")
-        # Validation may select only a bounded TRAIN shortlist; it never feeds back into search.
+        # Keep failed attempts in the immutable search trace, but never send them to VALIDATION.
+        successful_candidate_rows = [
+            candidate for candidate in candidate_rows
+            if candidate["status"] == "succeeded"
+        ]
+        if not successful_candidate_rows:
+            raise RuntimeError("no candidate survived TRAIN evaluation")
+        # Deduplicate identical parameter sets before validation to avoid wasting its budget.
+        validation_pool: dict[str, dict[str, Any]] = {}
+        for candidate in successful_candidate_rows:
+            key = self._config_key(candidate["parameters"])
+            current = validation_pool.get(key)
+            if current is None or candidate["train_score"] > current["train_score"]:
+                validation_pool[key] = candidate
         shortlist = sorted(
-            candidate_rows,
-            key=lambda item: (-item["train_score"], item["candidate_digest"]),
-        )[:min(validation_count, len(candidate_rows))]
+            validation_pool.values(),
+            key=lambda item: (-float(item["train_score"]), item["candidate_digest"]),
+        )[:min(validation_count, len(validation_pool))]
         validation_rows: list[dict[str, Any]] = []
         for index, candidate in enumerate(shortlist, start=1):
             context.check_cancelled()
