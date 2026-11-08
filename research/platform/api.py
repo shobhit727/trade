@@ -13,6 +13,7 @@ from wsgiref.types import StartResponse
 from .data_catalog import DatasetManifest, LicenseStatus, TimeGap, ValueOrigin
 from .domain import AlgorithmFamily, DataResolution, MARKET_SPECS, Market, ResearchTrack
 from .experiments import ExperimentSpec
+from .jobs import ResearchJobManager
 from .storage import ExperimentStore
 from .strategy_catalog import ExistingStrategyRegistry
 
@@ -380,10 +381,20 @@ def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
 class ResearchAPI:
     """Minimal local WSGI API for creating and inspecting actual experiment records."""
 
-    def __init__(self, store: ExperimentStore) -> None:
-        # Cache the authoritative strategy registry; discovery is lazy and read-only.
+    def __init__(
+        self,
+        store: ExperimentStore,
+        job_manager: ResearchJobManager | None = None,
+    ) -> None:
+        # Cache the catalogue and optional trusted runner manager for this local API process.
         self.store = store
+        self.job_manager = job_manager
         self.strategy_registry = ExistingStrategyRegistry()
+
+    def shutdown(self) -> None:
+        # Release worker threads when the local dashboard server exits.
+        if self.job_manager is not None:
+            self.job_manager.shutdown(wait=True, cancel_pending=True)
 
     def _response(self, start_response: StartResponse, status: HTTPStatus, payload: object,
                   content_type: str = "application/json; charset=utf-8") -> list[bytes]:
@@ -421,6 +432,74 @@ class ResearchAPI:
                     for market, spec in MARKET_SPECS.items()
                 ]
                 return self._response(start_response, HTTPStatus.OK, {"markets": markets})
+            if method == "GET" and path == "/api/runners":
+                # Expose only server-registered trusted runner identifiers.
+                names = self.job_manager.runner_names() if self.job_manager is not None else ()
+                return self._response(start_response, HTTPStatus.OK, {"runners": list(names)})
+            if method == "GET" and path == "/api/jobs":
+                # Jobs retain experiment references; no financial results are aggregated here.
+                query = parse_qs(environ.get("QUERY_STRING", ""))
+                experiment_values = query.get("experiment_id", [])
+                limit_values = query.get("limit", ["100"])
+                rows = self.store.list_jobs(
+                    experiment_id=experiment_values[0] if experiment_values else None,
+                    limit=int(limit_values[0]),
+                )
+                return self._response(start_response, HTTPStatus.OK, {"jobs": rows})
+            if method == "POST" and path == "/api/jobs":
+                # Only a registered runner name and JSON parameters are accepted.
+                if self.job_manager is None:
+                    return self._response(start_response, HTTPStatus.SERVICE_UNAVAILABLE,
+                                          {"error": "no research worker manager is configured"})
+                if environ.get("CONTENT_TYPE", "").split(";")[0].strip() != "application/json":
+                    return self._response(start_response, HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                                          {"error": "Content-Type must be application/json"})
+                length = int(environ.get("CONTENT_LENGTH") or "0")
+                if not 0 < length <= 100_000:
+                    return self._response(start_response, HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                                          {"error": "job request must be between 1 byte and 100 KB"})
+                payload = json.loads(environ["wsgi.input"].read(length))
+                if not isinstance(payload, dict):
+                    raise ValueError("job request JSON must be an object")
+                experiment_id = str(payload["experiment_id"])
+                runner_name = str(payload["runner_name"])
+                parameters = payload.get("parameters", {})
+                if not isinstance(parameters, dict):
+                    raise ValueError("job parameters must be a JSON object")
+                record = self.store.get_experiment(experiment_id)
+                if record["spec"]["algorithm_family"] != AlgorithmFamily.EXISTING_STRATEGY.value:
+                    raise ValueError("the registered evaluation runner currently supports existing_strategy only")
+                job_id = self.job_manager.submit(experiment_id, runner_name, parameters)
+                return self._response(start_response, HTTPStatus.ACCEPTED, {
+                    "job_id": job_id,
+                    "experiment_id": experiment_id,
+                    "runner_name": runner_name,
+                    "status": "queued",
+                })
+            if path.startswith("/api/jobs/"):
+                # Job IDs are opaque identifiers and cannot select arbitrary runner code.
+                suffix = path.removeprefix("/api/jobs/").strip("/")
+                if not suffix or "/" in suffix:
+                    raise KeyError(suffix)
+                if method == "GET":
+                    return self._response(
+                        start_response, HTTPStatus.OK, {"job": self.store.get_job(suffix)}
+                    )
+                if method == "POST" and suffix.endswith("/cancel"):
+                    job_id = suffix.removesuffix("/cancel")
+                    if not job_id or "/" in job_id:
+                        raise KeyError(job_id)
+                    if self.job_manager is None:
+                        return self._response(start_response, HTTPStatus.SERVICE_UNAVAILABLE,
+                                              {"error": "no research worker manager is configured"})
+                    cancelled = self.job_manager.cancel(job_id)
+                    return self._response(start_response, HTTPStatus.OK, {
+                        "job_id": job_id,
+                        "cancellation_requested": cancelled,
+                        "job": self.store.get_job(job_id),
+                    })
+                return self._response(start_response, HTTPStatus.METHOD_NOT_ALLOWED,
+                                      {"error": "job route does not support this method"})
             if method == "GET" and path == "/api/strategies":
                 # This endpoint enumerates existing strategy code; it does not execute strategies.
                 query = parse_qs(environ.get("QUERY_STRING", ""))
@@ -527,8 +606,6 @@ class ResearchAPI:
             return self._response(start_response, HTTPStatus.NOT_FOUND, {"error": "route not found"})
         except sqlite3.IntegrityError as exc:
             return self._response(start_response, HTTPStatus.CONFLICT, {"error": f"record conflict: {exc}"})
-        except sqlite3.IntegrityError as exc:
-            return self._response(start_response, HTTPStatus.CONFLICT, {"error": f"record conflict: {exc}"})
         except KeyError as exc:
             return self._response(start_response, HTTPStatus.NOT_FOUND, {"error": f"not found: {exc}"})
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
@@ -538,7 +615,22 @@ class ResearchAPI:
                                   {"error": f"internal error: {type(exc).__name__}"})
 
 
-def create_app(database_path: str) -> ResearchAPI:
-    """Create an API instance against a dedicated research database."""
+def create_app(
+    database_path: str,
+    *,
+    crypto_data_root: str | None = None,
+    max_workers: int = 1,
+    max_queued: int = 8,
+) -> ResearchAPI:
+    """Create an API with a dedicated store and a bounded allow-listed worker manager."""
     # Do not reuse cryptobot trading state databases for research records.
-    return ResearchAPI(ExperimentStore(database_path))
+    from .runners import build_default_job_manager
+
+    store = ExperimentStore(database_path)
+    manager = build_default_job_manager(
+        store,
+        crypto_data_root=crypto_data_root,
+        max_workers=max_workers,
+        max_queued=max_queued,
+    )
+    return ResearchAPI(store, manager)
