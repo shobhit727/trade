@@ -525,6 +525,7 @@ def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
         AlgorithmFamily.GRID_SEARCH,
         AlgorithmFamily.DIFFERENTIAL_EVOLUTION,
         AlgorithmFamily.BAYESIAN,
+        AlgorithmFamily.PARETO_SEARCH,
     }
     if algorithm_family in supported_existing_families:
         # Never accept arbitrary strategy names; resolve against the repository catalogue.
@@ -576,6 +577,45 @@ def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
             or len(set(feature_windows)) != len(feature_windows)
         ):
             raise ValueError("genetic_programming.feature_windows must be unique integers >= 2")
+    if algorithm_family is AlgorithmFamily.PARETO_SEARCH:
+        # Multiobjective definitions are ordered and direction-aware in the experiment hash.
+        pareto = parameters.get("pareto_search")
+        required_pareto = {
+            "population_size", "generations", "mutation_rate",
+            "validation_candidates", "objectives", "directions",
+        }
+        if not isinstance(pareto, dict) or not required_pareto.issubset(pareto):
+            raise ValueError(f"pareto_search settings require {sorted(required_pareto)}")
+        for key in ("population_size", "generations", "validation_candidates"):
+            value = pareto[key]
+            minimum = 4 if key == "population_size" else 1
+            maximum = 10000 if key != "validation_candidates" else 1000
+            if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
+                raise ValueError(f"pareto_search.{key} must be an integer from {minimum} to {maximum}")
+        if pareto["population_size"] * (pareto["generations"] + 1) > 10000:
+            raise ValueError("Pareto candidate count exceeds the 10000 evaluation limit")
+        mutation = pareto["mutation_rate"]
+        if (
+            isinstance(mutation, bool)
+            or not isinstance(mutation, int | float)
+            or not 0 <= mutation <= 1
+        ):
+            raise ValueError("pareto_search.mutation_rate must be between zero and one")
+        objectives = pareto["objectives"]
+        directions = pareto["directions"]
+        allowed_objectives = {
+            "sharpe", "sortino", "cagr", "calmar", "total_return",
+            "max_drawdown", "volatility", "win_rate", "turnover",
+        }
+        if (
+            not isinstance(objectives, list)
+            or len(objectives) < 2
+            or len(objectives) != len(directions)
+            or len(set(objectives)) != len(objectives)
+            or any(name not in allowed_objectives for name in objectives)
+            or any(direction not in {"min", "max"} for direction in directions)
+        ):
+            raise ValueError("pareto_search requires 2+ unique objectives with aligned min/max directions")
     if algorithm_family is AlgorithmFamily.STRATEGY_COMPOSITION:
         # Composition candidates are selected only from the fixed allow-listed component registry.
         composition = parameters.get("strategy_composition")
@@ -886,6 +926,8 @@ class ResearchAPI:
                     expected_runner = "neuroevolution"
                 elif family is AlgorithmFamily.STRATEGY_COMPOSITION:
                     expected_runner = "strategy_composition"
+                elif family is AlgorithmFamily.PARETO_SEARCH:
+                    expected_runner = "pareto_search"
                 else:
                     raise ValueError(
                         "no job runner is registered for this algorithm family yet"
