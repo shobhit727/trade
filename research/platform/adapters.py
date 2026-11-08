@@ -7,6 +7,7 @@ or infer licensing permission from public accessibility.
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -257,7 +258,12 @@ class NSELegacyAdapter:
             extra_metadata={
                 "file_sha256": digest,
                 "numeric_timestamp_unit": "ms",
-                "quality_report": str(frame.attrs.get("quality_report", {})),
+                "quality_report_json": json.dumps(
+                    frame.attrs.get("quality_report", {}),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                ),
             },
         )
 
