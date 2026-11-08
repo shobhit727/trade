@@ -121,14 +121,23 @@ class NSELegacyAdapter:
         return _normalise_ohlcv(frame.reset_index(), timezone_name=self.timezone_name)
 
     def manifest(self, symbol: str, resolution: DataResolution = DataResolution.ONE_DAY) -> DatasetManifest:
-        """Create an unapproved local-data manifest; user must review data licence."""
+        """Create an unapproved local-data manifest fingerprinted to source bytes."""
         # The adapter does not claim that the historical vendor licence permits reuse.
+        from research.optimize import config as optimizer_config
+
+        timeframe = RESOLUTION_MAP.get(resolution)
+        if timeframe is None:
+            raise ValueError(f"NSE legacy loader does not support resolution {resolution.value}")
+        path = optimizer_config.DATA_DIR / f"{symbol}_{timeframe}.csv"
+        if not path.is_file():
+            raise FileNotFoundError(f"no local NSE source file for {symbol} at {timeframe}")
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
         frame = self.load(symbol, resolution)
         return DatasetManifest(
-            dataset_id=f"nse-local-{symbol}-{resolution.value}",
+            dataset_id=f"nse-local-{symbol}-{resolution.value}-{digest[:12]}",
             market=Market.NSE,
             provider="local-repository",
-            source=f"data/nse/{symbol}_{RESOLUTION_MAP[resolution]}.csv via research.optimize.splitter",
+            source=f"{path.name} sha256={digest} via research.optimize.splitter",
             instrument=symbol,
             exchange="NSE",
             category="ohlcv",
