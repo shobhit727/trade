@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from enum import StrEnum
 
 
@@ -74,7 +74,6 @@ class SplitPlan:
                 raise ValueError("partitions overlap or do not respect the embargo")
         if not self.protocol_id.strip():
             raise ValueError("protocol_id is required")
-
 
 
 @dataclass(slots=True)

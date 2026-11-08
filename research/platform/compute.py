@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import time
 from dataclasses import dataclass
 from typing import Any
