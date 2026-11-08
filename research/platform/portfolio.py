@@ -13,6 +13,7 @@ from typing import Mapping
 import numpy as np
 import pandas as pd
 
+from .costs import FeeCalculator
 from .domain import MARKET_SPECS, Market
 from .market import Fill, MarketLedger, Side
 
@@ -32,13 +33,19 @@ class PortfolioConfig:
     max_gross_exposure: Decimal = D("1.0")
     assumed_timezone: str = "UTC"
     cost_model_id: str = "research-cost-v1"
+    fee_calculator: FeeCalculator | None = None
 
     def __post_init__(self) -> None:
         # Enforce long-only exposure and bounded participation for the cash simulator.
         if self.fee_bps < 0 or self.slippage_bps < 0 or self.impact_coefficient_bps < 0:
             raise ValueError("cost assumptions cannot be negative")
-        if self.fee_bps + self.slippage_bps + self.impact_coefficient_bps >= D("10000"):
+        if self.fee_calculator is None and self.fee_bps + self.slippage_bps + self.impact_coefficient_bps >= D("10000"):
             raise ValueError("maximum fee, slippage and impact assumptions must stay below 10000 bps")
+        if self.fee_calculator is not None:
+            if self.fee_calculator.market is not self.market:
+                raise ValueError("fee calculator belongs to a different market")
+            if self.fee_calculator.model_id != self.cost_model_id:
+                raise ValueError("cost_model_id must match the supplied fee calculator")
         if not D("0") < self.max_participation <= D("1"):
             raise ValueError("max_participation must be in (0, 1]")
         if not D("0") < self.max_gross_exposure <= D("1"):
@@ -120,6 +127,16 @@ class PortfolioSimulator:
         self.config = config
         self.initial_capital = MARKET_SPECS[config.market].initial_simulated_capital
         self.ledger = MarketLedger(config.market, self.initial_capital)
+
+    def _fee(self, side: Side, quantity: Decimal, price: Decimal) -> Decimal:
+        # Prefer the market-specific calculator; use proportional bps only as fallback.
+        if self.config.fee_calculator is not None:
+            fee = self.config.fee_calculator.fee(side, quantity, price)
+        else:
+            fee = quantity * price * self.config.fee_bps / D("10000")
+        if fee < 0:
+            raise ValueError("fee calculator returned a negative fee")
+        return fee
 
     def _normalise_index(self, index: pd.Index) -> pd.DatetimeIndex:
         # Convert timestamps into one explicit timezone without guessing from values.
@@ -218,15 +235,22 @@ class PortfolioSimulator:
             orders.sort(key=lambda item: (0 if item[1] is Side.SELL else 1, item[0]))
             for symbol, side, quantity, reference, price in orders:
                 notional = quantity * price
-                fee = notional * self.config.fee_bps / D("10000")
+                fee = self._fee(side, quantity, price)
                 if side is Side.BUY:
-                    # Cap the buy size by available cash including the fee reserve.
-                    affordable = self.ledger.cash_inr / (price * (D("1") + self.config.fee_bps / D("10000")))
-                    quantity = min(quantity, affordable)
+                    # Binary-search affordability so flat charges and tiered fees are supported.
+                    if notional + fee > self.ledger.cash_inr:
+                        low, high = D("0"), quantity
+                        for _ in range(64):
+                            middle = (low + high) / D("2")
+                            if middle * price + self._fee(side, middle, price) <= self.ledger.cash_inr:
+                                low = middle
+                            else:
+                                high = middle
+                        quantity = low
                     if quantity <= 0:
                         continue
                     notional = quantity * price
-                    fee = notional * self.config.fee_bps / D("10000")
+                    fee = self._fee(side, quantity, price)
                 timestamp = index[row].to_pydatetime()
                 fill = Fill(
                     fill_id=f"{self.config.market.value}-{timestamp.isoformat()}-{symbol}-{side.value}",
