@@ -159,6 +159,7 @@ def test_existing_strategy_runner_refuses_multi_symbol_individual_track(tmp_path
         market=Market.NSE,
         fee_bps=Decimal("0"),
         cost_model_id=spec.cost_model_id,
+        execution_model_id=spec.execution_model_id,
     )
     store = _registered_store(tmp_path / "multi-symbol.sqlite3", spec)
     with pytest.raises(ValueError, match="exactly one"):
