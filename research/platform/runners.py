@@ -1146,6 +1146,33 @@ def _prediction_digest(values: np.ndarray) -> str:
     ).hexdigest()
 
 
+def _record_train_family_diagnostics(
+    context: JobContext,
+    spec: ExperimentSpec,
+    report: dict[str, Any],
+) -> None:
+    """Persist a compact TRAIN-only statistical summary without changing candidate selection."""
+    # Full candidate-level p-values remain in the job result; the event stores bounded summaries.
+    fdr = report.get("fdr", {})
+    context.store.append_event(
+        spec.experiment_id,
+        "training_candidate_family_diagnostics",
+        {
+            "algorithm_family": spec.algorithm_family.value,
+            "candidate_family_size": report.get("candidate_family_size", 0),
+            "fdr": {
+                "hypotheses": fdr.get("hypotheses", 0),
+                "rejections": fdr.get("rejections", 0),
+                "alpha": fdr.get("alpha", 0.05),
+            },
+            "deflated_sharpe": report.get("deflated_sharpe"),
+            "pbo_cscv": report.get("pbo_cscv"),
+            "sampling_frequency": report.get("sampling_frequency"),
+            "selection_effect": "diagnostic_only_not_used_for_candidate_selection",
+        },
+    )
+
+
 class GeneticProgrammingJobRunner:
     """Evolve a numerical long/flat policy on TRAIN, select on VALIDATION and freeze OOS."""
 
