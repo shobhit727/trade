@@ -564,6 +564,41 @@ def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
             or len(set(feature_windows)) != len(feature_windows)
         ):
             raise ValueError("genetic_programming.feature_windows must be unique integers >= 2")
+    if algorithm_family is AlgorithmFamily.STRATEGY_COMPOSITION:
+        # Composition candidates are selected only from the fixed allow-listed component registry.
+        composition = parameters.get("strategy_composition")
+        required_composition = {
+            "population_size", "generations", "max_components", "mutation_rate",
+            "validation_candidates", "objective", "feature_windows",
+        }
+        if not isinstance(composition, dict) or not required_composition.issubset(composition):
+            raise ValueError(
+                f"strategy_composition settings require {sorted(required_composition)}"
+            )
+        for key in ("population_size", "generations", "max_components", "validation_candidates"):
+            value = composition[key]
+            minimum = 4 if key == "population_size" else 2 if key == "max_components" else 1
+            if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+                raise ValueError(f"strategy_composition.{key} must be an integer >= {minimum}")
+        if composition["population_size"] * (composition["generations"] + 1) > 10000:
+            raise ValueError("strategy_composition candidate count exceeds the 10000 evaluation limit")
+        mutation = composition["mutation_rate"]
+        if (
+            isinstance(mutation, bool)
+            or not isinstance(mutation, int | float)
+            or not 0 <= mutation <= 1
+        ):
+            raise ValueError("strategy_composition.mutation_rate must be between zero and one")
+        if composition["objective"] not in {"sharpe", "sortino", "cagr", "calmar", "total_return"}:
+            raise ValueError("strategy_composition objective is not supported")
+        windows = composition["feature_windows"]
+        if (
+            not isinstance(windows, list)
+            or not windows
+            or any(isinstance(value, bool) or not isinstance(value, int) or value < 2 for value in windows)
+            or len(set(windows)) != len(windows)
+        ):
+            raise ValueError("strategy_composition.feature_windows must be unique integers >= 2")
     if algorithm_family is AlgorithmFamily.NEUROEVOLUTION:
         # Bound network dimensions, total candidates and numerical search parameters before queueing.
         neural = parameters.get("neuroevolution")
@@ -816,6 +851,8 @@ class ResearchAPI:
                     expected_runner = "genetic_programming"
                 elif family is AlgorithmFamily.NEUROEVOLUTION:
                     expected_runner = "neuroevolution"
+                elif family is AlgorithmFamily.STRATEGY_COMPOSITION:
+                    expected_runner = "strategy_composition"
                 else:
                     raise ValueError(
                         "no job runner is registered for this algorithm family yet"
