@@ -1179,10 +1179,14 @@ data only; it is not imposed on crypto. These checks are not a complete data-qua
 substitute for point-in-time constituent history, corporate actions, missing-bar audits or licence
 review.
 
-The existing source adapters still may read/parse a complete local file before clipping rows at
-the OOS end boundary. This is disclosed in the architecture documentation and is not a secure
-final-holdout isolation boundary. A physically partitioned dataset store and process-isolated
-holdout service remain required before claiming secure final-holdout separation.
+The data layer now supports a trusted ingestion step which materialises a physical non-holdout
+copy ending before the declared final-holdout boundary. Workers with
+RESEARCH_REQUIRE_PARTITIONED_DATA=1 reject manifests without a checksum-verified safe copy;
+RESEARCH_PARTITION_DATA_ROOT selects the store. The default compatibility mode still permits
+legacy combined-file readers, and a local process can access other files on the same filesystem.
+This is not an OS/process security boundary. Enable strict mode for partitioned-data research and
+retain the requirement for a physically isolated worker/holdout service before claiming secure
+final-holdout separation.
 
 No strategy profitability, deployability, live trading or hardware performance is implied by this
 implementation snapshot. Synthetic CI fixtures test software contracts; they are not market
