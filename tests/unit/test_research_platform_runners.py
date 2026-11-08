@@ -589,17 +589,38 @@ def test_genetic_programming_worker_persists_lineage_selects_validation_and_eval
         assert result["final_holdout_accessed"] is False
 
         candidates = store.candidates(spec.experiment_id)
-        assert len(candidates) == 8
-        assert all(item["family"] == "genetic_programming" for item in candidates)
+        train_candidates = [
+            item for item in candidates if item["family"] == "genetic_programming"
+        ]
+        validation_candidates = [
+            item for item in candidates if item["family"] == "genetic_programming_validation"
+        ]
+        oos_candidates = [
+            item for item in candidates if item["family"] == "genetic_programming_selected_oos"
+        ]
+        assert len(train_candidates) == 8
+        assert len(validation_candidates) == 2
+        assert len(oos_candidates) == 1
+        assert result["out_of_sample_candidate_id"] == oos_candidates[0]["candidate_id"]
         assert any(
             item["lineage"]["operator"] == "subtree_crossover"
             or item["lineage"]["operator"] == "subtree_crossover_then_mutation"
-            for item in candidates
+            for item in train_candidates
         )
         candidate_ids = {item["candidate_id"] for item in candidates}
         for item in candidates:
             for parent_id in item["lineage"]["parent_candidate_ids"]:
                 assert parent_id in candidate_ids
+        selected_validation = next(
+            item for item in validation_candidates
+            if item["candidate_id"] == result["selected_candidate"]["validation_candidate_id"]
+        )
+        assert selected_validation["lineage"]["parent_candidate_ids"] == [
+            result["selected_candidate"]["candidate_id"]
+        ]
+        assert oos_candidates[0]["lineage"]["parent_candidate_ids"] == [
+            selected_validation["candidate_id"]
+        ]
         event_types = {event["event_type"] for event in store.events(spec.experiment_id)}
         assert "genetic_programming_candidate_frozen" in event_types
         assert "genetic_programming_oos_recorded" in event_types
