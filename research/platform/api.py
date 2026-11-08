@@ -336,11 +336,19 @@ def _validate_dataset_coverage(store: ExperimentStore, spec: ExperimentSpec) -> 
 
 def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
     # Construct the immutable experiment definition from API input and validate all fields.
+    parameters = dict(payload.get("parameters", {}))
+    algorithm_family = AlgorithmFamily(payload["algorithm_family"])
+    if algorithm_family is AlgorithmFamily.EXISTING_STRATEGY:
+        # Do not accept arbitrary names; the strategy must be registered in the repository.
+        strategy_name = parameters.get("strategy_name")
+        if not isinstance(strategy_name, str) or not strategy_name.strip():
+            raise ValueError("existing_strategy experiments require a registered strategy_name")
+        ExistingStrategyRegistry().describe(strategy_name)
     return ExperimentSpec(
         experiment_id=str(payload["experiment_id"]),
         market=Market(payload["market"]),
         track=ResearchTrack(payload["track"]),
-        algorithm_family=AlgorithmFamily(payload["algorithm_family"]),
+        algorithm_family=algorithm_family,
         resolution=DataResolution(payload["resolution"]),
         dataset_ids=tuple(str(item) for item in payload["dataset_ids"]),
         random_seed=int(payload["random_seed"]),
@@ -359,7 +367,7 @@ def _create_spec(payload: dict[str, Any]) -> ExperimentSpec:
         objectives=tuple(str(item) for item in payload["objectives"]),
         compute_backend=str(payload.get("compute_backend", "auto")),
         compute_device=str(payload.get("compute_device", "unverified")),
-        parameters=dict(payload.get("parameters", {})),
+        parameters=parameters,
     )
 
 
