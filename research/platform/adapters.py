@@ -169,6 +169,7 @@ class CryptoLocalAdapter:
         numeric_timestamp_unit: str | None = None,
         quote_currency: str | None = None,
         fx_dataset_id: str | None = None,
+        timestamp_position: str | None = None,
     ) -> None:
         # Keep every venue rooted inside its own local data directory and timestamp convention.
         self.data_root = Path(data_root).resolve()
@@ -177,6 +178,9 @@ class CryptoLocalAdapter:
         self.numeric_timestamp_unit = numeric_timestamp_unit
         self.quote_currency = quote_currency.upper() if quote_currency else None
         self.fx_dataset_id = fx_dataset_id
+        self.timestamp_position = timestamp_position
+        if timestamp_position not in {None, "bar_open", "bar_close"}:
+            raise ValueError("timestamp_position must be bar_open or bar_close")
         if numeric_timestamp_unit not in {None, "s", "ms", "us", "ns"}:
             raise ValueError("numeric_timestamp_unit must be s, ms, us, ns or None")
         if not self.exchange or any(part in self.exchange for part in ("/", "\\", "..")):
@@ -271,6 +275,7 @@ class CryptoLocalAdapter:
                 "numeric_timestamp_unit": self.numeric_timestamp_unit or "",
                 "quote_currency": self.quote_currency or "",
                 "fx_dataset_id": self.fx_dataset_id or "",
+                "timestamp_position": self.timestamp_position or "",
             },
         )
 
