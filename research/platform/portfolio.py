@@ -214,6 +214,8 @@ class PortfolioSimulator:
         the target row's close. Row t is executed at row t+1 open. The final close has no
         following execution bar and therefore cannot create a fill.
         """
+        # Every call starts from the isolated seed capital, making repeated runs independent.
+        self.ledger = MarketLedger(self.config.market, self.initial_capital)
         # Validate the full input panel before creating any simulated transactions.
         symbols, index = self._validate_data(bars, targets)
         ordered_targets = targets[symbols]
