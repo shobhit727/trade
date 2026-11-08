@@ -19,6 +19,7 @@ from research.platform.optimizers import (
     Parameter,
     differential_evolution,
     grid_search,
+    optuna_tpe_search,
     parzen_heuristic_search,
     random_search,
 )
@@ -631,3 +632,23 @@ def test_differential_evolution_keeps_failed_trials_in_attempt_ledger() -> None:
     assert len(result.failures) == 12
     assert all(item.lineage.get("evaluation_failed") is True for item in result.attempts)
     assert all(item.lineage.get("operator") for item in result.attempts)
+
+
+def test_optuna_tpe_search_records_sampler_seed_and_attempts() -> None:
+    # The Bayesian family is backed by Optuna TPESampler, not the lightweight Parzen helper.
+    result = optuna_tpe_search(
+        (Parameter("x", -2.0, 2.0), Parameter("period", 2, 12, kind="int")),
+        lambda params: -(
+            (float(params["x"]) - 0.3) ** 2
+            + (int(params["period"]) - 7) ** 2 / 100.0
+        ),
+        budget=12,
+        startup_trials=4,
+        seed=123,
+    )
+    assert result.method == "optuna_tpe"
+    assert len(result.candidates) == 12
+    assert len(result.attempts) == 12
+    assert result.best.lineage["sampler"] == "TPESampler"
+    assert result.best.lineage["seed"] == 123
+    assert all(np.isfinite(candidate.score) for candidate in result.candidates)
