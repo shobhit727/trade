@@ -83,9 +83,16 @@ def validate_ohlcv_quality(
             or not 0 < max_abs_close_return < 1
         ):
             raise ValueError("max_abs_close_return must be between zero and one")
-        outliers = int((close_returns >= max_abs_close_return).sum())
+        # Treat a mathematically exact threshold as equal despite binary float representation.
+        at_or_above_limit = (close_returns > max_abs_close_return) | np.isclose(
+            close_returns.to_numpy(dtype=np.float64),
+            max_abs_close_return,
+            rtol=1e-12,
+            atol=1e-15,
+        )
+        outliers = int(at_or_above_limit.sum())
         if outliers:
-            first_bad = close_returns[close_returns >= max_abs_close_return].index[0]
+            first_bad = close_returns[at_or_above_limit].index[0]
             raise ValueError(
                 f"absolute close return must be < {max_abs_close_return:.1%}; "
                 f"{outliers} bars failed, first at {first_bad.isoformat()}"
