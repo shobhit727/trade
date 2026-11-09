@@ -126,9 +126,13 @@ def _normalise_ohlcv(
             # Numeric timestamp units must come from the provider's documented convention.
             if numeric_timestamp_unit not in {"s", "ms", "us", "ns"}:
                 raise ValueError("numeric timestamps require an explicit s/ms/us/ns unit")
-            index = pd.to_datetime(raw_time, unit=numeric_timestamp_unit, utc=True, errors="coerce")
+            index = pd.DatetimeIndex(
+                pd.to_datetime(raw_time, unit=numeric_timestamp_unit, utc=True, errors="coerce")
+            )
         else:
-            index = pd.to_datetime(raw_time, utc=True, errors="coerce")
+            index = pd.DatetimeIndex(
+                pd.to_datetime(raw_time, utc=True, errors="coerce")
+            )
     if index.isna().any():
         raise ValueError("data source contains invalid timestamps")
     if index.tz is None:
