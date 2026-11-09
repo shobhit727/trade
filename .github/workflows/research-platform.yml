@@ -41,6 +41,7 @@ jobs:
     env:
       PYTHONPATH: src
       PYTHONHASHSEED: "0"
+      RESEARCH_REQUIRE_PARTITIONED_DATA: "1"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
