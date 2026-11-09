@@ -7,7 +7,7 @@ broker or venue. It uses the market-scoped cash ledger and rejects cross-market 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, ROUND_FLOOR
 from typing import Mapping
 
 import numpy as np
@@ -149,6 +149,12 @@ class PortfolioSimulator:
         self.initial_capital = MARKET_SPECS[config.market].initial_simulated_capital
         self.ledger = MarketLedger(config.market, self.initial_capital)
 
+    def _normalise_order_quantity(self, quantity: Decimal) -> Decimal:
+        # NSE shares are indivisible; crypto spot quantities retain decimal precision.
+        if self.config.market is Market.NSE:
+            return quantity.to_integral_value(rounding=ROUND_FLOOR)
+        return quantity
+
     def _execution_price(
         self, side: Side, reference: Decimal, quantity: Decimal, available_volume: Decimal
     ) -> tuple[Decimal, Decimal, Decimal]:
@@ -241,8 +247,10 @@ class PortfolioSimulator:
             prior_snapshot = self.ledger.snapshot(prior_marks)
             decision_weights = ordered_targets.iloc[row - 1]
             desired_quantities = {
-                symbol: D(str(float(decision_weights[symbol]) * float(prior_snapshot.equity_inr)
-                               / float(prior_marks[symbol])))
+                symbol: self._normalise_order_quantity(
+                    D(str(float(decision_weights[symbol]) * float(prior_snapshot.equity_inr)
+                          / float(prior_marks[symbol])))
+                )
                 for symbol in symbols
             }
             orders: list[tuple[str, Side, Decimal, Decimal]] = []
@@ -259,8 +267,8 @@ class PortfolioSimulator:
                 reference = D(str(bars[symbol]["open"].iloc[row]))
                 # At the next open, only the previous completed bar's final volume is known.
                 available = D(str(bars[symbol]["volume"].iloc[row - 1]))
-                max_quantity = available * participation_cap
-                executable = min(requested, max_quantity)
+                max_quantity = self._normalise_order_quantity(available * participation_cap)
+                executable = self._normalise_order_quantity(min(requested, max_quantity))
                 if executable <= 0:
                     continue
                 orders.append((symbol, side, executable, reference))
@@ -286,7 +294,7 @@ class PortfolioSimulator:
                             affordable_low = middle
                         else:
                             affordable_high = middle
-                    quantity = affordable_low
+                    quantity = self._normalise_order_quantity(affordable_low)
                     if quantity <= 0:
                         continue
                     # Recompute price, participation, impact and fee for the actual fill.
