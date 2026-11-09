@@ -449,6 +449,15 @@ def test_existing_strategy_optimizer_searches_train_selects_validation_then_eval
             candidate for candidate in stored_candidates
             if candidate["family"] == "random_search"
         ]
+        # Baselines are retained for comparison but are not counted as random-search trials.
+        baseline_candidates = [
+            candidate for candidate in stored_candidates
+            if candidate["family"] == "random_search_baseline"
+        ]
+        assert len(baseline_candidates) == 2
+        assert {item["lineage"]["operator"] for item in baseline_candidates} == {
+            "shipped_default", "user_configured_baseline"
+        }
         validation_candidates = [
             candidate for candidate in stored_candidates
             if candidate["family"] == "random_search_validation"
