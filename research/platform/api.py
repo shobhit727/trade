@@ -79,8 +79,8 @@ pre { overflow:auto; white-space:pre-wrap; word-break:break-word; color:#c4d3e4;
 <label>Crypto maker/taker fee schedule JSON</label><textarea id="fee-schedule" rows="2">{"maker_fee_bps":10,"taker_fee_bps":10}</textarea>
 <label>Training start / end (ISO timestamps)</label><input id="train-start" type="datetime-local" value="2016-01-01T00:00" required><input id="train-end" type="datetime-local" value="2020-01-01T00:00" required>
 <label>Validation start / end</label><input id="val-start" type="datetime-local" value="2020-01-01T00:00" required><input id="val-end" type="datetime-local" value="2022-01-01T00:00" required>
-<label>OOS start / end</label><input id="oos-start" type="datetime-local" value="2022-01-01T00:00" required><input id="oos-end" type="datetime-local" value="2024-01-01T00:00" required>
-<label>Final holdout start / end</label><small>NSE holdout data must start after 1 October 2026; the prior 2024–2026 test window is exposed.</small><input id="hold-start" type="datetime-local" value="2026-10-02T00:00" required><input id="hold-end" type="datetime-local" value="2026-11-08T00:00" required>
+<label>OOS start / end</label><input id="oos-start" type="datetime-local" value="2026-10-02T00:00" required><input id="oos-end" type="datetime-local" value="2026-10-16T00:00" required>
+<label>Final holdout start / end</label><small>NSE OOS and final holdout must both start after 1 October 2026; adjust these windows to the dataset coverage.</small><input id="hold-start" type="datetime-local" value="2026-10-16T00:00" required><input id="hold-end" type="datetime-local" value="2026-11-08T00:00" required>
 <button type="submit" name="action" value="create">Create experiment record</button><button type="submit" name="action" value="queue">Create and queue evaluation</button><p id="form-status" class="status"></p>
 </form>
 </section>
