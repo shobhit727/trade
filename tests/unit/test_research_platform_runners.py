@@ -260,6 +260,36 @@ def test_ohlcv_normalizer_converts_numeric_timestamp_columns_to_datetime_index()
     assert len(normalised) == 2
 
 
+def test_ohlcv_normalizer_localizes_naive_text_timestamps_to_source_timezone() -> None:
+    # Naive timestamp strings are local wall-clock values, not UTC instants.
+    frame = pd.DataFrame({
+        "timestamp": ["2025-01-01 00:00:00", "2025-01-01 01:00:00"],
+        "open": [100.0, 101.0],
+        "high": [101.0, 102.0],
+        "low": [99.0, 100.0],
+        "close": [100.5, 101.5],
+        "volume": [10.0, 12.0],
+    })
+    normalised = _normalise_ohlcv(frame, timezone_name="Asia/Kolkata")
+    assert normalised.index[0] == pd.Timestamp("2025-01-01T00:00:00+05:30")
+    assert normalised.index[1] == pd.Timestamp("2025-01-01T01:00:00+05:30")
+
+
+def test_ohlcv_normalizer_preserves_aware_timestamp_instants() -> None:
+    # Explicit UTC offsets remain the same instants when displayed in the source timezone.
+    frame = pd.DataFrame({
+        "timestamp": ["2025-01-01T00:00:00Z", "2025-01-01T01:00:00Z"],
+        "open": [100.0, 101.0],
+        "high": [101.0, 102.0],
+        "low": [99.0, 100.0],
+        "close": [100.5, 101.5],
+        "volume": [10.0, 12.0],
+    })
+    normalised = _normalise_ohlcv(frame, timezone_name="Asia/Kolkata")
+    assert normalised.index[0] == pd.Timestamp("2025-01-01T05:30:00+05:30")
+    assert normalised.index[1] == pd.Timestamp("2025-01-01T06:30:00+05:30")
+
+
 def test_crypto_loader_verifies_registered_source_hash_and_quote_currency(tmp_path) -> None:
     # INR-quoted crypto spot bars are loaded only when file bytes match the manifest.
     from research.platform.runners import load_registered_bars
