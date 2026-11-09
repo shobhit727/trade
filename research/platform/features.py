@@ -79,9 +79,12 @@ class PointInTimeFeatureEngine:
             )
             rolling_volume_mean = volume.rolling(window, min_periods=window).mean()
             rolling_volume_std = volume.rolling(window, min_periods=window).std(ddof=0)
-            output[f"volume_z_{window}"] = (
+            volume_z = (
                 (volume - rolling_volume_mean) / rolling_volume_std.where(rolling_volume_std > 0)
             )
+            # A fully formed zero-variance window has a well-defined z-score of zero.
+            # Keep warm-up rows as NaN so they cannot bypass causal lookback requirements.
+            output[f"volume_z_{window}"] = volume_z.mask(rolling_volume_std.eq(0), 0.0)
             output[f"close_to_sma_{window}"] = (
                 close / close.rolling(window, min_periods=window).mean() - 1.0
             )
