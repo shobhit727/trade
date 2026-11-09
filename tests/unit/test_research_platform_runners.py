@@ -363,7 +363,8 @@ def test_crypto_loader_converts_usdt_using_prior_fx_close_only(tmp_path) -> None
             "quote_currency": "USDT",
             "timestamp_position": "bar_open",
             "fx_dataset_id": "fx-usdt-inr-v1",
-            "max_fx_staleness_seconds": 7200,
+            # DatasetManifest extra metadata is string-valued; the loader parses this as seconds.
+            "max_fx_staleness_seconds": "7200",
         },
     ))
     store.register_dataset(DatasetManifest(
