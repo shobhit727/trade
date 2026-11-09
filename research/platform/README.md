@@ -34,9 +34,11 @@ any existing backtest engine.
   inferred from these checks.
 - A materialize_non_holdout_partition ingestion helper writes a checksum-verified
   non_holdout.csv copy ending before the final-holdout boundary and returns a new immutable
-  manifest. load_registered_bars prefers that copy and never opens the original source when
-  the manifest contains partition metadata. Set RESEARCH_PARTITION_DATA_ROOT to its root and
-  RESEARCH_REQUIRE_PARTITIONED_DATA=1 to reject legacy combined-source fallback.
+  manifest. Production runners require that copy by default; load_registered_bars never opens
+  the original source when the manifest contains partition metadata. Set
+  RESEARCH_PARTITION_DATA_ROOT to the partition store. An unset
+  RESEARCH_REQUIRE_PARTITIONED_DATA setting is strict mode; set it to 0 only for explicitly
+  controlled exploratory runs that accept legacy combined-source parsing.
 - Explicit quote-currency to INR conversion using backward-only FX alignment, maximum staleness
   limits and source provenance. Future or stale FX rates are rejected.
 - A causal trailing price/volume feature engine plus separately timestamped forward labels.
@@ -78,8 +80,8 @@ system, full NSE tax-lot/corporate-action portfolio simulator, crypto derivative
 liquidation engine, exchange arbitrage simulator, durable distributed worker cluster,
 secured process-isolated holdout service, or full dashboard telemetry/comparison suite.
 The job manager uses local threads and marks in-flight jobs interrupted after process
-restart; interrupted jobs must be resubmitted. Without RESEARCH_REQUIRE_PARTITIONED_DATA=1,
-legacy source loading remains available and can parse a combined file before row clipping.
+restart; interrupted jobs must be resubmitted. Setting RESEARCH_REQUIRE_PARTITIONED_DATA=0 explicitly re-enables legacy source loading,
+which can parse a combined file before row clipping and must not be used for protected-holdout research.
 The safe partition copy avoids that normal worker read, but local filesystem access is not
 an OS/process security boundary. GP, neural and composition policies are currently long/flat
 cash models over price/volume features; they do not yet use point-in-time fundamentals, macro,
