@@ -1,6 +1,6 @@
-# AGENTS.md — Trading Repository Guide
+# Repository Guidelines
 
-## ⚠️ READ THIS FIRST: the mission lives in `GOAL.md`
+**⚠️ READ THIS FIRST: the mission lives in `GOAL.md`.**
 
 **`GOAL.md` is the binding constitution for this project.** It defines the capital
 (₹21,00,000), the return target (3%/month net), the hard risk limits, the anti-fraud
@@ -13,7 +13,229 @@ rules, and the 7 go/no-go gates that must ALL pass before real capital is deploy
   to rescue a result, no survivorship-bias concealment)
 - §5 gates are **not waivable** to ship faster
 
-## 🐍 Run policy: tests on host, app in Docker
+---
+
+## Project Overview
+
+Two trading systems share one backbone in this repo:
+
+1. **`src/cryptobot/`** — async Python crypto engine + 7-crate Rust workspace
+   (`cryptobot-core/-backtest/-features/-risk/-stats/-orderbook/-py`), ~90-strategy catalog,
+   event-bus architecture. PyO3 0.29/maturin extension `cryptobot_rs` is CI-built and
+   import-smoke-tested only — **not** imported by `src/` or `tools/` (known bugs #24 ERC,
+   #40 Sortino/drawdown, #41 NaN limits; dead `-backtest` crate modules #42).
+2. **`src/nsealgo/`** — sync vectorized NSE NIFTY-50 daily-bar engine, the active
+   mission (`GOAL.md`). Single paper/live code path.
+
+**Shared backbone**: `EventBus`, `Clock` protocol, `Decimal` money, Pydantic Settings,
+Prometheus monitoring, health checks, Docker/CI. Broker: Zerodha KiteConnect (nsealgo);
+Binance WS (crypto). Stack: Python ≥3.13, Rust 1.75+, TimescaleDB + Redis (crypto) /
+SQLite (nsealgo), Prometheus/Grafana.
+
+---
+
+## Architecture & Data Flow
+
+### cryptobot (crypto, async event-driven)
+
+```
+Binance WS → LiveTrader → strategy.feed (per closed bar) → OrderEvent
+  → ExecutionEngine (risk check → venue) → EventBus → portfolio / health / tax / fund / breaker / gate  (state under state/)
+```
+
+- `core/events.py` — `EventType` enum, `OrderEvent`/`KlineEvent`/`PnLEvent`: the shared
+  event vocabulary.
+- `core/bus.py` — `EventBus` async pub/sub singleton; Redis mode raises `NotImplementedError`.
+- `core/clock.py` — `Realtime`/`Simulated`/`Accelerated` + `ClockFactory`.
+  **No `datetime.now()` in engines** — always inject the Clock.
+- `core/portfolio.py` — `PortfolioManager` for BACKTEST/PAPER/LIVE; `core/{breaker,gate,tax,fund,state}.py`
+  — CircuitBreaker (JSON state), 60-day paper gate, Schedule VDA TaxEngine, GlobalFundLedger, state_manager.
+- `backtest/engine.py` — `run()` event-stream + `run_bars()` fast path, funding settlement,
+  bankruptcy floor. `execution/engine.py` — `submit_order`: risk check → venue →
+  `ORDER_FILLED`/`REJECTED`; `build_venue` maps mode; SmartOrderRouter unwired.
+- `strategies/registry.py` + `strategies/catalog/*` — ~90 strategies auto-discovered.
+- `live/trader.py` — LiveTrader; `live/nse_basket.py`, `live/nse_powerhour.py` are
+  standalone scheduled NSE processes.
+- `cli/main.py` subcommands: `backtest, mm, ml, serve, bot, validate, breaker-reset, tax, paper,
+  paper-funder, carry`; **live refused** via `PaperGateTracker.allows_live()`.
+
+### nsealgo (NSE, sync vectorized)
+
+```
+validate: load_universe → 18-cell grid (n_positions × lookback × threshold)
+  → walk_forward (6 train / 2 test years) → OOS metrics
+live cycle: kill-switch → target_weights → risk-check every order → CostModel fills
+```
+
+- `cli.py` — sole entrypoint: `audit, costs, limits, backtest, validate, paper, flatten`.
+- `data/loader.py` — **C1–C10 cleaning**; `_apply_c10` rescales unadjusted bonus/split
+  events; raises `DataIntegrityError`.
+- `factors/core.py` + `regime.py` — `momentum_12_1`, `trend_strength_200d`,
+  `low_volatility`, negative controls; `build_composite_score` (median 0.5 fill for
+  missing factor values → ties are common by construction).
+- `backtest/engine.py` — vectorized monthly-rebalance long-only; no-lookahead
+  t scores → t+1 returns; **blake2b tie-break**; `TRADING_DAYS=244`; provenance SHAs.
+- `walkforward.py` — 6 train / 2 test year folds.
+- `live/engine.py` + `execution/{broker,paper}.py` — **Broker Protocol**:
+  `PaperBroker` vs `KiteBroker` behind one code path; only the adapter differs.
+- `risk/limits.py` — frozen `LIMITS` verified at import (from `GOAL.md` §3.3).
+
+---
+
+## Key Directories
+
+```
+src/cryptobot/         # crypto engine (src-layout); backtest/ cli/ core/ data/ execution/
+                       # market_data/ ml/ monitoring/ risk/ strategies/ live/ utils/
+src/nsealgo/           # NSE engine: cli.py, data/ factors/ backtest/ walkforward.py live/ execution/ risk/
+crates/cryptobot-*/    # Rust workspace, 7 crates (edition 2021, rust-version 1.75, lto=thin, panic=abort)
+tests/                 # unit/ (~150+ files), strategies/ (test_catalog_<strategy>.py per strategy),
+                       # integration/ (only test_external_services.py — self-skips via socket probes)
+research/              # ~35 self-contained research/agent_<name>/ dirs; sweep/, optimize/
+tools/                 # 32 scripts: NSE data, Kite login, crypto data pulls, ops, codegen
+scripts/               # 23 bash scripts, all set -euo pipefail with "# Usage:" header
+data/                  # data/nse/<symbol>_<tf>.csv (ts,open,high,low,close,vol; ts=epoch ms);
+                       # data/nse_membership/ (PIT membership 2008→2026, 104 symbols)
+configs/base.yaml      # full config schema; secrets via ${ENV_VAR}
+state/ + state-nse/    # runtime state (gitignored)
+docs/, reports/, PROJECT_MEMORY/, doc/
+```
+
+**Data reality** (`data/nse/`): 50 symbols × {1d,1h,30m,15m,5m}; only **1d is the
+validated substrate** (5,997 bars, 2002→2026-10). 1h from 2024-11-18; 5m/15m from
+2026-08-18→2026-10-06. 1m is unusable — **intraday is BANNED** (GOAL.md).
+Survivorship bias present (today's NIFTY-50 backfilled) — disclose in every report.
+
+---
+
+## Development Commands
+
+```bash
+# Install (PY ?= python3.13; override: make test PY=python3)
+make install           # production deps only
+make install-test      # test deps (pytest stack)
+
+# Tests (HOST venv)
+.venv/bin/python -m pytest tests/unit -q
+.venv/bin/python -m pytest tests/unit/test_core_foundation.py::test_event_bus_subscription_and_history -v
+pytest -m "not integration" -q
+make test
+
+# Lint (HOST venv)
+make lint              # ruff; CI adds pyflakes separately (ruff==0.16.1, pyflakes==3.4.0)
+.venv/bin/ruff check --fix src tests
+
+# Rust (separate from Python CI)
+make cargo-lint        # cargo fmt --check + clippy -D warnings
+make cargo-test
+make cargo-build       # --release
+
+# Docker
+make compose-test / make compose-shell
+docker build --target test --build-arg REQUIREMENTS=requirements/test.txt -t cryptobot:test .
+docker build --target production -t ghcr.io/shobhit727/trade:latest .
+docker buildx build --platform linux/amd64,linux/arm64 --target production --push -t ghcr.io/shobhit727/trade:latest .
+
+# Crypto CLI
+.venv/bin/python -m cryptobot.cli.main backtest --strategy trend_following --bars 5000000 --show-trades
+.venv/bin/python -m cryptobot.cli.main backtest --algorithms jobs.json --workers 8 --json
+
+# NSE validate (the only result that counts) + paper
+.venv/bin/python -m nsealgo.cli validate --walk-forward
+docker compose -f docker-compose.nse.yml run --rm nsealgo paper --cycles 5
+
+# Research (conventions)
+PYTHONPATH=src:. .venv/bin/python -m research.sweep.run --wave N --agent I --agents 40 --out tem/waves/waveN
+PYTHONPATH=src .venv/bin/python -m research.optimize.run --smoke
+```
+
+**Research entrypoints**: `research/AGENT_BRIEF.md` is mandatory reading —
+`sys.path.insert(0, 'src')` + `load_universe('data/nse')`. `research/optimize/`:
+84 strategies × 48 stocks, TRAIN-only selection, TEST once, ₹21L/stock, 21.92 bps
+round-trip, FIFO CGT (STCG 20% / LTCG 12.5%), `out/test_results.jsonl --resume`.
+Loader excludes `adanient`, `jiofin`, `tmpv`.
+
+---
+
+## Code Conventions & Common Patterns
+
+1. **`Decimal` for all money. Never `float`.**
+2. **No lookahead.** Event-driven engine + explicit `Clock`. **No `datetime.now()` in
+   logic** — inject `Realtime`/`Simulated`/`Accelerated` from `core/clock.py`.
+3. **Walk-forward is the only accepted performance evidence.** In-sample numbers are
+   not results; no cost reductions to rescue a result (GOAL.md §6).
+4. **Full Indian cost stack on every fill**: STT, exchange txn, SEBI, stamp duty, DP
+   charges, brokerage, 18% GST — never skip (calibrated 21.92 bps round-trip; CI greps
+   costs = 11.92 bps figure in nsealgo).
+5. **Live and paper share one code path** — only the broker adapter differs
+   (`PaperBroker` vs `KiteBroker`, Broker Protocol).
+6. **C1–C10 data cleaning** in `nsealgo/data/loader.py` — never bypass; `DataIntegrityError`
+   is a stop, not a warning.
+7. **Provenance is fingerprinted** (`nsealgo.provenance`):
+   `engine 29764f562cd5 · loader c1badf5f7df8 · costs ba350aef75b3 · panel 389b082b832f`.
+   **Always quote an nsealgo result with its end date AND its engine SHA.** A stored
+   result whose `engine_sha` does not match the working tree is stale — re-run it,
+   never quote it. Current authoritative result (reports/VALIDATION_v1.md §0):
+   9.52% OOS, Sharpe 0.32, Sortino 0.38, MaxDD −14.92%, Band D; correction chain
+   13.40 → 10.97 → 9.89 → 9.71 → 9.52.
+8. **Tie-break rule (binding)**: score ties broken by `blake2b(f"{date}|{symbol}")` via
+   `np.lexsort` — deterministic, order-independent, **not alphabetical**. Never
+   reintroduce `argsort(..., kind="stable")` (silent alphabetical bias). Binary 0/1
+   masks tie every name exactly → 0.0%-turnover book under the old rule. Any result on
+   a tied/binary panel from `d93815344bd3` or earlier must be re-run. GOAL.md §11.5.
+9. **EventBus** for decoupled component communication (crypto); events vocabulary in
+   `core/events.py`.
+10. **Risk limits from GOAL.md §3.3 hard-coded** in `nsealgo/risk/limits.py` (verified
+    at import; not configurable upward).
+11. **Async-first** crypto I/O (asyncio, aiohttp, redis.asyncio); config via Pydantic
+    Settings + YAML (`configs/base.yaml`, env-prefix, `${ENV_VAR}` secrets).
+12. **src-layout** (`pip install -e .`); import as `cryptobot` / `nsealgo`.
+13. **ruff**: py313 target, line 110, E,F,W,I,B,UP (ignore E501), `tests/*=['B']`,
+    **`known-first-party = ['nsealgo','cryptobot']`** — keep it updated when adding top-level packages.
+
+### NSE hard constraints (from data reality, audited)
+
+| Timeframe | History | Use |
+|-----------|---------|-----|
+| **1d** | ~6,000 bars, ~24y (2002→2026-10) | ✅ primary research substrate |
+| 1h / 4h | ~1–2y | ⚠️ corroboration only |
+| 5m/15m/30m | weeks–months | ⚠️ sanity only |
+| **1m** | ~1,800 bars, ~30 days | ❌ **unusable — intraday is BANNED** |
+
+Daily bars only; holding period 5–60 days; weekly/biweekly rebalance.
+
+---
+
+## Important Files
+
+| File | Purpose |
+|------|---------|
+| `GOAL.md` | Binding constitution — capital, limits, gates (read first) |
+| `reports/VALIDATION_v1.md` | **Authoritative** validation evidence |
+| `configs/base.yaml` | Full config schema (env-overridable) |
+| `src/cryptobot/config.py` | Pydantic Settings loading |
+| `src/cryptobot/core/events.py` | All event types + payloads |
+| `src/cryptobot/core/clock.py` | Clock protocol (Realtime/Simulated/Accelerated) |
+| `src/cryptobot/core/portfolio.py` | Portfolio state, kill-switch logic |
+| `src/cryptobot/execution/engine.py` | Order submission flow |
+| `src/cryptobot/backtest/engine.py` | Backtest event loop |
+| `src/cryptobot/monitoring/health.py` | Health check framework |
+| `src/nsealgo/cli.py` | NSE sole CLI entrypoint |
+| `src/nsealgo/data/loader.py` | C1–C10 cleaning + `load_universe` |
+| `src/nsealgo/risk/limits.py` | Frozen hard limits (import-verified) |
+| `src/nsealgo/execution/{broker,paper}.py` | Broker Protocol adapters |
+| `research/AGENT_BRIEF.md` | Mandatory research setup (`sys.path.insert(0,'src')`) |
+| `docs/RUNBOOK.md` | Ops guide: venv, CLIs, compose paths, provenance |
+| `PROJECT_MEMORY/13_Bug_Tracker.md` | Bugs indexed vs GitHub #20–#53 |
+| `tools/` | `download_nse.py`, `recover_nse_data.py --verify-only`, `build_pit_membership.py`, `kite_login.py` (token swap → `state-nse/kite_session.json`), `gate_status.py`, `control_room.py` (:8090), `gen_catalog.py` codegen |
+
+`tools/*.py` need repo-root cwd.
+
+---
+
+## Runtime/Tooling Preferences
+
+### Run policy: tests on host, app in Docker
 
 | What | Where it runs | Why |
 |------|---------------|-----|
@@ -36,376 +258,65 @@ docker compose -f docker-compose.nse.yml logs -f nsealgo
 docker compose -f docker-compose.research.yml run --rm research python research/audit_data.py
 ```
 
-**Never edit a file inside a container.** Edit on the host, rebuild the image.
+- **Wave files**: `tests/unit/test_waveN_*` are generated try/except-True artifacts —
+  low-signal; don't infer code health from them.
+- **`PYTHONPATH=src:.` pattern** for research module runs (crypto imports fail without
+  the `trade` package installed; nsealgo CI slice sets `PYTHONPATH=src` explicitly).
+- **Coverage gate is CI-only**: `--cov=cryptobot --cov-fail-under=70 --timeout=60`
+  (`COVERAGE_THRESHOLD=70`); don't demand coverage locally.
+- **`.cargo/config.toml` must NOT set `-C target-cpu=native`** — breaks cached builds
+  across runner CPUs (proc-macro `.so` SIGILL). Local opt-in: `CARGO_RUSTFLAGS="-C target-cpu=native"`.
+- **Never edit a file inside a container.** Edit on the host, rebuild the image.
+- Root `tools/*.py` need repo-root cwd.
+- Rust extension `cryptobot_rs`: CI-built + import-smoke-tested only; not imported by Python.
 
 ---
 
-## Project Overview
+## Testing & QA
 
-This repo hosts **two trading systems** sharing one backbone:
+### Layout & fixtures
+- `tests/unit/` (~150+ files incl. low-signal generated `test_waveN_*`),
+  `tests/strategies/` (`test_catalog_<strategy>.py` per strategy), `tests/integration/`
+  (`test_external_services.py` — TimescaleDB/Redis/Prometheus; **self-skips** via socket
+  probes when services are absent).
+- Single `tests/conftest.py`: autouse `reset_singletons` + `reset_logging` every test;
+  `metrics_registry` fixture (isolated Prometheus registry); `@pytest_asyncio.fixture event_bus`.
 
-1. **`src/cryptobot/`** — the crypto quantitative system (Python + Rust workspace),
-   with backtesting, live trading, risk, monitoring, multi-arch Docker deploys.
-2. **`src/nsealgo/`** — the **NSE NIFTY-50 equity system** (the active mission,
-   see `GOAL.md`). Swing-horizon, daily-bar, cost-aware, walk-forward validated.
-
-**Shared backbone reused by `nsealgo`:** `EventBus`, `Clock`, `Decimal` money
-handling, Pydantic Settings config, Prometheus monitoring, health checks, Docker/CI.
-
-**Key Stack:**
-- Python 3.13+ (`src/cryptobot/`, `src/nsealgo/`)
-- Rust workspace (`crates/`) — 7 crates, PyO3 0.29 bindings (crypto hot paths)
-- NSE data: 50 NIFTY-50 symbols, ~24y daily OHLCV in `data/nse/`
-- Broker: Zerodha KiteConnect
-- Docker multi-arch (amd64/arm64) via buildx
-- TimescaleDB + Redis (crypto); SQLite state (nsealgo)
-- Prometheus/Grafana monitoring stack
-
----
-
-## NSE System (`src/nsealgo`) — the active mission
-
-### Hard constraints (from data reality, audited)
-| Timeframe | History | Use |
-|-----------|---------|-----|
-| **1d** | ~6,000 bars, ~24y (2002→2026-10) | ✅ primary research substrate |
-| 1h / 4h | ~1–2y | ⚠️ corroboration only |
-| 5m/15m/30m | weeks–months | ⚠️ sanity only |
-| **1m** | **~1,800 bars, ~30 days** | ❌ **unusable — intraday is BANNED** |
-
-- **Daily bars only.** Holding period 5–60 days. Weekly/biweekly rebalance.
-- **Survivorship bias is present** (today's NIFTY-50 backfilled) — disclose it in every report.
-- Data ends **2026-10-01** (panel re-fetched 2026-10-06 via `tools/recover_nse_data.py`,
-  verified 49/50 vs `research/_audit_1d.csv`) → staleness resolved, but the refresh is a
-  one-off script: a Kite historical feed is still required before live.
-- **Always quote an nsealgo result with its end date AND its engine SHA.** Moving the end
-  date 27 sessions (2026-08-25 → 2026-10-01) moved walk-forward Sharpe 0.66 → 0.44 and the
-  band C → D. Moving only the **tie-break rule** (`d93815344bd3` → `29764f562cd5`) moved
-  CAGR 9.71% → **9.52%** and Sharpe 0.34 → **0.32** with no strategy change at all.
-  Current authoritative result: **9.52% OOS, Sharpe 0.32, Sortino 0.38, MaxDD −12.91→−14.92%,
-  Calmar 0.64, Band D, four gates failing** — see `reports/VALIDATION_v1.md` §0.
-  Correction chain, every step a bug fix that made it worse:
-  **13.40 → 10.97 → 9.89 → 9.71 → 9.52**.
-- **Provenance is fingerprinted** (`nsealgo.provenance`): current
-  `engine 29764f562cd5 · loader c1badf5f7df8 · costs ba350aef75b3 · panel 389b082b832f`.
-  Loader/costs/panel are unchanged from v3; only the engine moved. **A stored result whose
-  `engine_sha` does not match the working tree is stale — re-run it, never quote it.**
-- **Tie-break rule (binding).** Score ties are broken by `blake2b(f"{date}|{symbol}")` via
-  `np.lexsort` — deterministic, reproducible across processes, and **order-independent but
-  NOT alphabetical**. Never reintroduce `argsort(..., kind="stable")` for selection: it
-  resolves ties by column position, and since the panel's columns are alphabetical that is
-  a silent alphabetical bias. `build_composite_score` fills missing factor values with the
-  median **0.5**, so ties are common by construction; a **binary 0/1 mask ties every name
-  exactly and produced a 0.0%-turnover book** under the old rule. See `GOAL.md` §11.5 —
-  any result on a tied/binary panel from `d93815344bd3` or earlier must be re-run.
-
-### Rules that code must obey
-1. **`Decimal` for all money. Never `float`.**
-2. **No lookahead.** Event-driven engine + explicit `Clock`. No `datetime.now()` in logic.
-3. **Walk-forward is the only accepted performance evidence.**
-4. **Full Indian cost stack on every fill**: STT, exchange txn, SEBI, stamp duty,
-   DP charges, brokerage, **18% GST**. Never skip.
-5. **Live and paper share one code path** — only the broker adapter differs.
-6. **Risk limits from `GOAL.md` §3.3 are hard-coded** in `nsealgo/risk/limits.py`.
+### Config
+- `pyproject [tool.pytest.ini_options]`: `asyncio_mode="auto"`, `testpaths=["tests"]`,
+  `addopts="-ra"`, marker `integration`. Deps: `requirements/test.txt` (prod + pytest≥8.3,
+  pytest-asyncio, pytest-cov, pytest-timeout, hypothesis (max_examples=50), ccxt, tqdm).
 
 ### Commands
 ```bash
-# Validate a strategy (the only result that counts)
-.venv/bin/python -m nsealgo.cli validate --strategy momentum --walk-forward
-
-# Paper trade (no capital)
-docker compose -f docker-compose.nse.yml run --rm nsealgo paper --duration 1w
-
-# Research
-.venv/bin/python research/audit_data.py
-.venv/bin/python research/sweep.py --factor momentum
+.venv/bin/python -m pytest tests/unit -q                 # host venv, fast loop
+pytest -m "not integration" -q                           # skip external-service tests
+pytest --cov=cryptobot --cov-report=term-missing --timeout=60   # what CI runs (gate CI-only)
+# CI nsealgo slice = explicit file list with PYTHONPATH=src
+cargo test --workspace                                    # Rust, separate
 ```
+
+### Quirks & common failures
+| Symptom | Cause / fix |
+|---------|-------------|
+| `ModuleNotFoundError: cryptobot` | `pip install -e .` (or set `PYTHONPATH=src`) |
+| `asyncio.run()` inside tests | **Known failure cause** — use `await` directly (asyncio auto-mode is on; explicit `@pytest.mark.asyncio` dominant) |
+| `test_nsealgo_data.py` skips/fails | requires `data/nse/asianpaint_1d.csv` or `$NSE_DATA` (68MB, gitignored) |
+| `sqlite3` missing | graceful no-op persistence (try/except import) — install `sqlite3` or run in Docker |
+| `ccxt` not installed | in `requirements/test.txt`; needed for Binance venue tests |
+| CI nsealgo slice imports fail | run with `PYTHONPATH=src` |
+| Docker tests | `make compose-test`, test target runs `pytest -q tests` |
+
+### CI pipeline (ci.yml DAG)
+`changes` (path filter) → `lint` (ruff 0.16.1 + pyflakes 3.4.0) → `security-review`
+(gitleaks) ∥ `security-audit` (pip-audit) → `cargo-lint` → `cargo-test` → `pyo3`
+(maturin 1.9.6, core paths) → `nsealgo` (ruff + 4 test files `PYTHONPATH=src` +
+calibration greps: costs 11.92 bps; limits 0.15 0.25 0.08 0.02 0.04 0.12 0.25 +
+Dockerfile.nse smoke) → `unit` (matrix 3.13/3.14, `--cov-fail-under=70`) →
+`docker-test` (Trivy CRITICAL/HIGH fail) → `compose-validate` → `docker-build`
+(production; amd64 PR / amd64+arm64 push; /health smoke) → `docker-manifest`.
+`release.yml`: tag `v*.*.*` → multiarch + SBOM + provenance. Dependabot: actions/pip/docker Mondays.
 
 ---
 
-## Essential Commands
-
-### Development
-```bash
-# Install dependencies
-make install          # production deps only
-make install-test     # test + dev deps (includes numpy/pandas)
-
-# Run tests  (HOST venv)
-.venv/bin/python -m pytest tests -q
-.venv/bin/python -m pytest tests/unit/test_nsealgo_costs.py -v  # single file
-
-# Lint  (HOST venv)
-make lint             # ruff check + pyflakes
-.venv/bin/ruff check --fix src tests
-
-# Docker
-make compose-test     # run test container
-make compose-shell    # shell into test container
-```
-
-### Docker
-```bash
-# Build test image
-docker build --target test --build-arg REQUIREMENTS=requirements/test.txt -t cryptobot:test .
-
-# Build production
-docker build --target production -t ghcr.io/shobhit727/trade:latest .
-
-# Multi-arch (requires buildx)
-docker buildx build --platform linux/amd64,linux/arm64 --target production --push -t ghcr.io/shobhit727/trade:latest .
-```
-
-### CI Pipeline Order (must run in order)
-```bash
-# Required order per CI
-1. lint          # ruff (pinned) — Makefile target runs ruff only; CI adds pyflakes as a separate step
-2. cargo-lint    # cargo fmt --check + cargo clippy -D warnings
-3. cargo-test    # cargo test --workspace
-4. unit          # pytest with coverage gate (--cov-fail-under=70), matrix on 3.13+3.14 (depends on lint)
-5. docker-test   # cached image build + pytest inside container + trivy scan (needs: lint + changes path-filter)
-6. docker-build  # multi-arch buildx (push only on push); gated by changes path-filter
-```
-
-> **Reality check (2026-08-22 audit)**: `docker-test` depends only on `[lint, changes]` and runs in
-> parallel with cargo/unit — it does NOT wait for them. That's how the broken production CMD (#22)
-> shipped green: the production target is built+scanned but never *run* by CI.
-
-### Parallel / Independent CI Jobs
-- `changes` (path filter: core/docker) — a *skip* gate, not a true dependency stage
-- `security-review` (gitleaks secrets scan) — independent
-- `security-audit` (pip-audit on prod+test requirements) — independent
-- `pyo3` (maturin build + import smoke test of `cryptobot_rs`) — runs when `core` paths change
-- `compose-validate` (docker compose config) — after lint
-- `docker-manifest` (multi-arch manifest) — after `docker-build`, push only
-
-### Docker Image Scans
-- `docker-test` + `docker-build` + `release.yml` all run Trivy (CRITICAL/HIGH, ignore-unfixed, fail on findings)
-- `release.yml` also emits SBOM + provenance on the multi-arch push
-
-### Coverage Gate
-- `unit` enforces `--cov-fail-under=70` and uploads `coverage.xml` (artifact + Codecov when `CODECOV_TOKEN` set)
-
----
-
-## Architecture Notes (Non-Obvious)
-
-### Package Structure
-```
-src/cryptobot/          # Main Python package (src-layout)
-├── backtest/           # Event-driven backtesting engine
-├── cli/                # CLI entrypoint (cryptobot.cli.main:main)
-├── core/               # Core primitives (events, bus, clock, portfolio, state)
-├── data/               # Ingestion, storage (TimescaleDB, Parquet), cleaning
-├── execution/          # Engine, router, venues (Binance, simulated), algorithms
-├── market_data/        # WebSocket managers
-├── ml/                 # Features, models (direction, volatility, regime, ensemble)
-├── monitoring/         # Metrics, alerting, health checks, dashboards
-├── risk/               # Limits, kill switch, correlation, sizing
-├── strategies/         # Base + implementations (trend, MM, stat arb, funding, ML)
-└── utils/              # Logging, decorators, types, health server
-
-crates/cryptobot-*/      # Rust workspace — 7 crates (core, features, risk, stats, orderbook, backtest, py)
-```
-
-### Key Conventions
-- **src-layout**: `pip install -e .` installs from `src/cryptobot`
-- **Async-first**: All I/O is async (asyncio, aiohttp, redis.asyncio)
-- **Config**: Pydantic Settings + YAML (`configs/base.yaml`) with env overrides
-- **Events**: Central `EventBus` for decoupled component communication
-- **Time abstraction**: `Clock` protocol (Realtime/Simulated/Accelerated) — critical for backtest determinism
-- **Decimal for money**: All financial values use `Decimal`, never `float`
-
-### Critical Files to Know
-| File | Purpose |
-|------|---------|
-| `configs/base.yaml` | Full config schema (env-overridable) |
-| `src/cryptobot/config.py` | Pydantic Settings loading |
-| `src/cryptobot/core/events.py` | All event types + payloads |
-| `src/cryptobot/core/portfolio.py` | Portfolio state, kill-switch logic |
-| `src/cryptobot/execution/engine.py` | Order submission flow |
-| `src/cryptobot/backtest/engine.py` | Backtest event loop |
-| `src/cryptobot/monitoring/health.py` | Health check framework |
-
----
-
-## Testing Quirks
-
-### Running Tests
-```bash
-# All tests (with coverage, timeout=60s)
-pytest -q --tb=short --cov=cryptobot --cov-report=term-missing --timeout=60
-
-# Single test
-pytest tests/unit/test_core_foundation.py::test_event_bus_subscription_and_history -v
-
-# Skip slow/integration
-pytest -m "not integration" -q
-```
-
-### Test Infrastructure
-- **Async**: All tests use `pytest-asyncio` (`@pytest.mark.asyncio`)
-- **Timeout**: Default 60s per test (CI enforces)
-- **Fixtures**: `tests/conftest.py` — check for `monkeypatch`, `asyncio` fixtures
-- **Test DB**: Uses in-memory SQLite; `_sqlite3` missing = graceful fallback (warning logged)
-
-### Common Test Failures
-| Symptom | Cause |
-|---------|-------|
-| `ModuleNotFoundError: cryptobot` | Forgot `pip install -e .` |
-| `asyncio.run()` in async test | Use `await` directly, not `asyncio.run()` |
-| `sqlite3` missing | Install `sqlite3` package or run in Docker |
-| `ccxt` not installed | `pip install ccxt` for Binance venue tests |
-
----
-
-## Docker Gotchas
-
-### Build Targets
-| Target | Purpose |
-|---------|---------|
-| `base` | Shared base with deps |
-| `test` | Runs `pytest -q tests` (CI) |
-| `production` | Runs bot server with healthcheck |
-
-### Multi-Arch Tags
-```bash
-# Tags use sanitized platform names (no slashes)
-linux/amd64  ->  linux-amd64
-linux/arm64  ->  linux-arm64
-
-# Tags pushed:
-ghcr.io/shobhit727/trade:<sha>-linux-amd64
-ghcr.io/shobhit727/trade:<sha>-linux-arm64
-ghcr.io/shobhit727/trade:latest-linux-amd64
-ghcr.io/shobhit727/trade:latest-linux-arm64
-```
-
-### Manifest Creation
-Runs in separate `docker-manifest` job AFTER `docker-build` completes (both platforms pushed). Creates:
-- `ghcr.io/...:<sha>` (multi-arch)
-- `ghcr.io/...:latest` (multi-arch)
-
----
-
-## CI/CD Specifics
-
-### Environment Variables
-```yaml
-env:
-  PYTHON_TAG: "3.14-slim"    # Docker base image (threaded into builds as --build-arg)
-  CI_PYTHON: "3.13"          # Python version for CI runners
-  REGISTRY_IMAGE: ghcr.io/${{ github.repository }}
-```
-
-> **Reality check (2026-08-22 audit)**: only `ci.yml` actually passes `PYTHON_TAG=3.14-slim`;
-> `release.yml`, `scripts/build_multiarch.sh`, and compose omit it, so tagged release images build
-> on the Dockerfile default (`3.13-slim`). See issue #38.
-
-### Python Version
-- **CI runners**: 3.13 + 3.14 (unit tests run a matrix on both)
-- **Docker base image**: 3.14-slim in CI; Dockerfile *default* ARG is still `3.13-slim` (#38)
-- **Local**: 3.14 works (`pyproject requires-python >=3.13`); override Makefile if no `python3.13`:
-  `make test PY=python3`
-
-### Rust Toolchain
-- Uses `dtolnay/rust-toolchain@stable` (auto-installs) + `Swatinem/rust-cache@v2` (caches target dir)
-- Workspace: 7 crates in `crates/` (core, features, risk, stats, orderbook, backtest, py); fully buildable locally via `rustup`
-- Targets: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`
-- PyO3: `0.29` for Rust 1.97+ compatibility
-- All Rust tests pass
-- ⚠️ `.cargo/config.toml` must NOT set `-C target-cpu=native` — it breaks cached builds across heterogeneous runner CPUs (proc-macro `.so` SIGILL). For local builds opt in via `CARGO_RUSTFLAGS="-C target-cpu=native"`.
-
-### CI job details (ci.yml)
-- `concurrency: ci-..., cancel-in-progress: true` keyed per workflow+branch — rapid pushes cancel superseded runs
-- Every job has `timeout-minutes` (15–60) to bound cost
-- `permissions: contents: read` at workflow level; `docker-build`/`docker-manifest` donate `packages: write`
-- `lint` dep: pin ruff==0.16.1 + pyflakes==3.4.0; `checkout@v6`, `setup-python@v5`
-- `unit`: coverage gate `--cov-fail-under=70` + `coverage.xml` artifact (+ Codecov when `CODECOV_TOKEN` set)
-- `pyo3`: `maturin==1.9.6` build + import smoke test of `cryptobot_rs` (gated by `core` path filter)
-- `security-review` (gitleaks) + `security-audit` (pip-audit) run in parallel, no deps
-- `docker-test` + `docker-build` run Trivy (CRITICAL/HIGH, ignore-unfixed, fail on findings)
-- Docker build uses `docker/build-push-action@v6` with GHA cache (`cache-from/to: type=gha`)
-- `docker-build` matrix: **PRs build amd64 only; pushes build amd64 + arm64** (dynamic `fromJSON` matrix); both docker jobs gated by `changes` path filter
-- Build args threaded through: `PYTHON_TAG`, `REQUIREMENTS`, `GIT_SHA`, `BUILD_DATE`
-
----
-
-## Release Process
-
-```bash
-# Tag a version
-git tag v0.1.0
-git push origin v0.1.0
-
-# Triggers release-multiarch workflow:
-# 1. Validates tag format (refs/tags/v*)
-# 2. Builds multi-arch production image (amd64 + arm64 in one buildx push)
-# 3. Pushes to GHCR with tags: latest, vX.Y.Z, vX.Y.Z-multiarch
-# 4. Attaches SBOM + provenance to the same push step
-```
-
-### Version Sources
-- **Python**: `pyproject.toml` `[project].version` (0.2.0)
-- **Rust**: `Cargo.toml` `[workspace.package].version` (0.2.0)
-- **Docker**: Git tag (stripped `v` prefix)
-
----
-
-## Common Pitfalls
-
-| Issue | Fix |
-|-------|-----|
-| `ruff` import sorting | Run `ruff check --fix src tests` |
-| `datetime.utcnow()` deprecation | Use `datetime.now(timezone.utc)` |
-| `np.math.erf` | Use `math.erf` (numpy 2.x) |
-| `np.sum(generator)` | Use `np.fromiter(gen, dtype=float, count=n)` |
-| `asyncio.run()` in async test | Remove `asyncio.run()`, use `await` |
-| `docker buildx imagetools` not found | Ensure `docker/setup-buildx-action@v3` runs first |
-
----
-
-## Useful References
-
-- **Plan/Architecture**: `plan.md`, `CODEBASE.md`, `PROJECT_MEMORY/`
-- **Runbook**: `docs/RUNBOOK.md` (ops guide)
-- **Config Reference**: `PROJECT_MEMORY/08_Config_Reference.md`
-- **Bug Tracker**: `PROJECT_MEMORY/13_Bug_Tracker.md` (indexed against GitHub issues #20–#53, filed 2026-08-22 audit)
-- **Feature Status**: `PROJECT_MEMORY/12_Feature_Status.md`
-
-> **2026-08-22 audit**: 34 verified bugs filed as #20–#53 (9 critical, 16 high). Headline caveats
-> until fixed: production Docker image cannot start (#22), backtest Sharpe/drawdown unreliable
-> (#20/#32/#39/#40), catalog strategies effectively long-only (#25), ML training labels leak
-> features (#21), optimizer layer non-functional (#27). Check the tracker before trusting any
-> module marked ✅ elsewhere.
-
----
-
-## Quick Reference: Most Common Commands
-
-```bash
-# Daily dev loop
-make install-test && make lint && make test
-
-# Full CI locally (needs docker)
-make lint && make test && docker build --target test -t cryptobot:test . && docker run --rm cryptobot:test
-
-# Release
-git tag v0.1.0 && git push origin v0.1.0
-
-# Debug in container
-make compose-shell
-
-# Rust workspace
-make cargo-lint && make cargo-test && make cargo-build
-
-# Backtest: per-trade output
-python -m cryptobot.cli.main backtest --strategy trend_following --bars 5000000 --show-trades
-
-# Backtest: parallel algorithm sweep (multi-core)
-python -m cryptobot.cli.main backtest --algorithms jobs.json --workers 8 --json
-```
-
----
-
-*Generated from repo analysis. Update when conventions change.*
+*Generated from repo analysis + 4 scout reports (2026-11-10). Update when conventions change.*
