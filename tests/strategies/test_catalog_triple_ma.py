@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.triple_ma import TripleMaStrategy
+from cryptobot.strategies.catalog.triple_moving_average import TripleMaStrategy
 
 
 def _series(up: bool):

@@ -1,0 +1,107 @@
+{
+  "roc_fidelity": {
+    "5": {
+      "n_probes": 124,
+      "max_abs_diff": 1.1102230246251565e-16
+    },
+    "20": {
+      "n_probes": 124,
+      "max_abs_diff": 1.1102230246251565e-16
+    },
+    "60": {
+      "n_probes": 123,
+      "max_abs_diff": 1.1102230246251565e-16
+    },
+    "126": {
+      "n_probes": 121,
+      "max_abs_diff": 1.1102230246251565e-16
+    }
+  },
+  "variants": {
+    "V1 roc20 t0.5%": {
+      "name": "V1 roc20 t0.5%",
+      "period": 20,
+      "threshold": 0.005,
+      "frac_bars_long": 0.5373648126689842,
+      "frac_bars_flat": 0.05479432213209733,
+      "frac_bars_short": 0.4078408651989185,
+      "mean_flagged_per_day": 24.06464864864865,
+      "min_flagged_per_day": 0.0,
+      "days_zero_flagged": 56,
+      "fwd_flagged": 0.018180087563905274,
+      "fwd_unflagged": 0.02029597850102717,
+      "spread_bps": -21.15890937121896,
+      "tstat": -3.4152024969893633,
+      "n_flagged": 49858,
+      "n_unflagged": 40352
+    },
+    "V2 roc20 t3%": {
+      "name": "V2 roc20 t3%",
+      "period": 20,
+      "threshold": 0.03,
+      "frac_bars_long": 0.4084878331402086,
+      "frac_bars_flat": 0.30758014677481654,
+      "frac_bars_short": 0.28393202008497487,
+      "mean_flagged_per_day": 18.29318918918919,
+      "min_flagged_per_day": 0.0,
+      "days_zero_flagged": 92,
+      "fwd_flagged": 0.018267257344681456,
+      "fwd_unflagged": 0.019746755859223645,
+      "spread_bps": -14.794985145421894,
+      "tstat": -2.42311008387818,
+      "n_flagged": 37816,
+      "n_unflagged": 52394
+    },
+    "V3 roc60 t3%": {
+      "name": "V3 roc60 t3%",
+      "period": 60,
+      "threshold": 0.03,
+      "frac_bars_long": 0.5210695854308702,
+      "frac_bars_flat": 0.17668529880458672,
+      "frac_bars_short": 0.30224511576454305,
+      "mean_flagged_per_day": 23.118702702702702,
+      "min_flagged_per_day": 0.0,
+      "days_zero_flagged": 98,
+      "fwd_flagged": 0.018263534204894395,
+      "fwd_unflagged": 0.020156777968490237,
+      "spread_bps": -18.932437635958422,
+      "tstat": -3.0696392147498046,
+      "n_flagged": 48632,
+      "n_unflagged": 41392
+    },
+    "V4 roc126 t8%": {
+      "name": "V4 roc126 t8%",
+      "period": 126,
+      "threshold": 0.08,
+      "frac_bars_long": 0.49271660850842675,
+      "frac_bars_flat": 0.2981265622293167,
+      "frac_bars_short": 0.20915682926225654,
+      "mean_flagged_per_day": 21.52345945945946,
+      "min_flagged_per_day": 0.0,
+      "days_zero_flagged": 184,
+      "fwd_flagged": 0.017049123589686396,
+      "fwd_unflagged": 0.0211426317535785,
+      "spread_bps": -40.93508163892104,
+      "tstat": -6.724037904110359,
+      "n_flagged": 44629,
+      "n_unflagged": 45065
+    },
+    "V5 roc5 t0.5%": {
+      "name": "V5 roc5 t0.5%",
+      "period": 5,
+      "threshold": 0.005,
+      "frac_bars_long": 0.4715646651270208,
+      "frac_bars_flat": 0.11922632794457275,
+      "frac_bars_short": 0.40920900692840645,
+      "mean_flagged_per_day": 21.19135135135135,
+      "min_flagged_per_day": 0.0,
+      "days_zero_flagged": 23,
+      "fwd_flagged": 0.0196807785504893,
+      "fwd_unflagged": 0.018626299267749134,
+      "spread_bps": 10.544792827401652,
+      "tstat": 1.7353198172742041,
+      "n_flagged": 43180,
+      "n_unflagged": 47090
+    }
+  }
+}

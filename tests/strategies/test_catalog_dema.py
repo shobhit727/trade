@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.dema import DemaStrategy
+from cryptobot.strategies.catalog.dema_strategy import DemaStrategy
 
 
 def _series(up: bool):

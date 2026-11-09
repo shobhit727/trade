@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.price_channel import PriceChannelStrategy
+from cryptobot.strategies.catalog.price_channel_strategy import PriceChannelStrategy
 
 
 def _series(up: bool):

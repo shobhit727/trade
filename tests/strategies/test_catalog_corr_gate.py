@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.corr_gate import CorrGateStrategy
+from cryptobot.strategies.catalog.correlation_gate import CorrGateStrategy
 
 
 def _series(up: bool):

@@ -1,0 +1,74 @@
+
+================================================================================================
+3b.1  CONSTRAINT RE-CHECK (corrected sector computation)
+================================================================================================
+  n positions held: mean 7.6, max 30 (cap max_names=30)
+  single name max  0.1080  (cap 0.12)  OK
+  worst sector 'other' 0.2250  (cap 0.25)  OK
+  invested max     0.7948  (cap 0.90)  OK
+  -> ALL ENGINE CONSTRAINTS HOLD. The step-2 'CAP VIOLATION' line was my own
+     mistake (compared to n_positions=22, the target, instead of max_names=30,
+     the cap). No bug in the engine or in the result.
+
+================================================================================================
+3b.2  SELECTION vs EXPOSURE -- unbiased decomposition
+================================================================================================
+Method: regress the strategy's GROSS daily return on the equal-weight market
+daily return over all 685 TEST bars. No conditioning, so no exposure bias.
+
+  market (equal-weight universe) daily mean   3.617 bp
+  strategy gross daily mean               0.944 bp
+  average exposure                     0.3004
+
+  regression:  strategy_gross = alpha + beta * market
+    beta   0.338   (market exposure actually taken)
+    alpha  -0.277 bp/day   t = -0.00
+    annualised alpha  -0.68 pp/yr  (se 405.05)
+    -> alpha indistinguishable from zero
+
+Reading:
+  beta 0.34 confirms the book is structurally under-exposed: it participates
+  in roughly 34% of the market's daily move, because the sparse gate plus the
+  12% single-name cap leave ~70% of the book in cash.
+  alpha -0.68 pp/yr (t=-0.00) is the separate question of
+  whether the names the gate DOES pick beat the universe.
+
+================================================================================================
+3b.3  UNCONDITIONED SELECTION TEST
+================================================================================================
+Compare the strategy's gross return against beta*market at the SAME time,
+averaged over all bars -- no conditioning on exposure.
+
+  mean(strategy - 0.34*market) =  -0.277 bp/day
+  t-statistic                        =  -0.19
+  annualised                         =  -0.68 pp/yr (se 3.48)
+  -> selection edge is statistically indistinguishable from zero.
+     The Donchian gate carries NO positive stock-selection information in TEST.
+
+================================================================================================
+3b.4  WHY IS THE BOOK 70% CASH? -- the sparsity arithmetic
+================================================================================================
+  rebalance dates in TEST        : 34
+  names flagged, mean            : 3.4
+  names flagged, median          : 2
+  names in the tradable universe : ~47
+  rebalances with 0 flags        : 7  -> 100% cash that month
+  rebalances with <=3 flags      : 23  -> 3*12% = 36% max investable
+
+  The catalog's breakouts are RARE events. A strategy that only holds names on
+  the rare days it is confident is, for a long-only delivery account, a strategy
+  that is in cash 70% of the time. The 12% single-name cap then makes it worse:
+  you cannot concentrate into the 2-3 names you like to make up for the cash.
+
+  This is a mismatch of signal FREQUENCY with PORTFOLIO STRUCTURE, not evidence
+  that breakouts never work. It is a design flaw in adapting this per-symbol
+  +1/0/-1 strategy to a 22-name cross-sectional book.
+
+================================================================================================
+3b.5  CORRECTED CONTROL PERCENTILE
+================================================================================================
+  strategy CAGR 1.45%
+  beat 11/20 random controls -> percentile 55th
+  (step 3 printed '1th' because it formatted a 0-1 fraction with :.0f -- correct value is 55th)
+  exact one-sided binomial p = 0.412
+  -> indistinguishable from a coin flip.

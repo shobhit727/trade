@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.dual_ma import DualMaStrategy
+from cryptobot.strategies.catalog.dual_moving_average import DualMovingAverageStrategy
 
 
 def _series(up: bool):
-    s = DualMaStrategy()
+    s = DualMovingAverageStrategy()
     out = []
     for i in range(200):
         px = (100.0 + i * 0.4) if up else (200.0 - i * 0.4)

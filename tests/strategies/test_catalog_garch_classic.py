@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.garch_classic import GarchClassicStrategy
+from cryptobot.strategies.catalog.garch_classic_strategy import GarchClassicStrategy
 
 
 def test_garch_classic_expansion_follows_spike():

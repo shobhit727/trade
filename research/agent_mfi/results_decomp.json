@@ -1,0 +1,126 @@
+{
+  "tripwire": {
+    "cut_date": "2021-06-30",
+    "weights_before_cut_max_abs_diff": 0.0,
+    "weights_before_cut_n_differing": 0,
+    "weights_before_cut_n": 64992,
+    "weights_after_cut_max_abs_diff": 0.108,
+    "pass": true
+  },
+  "decomposition": {
+    "TRAIN": {
+      "V1_mfi_p14_l20": {
+        "mean_invested": 0.11984909049902241,
+        "pct_days_fully_invested": 0.0,
+        "pct_days_zero": 0.45919918905220475,
+        "net_cagr": -0.008530707108543978,
+        "gross_cagr": -0.0026490380908662514,
+        "beta_component_cagr": 0.0014727620422303467,
+        "selection_alpha_cagr": -0.004121800133096598,
+        "cost_drag_annual": 0.0058922421101210406,
+        "mkt_cagr": 0.21527562705053138
+      },
+      "V2_mfi_p14_l30": {
+        "mean_invested": 0.27875399413323493,
+        "pct_days_fully_invested": 0.0,
+        "pct_days_zero": 0.15560060821084643,
+        "net_cagr": 0.023937159706334032,
+        "gross_cagr": 0.03718729351920835,
+        "beta_component_cagr": 0.03825188767957499,
+        "selection_alpha_cagr": -0.0010645941603666387,
+        "cost_drag_annual": 0.01431964374701859,
+        "mkt_cagr": 0.21527562705053138
+      },
+      "V3_mfi_p14_l40": {
+        "mean_invested": 0.3992790936234001,
+        "pct_days_fully_invested": 0.0,
+        "pct_days_zero": 0.08362899138367967,
+        "net_cagr": 0.05333982217058164,
+        "gross_cagr": 0.0706413096194356,
+        "beta_component_cagr": 0.06709717082197075,
+        "selection_alpha_cagr": 0.0035441387974648464,
+        "cost_drag_annual": 0.019224123881852052,
+        "mkt_cagr": 0.21527562705053138
+      },
+      "V4_mfi_p28_l30": {
+        "mean_invested": 0.138595289701258,
+        "pct_days_fully_invested": 0.0,
+        "pct_days_zero": 0.4216928535225545,
+        "net_cagr": 0.029647516367726334,
+        "gross_cagr": 0.03633405399721701,
+        "beta_component_cagr": 0.008921059856120461,
+        "selection_alpha_cagr": 0.027412994141096547,
+        "cost_drag_annual": 0.007614210581764649,
+        "mkt_cagr": 0.21527562705053138
+      },
+      "V5_mfi_p9_l30": {
+        "mean_invested": 0.32628959837610644,
+        "pct_days_fully_invested": 0.0,
+        "pct_days_zero": 0.10187531677648251,
+        "net_cagr": 0.015494934595509546,
+        "gross_cagr": 0.030524090109392832,
+        "beta_component_cagr": 0.044241381094630716,
+        "selection_alpha_cagr": -0.013717290985237884,
+        "cost_drag_annual": 0.01560373171425836,
+        "mkt_cagr": 0.21527562705053138
+      }
+    },
+    "TEST": {
+      "V1_mfi_p14_l20": {
+        "mean_invested": 0.16531662240901052,
+        "pct_days_fully_invested": 0.0,
+        "pct_days_zero": 0.4590643274853801,
+        "net_cagr": -0.004553396785220154,
+        "gross_cagr": 0.003647169401949979,
+        "beta_component_cagr": 0.012356579948855861,
+        "selection_alpha_cagr": -0.008709410546905882,
+        "cost_drag_annual": 0.00812777999784994,
+        "mkt_cagr": 0.08259753854961804
+      },
+      "V2_mfi_p14_l30": {
+        "mean_invested": 0.2570383734795804,
+        "pct_days_fully_invested": 0.0,
+        "pct_days_zero": 0.26900584795321636,
+        "net_cagr": -0.002281281528562218,
+        "gross_cagr": 0.009673951091119681,
+        "beta_component_cagr": 0.009399089235927027,
+        "selection_alpha_cagr": 0.00027486185519265405,
+        "cost_drag_annual": 0.011978587781779647,
+        "mkt_cagr": 0.08259753854961804
+      },
+      "V3_mfi_p14_l40": {
+        "mean_invested": 0.36553694689656024,
+        "pct_days_fully_invested": 0.0,
+        "pct_days_zero": 0.23830409356725146,
+        "net_cagr": -0.02544229474935278,
+        "gross_cagr": -0.011321688088842041,
+        "beta_component_cagr": 0.005860242462717213,
+        "selection_alpha_cagr": -0.017181930551559255,
+        "cost_drag_annual": 0.013789418099279643,
+        "mkt_cagr": 0.08259753854961804
+      },
+      "V4_mfi_p28_l30": {
+        "mean_invested": 0.17528041353312,
+        "pct_days_fully_invested": 0.0,
+        "pct_days_zero": 0.48099415204678364,
+        "net_cagr": 0.014229759614358573,
+        "gross_cagr": 0.022661753599241052,
+        "beta_component_cagr": 0.02813965967427734,
+        "selection_alpha_cagr": -0.005477906075036287,
+        "cost_drag_annual": 0.008328403663304444,
+        "mkt_cagr": 0.08259753854961804
+      },
+      "V5_mfi_p9_l30": {
+        "mean_invested": 0.30079771549900086,
+        "pct_days_fully_invested": 0.0,
+        "pct_days_zero": 0.2733918128654971,
+        "net_cagr": 0.014147283690711054,
+        "gross_cagr": 0.027967715811459737,
+        "beta_component_cagr": 0.024514465385007345,
+        "selection_alpha_cagr": 0.0034532504264523922,
+        "cost_drag_annual": 0.014122093495410604,
+        "mkt_cagr": 0.08259753854961804
+      }
+    }
+  }
+}

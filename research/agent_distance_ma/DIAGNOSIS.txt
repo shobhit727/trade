@@ -1,0 +1,44 @@
+--- return decomposition, TEST, selected variant (V3) ---
+  window                              : 2.81 years
+  avg invested fraction              : 48.5%
+  sleeve gross return (annualised)   :   4.79%
+  market (EW22) annualised           :  10.99%
+  SELECTION term (sleeve - market)   :  -6.21%
+  CASH term (1 - invested) x sleeve  :  -2.46%
+  -> implied gross CAGR              :   2.32%   (actual gross was 1.90%)
+
+  Reading: the sleeve itself barely matched the market, and then roughly
+  half the book was sitting in cash because a 5%-below-a-50d-SMA gate
+  almost never puts 22 names on the screen at once under a 12% name cap.
+
+--- buy depth vs forward return, TEST (period=50, thr=0.05) ---
+  universe mean 21d forward return: +0.857%
+  quintile of deviation        n   mean fwd21  vs universe
+  Q1 shallowest             914      1.246%     +0.389%
+  Q2                        914      0.797%     -0.060%
+  Q3                        913      1.356%     +0.499%
+  Q4                        914      1.344%     +0.487%
+  Q5 deepest                914      1.213%     +0.356%
+
+  The book buys the DEEPEST bin. If that bin is the worst, the signal's
+  positive average is not reachable by the way the strategy actually trades.
+
+--- TRAIN random control, same 13.85% of name-days long ---
+  random(seed=1)  CAGR  14.59%  Sharpe   0.76  MaxDD  -20.24%
+  random(seed=2)  CAGR   7.01%  Sharpe   0.10  MaxDD  -29.26%
+  random(seed=3)  CAGR   9.64%  Sharpe   0.30  MaxDD  -36.67%
+  STRATEGY V3     CAGR  11.69%  Sharpe   0.44  MaxDD  -30.63%
+  -> TRAIN: strategy Sharpe 0.44 vs random 0.38  (BEATS a coin flip)
+
+--- book fullness, TEST ---
+  bars <25% invested :  232/685 (34%)
+  bars <50% invested :  293/685 (43%)
+  bars >80% invested :  143/685 (21%)
+
+--- sanity checks (brief §6) ---
+  §6.1 plausibility : CAGR 1.21%  -> plausible, no bug
+  §6.2 weight count : 15.1 names (not ~48) -> OK
+  §6.3 liveness     : 14.87% of name-days -> above the 5% floor
+  §6.4 cost drag    : gross 1.90% -> net 1.21%; drag 0.71%/y. Costs hurt
+                      but are NOT the cause: gross was already near zero
+  §6.5 random ctl   : strategy Sharpe -0.50 vs random 0.38 -> FAILS the coin-flip bar

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from cryptobot.strategies.catalog.funding_basis import FundingBasisStrategy
+from cryptobot.strategies.catalog.funding_basis_strategy import FundingBasisStrategy
 
 
 def _series(up: bool):

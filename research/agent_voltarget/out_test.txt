@@ -1,0 +1,27 @@
+============================================================================================
+STEP 2 — TEST (2024-01-01 -> 2026-10-01). Frozen variant: V4_atronly_mom126
+This is the first and only time TEST is read for performance.
+============================================================================================
+bars in TEST: 684  (~2.80 years)
+
+V4_atronly_mom126       TEST       2.59   -0.40   -16.14    0.16    3.81     1.90   14.4       7.4   67%
+TEST buy-and-hold       TEST       8.18    0.18   -15.90    0.51    0.36     0.10   48.0      24.6   67%
+nsealgo composite       TEST       6.04    0.03   -15.22    0.40    2.08     1.10   21.3      17.9   67%
+
+label                   set       CAGR%  Sharpe   MaxDD%  Calmar  Turn/y  Cost/y%  Names    Total%   Yr+
+
+vs buy-and-hold  return -5.59pp/yr   drawdown -0.24pp   Sharpe -0.58
+vs composite     return -3.45pp/yr   drawdown -0.92pp   Sharpe -0.43
+
+year-by-year (2026 partial, through 2026-10-01):
+  year        strategy    buy-hold   composite
+  2024           9.78%      20.13%      21.91%
+  2025          14.33%      13.35%       6.61%
+  2026         -14.41%      -8.47%      -9.31%
+
+avg names held 14.4   max top weight 7.10% (cap 12%)
+rebalances 33
+signal liveness (V4_atronly_mom126 eligibility mask): active on 37.64% of name-days; median eligible names/bar 16
+  bars with >=22 eligible: 40.2%  bars with 0 eligible: 3.4%
+
+wrote test_results.json

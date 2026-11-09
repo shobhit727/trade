@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from cryptobot.strategies.catalog.vwap import VwapStrategy
+from cryptobot.strategies.catalog.vwap_strategy import VwapStrategy
 
 
 def _series(up: bool):

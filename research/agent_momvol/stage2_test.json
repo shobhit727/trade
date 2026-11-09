@@ -1,0 +1,102 @@
+{
+  "strategy": {
+    "name": "STRATEGY_V5",
+    "cagr": 0.025881761692513328,
+    "sharpe": -0.31981955725229655,
+    "maxdd": -0.14586533636472354,
+    "calmar": 0.17743599910398342,
+    "vol": 0.10091416819361283,
+    "turnover": 4.1046240986924305,
+    "cost_drag": 0.01977509998121229,
+    "avg_names": 17.001461988304094,
+    "max_weight": 0.05827133430805051,
+    "trades": 11.771929824561404,
+    "gross_cagr": 0.0445237257718234,
+    "long_frac": 0.44608918128654973,
+    "n_rebal": 33,
+    "total_return": 0.07425862590614463
+  },
+  "buy_hold_constrained": {
+    "name": "BUY_HOLD",
+    "cagr": 0.09638415682949453,
+    "sharpe": 0.3088352014155095,
+    "maxdd": -0.13484078143349387,
+    "calmar": 0.7147997497851426,
+    "vol": 0.11573407671747481,
+    "turnover": 0.6417958623387279,
+    "cost_drag": 0.003310596847243454,
+    "avg_names": 21.32456140350877,
+    "max_weight": 0.060271506814082304,
+    "trades": 11.771929824561404,
+    "gross_cagr": 0.0994743265402358,
+    "long_frac": NaN,
+    "n_rebal": 33,
+    "total_return": 0.29427549546953835
+  },
+  "buy_hold_equal_weight_raw": {
+    "name": "BUY_HOLD_EW_RAW",
+    "cagr": 0.082768369656115,
+    "sharpe": 0.19026351003794512,
+    "maxdd": -0.15897122334688418,
+    "calmar": 0.5206500139683127,
+    "vol": 0.13459281263537953,
+    "total_return": 0.24931300669162315,
+    "years": 2.7991803278688523
+  },
+  "composite": {
+    "name": "COMPOSITE",
+    "cagr": 0.007103617365725068,
+    "sharpe": -0.42554582858065876,
+    "maxdd": -0.1528341642616744,
+    "calmar": 0.046479250238596115,
+    "vol": 0.1156502365537389,
+    "turnover": 2.449647300084505,
+    "cost_drag": 0.011335574263730988,
+    "avg_names": 21.32456140350877,
+    "max_weight": 0.05901035692819977,
+    "trades": 11.771929824561404,
+    "gross_cagr": 0.017983472353045205,
+    "long_frac": NaN,
+    "n_rebal": 33,
+    "total_return": 0.020041205160146625
+  },
+  "random_control": {
+    "n_seeds": 20,
+    "mean_cagr": -0.017407592802809978,
+    "std_cagr": 0.0154978990312672,
+    "median_cagr": -0.018362621583363825,
+    "mean_sharpe": -1.0698141271215222,
+    "std_sharpe": 0.21525380516200854,
+    "mean_maxdd": -0.1119956012505772,
+    "best_cagr": 0.010366380324126068,
+    "worst_cagr": -0.04289298022231336,
+    "strategy_cagr": 0.025881761692513328,
+    "strategy_sharpe": -0.31981955725229655,
+    "strategy_pctile_vs_random": 1.0
+  },
+  "cost_analysis": {
+    "strategy_net_cagr": 0.025881761692513328,
+    "strategy_gross_cagr": 0.0445237257718234,
+    "cost_drag_annual": 0.01977509998121229,
+    "round_trip_bps_charged": 21.92
+  },
+  "sanity": {
+    "avg_names_held": 17.001461988304094,
+    "avg_top_weight": 0.05827133430805051,
+    "n_rebalances": 33,
+    "gross_weight_sum_max": 0.9000000000000001,
+    "gross_weight_sum_min": 0.0,
+    "final_equity": 1.0742586259061446,
+    "max_equity": 1.2167918817652115,
+    "plausible_cagr": true,
+    "weight_count_ok": false,
+    "signal_liveness_ok": true,
+    "no_negative_weights": true,
+    "weights_sum_le_1": true
+  },
+  "yearly": {
+    "2024": 0.10498720896703384,
+    "2025": -0.009708670354740767,
+    "2026": -0.018277776915107236
+  }
+}

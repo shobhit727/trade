@@ -8,12 +8,16 @@ dedicated test built from synthetic frames that reproduce the exact defect.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from nsealgo.data.loader import (
+    C10_MIN_GAP,
+    C10_RESCALE_TOLERANCE,
+    C10_SPLIT_RATIOS,
     CLEAN_START,
     FROZEN_RUN_MIN,
     MAX_ABS_RETURN,
@@ -434,3 +438,106 @@ class TestRealDataset:
             f"a run of {worst} identical closes survived cleaning; "
             f"C9 must cap every run below {FROZEN_RUN_MIN}"
         )
+
+
+class TestC10CorporateActions:
+    """C10 - unadjusted bonus/split events that C5's 45% threshold cannot see.
+
+    TRENT did a 1:1.5 bonus on 2026-01-01, inside the TEST window. It read as only
+    a -33.0% close-to-close return, below C5's 45% bar, so it survived every prior
+    rule and corrupted every TRENT result. C10 keys off the overnight gap, which
+    ordinary trading cannot push past the exchange circuit limit.
+    """
+
+    @staticmethod
+    def _rows(opens: list[float], closes: list[float]) -> list[tuple]:
+        out = []
+        for i, (o, c) in enumerate(zip(opens, closes)):
+            d = pd.Timestamp("2020-01-01", tz="Asia/Kolkata") + pd.Timedelta(days=i)
+            out.append(
+                (int(d.tz_convert("UTC").timestamp() * 1000), o, max(o, c), min(o, c), c, 1000)
+            )
+        return out
+
+    def test_split_is_rescaled_and_all_rows_survive(self, tmp_path) -> None:
+        """A 1:1.5 bonus must rescale prior history and keep every row."""
+        # 30 rising bars, then a bar at exactly 2/3 of the FINAL pre-event close.
+        prior = 100.2 + 0.5 * 29  # 114.7
+        level = prior * 2 / 3  # 76.4667
+        opens = [100.0 + i * 0.5 for i in range(30)] + [level, level + 0.5, level + 1.0]
+        closes = [100.2 + i * 0.5 for i in range(30)] + [level + 0.2, level + 0.7, level + 1.2]
+        p = write_csv(tmp_path, "SPLIT_1d.csv", self._rows(opens, closes))
+
+        rep = CleaningReport()
+        out = load_symbol(p, "SPLIT", rep)
+
+        assert rep.unresolved_actions == []
+        assert len(rep.rescaled_actions) == 1
+        assert rep.rescaled_actions[0][2] == pytest.approx(2 / 3, rel=1e-6)
+        assert len(out) == 33, "a repair must never drop rows"
+        # The series is now continuous: no artificial jump at the event.
+        jump = out["close"].pct_change().abs().max()
+        assert jump < 0.35
+
+    def test_genuine_crash_is_never_rescaled_or_dropped(self, tmp_path) -> None:
+        """A real drawdown must survive untouched; deleting it flatters MaxDD."""
+        # Opens at the -20% circuit limit then keeps falling: close-to-close is
+        # about -38%, inside C5, and the overnight gap is exactly the limit, well
+        # under C10's bar. This is the drawdown C10 must never touch.
+        prior = 100.2 + 0.5 * 19
+        opens = [100.0 + i * 0.5 for i in range(20)] + [prior * 0.80] * 3
+        closes = [100.2 + i * 0.5 for i in range(20)] + [prior * 0.70, prior * 0.68, prior * 0.66]
+        p = write_csv(tmp_path, "CRASH_1d.csv", self._rows(opens, closes))
+
+        rep = CleaningReport()
+        out = load_symbol(p, "CRASH", rep)
+
+        assert rep.rescaled_actions == []
+        assert len(out) == 23, "C10 must never delete a row"
+        assert out["close"].iloc[-1] == pytest.approx(109.7 * 0.66)
+
+    def test_ambiguous_gap_is_flagged_not_modified(self, tmp_path) -> None:
+        """A gap that is not a known split ratio is disclosed and left alone.
+
+        Price alone cannot always separate a crash from a demerger. Truncating on
+        ambiguity deleted real 2008 drawdowns (bajajfinsv) and duplicated C9's
+        nestleind fix, so C10 discloses instead of guessing.
+        """
+        # Gap > 30% (fires C10) but close-to-close < 45% (C5 keeps it), and the
+        # ratio is deliberately not a known split ratio.
+        prior = 100.2 + 0.5 * 19  # 109.7
+        opens = [100.0 + i * 0.5 for i in range(20)] + [prior * 0.63, prior * 0.63]
+        closes = [100.2 + i * 0.5 for i in range(20)] + [prior * 0.615, prior * 0.615]
+        p = write_csv(tmp_path, "DEMERGE_1d.csv", self._rows(opens, closes))
+
+        rep = CleaningReport()
+        out = load_symbol(p, "DEMERGE", rep)
+
+        assert rep.rescaled_actions == []
+        assert len(rep.unresolved_actions) == 1
+        assert len(out) == 22, "flagging must not remove data"
+        assert out["close"].iloc[0] == pytest.approx(100.2)
+
+    def test_real_panel_repairs_trent_and_flags_the_rest(self) -> None:
+        """Regression guard: exactly one repair (TRENT), everything else disclosed."""
+        data = Path(__file__).resolve().parents[2] / "data" / "nse"
+        if not data.exists():  # pragma: no cover
+            pytest.skip("panel not present")
+        rescaled, unresolved = set(), set()
+        for csv in sorted(data.glob("*_1d.csv")):
+            sym = csv.name[: -len("_1d.csv")]
+            rep = CleaningReport()
+            load_symbol(csv, sym, rep)
+            rescaled |= {(sym, d) for sym, d, _ in rep.rescaled_actions}
+            unresolved |= {sym for sym, *_ in rep.unresolved_actions}
+
+        assert rescaled == {("trent", "2026-01-01")}
+        # The demerger that makes tmpv unusable must stay flagged, not silently fixed.
+        assert "tmpv" in unresolved
+        assert {"adanient", "bajajfinsv", "nestleind"} <= unresolved
+
+    def test_gap_bar_sits_far_above_the_circuit_limit(self) -> None:
+        """A ~30% collapse that gaps at the limit and keeps falling must survive."""
+        assert C10_MIN_GAP > 0.25, "must clear -20% open plus intraday continuation"
+        assert 2 / 3 in C10_SPLIT_RATIOS, "TRENT's 1:1.5 bonus"
+        assert C10_RESCALE_TOLERANCE < 0.05

@@ -1,0 +1,100 @@
+
+====================================================================================================
+WARM-UP CORRECTNESS: full-panel build then slice
+====================================================================================================
+  CCI(20) NaNs inside TRAIN when built on TRAIN slice :  4,321
+  CCI(20) NaNs inside TRAIN when built on FULL panel :  3,485  <- correct
+  mom126 NaNs inside TRAIN, slice-build / full-build :  9,457 /  4,005
+  => s2_train.py held ~126 sessions (about 6 months) of TRAIN in cash.
+
+
+====================================================================================================
+1) TRAIN 2016-01-01 -> 2023-12-31, warm-up corrected (SELECTION ONLY)
+====================================================================================================
+bars=1975  symbols=48
+
+V1_base    p= 20 entry=  100 M mom126  CAGR    6.38%  Sharpe   0.05  MaxDD  -35.15%  Calmar   0.18  Turn  3.81x  Cost  1.05%/y  Names  16.8  LongFrac 16.66%
+V2_tight   p= 20 entry=  150 M mom126  CAGR   -1.03%  Sharpe  -0.72  MaxDD  -34.33%  Calmar  -0.03  Turn  2.53x  Cost  0.53%/y  Names   4.6  LongFrac  6.84%
+V3_week    p= 20 entry=  100 W mom126  CAGR    4.17%  Sharpe  -0.11  MaxDD  -36.69%  Calmar   0.11  Turn 14.58x  Cost  3.72%/y  Names  14.7  LongFrac 16.66%
+V4_fast    p= 10 entry=  100 M mom126  CAGR    4.67%  Sharpe  -0.09  MaxDD  -34.28%  Calmar   0.14  Turn  3.64x  Cost  1.01%/y  Names  14.4  LongFrac 17.22%
+V5_deep    p= 20 entry=  100 M deepest CAGR    7.16%  Sharpe   0.11  MaxDD  -32.36%  Calmar   0.22  Turn  3.82x  Cost  1.08%/y  Names  16.9  LongFrac 16.66%
+equal_weight_book (comparator)              CAGR   18.78%  Sharpe   0.82  MaxDD  -33.27%  Names  21.8
+
+  selection (TRAIN Sharpe, tie-break Calmar):
+    1. V5_deep    Sharpe   0.11  Calmar   0.22
+    2. V1_base    Sharpe   0.05  Calmar   0.18
+    3. V4_fast    Sharpe  -0.09  Calmar   0.14
+    4. V3_week    Sharpe  -0.11  Calmar   0.11
+    5. V2_tight   Sharpe  -0.72  Calmar  -0.03
+
+  WINNER (frozen): V5_deep
+  TRAIN bar-long fraction, frozen: 16.66%
+
+====================================================================================================
+2) TEST 2024-01-01 -> 2026-10-01 — all 5 declared variants, unchanged
+====================================================================================================
+bars=685  symbols=48
+
+variant        CAGR  Sharpe    MaxDD  Calmar   Turn    Cost  Names  LongFrac
+V1_base       4.43%   -0.20  -13.23%    0.33  3.76x   0.91%   18.8    18.64%
+V2_tight      4.04%   -0.33  -11.75%    0.34  2.69x   0.66%    6.5     7.59%
+V3_week       1.72%   -0.43  -12.68%    0.14 14.90x   3.63%   16.2    18.64%
+V4_fast       8.07%    0.21  -15.03%    0.54  3.82x   1.01%   18.4    19.06%
+V5_deep       4.56%   -0.18  -13.23%    0.34  3.77x   0.91%   18.7    18.64%
+
+  PRIMARY (frozen TRAIN winner 'V5_deep' on TEST):
+    CAGR 4.56%   Sharpe -0.18   MaxDD -13.23% (61d)   Calmar 0.34
+    Turnover 3.77x/yr   Cost drag 0.91%/yr   Trades 11.8/yr   Avg names 18.7
+    Positive years 2/3
+      2024:    6.49%
+      2025:   13.97%
+      2026:   -6.61%
+
+====================================================================================================
+3) BUY-AND-HOLD, identical TEST window, net of costs
+====================================================================================================
+  panel.pct_change().mean(axis=1), one entry round trip (21.92 bps) charged d1
+  buy_and_hold_EW     CAGR    8.16%  Sharpe   0.19  MaxDD  -15.91%  Calmar   0.51
+  equal_weight_book   CAGR    9.76%  Sharpe   0.32  MaxDD  -13.51%  Names 21.3   <- same 22-name cap / 10% cash / costs
+
+  DELTA strategy - buy_and_hold:
+    CAGR   -3.60 pp
+    Sharpe -0.37
+    MaxDD  +2.68 pp (shallower)
+
+====================================================================================================
+4) vs nsealgo COMPOSITE (build_composite_score, same panel, monthly)
+====================================================================================================
+  nsealgo_composite   CAGR    6.55%  Sharpe   0.07  MaxDD  -14.84%  Names  21.3
+  CCI V5_deep        CAGR    4.56%  Sharpe  -0.18  MaxDD  -13.23%  Names  18.7
+
+====================================================================================================
+5) NEGATIVE CONTROLS on TEST, same long fraction, 20 seeds each
+====================================================================================================
+  (i)  random eligibility + mom126 rank      CAGR mean   3.90%  p05   1.73%  p95   7.20%   Sharpe mean -0.19
+  (ii) TRUE COIN (random scores, no rank)    CAGR mean   4.84%  p05   2.39%  p95   7.08%   Sharpe mean -0.09
+
+  CCI V5_deep TEST                                CAGR   4.56%                Sharpe -0.18
+  vs control (i)  : CAGR +0.66 pp, Sharpe +0.01
+  vs control (ii) : CAGR -0.28 pp, Sharpe -0.09
+
+====================================================================================================
+6) COST STRESS — same signal, cost model varied (TEST)
+====================================================================================================
+  zero_cost                CAGR    4.95%  Sharpe  -0.14  rt_bps  11.92
+  base 5bps/side (reported) CAGR    4.56%  Sharpe  -0.18  rt_bps  21.92
+  double_slippage          CAGR    4.17%  Sharpe  -0.23  rt_bps  31.92
+  triple_slippage          CAGR    3.77%  Sharpe  -0.27  rt_bps  41.92
+
+====================================================================================================
+7) BUG CHECKS (brief §6)
+====================================================================================================
+  1 plausibility : CAGR   4.6%  under 50% ceiling: OK
+  2 weight count : avg names 18.7 (cap 22) : OK
+  3 liveness     : bar long frac 18.64% (TRAIN 16.66%) : OK
+  4 cost drag    : 0.91%/yr against 4.56% CAGR
+  5 random ctrl  : see §5
+
+====================================================================================================
+DONE
+====================================================================================================

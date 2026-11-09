@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "goals": [],
+  "results": [
+    {
+      "condition": "Independently verify the interrupted cci_strategy run (5 declared variants) on NSE daily data using the nsealgo harness, resolve discrepancies in the prior scratch output, and produce an honest research/agent_cci/REPORT.md with a validated TEST (2024-01-01..2026-10-01) result vs buy-and-hold, plus negative controls. Do not exceed the 5 declared variants. Do not commit.",
+      "state": "achieved",
+      "reason": "",
+      "evidence": "Summary: Validated negative for cci_strategy. Report at research/agent_cci/REPORT.md, numbers reproduced by v1/v2/v3 scripts, ruff clean, nothing committed. TEST: 4.56% CAGR, Sharpe -0.18, MaxDD -13.23%, 3.77x/yr turnover, 0.91%/yr cost, 18.7 names. Buy-and-hold 8.16%/0.19; composite 6.55%/0.07; 100-seed random null 5.41%/-0.04 puts CCI at the 24th/12th percentile, paired t=-0.27. Verdict NO. Not a cost story (gross 4.95%). Three harness bugs documented.\nCriterion: REPORT.md written early with header + declared 5-variant budget before running anything | Evidence: research/agent_cci/REPORT.md sections 1-3 written before v1_verify.py executed; 5 variants declared in s2_train.py docstring, predating the interrupted run; not exceeded\nCriterion: TEST table with CAGR, Sharpe, MaxDD, Calmar, turnover/yr, cost drag, avg names | Evidence: research/agent_cci/REPORT.md section 5.1; research/agent_cci/VERIFY_OUT.txt section 2 PRIMARY\nCriterion: Buy-and-hold over the identical TEST window, net of same costs | Evidence: research/agent_cci/REPORT.md section 5.3; research/agent_cci/VERIFY_OUT.txt section 3\nCriterion: TEST vs buy-and-hold on return AND drawdown | Evidence: research/agent_cci/REPORT.md section 5.4\nCriterion: Random-signal negative control at matched long fraction | Evidence: research/agent_cci/REPORT.md section 5.6; research/agent_cci/NULL_OUT.txt sections B and C (100-seed null, paired t = -0.27)\nCriterion: Comparison against build_composite_score on the same panel | Evidence: research/agent_cci/REPORT.md section 5.5; research/agent_cci/VERIFY_OUT.txt section 4\nCriterion: Plain one-sentence verdict plus failure reason and next step | Evidence: research/agent_cci/REPORT.md section 6\nCriterion: Brief section 6 sanity checks run and reported | Evidence: research/agent_cci/REPORT.md section 5.8; research/agent_cci/VERIFY_OUT.txt section 7\nCriterion: All numbers reproducible from scripts in research/agent_cci/ | Evidence: v1_verify.py, v2_diagnose.py, v3_null.py with stdout in VERIFY_OUT.txt, DIAG_OUT.txt, NULL_OUT.txt; ruff check on the four files: All checks passed\nCriterion: No lookahead; costs at the correct 21.92 bps all-in figure | Evidence: research/agent_cci/REPORT.md section 3; s1_lookahead_check.py: max |full - truncated| = 0.000e+00 over 1,507,015 values; VERIFY_OUT.txt section 6: base rt_bps 21.92\nCriterion: Nothing committed; nothing outside research/agent_cci/ modified | Evidence: git log --oneline -1 still 6a7ce6e; All writes confined to research/agent_cci/; pre-existing src/ and tests/ modifications belong to the in-flight catalog rename\nCheck: cd research/agent_cci && ../../.venv/bin/python s0_data_check.py | passed | exit 0; 48 symbols, 4629 rows; vectorised CCI identical to catalog cci() at periods 10/14/20 (max_abs_error 0.000e+00)\nCheck: cd research/agent_cci && ../../.venv/bin/python s1_lookahead_check.py | passed | exit 0; 12 truncations, 1,507,015 values, max |full - truncated| = 0.000e+00 -> NO LOOKAHEAD = True\nCheck: cd research/agent_cci && ../../.venv/bin/python v1_verify.py | passed | exit 0; Warm-up fix, TRAIN selection (V5_deep wins), all 5 variants on TEST, buy-and-hold, composite, controls, cost stress, bug checks\nCheck: cd research/agent_cci && ../../.venv/bin/python v2_diagnose.py | passed | exit 0; Constant-score book audit, CCI-gate ablation (TRAIN -12.00pp), forward-return bucket analysis\nCheck: cd research/agent_cci && ../../.venv/bin/python v3_null.py | passed | exit 0; Book composition confirmed alphabetical top-22; 100-seed null puts CCI at 24th/12th percentile; paired t = -0.27\nCheck: cd /home/ph03n1x/trade && .venv/bin/ruff check research/agent_cci/{common,v1_verify,v2_diagnose,v3_null}.py | passed | exit 0; All checks passed\nCheck: cd /home/ph03n1x/trade && git log --oneline -1 && git status --short research/agent_cci/ | passed | exit 0; HEAD unchanged at 6a7ce6e; research/agent_cci/ untracked only; nothing committed\nChanged files: research/agent_cci/REPORT.md, research/agent_cci/v1_verify.py, research/agent_cci/v2_diagnose.py, research/agent_cci/v3_null.py, research/agent_cci/common.py, research/agent_cci/VERIFY_OUT.txt, research/agent_cci/DIAG_OUT.txt, research/agent_cci/NULL_OUT.txt\nKnown limitations: The TEST window had already been read and written to PRIMARY_TEST_RESULT.txt by the interrupted run, so this session re-verified an already-consumed TEST set rather than producing a first-touch result. No new parameter was chosen after seeing TEST, but single-touch cannot be restored.; V4_fast (CCI period 10) has the only positive TEST Sharpe (0.21) but a negative TRAIN Sharpe (-0.09). Reported as a curiosity and explicitly NOT promoted: against the 100-seed random-22 null it is a 2.08-sigma single draw, and best-of-5 raises that to p ~ 9%. A fresh out-of-sample window would be required.; The 'equal-weight' comparator exposed by BUG-3 has no correct in-engine replacement beyond the random-22 null, because any constant score panel re-triggers the alphabetical tie-break in build_rebalance_weights. Fixing it would need a change to src/nsealgo, which the brief forbids.; The causal explanation (CCI gate is anti-momentum) is an ablation and a literature-consistent inference, not a formal factor decomposition; the bucket-level reversion edge flips sign between TRAIN (-0.24 pp) and TEST (+0.61 pp).; Costs are modelled at the engine's all_in_round_trip_bps(100000) = 21.92 bps on Rs 1,00,000 reference notionals. A live 22-name book on Rs 21,00,000 has ~10x larger per-position notionals, making the flat DP charge proportionally lighter, so true drag is slightly below what is reported - conservative.; Survivorship bias is present in the panel (today's NIFTY-50 backfilled) and uncorrected. It affects the strategy and buy-and-hold equally so the comparison holds, but absolute CAGRs are optimistic for both.",
+      "blockedReason": "",
+      "turnCount": 0,
+      "totalTokens": 208760,
+      "usage": {
+        "input": 404112,
+        "output": 36600,
+        "reasoning": 9124,
+        "cacheRead": 9175048,
+        "cacheWrite": 0,
+        "cost": 0,
+        "costKnown": true
+      },
+      "startedAt": 1791462948227,
+      "finishedAt": 1791504193649,
+      "lastStatus": "Goal completed.",
+      "lastCheckpoint": null,
+      "checkpoints": [],
+      "history": [
+        {
+          "type": "set",
+          "detail": "Goal created via agent tool with limits: 70 auto-continues, 900s, 200,000 context tokens.",
+          "timestamp": 1791462948235
+        },
+        {
+          "type": "completed",
+          "detail": "Marked complete via tool: Summary: Validated negative for cci_strategy. Report at research/agent_cci/REPORT.md, numbers reproduced by v1/v2/v3 scripts, ruff clean, nothing committed. TEST: 4.56% CAGR, Sharpe -0.18, MaxDD -13.23%, 3.77x/yr turnover, 0.91%/yr cost, 18.7 names. Buy-and-hold 8.16%/0.19; composite 6.55%/0.07; 100-seed random null 5.41%/-0.04 puts CCI at the 24th/12th percentile, paire…",
+          "timestamp": 1791504193648
+        }
+      ],
+      "sessionID": "ses_ee47e080affetOqwj43W8fqRxl"
+    }
+  ],
+  "archives": [
+    {
+      "sessionID": "ses_ee47e080affetOqwj43W8fqRxl",
+      "results": [
+        {
+          "condition": "Independently verify the interrupted cci_strategy run (5 declared variants) on NSE daily data using the nsealgo harness, resolve discrepancies in the prior scratch output, and produce an honest research/agent_cci/REPORT.md with a validated TEST (2024-01-01..2026-10-01) result vs buy-and-hold, plus negative controls. Do not exceed the 5 declared variants. Do not commit.",
+          "state": "achieved",
+          "reason": "",
+          "evidence": "Summary: Validated negative for cci_strategy. Report at research/agent_cci/REPORT.md, numbers reproduced by v1/v2/v3 scripts, ruff clean, nothing committed. TEST: 4.56% CAGR, Sharpe -0.18, MaxDD -13.23%, 3.77x/yr turnover, 0.91%/yr cost, 18.7 names. Buy-and-hold 8.16%/0.19; composite 6.55%/0.07; 100-seed random null 5.41%/-0.04 puts CCI at the 24th/12th percentile, paired t=-0.27. Verdict NO. Not a cost story (gross 4.95%). Three harness bugs documented.\nCriterion: REPORT.md written early with header + declared 5-variant budget before running anything | Evidence: research/agent_cci/REPORT.md sections 1-3 written before v1_verify.py executed; 5 variants declared in s2_train.py docstring, predating the interrupted run; not exceeded\nCriterion: TEST table with CAGR, Sharpe, MaxDD, Calmar, turnover/yr, cost drag, avg names | Evidence: research/agent_cci/REPORT.md section 5.1; research/agent_cci/VERIFY_OUT.txt section 2 PRIMARY\nCriterion: Buy-and-hold over the identical TEST window, net of same costs | Evidence: research/agent_cci/REPORT.md section 5.3; research/agent_cci/VERIFY_OUT.txt section 3\nCriterion: TEST vs buy-and-hold on return AND drawdown | Evidence: research/agent_cci/REPORT.md section 5.4\nCriterion: Random-signal negative control at matched long fraction | Evidence: research/agent_cci/REPORT.md section 5.6; research/agent_cci/NULL_OUT.txt sections B and C (100-seed null, paired t = -0.27)\nCriterion: Comparison against build_composite_score on the same panel | Evidence: research/agent_cci/REPORT.md section 5.5; research/agent_cci/VERIFY_OUT.txt section 4\nCriterion: Plain one-sentence verdict plus failure reason and next step | Evidence: research/agent_cci/REPORT.md section 6\nCriterion: Brief section 6 sanity checks run and reported | Evidence: research/agent_cci/REPORT.md section 5.8; research/agent_cci/VERIFY_OUT.txt section 7\nCriterion: All numbers reproducible from scripts in research/agent_cci/ | Evidence: v1_verify.py, v2_diagnose.py, v3_null.py with stdout in VERIFY_OUT.txt, DIAG_OUT.txt, NULL_OUT.txt; ruff check on the four files: All checks passed\nCriterion: No lookahead; costs at the correct 21.92 bps all-in figure | Evidence: research/agent_cci/REPORT.md section 3; s1_lookahead_check.py: max |full - truncated| = 0.000e+00 over 1,507,015 values; VERIFY_OUT.txt section 6: base rt_bps 21.92\nCriterion: Nothing committed; nothing outside research/agent_cci/ modified | Evidence: git log --oneline -1 still 6a7ce6e; All writes confined to research/agent_cci/; pre-existing src/ and tests/ modifications belong to the in-flight catalog rename\nCheck: cd research/agent_cci && ../../.venv/bin/python s0_data_check.py | passed | exit 0; 48 symbols, 4629 rows; vectorised CCI identical to catalog cci() at periods 10/14/20 (max_abs_error 0.000e+00)\nCheck: cd research/agent_cci && ../../.venv/bin/python s1_lookahead_check.py | passed | exit 0; 12 truncations, 1,507,015 values, max |full - truncated| = 0.000e+00 -> NO LOOKAHEAD = True\nCheck: cd research/agent_cci && ../../.venv/bin/python v1_verify.py | passed | exit 0; Warm-up fix, TRAIN selection (V5_deep wins), all 5 variants on TEST, buy-and-hold, composite, controls, cost stress, bug checks\nCheck: cd research/agent_cci && ../../.venv/bin/python v2_diagnose.py | passed | exit 0; Constant-score book audit, CCI-gate ablation (TRAIN -12.00pp), forward-return bucket analysis\nCheck: cd research/agent_cci && ../../.venv/bin/python v3_null.py | passed | exit 0; Book composition confirmed alphabetical top-22; 100-seed null puts CCI at 24th/12th percentile; paired t = -0.27\nCheck: cd /home/ph03n1x/trade && .venv/bin/ruff check research/agent_cci/{common,v1_verify,v2_diagnose,v3_null}.py | passed | exit 0; All checks passed\nCheck: cd /home/ph03n1x/trade && git log --oneline -1 && git status --short research/agent_cci/ | passed | exit 0; HEAD unchanged at 6a7ce6e; research/agent_cci/ untracked only; nothing committed\nChanged files: research/agent_cci/REPORT.md, research/agent_cci/v1_verify.py, research/agent_cci/v2_diagnose.py, research/agent_cci/v3_null.py, research/agent_cci/common.py, research/agent_cci/VERIFY_OUT.txt, research/agent_cci/DIAG_OUT.txt, research/agent_cci/NULL_OUT.txt\nKnown limitations: The TEST window had already been read and written to PRIMARY_TEST_RESULT.txt by the interrupted run, so this session re-verified an already-consumed TEST set rather than producing a first-touch result. No new parameter was chosen after seeing TEST, but single-touch cannot be restored.; V4_fast (CCI period 10) has the only positive TEST Sharpe (0.21) but a negative TRAIN Sharpe (-0.09). Reported as a curiosity and explicitly NOT promoted: against the 100-seed random-22 null it is a 2.08-sigma single draw, and best-of-5 raises that to p ~ 9%. A fresh out-of-sample window would be required.; The 'equal-weight' comparator exposed by BUG-3 has no correct in-engine replacement beyond the random-22 null, because any constant score panel re-triggers the alphabetical tie-break in build_rebalance_weights. Fixing it would need a change to src/nsealgo, which the brief forbids.; The causal explanation (CCI gate is anti-momentum) is an ablation and a literature-consistent inference, not a formal factor decomposition; the bucket-level reversion edge flips sign between TRAIN (-0.24 pp) and TEST (+0.61 pp).; Costs are modelled at the engine's all_in_round_trip_bps(100000) = 21.92 bps on Rs 1,00,000 reference notionals. A live 22-name book on Rs 21,00,000 has ~10x larger per-position notionals, making the flat DP charge proportionally lighter, so true drag is slightly below what is reported - conservative.; Survivorship bias is present in the panel (today's NIFTY-50 backfilled) and uncorrected. It affects the strategy and buy-and-hold equally so the comparison holds, but absolute CAGRs are optimistic for both.",
+          "blockedReason": "",
+          "turnCount": 0,
+          "totalTokens": 208760,
+          "usage": {
+            "input": 404112,
+            "output": 36600,
+            "reasoning": 9124,
+            "cacheRead": 9175048,
+            "cacheWrite": 0,
+            "cost": 0,
+            "costKnown": true
+          },
+          "startedAt": 1791462948227,
+          "finishedAt": 1791504193649,
+          "lastStatus": "Goal completed.",
+          "lastCheckpoint": null,
+          "checkpoints": [],
+          "history": [
+            {
+              "type": "set",
+              "detail": "Goal created via agent tool with limits: 70 auto-continues, 900s, 200,000 context tokens.",
+              "timestamp": 1791462948235
+            },
+            {
+              "type": "completed",
+              "detail": "Marked complete via tool: Summary: Validated negative for cci_strategy. Report at research/agent_cci/REPORT.md, numbers reproduced by v1/v2/v3 scripts, ruff clean, nothing committed. TEST: 4.56% CAGR, Sharpe -0.18, MaxDD -13.23%, 3.77x/yr turnover, 0.91%/yr cost, 18.7 names. Buy-and-hold 8.16%/0.19; composite 6.55%/0.07; 100-seed random null 5.41%/-0.04 puts CCI at the 24th/12th percentile, paire…",
+              "timestamp": 1791504193648
+            }
+          ],
+          "sessionID": "ses_ee47e080affetOqwj43W8fqRxl"
+        }
+      ]
+    }
+  ],
+  "orderedSessions": []
+}

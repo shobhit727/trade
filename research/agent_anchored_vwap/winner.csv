@@ -1,0 +1,2 @@
+variant,period,threshold,score_kind,train_sharpe,train_cagr,train_maxdd,train_cost_drag,train_avg_names
+V1_p50_t2.0_mom,50,0.02,mom,0.37844148148249945,0.1100907793385344,-0.3445440841981626,0.0090493852754793,23.4146835443038

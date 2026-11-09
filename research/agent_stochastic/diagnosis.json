@@ -1,0 +1,17 @@
+{
+  "engine_sha": "970713f3eecf",
+  "strategy_cagr": 0.044273159368867665,
+  "strategy_sharpe": -0.23190386349234837,
+  "strategy_exposure": 0.4498954606461949,
+  "n_seeds": 200,
+  "null_cagr_mean": 0.02657964477213561,
+  "null_cagr_sd": 0.018212837790266063,
+  "p_cagr": 0.205,
+  "p_sharpe": 0.19,
+  "seeds_beating_strategy": 41,
+  "residual_cagr": 0.00641756025445539,
+  "beta": 0.43715864743109745,
+  "fwd21_signalled": 0.010707149633225853,
+  "fwd21_universe": 0.0085849480271224,
+  "fwd21_diff": 0.002122201606103453
+}

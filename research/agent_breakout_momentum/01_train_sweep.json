@@ -1,0 +1,122 @@
+{
+  "V1": {
+    "name": "FAITHFUL",
+    "params": {
+      "channel": "incl",
+      "period": 20,
+      "mom_period": 10
+    },
+    "live": 0.0,
+    "cagr": 0.0,
+    "sharpe": 0.0,
+    "sortino": 0.0,
+    "max_dd": 0.0,
+    "calmar": 0.0,
+    "vol": 0.0,
+    "total_return": 0.0,
+    "annual_turnover": 0.0,
+    "cost_drag": 0.0,
+    "trades_per_year": 11.736708860759494,
+    "avg_names": 0.0,
+    "avg_top_weight": NaN,
+    "n_rebalances": 95,
+    "win_rate": 0.0,
+    "round_trip_bps": 21.92
+  },
+  "V2": {
+    "name": "EXCL20",
+    "params": {
+      "channel": "excl",
+      "period": 20,
+      "mom_period": 10
+    },
+    "live": 7.30268844853432,
+    "cagr": 0.06466772241160168,
+    "sharpe": 0.029416661652827577,
+    "sortino": 0.039751023889761455,
+    "max_dd": -0.08012340285126274,
+    "calmar": 0.8071015472426671,
+    "vol": 0.06801286295550998,
+    "total_return": 0.660649443438994,
+    "annual_turnover": 3.1647626417546086,
+    "cost_drag": 0.008539174118007245,
+    "trades_per_year": 11.736708860759494,
+    "avg_names": 8.97620253164557,
+    "avg_top_weight": 0.09459713763380082,
+    "n_rebalances": 95,
+    "win_rate": 0.4607594936708861,
+    "round_trip_bps": 21.92
+  },
+  "V3": {
+    "name": "EXCL20_NOMOM",
+    "params": {
+      "channel": "excl",
+      "period": 20,
+      "mom_period": 0
+    },
+    "live": 7.30268844853432,
+    "cagr": 0.06466772241160168,
+    "sharpe": 0.029416661652827577,
+    "sortino": 0.039751023889761455,
+    "max_dd": -0.08012340285126274,
+    "calmar": 0.8071015472426671,
+    "vol": 0.06801286295550998,
+    "total_return": 0.660649443438994,
+    "annual_turnover": 3.1647626417546086,
+    "cost_drag": 0.008539174118007245,
+    "trades_per_year": 11.736708860759494,
+    "avg_names": 8.97620253164557,
+    "avg_top_weight": 0.09459713763380082,
+    "n_rebalances": 95,
+    "win_rate": 0.4607594936708861,
+    "round_trip_bps": 21.92
+  },
+  "V4": {
+    "name": "EXCL55",
+    "params": {
+      "channel": "excl",
+      "period": 55,
+      "mom_period": 10
+    },
+    "live": 4.781652460307908,
+    "cagr": 0.038086469656604116,
+    "sharpe": -0.40913606073254594,
+    "sortino": -0.5587144860893066,
+    "max_dd": -0.09275435877626381,
+    "calmar": 0.41061649456791444,
+    "vol": 0.05840702072148696,
+    "total_return": 0.3533136241107533,
+    "annual_turnover": 2.3891215776906694,
+    "cost_drag": 0.005818721887395447,
+    "trades_per_year": 11.736708860759494,
+    "avg_names": 4.674430379746836,
+    "avg_top_weight": 0.10131288825026681,
+    "n_rebalances": 95,
+    "win_rate": 0.3918987341772152,
+    "round_trip_bps": 21.92
+  },
+  "V5": {
+    "name": "EXCL55_MOM63",
+    "params": {
+      "channel": "excl",
+      "period": 55,
+      "mom_period": 63
+    },
+    "live": 4.655819500826121,
+    "cagr": 0.03675666509429254,
+    "sharpe": -0.4379824133055626,
+    "sortino": -0.5983083682243326,
+    "max_dd": -0.08419494804353189,
+    "calmar": 0.436566159234257,
+    "vol": 0.057594629836207195,
+    "total_return": 0.33934488309037336,
+    "annual_turnover": 2.3432430562977142,
+    "cost_drag": 0.005682193939670228,
+    "trades_per_year": 11.736708860759494,
+    "avg_names": 4.330126582278481,
+    "avg_top_weight": 0.10126253650960114,
+    "n_rebalances": 95,
+    "win_rate": 0.37468354430379747,
+    "round_trip_bps": 21.92
+  }
+}

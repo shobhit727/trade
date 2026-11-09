@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.rsi_momentum import RsiMomentumStrategy
+from cryptobot.strategies.catalog.rsi_momentum_strategy import RsiMomentumStrategy
 
 
 def _series(up: bool):

@@ -1,0 +1,61 @@
+
+====================================================================================================
+A) IS equal_weight_score(score=1.0) ACTUALLY AN UNTILTED BOOK?
+====================================================================================================
+  universe: 48 symbols, alphabetically first 22 = ['adaniports', 'apollohosp', 'asianpaint', 'axisbank', 'bajajauto', 'bajajfinsv'] ...
+  names ever held in the 22-name cap: 48
+  of those, in the alphabetical first 22: 22
+  symbols NEVER held: []
+  => equal_weight_book is a FIXED alphabetical 22-name book, not the universe.
+     It is a biased comparator. Reported CAGR 9.76%, Sharpe 0.32.
+
+
+====================================================================================================
+A2) CORRECTED UNTILTED COMPARATORS on TEST
+====================================================================================================
+  random 22-name book, 20 seeds : CAGR mean   5.23%  p05   2.61%  p95   7.09%  Sharpe mean -0.06
+  alphabetical 22-name book      : CAGR   9.76%  Sharpe  0.32  <- OUTSIDE the random p05-p95 band
+  all-48 unconstrained (buy&hold): CAGR   8.16%  Sharpe  0.19  MaxDD -15.91%
+
+====================================================================================================
+B) CCI-GATE ABLATION — identical book/ranking/costs, gate toggled
+====================================================================================================
+  TRAIN  mom126, NO gate : CAGR   18.38%  Sharpe   0.78  MaxDD  -34.92%  Names  22.2  Cost 1.18%/y
+  TRAIN  mom126, CCI gate : CAGR    6.38%  Sharpe   0.05  MaxDD  -35.15%  Names  16.8  Cost 1.05%/y
+  TRAIN  DELTA           :  -12.00 pp CAGR,  -0.73 Sharpe
+
+  TEST  mom126, NO gate : CAGR    2.60%  Sharpe  -0.22  MaxDD  -16.86%  Names  21.3  Cost 0.70%/y
+  TEST  mom126, CCI gate : CAGR    4.43%  Sharpe  -0.20  MaxDD  -13.23%  Names  18.8  Cost 0.91%/y
+  TEST  DELTA           :   +1.83 pp CAGR,  +0.02 Sharpe
+
+  Same ablation for the strategy-faithful rank (deepest CCI):
+  TRAIN  deepest-CCI, NO gate : CAGR   18.62%  Sharpe   0.83  Names  29.6
+  TRAIN  deepest-CCI, gate on : CAGR    7.16%  Sharpe   0.11  Names  16.9
+  TRAIN  DELTA                :  -11.46 pp
+
+  TEST  deepest-CCI, NO gate : CAGR    6.60%  Sharpe   0.06  Names  28.6
+  TEST  deepest-CCI, gate on : CAGR    4.56%  Sharpe  -0.18  Names  18.7
+  TEST  DELTA                :   -2.04 pp
+
+
+====================================================================================================
+C) IS THERE A REVERSION EDGE? 21d forward returns by CCI bucket
+====================================================================================================
+
+  TRAIN  CCI < -100 (GATE BUYS)     mean 21d fwd   1.63%  n= 15,211  mean mom126  0.0226
+  TRAIN  -100 <= CCI <= 100         mean 21d fwd   2.06%  n= 52,556  mean mom126  0.1002
+  TRAIN  CCI > +100 (GATE EXCLUDES) mean 21d fwd   1.87%  n= 23,548  mean mom126  0.1768
+  TRAIN  raw reversion edge (oversold - overbought) = -0.24 pp
+  TRAIN  momentum-matched counterfactual (CCI>+100 AND mom126>0): mean 21d fwd   1.77%  n= 18,117  => edge -0.14 pp
+
+
+  TEST  CCI < -100 (GATE BUYS)     mean 21d fwd   1.13%  n=  5,652  mean mom126  0.0062
+  TEST  -100 <= CCI <= 100         mean 21d fwd   0.90%  n= 18,843  mean mom126  0.0804
+  TEST  CCI > +100 (GATE EXCLUDES) mean 21d fwd   0.52%  n=  7,356  mean mom126  0.1587
+  TEST  raw reversion edge (oversold - overbought) = +0.61 pp
+  TEST  momentum-matched counterfactual (CCI>+100 AND mom126>0): mean 21d fwd   0.62%  n=  5,789  => edge +0.52 pp
+
+
+====================================================================================================
+DONE
+====================================================================================================

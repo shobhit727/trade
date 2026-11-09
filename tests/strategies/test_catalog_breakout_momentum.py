@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.breakout_momentum import BreakoutMomentumStrategy
+from cryptobot.strategies.catalog.breakout_momentum_strategy import BreakoutMomentumStrategy
 
 
 def _series(up: bool):

@@ -1,0 +1,131 @@
+{
+  "cash_drag": {
+    "TRAIN": {
+      "corr_invested_cagr": 0.9833223950537456,
+      "r2_invested": 0.9669229326142346,
+      "corr_pred_cagr": 0.9833223950537454,
+      "r2_pred": 0.9669229326142341,
+      "ew_cagr": 0.21462162684446828
+    },
+    "TEST": {
+      "corr_invested_cagr": -0.11746441773451904,
+      "r2_invested": 0.013797889433709591,
+      "corr_pred_cagr": -0.117464417734519,
+      "r2_pred": 0.013797889433709583,
+      "ew_cagr": 0.08158401970957185
+    }
+  },
+  "band_direction": {
+    "TRAIN": {
+      "momentum_ranked": {
+        "label": "TRAIN momentum-ranked",
+        "n_periods": 1975,
+        "total_return": 1.2773235550146804,
+        "cagr": 0.10702592212856721,
+        "sharpe": 0.3717916102978746,
+        "calmar": 0.3153219156604799,
+        "max_drawdown": -0.33941796244764166,
+        "vol": 0.1254090184032911,
+        "turnover": 3.983832773323931,
+        "cost_drag": 0.012882587064994181,
+        "gross_cagr": 0.11673908320098403,
+        "avg_names": 25.630379746835445,
+        "max_names": 30,
+        "avg_invested": 0.7582700882364724,
+        "n_rebalances": 95
+      },
+      "band_equal": {
+        "label": "TRAIN band-only-equal",
+        "n_periods": 1975,
+        "total_return": 1.0944670502017777,
+        "cagr": 0.09563729252504016,
+        "sharpe": 0.292414905709938,
+        "calmar": 0.28043366177817225,
+        "max_drawdown": -0.341033568932573,
+        "vol": 0.12310110990442884,
+        "turnover": 4.015184373564709,
+        "cost_drag": 0.012593674648138145,
+        "gross_cagr": 0.10532653971028783,
+        "avg_names": 26.251645569620255,
+        "max_names": 30,
+        "avg_invested": 0.7561900621024674,
+        "n_rebalances": 95
+      },
+      "inverse": {
+        "label": "TRAIN INVERSE(band<0)",
+        "n_periods": 1975,
+        "total_return": 0.9332888424366383,
+        "cagr": 0.08485159534332376,
+        "sharpe": 0.20946242120671063,
+        "calmar": 0.24823218865904886,
+        "max_drawdown": -0.34182349920730415,
+        "vol": 0.1271502235517644,
+        "turnover": 3.202070761478013,
+        "cost_drag": 0.009607331665217564,
+        "gross_cagr": 0.0924955132143721,
+        "avg_names": 12.111392405063292,
+        "max_names": 30,
+        "avg_invested": 0.4568192535595388,
+        "n_rebalances": 95
+      }
+    },
+    "TEST": {
+      "momentum_ranked": {
+        "label": "TEST momentum-ranked",
+        "n_periods": 685,
+        "total_return": -0.04320747830961391,
+        "cagr": -0.015609970059774603,
+        "sharpe": -0.6260189088205205,
+        "calmar": -0.06701966873933339,
+        "max_drawdown": -0.23291625210038103,
+        "vol": 0.11507910354961992,
+        "turnover": 4.10829104401761,
+        "cost_drag": 0.009992230884058853,
+        "gross_cagr": -0.006701692976417428,
+        "avg_names": 25.137226277372264,
+        "max_names": 30,
+        "avg_invested": 0.7466116753013343,
+        "n_rebalances": 33
+      },
+      "band_equal": {
+        "label": "TEST band-only-equal",
+        "n_periods": 685,
+        "total_return": -0.055132676745385356,
+        "cagr": -0.019997955491519837,
+        "sharpe": -0.6752180552276298,
+        "calmar": -0.08306370400566553,
+        "max_drawdown": -0.2407544393897464,
+        "vol": 0.11356728879713927,
+        "turnover": 4.104431414951633,
+        "cost_drag": 0.00990113586615323,
+        "gross_cagr": -0.011137760171998079,
+        "avg_names": 25.017518248175183,
+        "max_names": 30,
+        "avg_invested": 0.7447189605590268,
+        "n_rebalances": 33
+      },
+      "inverse": {
+        "label": "TEST INVERSE(band<0)",
+        "n_periods": 685,
+        "total_return": 0.09336606698548611,
+        "cagr": 0.03230605186989233,
+        "sharpe": -0.2813997795632758,
+        "calmar": 0.2169394700304782,
+        "max_drawdown": -0.1489173540681813,
+        "vol": 0.09486057925105633,
+        "turnover": 3.492063257529839,
+        "cost_drag": 0.008302479155870745,
+        "gross_cagr": 0.04024116107302067,
+        "avg_names": 16.959124087591242,
+        "max_names": 30,
+        "avg_invested": 0.5640177255142135,
+        "n_rebalances": 33
+      }
+    }
+  },
+  "lookahead": {
+    "max_diff": 0.0,
+    "no_lookahead": true,
+    "control_shift": 0.09999999999999999
+  }
+}

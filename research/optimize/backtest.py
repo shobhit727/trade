@@ -105,6 +105,20 @@ class BacktestResult:
 #: slices. This turns the largest single cost into a dict lookup.
 _REBAL_CACHE: dict[tuple, frozenset] = {}
 
+#: Rebalance frequencies that group several months into one decision point. The
+#: measured cost bill is roughly linear in decisions per year, and the whole
+#: question Phase 1 asks is whether that bill is what kills the edge -- so the
+#: coarse end of the clock has to be reachable, not just daily/weekly/monthly.
+#:
+#:   "A"  annual      -- calendar year
+#:   "Q"  quarterly   -- calendar quarter (Jan-Mar, Apr-Jun, Jul-Sep, Oct-Dec)
+#:   "2Q" semi-annual -- calendar half  (Jan-Jun, Jul-Dec)
+#:
+#: These are anchored on the CALENDAR year, not the Indian fiscal year. That is a
+#: deliberate choice: Phase 1 is measuring the cost of clock granularity, and
+#: introducing a fiscal offset would confound that with a seasonal effect.
+_REBAL_FREQ_MONTHS: dict[str, int] = {"M": 1, "Q": 3, "2Q": 6, "A": 12}
+
 
 def rebalance_dates(index: pd.DatetimeIndex, freq: str) -> frozenset:
     """Set of dates on which we may change position.
@@ -131,8 +145,20 @@ def rebalance_dates(index: pd.DatetimeIndex, freq: str) -> frozenset:
     elif freq.upper() == "W":
         keys = index.to_period("W")
         out = frozenset(index[i] for i in range(len(index)) if i == 0 or keys[i] != keys[i - 1])
+    elif freq.upper() in _REBAL_FREQ_MONTHS:
+        # Group consecutive bars into fixed-length calendar buckets starting at the
+        # first bar of the calendar year, so Jan-Mar / Apr-Jun / Jul-Sep / Oct-Dec
+        # for "Q", Jan-Jun / Jul-Dec for "2Q", and whole years for "A".
+        span = _REBAL_FREQ_MONTHS[freq.upper()]
+        month = index.month.to_numpy()
+        year = index.year.to_numpy()
+        bucket = year * (12 // span) + (month - 1) // span
+        out = frozenset(index[i] for i in range(len(index)) if i == 0 or bucket[i] != bucket[i - 1])
     else:
-        raise BacktestError(f"unsupported rebalance freq {freq!r}; use M, W or D")
+        raise BacktestError(
+            f"unsupported rebalance freq {freq!r}; use one of "
+            f"{sorted({'D', 'W', *_REBAL_FREQ_MONTHS})}"
+        )
 
     _REBAL_CACHE[key] = out
     return out

@@ -1,0 +1,76 @@
+
+==============================================================================
+STEP 0.1  DATA (mandatory: load_universe report)
+==============================================================================
+CLEANING REPORT
+  rows in            :   274,541
+  rows out           :   208,226
+  dropped pre-2008   :    66,312
+  dropped artifact   :         0
+  dropped non-positive:      0
+  dropped extreme    :         3
+  excluded symbols   : ['adanient', 'jiofin']
+  extreme events     : 3
+
+symbols retained       : 48
+date span              : 2008-01-01 -> 2026-10-01
+panel shape            : (4629, 48)
+excluded (from loader) : ['adanient', 'jiofin']
+
+rows per symbol (1d) -- min/max/median:
+  min 1289  max 4629  median 4628
+  span days (calendar)  : 6848
+  trading bars          : 4629
+
+coverage over TRAIN start .. TEST end:
+  4 symbol(s) with <99.9% coverage in the split window:
+    eternal        48.5%  (first bar 2021-07-23)
+    maxhealth      57.1%  (first bar 2020-08-21)
+    hdfclife       82.6%  (first bar 2017-11-17)
+    sbilife        83.8%  (first bar 2017-10-03)
+
+TRAIN window : 2016-01-01 -> 2023-12-31  (1975 bars)
+TEST  window : 2024-01-01 -> 2026-10-01  (685 bars)
+
+OHLC alignment + low<=close<=high integrity: OK
+  finite OHLC bars checked     : 208,226
+  1-ULP float-noise bars      : 7  (relative tol 1e-9, disclosed)
+
+==============================================================================
+STEP 0.2  COST SANITY
+==============================================================================
+CostModel(delivery, slippage_bps=5)
+  statutory round-trip @ Rs 1L/side : 11.92 bps
+  brief expects ~11.9 bps          : MATCH
+  + 2x5bps slippage                : 21.92 bps  <-- what run_backtest charges
+  (the brief's ~11.9 is the STATUTORY figure; the engine additionally charges
+   10bps of adverse slippage per round trip, so 21.92 is the honest all-in)
+
+==============================================================================
+STEP 0.3  SIGNAL REPLICATION -- is my vectorised port bit-exact?
+==============================================================================
+catalog strategy: name=breakout_momentum period=20 mom_period=10 warmup=20
+bars verified against catalog .signal(): 7980
+  mismatches, channel='incl' (faithful): 0
+  mismatches, channel='excl'            : 572
+  FAITHFUL PORT: BIT-EXACT
+  (excl channel is intentionally a DIFFERENT strategy -- the standard Donchian reading -- so its mismatch count is expected to be non-zero and is itself the measure of how much the two readings differ)
+
+signal liveness (fraction of finite symbol-bars long), full sample:
+  finite symbol-bars: 208,226
+  channel=incl  fires  0.031%  (65 bars)
+  channel=excl  fires  6.659%  (13,865 bars)
+
+decomposition of the inclusive channel:
+  close == today's high          :  0.628% of bars
+  today's high == 20d high      : 14.475% of bars
+  both (== inclusive breakout)   :  0.267% of bars
+  -> the catalog's `close >= donchian_high(highs)` is a CLOSE-AT-THE-DAY-HIGH condition, not a channel breakout.
+  -> the ROC filter removes some; the fired rate above is after it.
+
+==============================================================================
+STEP 0.4  ENGINE SMOKE TEST (TRAIN only -- TEST untouched)
+==============================================================================
+weights rows=95  max single=0.0777 (cap 0.12)  max row sum=0.9000 (cap 0.90)
+avg names in target book: 21.8 (config n_positions=22, max_names=30)
+caps hold: OK

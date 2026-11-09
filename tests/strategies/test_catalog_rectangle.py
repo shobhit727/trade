@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.rectangle import RectangleStrategy
+from cryptobot.strategies.catalog.rectangle_pattern import RectangleStrategy
 
 
 def _series(up: bool):

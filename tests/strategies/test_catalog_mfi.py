@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from cryptobot.strategies.catalog.mfi import MfiStrategy
+from cryptobot.strategies.catalog.mfi_strategy import MfiStrategy
 
 
 def _series(up: bool):

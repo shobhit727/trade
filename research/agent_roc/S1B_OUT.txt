@@ -1,0 +1,9 @@
+truncation points    : 25 (bars 619..4524)
+values compared      : 13565
+max |full - truncated|: 0.000e+00
+VERDICT: PASS — no lookahead
+
+weights>0 on bar t vs bar t+1: identical rows = 1877 / 1972
+(weights are piecewise constant between monthly rebalances — the hold rule)
+rows where weights change   : 95
+gross[t] equals held[t-1].rets[t] by construction; first 3 gross values = [0.0, 0.0, 0.0]

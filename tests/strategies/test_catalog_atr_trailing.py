@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.atr_trailing import AtrTrailingStrategy
+from cryptobot.strategies.catalog.atr_trailing_stop import AtrTrailingStrategy
 
 
 def test_atr_trailing_expansion_follows_spike():

@@ -17,6 +17,7 @@ Deliberate design notes
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 from decimal import Decimal as D
 from pathlib import Path
@@ -25,6 +26,9 @@ REPO = Path(__file__).resolve().parents[2]
 DATA_DIR = REPO / "data" / "nse"
 OUT_DIR = Path(__file__).resolve().parent / "out"
 LOG_DIR = REPO / "logs"
+SRC = REPO / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
 # --------------------------------------------------------------------------- #
 # Capital
@@ -33,18 +37,42 @@ LOG_DIR = REPO / "logs"
 CAPITAL_INR = D("2100000")
 
 # --------------------------------------------------------------------------- #
-# Cost stack (statutory, per round trip, bps of turnover)
+# Cost stack (statutory, per round trip, bps of ONE-LEG NOTIONAL)
 # --------------------------------------------------------------------------- #
-#: Matches ``nsealgo.costs.CostModel.round_trip_bps`` for a delivery account:
-#: STT 10bps + exchange txn 0.307bps + SEBI 0.10bps + stamp 3.00bps + DP ~0.52bps
-#: + 18% GST on (brokerage + txn + SEBI). Zerodha charges zero brokerage on delivery.
-STATUTORY_BPS = D("11.92")
+def _delivery_statutory_bps() -> D:
+    """Delivery-equity statutory round trip, in bps of one-leg notional.
+
+    Single source of truth is :class:`nsealgo.costs.CostModel`. ``CostModel``
+    reports bps of *turnover*; ``FeeSchedule`` needs bps of *notional*, so we
+    multiply by two. Deriving rather than hard-coding means the optimizer can
+    never drift from the engine's canonical cost model again.
+    """
+    from nsealgo.costs import CostModel
+
+    model = CostModel(segment="delivery", slippage_bps=D("0"))
+    return model.round_trip_bps(CAPITAL_INR) * 2
+
+
+#: UNITS MATTER. ``nsealgo.costs.CostModel.round_trip_bps`` returns bps of
+#: *turnover* (it divides by 2 x notional). ``FeeSchedule._fee`` charges
+#: ``notional * bps / 10_000`` on each leg, so it needs bps of *notional*.
+#: Conflating the two understated every result by 1.87x.
+#:
+#: DP is a flat Rs15.93, so bp-of-notional is mildly notional-dependent; we pin
+#: to the Rs21L book size.
+#: Delivery components, bp of one-leg notional, per round trip:
+#:   STT 0.1% sell + 0.1% buy = 20.00 | stamp 0.015% buy = 1.50
+#:   exchange txn 0.00307% x2 =  0.61 | SEBI 0.0001% x2   =  0.02
+#:   18% GST on (txn + SEBI)   =  0.11 | DP Rs15.93       =  ~0.00
+STATUTORY_BPS = _delivery_statutory_bps()
 
 #: Adverse slippage per side, in bps. Base 5bps is what every prior result used.
 SLIPPAGE_BPS = D("5")
 
-#: A complete round trip pays slippage on both legs.
-ALL_IN_ROUND_TRIP_BPS = STATUTORY_BPS + SLIPPAGE_BPS * 2  # 21.92
+#: A complete round trip pays slippage on both legs. TRUE all-in = 32.32 bp of
+#: notional. The shipped code previously used 21.92 -- a 1.469x understatement
+#: that made the measured cost drag read 169 bp/yr instead of ~249 bp/yr.
+ALL_IN_ROUND_TRIP_BPS = STATUTORY_BPS + SLIPPAGE_BPS * 2
 
 # --------------------------------------------------------------------------- #
 # Capital gains tax (Indian, FY2025-26 onward)

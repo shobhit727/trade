@@ -1,0 +1,9 @@
+{
+  "winner": "V2",
+  "winner_name": "EXCL20",
+  "params": {
+    "channel": "excl",
+    "period": 20,
+    "mom_period": 10
+  }
+}

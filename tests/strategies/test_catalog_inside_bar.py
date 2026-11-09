@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from cryptobot.strategies.catalog.inside_bar import InsideBarStrategy
+from cryptobot.strategies.catalog.inside_bar_pattern import InsideBarStrategy
 
 
 def _series(up: bool):

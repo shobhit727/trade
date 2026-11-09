@@ -1,0 +1,23 @@
+{
+  "provenance": {
+    "engine": "d93815344bd3",
+    "loader": "c1badf5f7df8",
+    "costs": "ba350aef75b3",
+    "panel": "389b082b832f"
+  },
+  "shape": [
+    4625,
+    48
+  ],
+  "start": "2008-01-01",
+  "end": "2026-10-01",
+  "symbols": 48,
+  "excluded_symbols": [
+    "adanient"
+  ],
+  "vol_notna_frac": 0.9348873873873874,
+  "close_notna_frac": 0.9348873873873874,
+  "train_rows": 1973,
+  "test_rows": 684,
+  "close_crosscheck_maxdiff": 0.0
+}

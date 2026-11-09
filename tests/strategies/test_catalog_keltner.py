@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from cryptobot.strategies.catalog.keltner import KeltnerStrategy
+from cryptobot.strategies.catalog.keltner_channel import KeltnerStrategy
 
 
 def _series(up: bool):

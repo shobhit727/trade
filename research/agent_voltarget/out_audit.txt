@@ -1,0 +1,40 @@
+==============================================================================
+STEP 0 — AUDIT
+==============================================================================
+symbols          : 48
+index            : 2008-01-01 -> 2026-10-01
+bars             : 4625
+all-in RT bps    : 21.92  (engine charges this, net of everything)
+
+declared parameter budget (5 variants, TRAIN-only selection):
+  V1_flag_mom126        flag=up-day & NATR14<2%; rank=126d momentum
+  V2_flag_lowvol        flag=up-day & NATR14<2%; rank=-60d realised vol
+  V3_flag_momvol        flag=up-day & NATR14<2%; rank=126d mom / 60d vol
+  V4_atronly_mom126     flag=NATR14<2% only (no 1-bar direction); rank=126d mom
+  V5_flag3pct_mom126    flag=up-day & NATR14<3% (target=0.015); rank=126d mom
+
+NATR(14) = ATR/close, the exact quantity the strategy thresholds
+  full   mean  3.037%  p10  1.761%  p50  2.670%  p90  4.625%
+  TRAIN  mean  2.788%  p10  1.709%  p50  2.528%  p90  4.012%
+  TEST   mean  2.310%  p10  1.567%  p50  2.178%  p90  3.180%
+
+fraction of name-days satisfying each half of the flag:
+  TRAIN  NATR<2%: calm  22.3%  up-day  49.2%  BOTH  12.0%
+  TRAIN  NATR<3%: calm  65.8%  up-day  49.2%  BOTH  34.3%
+  TEST   NATR<2%: calm  36.8%  up-day  49.5%  BOTH  18.4%
+  TEST   NATR<3%: calm  84.4%  up-day  49.5%  BOTH  41.8%
+
+flag active  TRAIN 12.08%  TEST 18.80%  of name-days
+bars with >=1 eligible name: TRAIN 78.8%  TEST 91.2%
+median eligible names on a live bar: 2
+
+==============================================================================
+SOURCE-SIGNAL VERIFICATION (synthetic, mechanical)
+==============================================================================
+  matches_two_part_flag       440/440
+  pct_long_default            0.5181818181818182
+  pct_long_target_0002        0.0
+  pct_long_target_0050        0.5204545454545455
+  pct_long_period_60          0.5204545454545455
+  target_is_live              True
+  period_is_live              True

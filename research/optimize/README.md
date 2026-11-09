@@ -3,8 +3,14 @@
 Optimises every catalog strategy **independently for each NIFTY-50 stock**, so each
 `(strategy, stock)` pair is its own tuned unit rather than one global parameter set.
 
-- **84 strategies** × **48 stocks** = **4,032 pairs** (`adanient`/`jiofin` excluded as
-  corrupt, matching `nsealgo.data.loader`)
+- **84 strategies** × **48 stocks** = **4,032 pairs** as originally run. Three symbols
+  are now excluded, matching `nsealgo.data.loader`:
+  - `adanient` — structural corruption in the raw file (loader rule C3)
+  - `jiofin` — corrupt series
+  - `tmpv` — demerger on 2025-10-14. C10 cannot rescale a demerger (value genuinely
+    left the entity), so the symbol is unbacktestable from that date. **Any result
+    produced by a run older than this exclusion still contains TMPV and must be
+    treated as stale**.
 - **166 searchable parameters**; `quantity` is held fixed — it sizes orders, it is not a
   signal knob
 - Selection on **TRAIN only**; TEST opened once, at the end

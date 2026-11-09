@@ -1,0 +1,88 @@
+{
+  "rows": [
+    {
+      "variant": "V1_p20_t10_literal",
+      "cagr": 10.955,
+      "sharpe": 0.416,
+      "maxdd": -27.89,
+      "calmar": 0.393,
+      "vol": 11.45,
+      "turnover_y": 4.062,
+      "cost_drag_y": 1.34,
+      "avg_names": 27.74,
+      "trades_y": 11.7,
+      "rt_bps": 21.92,
+      "frac_bars_long": 0.2234
+    },
+    {
+      "variant": "V2_p20_t10_flipped",
+      "cagr": 16.184,
+      "sharpe": 0.7,
+      "maxdd": -32.12,
+      "calmar": 0.504,
+      "vol": 13.82,
+      "turnover_y": 4.118,
+      "cost_drag_y": 1.62,
+      "avg_names": 29.49,
+      "trades_y": 11.7,
+      "rt_bps": 21.92,
+      "frac_bars_long": 0.2639
+    },
+    {
+      "variant": "V3_p10_t10_flipped",
+      "cagr": 16.041,
+      "sharpe": 0.681,
+      "maxdd": -33.27,
+      "calmar": 0.482,
+      "vol": 14.05,
+      "turnover_y": 4.118,
+      "cost_drag_y": 1.635,
+      "avg_names": 29.33,
+      "trades_y": 11.7,
+      "rt_bps": 21.92,
+      "frac_bars_long": 0.3224
+    },
+    {
+      "variant": "V4_p60_t10_flipped",
+      "cagr": 13.482,
+      "sharpe": 0.517,
+      "maxdd": -36.63,
+      "calmar": 0.368,
+      "vol": 14.28,
+      "turnover_y": 3.662,
+      "cost_drag_y": 1.318,
+      "avg_names": 13.05,
+      "trades_y": 11.7,
+      "rt_bps": 21.92,
+      "frac_bars_long": 0.1555
+    },
+    {
+      "variant": "V5_p20_continuous_flip",
+      "cagr": 18.19,
+      "sharpe": 0.821,
+      "maxdd": -30.88,
+      "calmar": 0.589,
+      "vol": 13.87,
+      "turnover_y": 4.102,
+      "cost_drag_y": 1.738,
+      "avg_names": 29.36,
+      "trades_y": 11.7,
+      "rt_bps": 21.92,
+      "frac_bars_long": 0.9624
+    },
+    {
+      "variant": "BENCH_nsealgo_composite",
+      "cagr": 21.295,
+      "sharpe": 0.963,
+      "maxdd": -32.92,
+      "calmar": 0.647,
+      "vol": 14.63,
+      "turnover_y": 1.965,
+      "cost_drag_y": 1.003,
+      "avg_names": 21.78,
+      "trades_y": 11.7,
+      "rt_bps": 21.92
+    }
+  ],
+  "winner": "V5_p20_continuous_flip"
+}

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from cryptobot.strategies.catalog.rsi import RsiStrategy
+from cryptobot.strategies.catalog.rsi_strategy import RsiStrategy
 
 
 def _series(up: bool):

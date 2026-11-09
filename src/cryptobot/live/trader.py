@@ -346,7 +346,7 @@ class LiveTrader:
         bt = getattr(bar, "open_time", None) or getattr(bar, "timestamp", None)
         self._closed_bar_ts = int(bt.timestamp() * 1000) if bt is not None else None
 
-        if self._check_breaker():
+        if await self._check_breaker():
             return  # breaker tripped: no new entries
 
         orders = self._feed_strategy(
@@ -368,7 +368,7 @@ class LiveTrader:
                 self._record_tax_fill(filled)
                 self._record_trade(filled)
                 self._update_position_book(filled)
-                self._place_protective_stop(filled, Decimal(str(close)))
+                await self._place_protective_stop(filled, Decimal(str(close)))
             if filled.status in (OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED):
                 self.stats["fills"] += 1
             elif filled.status == OrderStatus.REJECTED:
@@ -378,7 +378,7 @@ class LiveTrader:
                                filled.payload.get("error"))
             self.stats["last_order_at"] = time.time()
 
-    def _place_protective_stop(self, order, ref_price: Decimal) -> None:
+    async def _place_protective_stop(self, order, ref_price: Decimal) -> None:
         """Exchange-side stop so a dead host cannot leave naked positions."""
         pct = self.config.protective_stop_pct
         if pct <= 0 or order.reduce_only:
@@ -391,14 +391,11 @@ class LiveTrader:
             close_side = "buy"
         qty = float(order.filled_quantity)
 
-        async def _submit():
-            try:
-                await self._engine.venue.place_protective_stop(
-                    order.symbol, close_side, qty, float(stop))
-            except Exception as exc:  # noqa: BLE001 - venue may not support it
-                logger.warning("protective stop skipped for %s: %s", order.symbol, exc)
-
-        asyncio.get_running_loop().create_task(_submit())
+        try:
+            await self._engine.venue.place_protective_stop(
+                order.symbol, close_side, qty, float(stop))
+        except Exception as exc:  # noqa: BLE001 - venue may not support it
+            logger.warning("protective stop skipped for %s: %s", order.symbol, exc)
 
     def _rescale_order(self, order, close: Decimal) -> None:
         """Equity-fractional sizing, mirroring BacktestEngine._run_orders.
@@ -513,7 +510,7 @@ class LiveTrader:
         except Exception as exc:  # noqa: BLE001 - tax bookkeeping must not kill trading
             logger.warning("tax fill recording failed: %s", exc)
 
-    def _check_breaker(self) -> bool:
+    async def _check_breaker(self) -> bool:
         """Update peak/drawdown; trip -> graceful profit-first close. True if tripped."""
         state = self._portfolio.get_state()
         equity = state.total_equity

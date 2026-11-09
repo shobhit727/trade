@@ -1,73 +1,45 @@
 {
  "capital": 2100000.0,
- "cash": 15219.096668432729,
+ "cash": 310139.94652601366,
  "peak_equity": 2100000.0,
  "breaker_tripped": false,
  "breaker_reason": null,
  "positions": {
-  "ADANIENT": {
-   "qty": 42,
-   "entry": 3110.0
-  },
-  "BAJAJ-AUTO": {
-   "qty": 11,
-   "entry": 11927.0
-  },
-  "BEL": {
-   "qty": 317,
-   "entry": 413.25
-  },
-  "DRREDDY": {
-   "qty": 109,
-   "entry": 1193.5
-  },
-  "EICHERMOT": {
-   "qty": 16,
-   "entry": 8055.0
-  },
-  "ETERNAL": {
-   "qty": 396,
-   "entry": 331.0
+  "COALINDIA": {
+   "qty": 405,
+   "entry": 420.04998779296875
   },
   "GRASIM": {
-   "qty": 39,
-   "entry": 3289.60009765625
-  },
-  "HDFCLIFE": {
-   "qty": 240,
-   "entry": 546.7000122070312
-  },
-  "HINDALCO": {
-   "qty": 124,
-   "entry": 1051.050048828125
-  },
-  "JSWSTEEL": {
-   "qty": 99,
-   "entry": 1320.300048828125
+   "qty": 51,
+   "entry": 3310.0
   },
   "KOTAKBANK": {
-   "qty": 326,
-   "entry": 401.6000061035156
+   "qty": 403,
+   "entry": 421.1499938964844
   },
-  "LT": {
-   "qty": 31,
-   "entry": 4119.0
+  "ADANIPORTS": {
+   "qty": 132,
+   "entry": 1707.300048828125
   },
-  "M&M": {
-   "qty": 38,
-   "entry": 3443.0
+  "ADANIENT": {
+   "qty": 102,
+   "entry": 3104.699951171875
   },
-  "RELIANCE": {
-   "qty": 99,
-   "entry": 1317.0
+  "APOLLOHOSP": {
+   "qty": 35,
+   "entry": 8967.0
   },
-  "SHRIRAMFIN": {
-   "qty": 115,
-   "entry": 1138.5
+  "MAXHEALTH": {
+   "qty": 306,
+   "entry": 1037.5
   },
-  "TITAN": {
-   "qty": 25,
-   "entry": 5124.7998046875
+  "NTPC": {
+   "qty": 5,
+   "entry": 335.0
+  },
+  "POWERGRID": {
+   "qty": 6,
+   "entry": 271.75
   }
  },
  "trades": [
@@ -182,6 +154,531 @@
    "side": "BUY",
    "qty": 25,
    "price": 5124.8
+  },
+  {
+   "time": "2026-08-31T23:26:07+05:30",
+   "symbol": "ADANIENT",
+   "side": "SELL",
+   "qty": 42,
+   "price": 2859.1
+  },
+  {
+   "time": "2026-08-31T23:26:07+05:30",
+   "symbol": "DRREDDY",
+   "side": "SELL",
+   "qty": 109,
+   "price": 1154.4
+  },
+  {
+   "time": "2026-08-31T23:26:07+05:30",
+   "symbol": "HINDALCO",
+   "side": "SELL",
+   "qty": 124,
+   "price": 1015.45
+  },
+  {
+   "time": "2026-08-31T23:26:07+05:30",
+   "symbol": "LT",
+   "side": "SELL",
+   "qty": 31,
+   "price": 4044.9
+  },
+  {
+   "time": "2026-08-31T23:26:07+05:30",
+   "symbol": "M&M",
+   "side": "SELL",
+   "qty": 38,
+   "price": 3282.0
+  },
+  {
+   "time": "2026-08-31T23:26:07+05:30",
+   "symbol": "RELIANCE",
+   "side": "SELL",
+   "qty": 99,
+   "price": 1277.0
+  },
+  {
+   "time": "2026-08-31T23:26:07+05:30",
+   "symbol": "SHRIRAMFIN",
+   "side": "SELL",
+   "qty": 115,
+   "price": 1109.9
+  },
+  {
+   "time": "2026-08-31T23:26:07+05:30",
+   "symbol": "APOLLOHOSP",
+   "side": "BUY",
+   "qty": 11,
+   "price": 8898.5
+  },
+  {
+   "time": "2026-08-31T23:26:07+05:30",
+   "symbol": "AXISBANK",
+   "side": "BUY",
+   "qty": 76,
+   "price": 1300.0
+  },
+  {
+   "time": "2026-08-31T23:26:07+05:30",
+   "symbol": "BAJAJFINSV",
+   "side": "BUY",
+   "qty": 48,
+   "price": 2021.0
+  },
+  {
+   "time": "2026-08-31T23:26:07+05:30",
+   "symbol": "ICICIBANK",
+   "side": "BUY",
+   "qty": 68,
+   "price": 1454.0
+  },
+  {
+   "time": "2026-08-31T23:26:07+05:30",
+   "symbol": "MAXHEALTH",
+   "side": "BUY",
+   "qty": 94,
+   "price": 1042.1
+  },
+  {
+   "time": "2026-08-31T23:26:07+05:30",
+   "symbol": "SUNPHARMA",
+   "side": "BUY",
+   "qty": 49,
+   "price": 1984.8
+  },
+  {
+   "time": "2026-08-31T23:26:07+05:30",
+   "symbol": "TCS",
+   "side": "BUY",
+   "qty": 41,
+   "price": 2399.3
+  },
+  {
+   "time": "2026-08-31T23:26:07+05:30",
+   "symbol": "TECHM",
+   "side": "BUY",
+   "qty": 60,
+   "price": 1628.0
+  },
+  {
+   "time": "2026-08-31T23:26:07+05:30",
+   "symbol": "WIPRO",
+   "side": "BUY",
+   "qty": 536,
+   "price": 184.5
+  },
+  {
+   "time": "2026-09-01T15:36:44+05:30",
+   "symbol": "EICHERMOT",
+   "side": "SELL",
+   "qty": 16,
+   "price": 7970.0
+  },
+  {
+   "time": "2026-09-01T15:36:44+05:30",
+   "symbol": "HDFCLIFE",
+   "side": "SELL",
+   "qty": 240,
+   "price": 540.3
+  },
+  {
+   "time": "2026-09-01T15:36:44+05:30",
+   "symbol": "BAJAJFINSV",
+   "side": "SELL",
+   "qty": 48,
+   "price": 1972.0
+  },
+  {
+   "time": "2026-09-01T15:36:44+05:30",
+   "symbol": "MAXHEALTH",
+   "side": "SELL",
+   "qty": 94,
+   "price": 1003.0
+  },
+  {
+   "time": "2026-09-01T15:36:44+05:30",
+   "symbol": "HCLTECH",
+   "side": "BUY",
+   "qty": 167,
+   "price": 1351.4
+  },
+  {
+   "time": "2026-09-01T15:36:44+05:30",
+   "symbol": "INFY",
+   "side": "BUY",
+   "qty": 195,
+   "price": 1156.0
+  },
+  {
+   "time": "2026-09-02T15:36:40+05:30",
+   "symbol": "APOLLOHOSP",
+   "side": "SELL",
+   "qty": 11,
+   "price": 8719.0
+  },
+  {
+   "time": "2026-09-02T15:36:40+05:30",
+   "symbol": "WIPRO",
+   "side": "SELL",
+   "qty": 536,
+   "price": 177.09
+  },
+  {
+   "time": "2026-09-02T15:36:40+05:30",
+   "symbol": "COALINDIA",
+   "side": "BUY",
+   "qty": 456,
+   "price": 417.85
+  },
+  {
+   "time": "2026-09-02T21:16:09+05:30",
+   "symbol": "BAJAJ-AUTO",
+   "side": "SELL",
+   "qty": 11,
+   "price": 11927.0
+  },
+  {
+   "time": "2026-09-02T21:16:09+05:30",
+   "symbol": "BEL",
+   "side": "SELL",
+   "qty": 317,
+   "price": 413.25
+  },
+  {
+   "time": "2026-09-02T21:16:09+05:30",
+   "symbol": "ETERNAL",
+   "side": "SELL",
+   "qty": 396,
+   "price": 331.0
+  },
+  {
+   "time": "2026-09-02T21:16:09+05:30",
+   "symbol": "GRASIM",
+   "side": "SELL",
+   "qty": 39,
+   "price": 3289.6
+  },
+  {
+   "time": "2026-09-02T21:16:09+05:30",
+   "symbol": "JSWSTEEL",
+   "side": "SELL",
+   "qty": 99,
+   "price": 1320.3
+  },
+  {
+   "time": "2026-09-02T21:16:09+05:30",
+   "symbol": "KOTAKBANK",
+   "side": "SELL",
+   "qty": 326,
+   "price": 401.6
+  },
+  {
+   "time": "2026-09-02T21:16:09+05:30",
+   "symbol": "TITAN",
+   "side": "SELL",
+   "qty": 25,
+   "price": 5124.8
+  },
+  {
+   "time": "2026-09-02T21:16:09+05:30",
+   "symbol": "AXISBANK",
+   "side": "SELL",
+   "qty": 76,
+   "price": 1300.0
+  },
+  {
+   "time": "2026-09-02T21:16:09+05:30",
+   "symbol": "ICICIBANK",
+   "side": "SELL",
+   "qty": 68,
+   "price": 1454.0
+  },
+  {
+   "time": "2026-09-02T21:16:09+05:30",
+   "symbol": "SUNPHARMA",
+   "side": "SELL",
+   "qty": 49,
+   "price": 1984.8
+  },
+  {
+   "time": "2026-09-02T21:16:09+05:30",
+   "symbol": "TCS",
+   "side": "SELL",
+   "qty": 41,
+   "price": 2399.3
+  },
+  {
+   "time": "2026-09-02T21:16:09+05:30",
+   "symbol": "TECHM",
+   "side": "SELL",
+   "qty": 60,
+   "price": 1628.0
+  },
+  {
+   "time": "2026-09-02T21:16:09+05:30",
+   "symbol": "HCLTECH",
+   "side": "SELL",
+   "qty": 167,
+   "price": 1351.4
+  },
+  {
+   "time": "2026-09-02T21:16:09+05:30",
+   "symbol": "INFY",
+   "side": "SELL",
+   "qty": 195,
+   "price": 1156.0
+  },
+  {
+   "time": "2026-09-02T21:16:09+05:30",
+   "symbol": "COALINDIA",
+   "side": "SELL",
+   "qty": 456,
+   "price": 417.85
+  },
+  {
+   "time": "2026-09-03T15:36:17+05:30",
+   "symbol": "AXISBANK",
+   "side": "BUY",
+   "qty": 134,
+   "price": 1267.0
+  },
+  {
+   "time": "2026-09-03T15:36:17+05:30",
+   "symbol": "BAJAJ-AUTO",
+   "side": "BUY",
+   "qty": 14,
+   "price": 11920.0
+  },
+  {
+   "time": "2026-09-03T15:36:17+05:30",
+   "symbol": "COALINDIA",
+   "side": "BUY",
+   "qty": 405,
+   "price": 420.05
+  },
+  {
+   "time": "2026-09-03T15:36:17+05:30",
+   "symbol": "ETERNAL",
+   "side": "BUY",
+   "qty": 523,
+   "price": 324.8
+  },
+  {
+   "time": "2026-09-03T15:36:17+05:30",
+   "symbol": "GRASIM",
+   "side": "BUY",
+   "qty": 51,
+   "price": 3310.0
+  },
+  {
+   "time": "2026-09-03T15:36:17+05:30",
+   "symbol": "HCLTECH",
+   "side": "BUY",
+   "qty": 128,
+   "price": 1319.0
+  },
+  {
+   "time": "2026-09-03T15:36:17+05:30",
+   "symbol": "ICICIBANK",
+   "side": "BUY",
+   "qty": 118,
+   "price": 1430.0
+  },
+  {
+   "time": "2026-09-03T15:36:17+05:30",
+   "symbol": "JSWSTEEL",
+   "side": "BUY",
+   "qty": 130,
+   "price": 1308.0
+  },
+  {
+   "time": "2026-09-03T15:36:17+05:30",
+   "symbol": "KOTAKBANK",
+   "side": "BUY",
+   "qty": 403,
+   "price": 421.15
+  },
+  {
+   "time": "2026-09-03T15:36:17+05:30",
+   "symbol": "SUNPHARMA",
+   "side": "BUY",
+   "qty": 88,
+   "price": 1916.0
+  },
+  {
+   "time": "2026-09-03T15:36:17+05:30",
+   "symbol": "TCS",
+   "side": "BUY",
+   "qty": 73,
+   "price": 2320.1
+  },
+  {
+   "time": "2026-09-03T15:36:17+05:30",
+   "symbol": "TECHM",
+   "side": "BUY",
+   "qty": 106,
+   "price": 1598.0
+  },
+  {
+   "time": "2026-09-04T15:36:37+05:30",
+   "symbol": "HCLTECH",
+   "side": "SELL",
+   "qty": 128,
+   "price": 1293.4
+  },
+  {
+   "time": "2026-09-04T15:36:37+05:30",
+   "symbol": "SUNPHARMA",
+   "side": "SELL",
+   "qty": 88,
+   "price": 1899.0
+  },
+  {
+   "time": "2026-09-04T15:36:37+05:30",
+   "symbol": "TCS",
+   "side": "SELL",
+   "qty": 73,
+   "price": 2304.0
+  },
+  {
+   "time": "2026-09-04T15:36:37+05:30",
+   "symbol": "TECHM",
+   "side": "SELL",
+   "qty": 106,
+   "price": 1596.9
+  },
+  {
+   "time": "2026-09-04T15:36:37+05:30",
+   "symbol": "ADANIPORTS",
+   "side": "BUY",
+   "qty": 132,
+   "price": 1707.3
+  },
+  {
+   "time": "2026-09-04T15:36:37+05:30",
+   "symbol": "RELIANCE",
+   "side": "BUY",
+   "qty": 171,
+   "price": 1322.0
+  },
+  {
+   "time": "2026-09-04T15:36:37+05:30",
+   "symbol": "TATASTEEL",
+   "side": "BUY",
+   "qty": 1197,
+   "price": 188.79
+  },
+  {
+   "time": "2026-09-07T15:36:41+05:30",
+   "symbol": "ETERNAL",
+   "side": "SELL",
+   "qty": 523,
+   "price": 320.8
+  },
+  {
+   "time": "2026-09-08T15:36:22+05:30",
+   "symbol": "ICICIBANK",
+   "side": "SELL",
+   "qty": 118,
+   "price": 1399.4
+  },
+  {
+   "time": "2026-09-08T15:36:22+05:30",
+   "symbol": "JSWSTEEL",
+   "side": "SELL",
+   "qty": 130,
+   "price": 1297.3
+  },
+  {
+   "time": "2026-09-08T15:36:22+05:30",
+   "symbol": "RELIANCE",
+   "side": "SELL",
+   "qty": 171,
+   "price": 1294.9
+  },
+  {
+   "time": "2026-09-08T15:36:22+05:30",
+   "symbol": "TATASTEEL",
+   "side": "SELL",
+   "qty": 1197,
+   "price": 184.15
+  },
+  {
+   "time": "2026-09-09T15:50:17+05:30",
+   "symbol": "AXISBANK",
+   "side": "SELL",
+   "qty": 134,
+   "price": 1238.5
+  },
+  {
+   "time": "2026-09-09T15:50:17+05:30",
+   "symbol": "BAJAJ-AUTO",
+   "side": "SELL",
+   "qty": 14,
+   "price": 11790.0
+  },
+  {
+   "time": "2026-09-09T15:50:17+05:30",
+   "symbol": "ADANIENT",
+   "side": "BUY",
+   "qty": 102,
+   "price": 3104.7
+  },
+  {
+   "time": "2026-09-09T15:50:17+05:30",
+   "symbol": "APOLLOHOSP",
+   "side": "BUY",
+   "qty": 35,
+   "price": 8967.0
+  },
+  {
+   "time": "2026-09-09T15:50:17+05:30",
+   "symbol": "MAXHEALTH",
+   "side": "BUY",
+   "qty": 306,
+   "price": 1037.5
+  },
+  {
+   "time": "2026-09-09T15:50:17+05:30",
+   "symbol": "TATASTEEL",
+   "side": "BUY",
+   "qty": 1686,
+   "price": 188.75
+  },
+  {
+   "time": "2026-09-10T15:36:49+05:30",
+   "symbol": "NTPC",
+   "side": "BUY",
+   "qty": 5,
+   "price": 335.0
+  },
+  {
+   "time": "2026-09-10T15:36:49+05:30",
+   "symbol": "ONGC",
+   "side": "BUY",
+   "qty": 7,
+   "price": 237.27
+  },
+  {
+   "time": "2026-09-10T15:36:49+05:30",
+   "symbol": "POWERGRID",
+   "side": "BUY",
+   "qty": 6,
+   "price": 271.75
+  },
+  {
+   "time": "2026-09-11T15:36:25+05:30",
+   "symbol": "TATASTEEL",
+   "side": "SELL",
+   "qty": 1686,
+   "price": 183.0
+  },
+  {
+   "time": "2026-09-11T15:36:25+05:30",
+   "symbol": "ONGC",
+   "side": "SELL",
+   "qty": 7,
+   "price": 232.5
   }
  ],
  "equity_curve": [
@@ -204,10 +701,143 @@
   {
    "date": "2026-08-25",
    "equity": 2097501.26
+  },
+  {
+   "date": "2026-08-31",
+   "equity": 2066719.59
+  },
+  {
+   "date": "2026-09-01",
+   "equity": 2048299.66
+  },
+  {
+   "date": "2026-09-02",
+   "equity": 2030337.19
+  },
+  {
+   "date": null,
+   "equity": 2041655.89
+  },
+  {
+   "date": "2026-09-03",
+   "equity": 2039219.7
+  },
+  {
+   "date": "2026-09-04",
+   "equity": 2032721.96
+  },
+  {
+   "date": "2026-09-07",
+   "equity": 2018204.92
+  },
+  {
+   "date": "2026-09-08",
+   "equity": 2009111.0
+  },
+  {
+   "date": "2026-09-09",
+   "equity": 2015547.89
+  },
+  {
+   "date": "2026-09-10",
+   "equity": 2008884.75
+  },
+  {
+   "date": "2026-09-11",
+   "equity": 1994190.82
   }
  ],
  "skipped": {},
- "last_run": "2026-08-25T22:10:30+05:30",
- "tax_lots": {},
- "tax_records": []
+ "last_run": "2026-09-11T15:36:25+05:30",
+ "tax_lots": {
+  "GRASIM": [
+   {
+    "qty": 51.0,
+    "price": 3310.0,
+    "date": "2026-09-03T15:36:17.796538+05:30"
+   }
+  ],
+  "KOTAKBANK": [
+   {
+    "qty": 403.0,
+    "price": 421.1499938964844,
+    "date": "2026-09-03T15:36:17.797029+05:30"
+   }
+  ],
+  "COALINDIA": [
+   {
+    "qty": 405.0,
+    "price": 420.04998779296875,
+    "date": "2026-09-03T15:36:17.796402+05:30"
+   }
+  ],
+  "ADANIPORTS": [
+   {
+    "qty": 132.0,
+    "price": 1707.300048828125,
+    "date": "2026-09-04T15:36:37.770809+05:30"
+   }
+  ],
+  "ADANIENT": [
+   {
+    "qty": 102.0,
+    "price": 3104.699951171875,
+    "date": "2026-09-09T15:50:17.243075+05:30"
+   }
+  ],
+  "APOLLOHOSP": [
+   {
+    "qty": 35.0,
+    "price": 8967.0,
+    "date": "2026-09-09T15:50:17.243086+05:30"
+   }
+  ],
+  "MAXHEALTH": [
+   {
+    "qty": 306.0,
+    "price": 1037.5,
+    "date": "2026-09-09T15:50:17.243095+05:30"
+   }
+  ],
+  "TATASTEEL": [],
+  "NTPC": [
+   {
+    "qty": 5.0,
+    "price": 335.0,
+    "date": "2026-09-10T15:36:49.776797+05:30"
+   }
+  ],
+  "ONGC": [],
+  "POWERGRID": [
+   {
+    "qty": 6.0,
+    "price": 271.75,
+    "date": "2026-09-10T15:36:49.777053+05:30"
+   }
+  ]
+ },
+ "tax_records": [
+  {
+   "symbol": "TATASTEEL",
+   "qty": 1686.0,
+   "buy_date": "2026-09-09",
+   "sell_date": "2026-09-11",
+   "proceeds": 308538.0,
+   "cost": 318232.5,
+   "gain": -9694.5,
+   "kind": "STCG",
+   "holding_days": 2
+  },
+  {
+   "symbol": "ONGC",
+   "qty": 7.0,
+   "buy_date": "2026-09-10",
+   "sell_date": "2026-09-11",
+   "proceeds": 1627.5,
+   "cost": 1660.89,
+   "gain": -33.39,
+   "kind": "STCG",
+   "holding_days": 1
+  }
+ ]
 }

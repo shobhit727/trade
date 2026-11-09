@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.momentum_vol import MomentumVolStrategy
+from cryptobot.strategies.catalog.momentum_volatility import MomentumVolStrategy
 
 
 def _series(up: bool):

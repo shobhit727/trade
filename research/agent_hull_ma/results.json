@@ -1,0 +1,318 @@
+{
+  "variants": {
+    "V1_20": {
+      "period": 20,
+      "train": {
+        "label": "V1_20",
+        "cagr": 17.02,
+        "sharpe": 0.8,
+        "maxdd": -26.52,
+        "calmar": 0.64,
+        "turnover_x_y": 3.96,
+        "cost_drag_pct_y": 1.66,
+        "avg_names": 28.2,
+        "trades_y": 11.7,
+        "total_ret_pct": 256.8,
+        "n_days": 1975,
+        "yearly_pos_frac": 1.0
+      },
+      "train_long_frac": 0.5482
+    },
+    "V2_10": {
+      "period": 10,
+      "train": {
+        "label": "V2_10",
+        "cagr": 18.73,
+        "sharpe": 0.96,
+        "maxdd": -14.38,
+        "calmar": 1.3,
+        "turnover_x_y": 3.96,
+        "cost_drag_pct_y": 1.82,
+        "avg_names": 28.2,
+        "trades_y": 11.7,
+        "total_ret_pct": 301.5,
+        "n_days": 1975,
+        "yearly_pos_frac": 1.0
+      },
+      "train_long_frac": 0.5305
+    },
+    "V3_15": {
+      "period": 15,
+      "train": {
+        "label": "V3_15",
+        "cagr": 18.4,
+        "sharpe": 0.92,
+        "maxdd": -20.12,
+        "calmar": 0.91,
+        "turnover_x_y": 3.95,
+        "cost_drag_pct_y": 1.77,
+        "avg_names": 28.0,
+        "trades_y": 11.7,
+        "total_ret_pct": 292.5,
+        "n_days": 1975,
+        "yearly_pos_frac": 1.0
+      },
+      "train_long_frac": 0.5404
+    },
+    "V4_30": {
+      "period": 30,
+      "train": {
+        "label": "V4_30",
+        "cagr": 15.64,
+        "sharpe": 0.7,
+        "maxdd": -29.46,
+        "calmar": 0.53,
+        "turnover_x_y": 3.94,
+        "cost_drag_pct_y": 1.56,
+        "avg_names": 27.6,
+        "trades_y": 11.7,
+        "total_ret_pct": 224.1,
+        "n_days": 1975,
+        "yearly_pos_frac": 1.0
+      },
+      "train_long_frac": 0.5618
+    },
+    "V5_55": {
+      "period": 55,
+      "train": {
+        "label": "V5_55",
+        "cagr": 13.76,
+        "sharpe": 0.54,
+        "maxdd": -33.28,
+        "calmar": 0.41,
+        "turnover_x_y": 3.72,
+        "cost_drag_pct_y": 1.36,
+        "avg_names": 25.8,
+        "trades_y": 11.7,
+        "total_ret_pct": 183.9,
+        "n_days": 1975,
+        "yearly_pos_frac": 0.75
+      },
+      "train_long_frac": 0.5866
+    }
+  },
+  "train_bh": {
+    "label": "BH",
+    "cagr": 18.38,
+    "sharpe": 0.78,
+    "maxdd": -34.92,
+    "calmar": 0.53,
+    "turnover_x_y": 2.64,
+    "cost_drag_pct_y": 1.18,
+    "avg_names": 22.2,
+    "trades_y": 11.7,
+    "total_ret_pct": 291.8,
+    "n_days": 1975,
+    "yearly_pos_frac": 1.0
+  },
+  "train_composite": {
+    "label": "COMP",
+    "cagr": 21.3,
+    "sharpe": 0.96,
+    "maxdd": -32.92,
+    "calmar": 0.65,
+    "turnover_x_y": 1.96,
+    "cost_drag_pct_y": 1.0,
+    "avg_names": 21.8,
+    "trades_y": 11.7,
+    "total_ret_pct": 377.1,
+    "n_days": 1975,
+    "yearly_pos_frac": 1.0
+  },
+  "train_textbook_hull_cagr": {
+    "V1_20": 19.86,
+    "V2_10": 15.96,
+    "V3_15": 18.14,
+    "V4_30": 19.6,
+    "V5_55": 15.88
+  },
+  "selected_on_train": "V2_10",
+  "rng_train_cagr": [
+    18.27,
+    16.8,
+    19.15,
+    17.14,
+    17.13,
+    15.61,
+    17.63,
+    18.5,
+    17.21,
+    16.05,
+    17.85,
+    17.39,
+    16.83,
+    18.21,
+    17.83,
+    18.48,
+    17.79,
+    17.61,
+    19.43,
+    16.61
+  ],
+  "test": {
+    "V1_20": {
+      "label": "V1_20",
+      "cagr": 2.86,
+      "sharpe": -0.22,
+      "maxdd": -15.19,
+      "calmar": 0.19,
+      "turnover_x_y": 4.02,
+      "cost_drag_pct_y": 1.03,
+      "avg_names": 27.6,
+      "trades_y": 11.8,
+      "total_ret_pct": 8.2,
+      "n_days": 685,
+      "yearly_pos_frac": 0.67
+    },
+    "V2_10": {
+      "label": "V2_10",
+      "cagr": 3.85,
+      "sharpe": -0.14,
+      "maxdd": -13.46,
+      "calmar": 0.29,
+      "turnover_x_y": 4.03,
+      "cost_drag_pct_y": 1.02,
+      "avg_names": 28.1,
+      "trades_y": 11.8,
+      "total_ret_pct": 11.2,
+      "n_days": 685,
+      "yearly_pos_frac": 0.67
+    },
+    "V3_15": {
+      "label": "V3_15",
+      "cagr": 4.56,
+      "sharpe": -0.08,
+      "maxdd": -13.79,
+      "calmar": 0.33,
+      "turnover_x_y": 4.01,
+      "cost_drag_pct_y": 1.05,
+      "avg_names": 27.6,
+      "trades_y": 11.8,
+      "total_ret_pct": 13.3,
+      "n_days": 685,
+      "yearly_pos_frac": 0.67
+    },
+    "V4_30": {
+      "label": "V4_30",
+      "cagr": 1.27,
+      "sharpe": -0.34,
+      "maxdd": -19.03,
+      "calmar": 0.07,
+      "turnover_x_y": 4.02,
+      "cost_drag_pct_y": 1.02,
+      "avg_names": 26.4,
+      "trades_y": 11.8,
+      "total_ret_pct": 3.6,
+      "n_days": 685,
+      "yearly_pos_frac": 0.67
+    },
+    "V5_55": {
+      "label": "V5_55",
+      "cagr": 1.98,
+      "sharpe": -0.27,
+      "maxdd": -18.8,
+      "calmar": 0.11,
+      "turnover_x_y": 3.74,
+      "cost_drag_pct_y": 0.95,
+      "avg_names": 25.3,
+      "trades_y": 11.8,
+      "total_ret_pct": 5.7,
+      "n_days": 685,
+      "yearly_pos_frac": 0.67
+    }
+  },
+  "test_bh": {
+    "label": "BH",
+    "cagr": 2.6,
+    "sharpe": -0.22,
+    "maxdd": -16.86,
+    "calmar": 0.15,
+    "turnover_x_y": 2.76,
+    "cost_drag_pct_y": 0.7,
+    "avg_names": 21.3,
+    "trades_y": 11.8,
+    "total_ret_pct": 7.5,
+    "n_days": 685,
+    "yearly_pos_frac": 0.67
+  },
+  "test_composite": {
+    "label": "COMP",
+    "cagr": 6.55,
+    "sharpe": 0.07,
+    "maxdd": -14.84,
+    "calmar": 0.44,
+    "turnover_x_y": 2.07,
+    "cost_drag_pct_y": 0.55,
+    "avg_names": 21.3,
+    "trades_y": 11.8,
+    "total_ret_pct": 19.5,
+    "n_days": 685,
+    "yearly_pos_frac": 0.67
+  },
+  "test_random_cagr": [
+    4.23,
+    4.14,
+    3.92,
+    9.0,
+    7.23,
+    3.97,
+    3.82,
+    7.73,
+    5.85,
+    5.24,
+    5.75,
+    6.41,
+    5.81,
+    5.09,
+    7.26,
+    5.02,
+    6.17,
+    5.26,
+    2.67,
+    4.97
+  ],
+  "test_random_sharpe": [
+    -0.14,
+    -0.15,
+    -0.17,
+    0.27,
+    0.12,
+    -0.17,
+    -0.18,
+    0.16,
+    -0.0,
+    -0.05,
+    -0.01,
+    0.05,
+    -0.01,
+    -0.07,
+    0.12,
+    -0.07,
+    0.03,
+    -0.05,
+    -0.29,
+    -0.07
+  ],
+  "test_cost_stress_cagr": {
+    "zero_cost": 4.26,
+    "double_slippage": 3.43,
+    "triple_slippage": 3.01
+  },
+  "test_yearly": {
+    "hull": {
+      "2024": 13.51,
+      "2025": 7.71,
+      "2026": -9.07
+    },
+    "bh": {
+      "2024": 18.6,
+      "2025": 3.12,
+      "2026": -12.12
+    },
+    "composite": {
+      "2024": 22.57,
+      "2025": 7.16,
+      "2026": -9.01
+    }
+  }
+}

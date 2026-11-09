@@ -1,0 +1,114 @@
+{
+  "winner": null,
+  "best_overall_train_sharpe": "kelt_pure_p40_m2",
+  "declared_liveness_min_avg_names": 8.0,
+  "rule_result": "all_disqualified",
+  "train_table": [
+    {
+      "name": "kelt_pure_p20_m2",
+      "CAGR%": 2.5518063222439213,
+      "Sharpe": -0.40019256880901116,
+      "MaxDD%": -27.140327282732034,
+      "Calmar": 0.09402268055431674,
+      "Turnover/y": 1.4814349466749794,
+      "CostDrag%/y": 0.904447210059321,
+      "AvgNames": 1.6193859426541486,
+      "Total%": 50.22854681068609,
+      "Win%": 25.171276325805632
+    },
+    {
+      "name": "kelt_hybrid_p20_m2",
+      "CAGR%": 3.475140632432505,
+      "Sharpe": -0.3367289355778041,
+      "MaxDD%": -24.534714373280174,
+      "Calmar": 0.14164178068513195,
+      "Turnover/y": 1.409984289514817,
+      "CostDrag%/y": 0.9445401608134636,
+      "AvgNames": 1.4435422481603655,
+      "Total%": 73.63054573601859,
+      "Win%": 24.10555696523725
+    },
+    {
+      "name": "kelt_pure_p20_m25",
+      "CAGR%": 0.8378855434579169,
+      "Sharpe": -0.8164962785264355,
+      "MaxDD%": -32.40963534345005,
+      "Calmar": 0.02585297657868442,
+      "Turnover/y": 0.7929674067008419,
+      "CostDrag%/y": 0.4486024549513681,
+      "AvgNames": 0.7868561278863233,
+      "Total%": 14.42717788345098,
+      "Win%": 17.711240801826946
+    },
+    {
+      "name": "kelt_pure_p40_m2",
+      "CAGR%": 2.3413633175579873,
+      "Sharpe": -0.2560378315420708,
+      "MaxDD%": -46.46550329865931,
+      "Calmar": 0.05038928132358235,
+      "Turnover/y": 2.3695447179509546,
+      "CostDrag%/y": 1.239944018057964,
+      "AvgNames": 3.6754630804364377,
+      "Total%": 45.32600184902484,
+      "Win%": 33.697031210352705
+    },
+    {
+      "name": "kelt_hybrid_p20_m25",
+      "CAGR%": 0.8261520774718534,
+      "Sharpe": -0.8896230316057254,
+      "MaxDD%": -32.40963534345016,
+      "Calmar": 0.025490940231723866,
+      "Turnover/y": 0.732781136047104,
+      "CostDrag%/y": 0.4222326325482545,
+      "AvgNames": 0.6734331387972596,
+      "Total%": 14.212312928856008,
+      "Win%": 16.950012687135242
+    }
+  ],
+  "liveness": [
+    {
+      "variant": "kelt_pure_p20_m2",
+      "cell_frac": 0.04119150194289576,
+      "mean_names_flagged": 1.9771920932589964,
+      "median_names_flagged": 0.0,
+      "p90_names_flagged": 6.0,
+      "frac_bars_zero": 0.5048150025342119
+    },
+    {
+      "variant": "kelt_hybrid_p20_m2",
+      "cell_frac": 0.04119150194289576,
+      "mean_names_flagged": 1.9771920932589964,
+      "median_names_flagged": 0.0,
+      "p90_names_flagged": 6.0,
+      "frac_bars_zero": 0.5048150025342119
+    },
+    {
+      "variant": "kelt_pure_p20_m25",
+      "cell_frac": 0.019809089373204934,
+      "mean_names_flagged": 0.9508362899138368,
+      "median_names_flagged": 0.0,
+      "p90_names_flagged": 3.0,
+      "frac_bars_zero": 0.6887987835783071
+    },
+    {
+      "variant": "kelt_pure_p40_m2",
+      "cell_frac": 0.08690234836965703,
+      "mean_names_flagged": 4.171312721743538,
+      "median_names_flagged": 2.0,
+      "p90_names_flagged": 12.0,
+      "frac_bars_zero": 0.2914343639128231
+    },
+    {
+      "variant": "kelt_hybrid_p20_m25",
+      "cell_frac": 0.019809089373204934,
+      "mean_names_flagged": 0.9508362899138368,
+      "median_names_flagged": 0.0,
+      "p90_names_flagged": 3.0,
+      "frac_bars_zero": 0.6887987835783071
+    }
+  ],
+  "train_window": [
+    "2016-01-01",
+    "2023-12-31"
+  ]
+}

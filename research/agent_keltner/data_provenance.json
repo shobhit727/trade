@@ -1,0 +1,19 @@
+{
+  "loader_path": "/home/ph03n1x/trade/src/nsealgo/data/loader.py",
+  "loader_sha": "d4fea73f8754",
+  "panel_shape": [
+    4625,
+    48
+  ],
+  "panel_sha": "cd443dfed5db",
+  "index_min": "2008-01-01 00:00:00+05:30",
+  "index_max": "2026-10-01 00:00:00+05:30",
+  "rows_in": 274541,
+  "rows_out": 207687,
+  "dropped_frozen": 539,
+  "frozen_symbols": [
+    "bajajauto",
+    "nestleind"
+  ],
+  "n_frozen_runs": 3
+}

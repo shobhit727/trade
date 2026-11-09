@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from cryptobot.strategies.catalog.stablecoin_peg import StablecoinPegStrategy
+from cryptobot.strategies.catalog.stablecoin_peg_strategy import StablecoinPegStrategy
 
 
 def _series(up: bool):

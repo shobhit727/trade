@@ -1,0 +1,59 @@
+
+====================================================================================================
+A) ALL 5 DECLARED VARIANTS ON BOTH WINDOWS (family diagnostic)
+====================================================================================================
+variant     TRAIN cagr  TRAIN shp |  TEST cagr  TEST shp  TEST maxdd  TEST names
+------------------------------------------------------------------------------
+V1_base          6.38%       0.05 |      4.43%     -0.20     -13.23%        18.8
+V2_tight        -1.03%      -0.72 |      4.04%     -0.33     -11.75%         6.5
+V3_week          4.17%      -0.11 |      1.72%     -0.43     -12.68%        16.2
+V4_fast          4.67%      -0.09 |      8.07%      0.21     -15.03%        18.4
+V5_deep          7.16%       0.11 |      4.56%     -0.18     -13.23%        18.7
+
+Variants whose TEST Sharpe beat their own TRAIN Sharpe: ['V2_tight', 'V4_fast']
+(These improved OOS, but none reached buy-and-hold or the equal-weight book.)
+Best TEST Sharpe in the family : 0.21
+Best TRAIN Sharpe in the family: 0.11
+No variant in the family beats buy-and-hold (Sharpe 0.19) except V4_fast,
+which merely matches it (0.21) while doubling turnover, and still loses to the
+equal-weight book through the identical engine (0.32).
+
+====================================================================================================
+B) ISOLATING THE CCI GATE (momentum with and without the CCI filter)
+====================================================================================================
+Same book, same ranking (mom126), same costs. Only difference: the CCI gate.
+
+TRAIN  momentum, NO CCI gate : CAGR   18.38%  Sharpe   0.78  MaxDD  -34.92%  Names  22.2  Cost  1.18%/y
+TRAIN  momentum, CCI gate on : CAGR    5.48%  Sharpe  -0.02  MaxDD  -35.15%  Names  16.3  Cost  0.94%/y
+TRAIN  DELTA (gate minus no-gate):  -12.90 pp CAGR,  -0.80 Sharpe
+
+TEST   momentum, NO CCI gate : CAGR    2.60%  Sharpe  -0.22  MaxDD  -16.86%  Names  21.3  Cost  0.70%/y
+TEST   momentum, CCI gate on : CAGR    2.45%  Sharpe  -0.46  MaxDD  -13.23%  Names  17.8  Cost  0.72%/y
+TEST   DELTA (gate minus no-gate):   -0.16 pp CAGR,  -0.24 Sharpe
+
+
+====================================================================================================
+C) DOES BUYING OVERSOLD NAMES ACTUALLY WORK? (21d forward returns)
+====================================================================================================
+
+  TRAIN  CCI < -100 (GATE BUYS)   mean 21d fwd ret    1.63%   n= 15,211   mean 126d mom  0.0226
+  TRAIN  -100 <= CCI <= 100       mean 21d fwd ret    2.06%   n= 52,556   mean 126d mom  0.1002
+  TRAIN  CCI > +100 (GATE EXCLUDES) mean 21d fwd ret    1.87%   n= 23,548   mean 126d mom  0.1768
+  -> reversion edge (oversold minus overbought) = -0.24 pp
+
+
+  TEST  CCI < -100 (GATE BUYS)   mean 21d fwd ret    1.13%   n=  5,652   mean 126d mom  0.0062
+  TEST  -100 <= CCI <= 100       mean 21d fwd ret    0.90%   n= 18,843   mean 126d mom  0.0804
+  TEST  CCI > +100 (GATE EXCLUDES) mean 21d fwd ret    0.52%   n=  7,356   mean 126d mom  0.1587
+  -> reversion edge (oversold minus overbought) = +0.61 pp
+
+
+====================================================================================================
+D) TWO NEGATIVE CONTROLS (same 16.43% density, 20 seeds each)
+====================================================================================================
+(i)  random eligibility + mom126 rank : CAGR mean  12.53%  Sharpe mean  0.50  p05  10.64%  p95  14.61%
+(ii) TRUE COIN (random scores, no rank)  : CAGR mean   4.84%  Sharpe mean -0.09  p05   2.39%  p95   7.08%
+
+  CCI V5_deep TEST                      : CAGR   4.56%  Sharpe -0.18
+  The true coin is the floor. CCI lands below both controls,
+  so the signal is worse than random selection, not merely weak.

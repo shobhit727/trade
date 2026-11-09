@@ -1,0 +1,95 @@
+==============================================================================
+A. ABLATION — does the ROC gate add anything over momentum alone?
+   (comparator/diagnostic; NOT a variant, NOT selectable)
+==============================================================================
+| book | CAGR | Sharpe | MaxDD | Calmar | Turn/y | Cost/y | Trades/y |
+|---|---|---|---|---|---|---|---|
+
+| momentum126 only, TRAIN | 17.56% | 0.73 | -35.21% | 0.50 | 2.64x | 2.29% | 11.7 | names=21.8 |
+| momentum126 only, TEST | 1.58% | -0.30 | -18.82% | 0.08 | 2.77x | 1.39% | 11.8 | names=21.3 |
+| ROC gate + mom rank, TRAIN | 15.37% | 0.88 | -10.71% | 1.44 | 4.00x | 3.16% | 11.7 | names=19.1 |
+| ROC gate + mom rank, TEST | 1.27% | -0.42 | -19.79% | 0.06 | 4.02x | 2.02% | 11.8 | names=18.4 |
+  TRAIN gate effect: CAGR -2.19pp   Sharpe +0.15   MaxDD +24.50pp   Calmar +0.94
+  TEST  gate effect: CAGR -0.31pp   Sharpe -0.12   MaxDD -0.97pp   Calmar -0.02
+
+==============================================================================
+B. IS ROC-10 CROSS-SECTIONALLY INFORMATIVE?
+   mean 21d forward return by ROC-10 cross-sectional quintile,
+   first raw then momentum-matched (within mom126 quartile).
+==============================================================================
+  --- TRAIN  (n = 90,702 symbol-day observations) ---
+    Q1 = weakest ROC-10 ... Q5 = strongest
+      Q1: mean 21d forward return -1.099%   n = 17,150
+      Q2: mean 21d forward return -1.265%   n = 18,272
+      Q3: mean 21d forward return -1.206%   n = 17,908
+      Q4: mean 21d forward return -1.024%   n = 18,250
+      Q5: mean 21d forward return -0.790%   n = 19,122
+    raw Q5 - Q1 spread                : +0.309 pp per 21d
+    momentum-matched spread, by mom quartile (Q5 - Q1):
+      momQ1 +0.528pp   momQ2 +0.120pp   momQ3 +0.022pp   momQ4 +0.229pp
+    mean over mom quartiles           : +0.225 pp per 21d
+  --- TEST  (n = 31,821 symbol-day observations) ---
+    Q1 = weakest ROC-10 ... Q5 = strongest
+      Q1: mean 21d forward return -0.424%   n = 5,967
+      Q2: mean 21d forward return -0.295%   n = 6,627
+      Q3: mean 21d forward return -0.245%   n = 5,969
+      Q4: mean 21d forward return -0.364%   n = 6,628
+      Q5: mean 21d forward return -0.262%   n = 6,630
+    raw Q5 - Q1 spread                : +0.162 pp per 21d
+    momentum-matched spread, by mom quartile (Q5 - Q1):
+      momQ1 +1.220pp   momQ2 -0.256pp   momQ3 -0.231pp   momQ4 +0.580pp
+    mean over mom quartiles           : +0.328 pp per 21d
+
+==============================================================================
+C. PAIRED MONTHLY EXCESS vs the random-eligibility null
+==============================================================================
+  months compared      : 34
+  ROC monthly mean     : +0.144%
+  random-book monthly  : -0.135%
+  mean monthly excess  : +0.279%
+  positive in          : 16 / 34 months
+  paired t-stat        : +0.89  (not significant at 5%)
+
+==============================================================================
+D. YEAR-BY-YEAR — what did the book actually do, and against what?
+==============================================================================
+  yr   ROC book   EW market   buy&hold(48)   avg names   invested
+  2024   +19.16%    +20.26%     +20.40%         19.4       74.3%
+  2025    +0.17%    +13.35%     +13.35%         18.2       58.5%
+  2026   -13.20%     -8.26%      -8.27%         17.2       53.7%
+
+  bars with fewer than 22 names passing the gate: 39.0%  (min 2, mean 25.2)
+  TRAIN: equal-weight market ROC10 > 0 on 61.4% of bars; universe ROC10 > 0 on 54.0% of cells
+  TEST: equal-weight market ROC10 > 0 on 55.8% of bars; universe ROC10 > 0 on 52.4% of cells
+  corr(universe-mean ROC10, sign of daily book P&L) on TEST = +0.168
+  -> the gate is close to a market-direction overlay: it was in the market
+     61.4% of TRAIN bars and 55.8% of TEST bars.
+
+==============================================================================
+E. 100-SEED NULL — the gate vs a coin at the same exposure
+==============================================================================
+  matched long fraction (bar/symbol cells flagged) = 52.41%
+  true coin    CAGR   3.46% ± 1.62   Sharpe -0.30 ± 0.19   MaxDD -11.22%   names 21.0
+  ROC V3_wide  CAGR   1.27%                      Sharpe -0.42         MaxDD -19.79%   names 18.4
+  ROC percentile inside the coin null : CAGR 6th   Sharpe 26th   MaxDD 0th (0th = worst of 100)
+  z vs the coin                      : CAGR -1.35   Sharpe -0.64
+
+==============================================================================
+F. GATE TIMING — is 'market up over 10 days' actually a useful overlay?
+   For each month, fraction of the universe passing the gate, and the
+   equal-weight market's return over the NEXT month.
+==============================================================================
+  --- TRAIN ---
+    gate pass-rate   0.0%- 37.5%  ->  mean next-21d market return  +1.49%   n = 503
+    gate pass-rate  39.6%- 54.2%  ->  mean next-21d market return  +1.96%   n = 493
+    gate pass-rate  56.2%- 70.8%  ->  mean next-21d market return  +1.44%   n = 503
+    gate pass-rate  72.9%-100.0%  ->  mean next-21d market return  +2.94%   n = 453
+    corr(gate pass-rate, next-21d market return) = +0.094
+  --- TEST ---
+    gate pass-rate   4.2%- 35.4%  ->  mean next-21d market return  +1.47%   n = 171
+    gate pass-rate  37.5%- 54.2%  ->  mean next-21d market return  +1.13%   n = 173
+    gate pass-rate  56.2%- 70.8%  ->  mean next-21d market return  +0.67%   n = 157
+    gate pass-rate  72.9%- 97.9%  ->  mean next-21d market return  +0.17%   n = 162
+    corr(gate pass-rate, next-21d market return) = -0.127
+
+wrote posthoc_results.json

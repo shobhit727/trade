@@ -1,0 +1,4 @@
+# Regenerable intermediate results for research/control_diagnostic.py.
+# Safe to delete: the script recomputes everything (several hours at 8 cores).
+*
+!.gitignore

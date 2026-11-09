@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -27,6 +28,35 @@ def reset_singletons():
     alert_mod._alert_manager = None
     health_mod._health_monitor = None
     yield
+
+
+@pytest.fixture(autouse=True)
+def reset_logging():
+    """Reset logging configuration before each test to prevent handler leakage."""
+    # Clear all handlers from root logger
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        handler.close()
+        root_logger.removeHandler(handler)
+    # Reset structlog
+    import structlog
+    structlog.reset_defaults()
+    # Clear structlog logger cache
+    if hasattr(structlog, '_config') and hasattr(structlog._config, '_logger_cache'):
+        structlog._config._logger_cache.clear()
+    # Clear context vars
+    from cryptobot.utils.logging import clear_context
+    clear_context()
+    yield
+    # Also clean up after test
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        handler.close()
+        root_logger.removeHandler(handler)
+    structlog.reset_defaults()
+    if hasattr(structlog, '_config') and hasattr(structlog._config, '_logger_cache'):
+        structlog._config._logger_cache.clear()
+    clear_context()
 
 
 @pytest.fixture

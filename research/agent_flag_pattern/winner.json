@@ -1,0 +1,12 @@
+{
+  "winner": "V0_LITERAL",
+  "train_sharpe": 0.777018261066022,
+  "selection_rule": "max TRAIN Sharpe among the 5 declared variants",
+  "variants_run": [
+    "V0_LITERAL",
+    "V1_RUN3",
+    "V2_RUN5",
+    "V3_FLAG5",
+    "V4_FLAG10"
+  ]
+}

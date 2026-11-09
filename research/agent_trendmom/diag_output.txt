@@ -1,0 +1,54 @@
+panel (4625, 48)  2008-01-01 -> 2026-10-01
+
+############ TRAIN-ONLY DIAGNOSTICS ############
+  TRAIN Sharpe V1 (Variant(fast=10, slow=40, mom=15, thr=0.01)) = 0.02
+  TRAIN Sharpe V2 (Variant(fast=20, slow=100, mom=60, thr=0.01)) = 0.58
+  TRAIN Sharpe V3 (Variant(fast=50, slow=200, mom=60, thr=0.01)) = 0.64
+  TRAIN Sharpe V4 (Variant(fast=10, slow=40, mom=15, thr=0.05)) = -0.25
+  TRAIN Sharpe V5 (Variant(fast=5, slow=20, mom=10, thr=0.01)) = 0.31
+
+selected variant (max TRAIN Sharpe): V3 -> Variant(fast=50, slow=200, mom=60, thr=0.01)
+
+  per-leg, Variant(fast=50, slow=200, mom=60, thr=0.01) — average forward 21d return, TRAIN
+    universe                        +1.912%
+    trend_up                     +1.646%   (n=61,091  64.5% of cells)   spread vs univ -0.266 pp
+    mom_up                       +1.788%   (n=54,845  57.9% of cells)   spread vs univ -0.124 pp
+    both_up                      +1.700%   (n=43,817  46.3% of cells)   spread vs univ -0.212 pp
+
+  TRAIN ablation, config Variant(fast=50, slow=200, mom=60, thr=0.01)
+    construction                   CAGR%  Sharpe   MaxDD%  Names  Turn  Cost%
+    both legs (= the strategy)     15.01    0.64   -28.11   17.6  3.37   2.63
+    trend leg only (SMA cross)     17.12    0.71   -35.10   20.6  2.61   2.21
+    momentum leg only (ROC)        14.57    0.61   -29.96   19.5  3.34   2.50
+    no gate at all (= BH_top22)    17.56    0.73   -35.21   21.8  2.64   2.29
+
+    rank by ROC(60) among flagged  TRAIN: CAGR 13.47%  Sharpe 0.54  MaxDD -27.41%  names 17.6
+
+  market timing, TRAIN: corr(trend breadth, fwd 21d equal-wt return) = -0.114  (n=1952)
+    lowest-breadth quartile fwd 21d +3.272%  |  highest-breadth quartile +2.438%  |  spread -0.834 pp
+
+  conviction bar (threshold) on the momentum leg, TRAIN (selected config fast=50 slow=200 mom=60):
+       thr    CAGR%  Sharpe   Live%  Names
+      0.00    15.77    0.69   48.3%   18.1
+      0.01    15.01    0.64   46.3%   17.6
+      0.02    13.97    0.58   44.3%   17.2
+      0.05    13.63    0.56   38.1%   15.8
+      0.10     9.86    0.32   27.2%   12.2
+
+############ STRUCTURAL (construction, not a tuning decision) ############
+
+  flagged names on the FIRST trading day of each month, 2016-01-01 -> 2023-12-31 (config Variant(fast=50, slow=200, mom=60, thr=0.01))
+    mean 22.0  median 22  min 3  max 44
+    rebalance dates with < 22 flagged names: 45/96
+    rebalance dates with < 10 flagged names:  10/96
+
+  flagged names on the FIRST trading day of each month, 2024-01-01 -> 2026-10-01 (config Variant(fast=50, slow=200, mom=60, thr=0.01))
+    mean 22.3  median 22  min 3  max 43
+    rebalance dates with < 22 flagged names: 17/34
+    rebalance dates with < 10 flagged names:  6/34
+
+  cost decomposition, TRAIN, selected variant: turnover 3.37x/y one-way -> drag 2.63%/y (= 3.37 x 2 x 21.92bps / 1e4 compounded)
+  realised costs on Rs 21,00,000 over TRAIN: Rs 446,868
+
+  P&L concentration, TRAIN: top stock jswsteel = 5.6% of gross sum  |  top 3 = 15.3%
+    n contributors: 48 of 48 names

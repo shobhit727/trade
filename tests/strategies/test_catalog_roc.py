@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.roc import RocStrategy
+from cryptobot.strategies.catalog.rate_of_change import RocStrategy
 
 
 def _series(up: bool):

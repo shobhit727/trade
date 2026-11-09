@@ -1,0 +1,16 @@
+# Regenerable intermediate results for research/selection_v2/run.py.
+# 74 sweeps x 6 folds x 18 cells, ~93 MB. Safe to delete: the script recomputes
+# everything (~50 min at 3 workers, ~35 min at 5).
+#
+# v1's cache at research/_selection_study/ is NOT gitignored and is read-only
+# input to this study — it holds the engine-d93815344bd3 sweeps that §7's diff
+# table is measured against. Do not delete it; re-running v1's script would
+# produce sweeps on the CURRENT engine and silently destroy the diff base.
+_cache/
+__pycache__/
+*.pyc
+
+# Keep the provenance-stamped JSON and the log: they are the evidence that the
+# report was produced, and they are small.
+!*.json
+!*.log

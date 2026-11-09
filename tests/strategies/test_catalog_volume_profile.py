@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.volume_profile import VolumeProfileStrategy
+from cryptobot.strategies.catalog.volume_profile_strategy import VolumeProfileStrategy
 
 
 def _flow(up: bool):

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.relative_strength import RelativeStrengthStrategy
+from cryptobot.strategies.catalog.relative_strength_strategy import RelativeStrengthStrategy
 
 
 def _series(up: bool):

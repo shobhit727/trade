@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from cryptobot.strategies.catalog.stochastic import StochasticStrategy
+from cryptobot.strategies.catalog.stochastic_strategy import StochasticStrategy
 
 
 def _series(up: bool):

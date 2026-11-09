@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.ma_cross import MaCrossStrategy
+from cryptobot.strategies.catalog.moving_average_cross import MaCrossStrategy
 
 
 def _series(up: bool):

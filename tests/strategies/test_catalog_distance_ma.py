@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from cryptobot.strategies.catalog.distance_ma import DistanceMaStrategy
+from cryptobot.strategies.catalog.distance_moving_average import DistanceMaStrategy
 
 
 def _series(up: bool):

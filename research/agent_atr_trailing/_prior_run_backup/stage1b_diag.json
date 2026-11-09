@@ -1,0 +1,26 @@
+{
+  "selected": "V4_period55_mult2.0",
+  "strategy": {
+    "label": "V4_period55_mult2.0",
+    "n_periods": 1975,
+    "total_return": 1.2773235550146804,
+    "cagr": 0.10702592212856721,
+    "sharpe": 0.3717916102978746,
+    "calmar": 0.3153219156604799,
+    "max_drawdown": -0.33941796244764166,
+    "vol": 0.1254090184032911,
+    "turnover": 3.983832773323931,
+    "cost_drag": 0.012882587064994181,
+    "gross_cagr": 0.11673908320098403,
+    "avg_names": 25.630379746835445,
+    "max_names": 30,
+    "avg_invested": 0.7582700882364724,
+    "n_rebalances": 95
+  },
+  "random": {
+    "sharpe_mean": 0.536368496884886,
+    "sharpe_sd": 0.09913946941328255,
+    "cagr_mean": 0.1259083643259285,
+    "p_random_beats": 0.9333333333333333
+  }
+}

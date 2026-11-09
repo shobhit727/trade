@@ -1335,7 +1335,7 @@ class TestExcludedSymbols:
             f"only in available_symbols: {sorted(available - set(symbols))}; "
             f"only in load_universe: {sorted(set(symbols) - available)}"
         )
-        assert len(available) == 48, "50 constituents minus the 2 corrupt files"
+        assert len(available) == 47, "50 minus adanient, jiofin and tmpv"
 
     def test_the_exclusion_list_is_non_empty_and_documented(self):
         assert S.EXCLUDED_SYMBOLS

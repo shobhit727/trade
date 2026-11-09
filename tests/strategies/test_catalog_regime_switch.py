@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from cryptobot.strategies.catalog.regime_switch import RegimeSwitchStrategy
+from cryptobot.strategies.catalog.regime_switch_strategy import RegimeSwitchStrategy
 
 
 def _series(up: bool):

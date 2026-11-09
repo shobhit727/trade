@@ -1,0 +1,29 @@
+{
+  "verification": {
+    "p40_t0.0": {
+      "comparisons": 27750,
+      "mismatches": 0,
+      "nan_mismatches": 0,
+      "examples": []
+    },
+    "p126_t0.0": {
+      "comparisons": 27750,
+      "mismatches": 0,
+      "nan_mismatches": 0,
+      "examples": []
+    },
+    "p20_t0.02": {
+      "comparisons": 27750,
+      "mismatches": 0,
+      "nan_mismatches": 0,
+      "examples": []
+    }
+  },
+  "liveness": {
+    "p20_t0.0": 0.5634704519119351,
+    "p40_t0.0": 0.5907402017850213,
+    "p60_t0.0": 0.6101578452346723,
+    "p126_t0.0": 0.6515306753780286,
+    "p40_t0.02": 0.5185147458284828
+  }
+}

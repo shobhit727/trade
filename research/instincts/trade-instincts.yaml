@@ -1,0 +1,298 @@
+---
+id: shared-constant-unit-mismatch
+trigger: A constant appears in both a production module and a research harness, and one side documents a different unit than the other consumes
+action: Import and derive the constant from the canonical source instead of restating it, and add a test asserting the two harnesses agree
+confidence: 0.95
+scope: project
+domain: python
+---
+In the 2026-10-19 nsealgo session, `research/optimize/config.py` held
+`STATUTORY_BPS = 11.92` documented as bps-of-turnover (matching
+`nsealgo.costs.CostModel.round_trip_bps`, which divides by 2x notional), but
+`FeeSchedule._fee` charged it as bps-of-notional. Every cost in the project was
+understated 1.469x (21.92 -> 32.32 bp) and nothing detected it for the life of
+the programme.
+
+Derive instead of restating:
+
+```python
+def _delivery_statutory_bps() -> D:
+    from nsealgo.costs import CostModel
+    model = CostModel(segment="delivery", slippage_bps=D("0"))
+    return model.round_trip_bps(CAPITAL_INR) * 2   # turnover-bps -> notional-bps
+```
+
+The import is what disambiguates the unit. A restated number carries its unit
+only in a comment, and comments drift silently.
+
+---
+id: charge-selection-to-the-hypothesis
+trigger: A signal or strategy result looks strong on a holdout window
+action: Before quoting it, compute the family distribution across all tested cells and run walk-forward with params selected once; a p-value after post-hoc selection is not a p-value
+confidence: 0.95
+scope: project
+domain: quant-research
+---
+Phase 2 of the 2026-10-19 session found the trend family beating its scrambled
+null in 43 of 44 configs, binomial p=2.6e-12. It was selection: 44 configs on
+one 2.75-year window, and the 95th percentile of the 96-cell family was 60.1%
+while the median was 36.2%. Walk-forward over 13 annual folds gave 6/13,
+p=0.778.
+
+Always report the family before the winner:
+
+```python
+cells = df.groupby(["strategy", "rebalance"]).agg(pos=("cagr", lambda s: (s > 0).mean()))
+print(cells.pos.describe(percentiles=[.5, .95]))
+print(f"cells at/above best: {(cells.pos >= best).sum()} of {len(cells)}")
+```
+
+And in walk-forward, select params once on the first fold and reuse them.
+Re-picking per fold turns a walk-forward into N independent in-sample searches.
+
+---
+id: repair-only-what-is-provable
+trigger: A data-cleaning rule could delete rows, and ambiguity is possible such as crash versus corporate action versus demerger
+action: Repair only what is provable, record everything else as flagged-but-unmodified, and test explicitly that a real drawdown survives the rule
+confidence: 0.9
+scope: project
+domain: quant-research
+---
+The first version of loader rule C10 truncated the series at any ambiguous
+corporate action. Measurement killed it: truncation would have deleted the real
+2008 crash in bajajfinsv and duplicated C9's nestleind freeze fix. Under-cleaning
+is visible and recoverable; over-cleaning is silent and flatters MaxDD, which is
+the exact failure GOAL.md section 6 forbids.
+
+The shipped rule only rescales a provable 1:x ratio and records everything else:
+
+```python
+nearest = min(C10_SPLIT_RATIOS, key=lambda r: abs(r - ratio))
+if abs(nearest - ratio) <= C10_RESCALE_TOLERANCE * nearest:
+    df.loc[df.index < event, ["open", "high", "low", "close"]] *= nearest
+    rep.rescaled_actions.append((symbol, str(event.date()), float(nearest)))
+else:
+    rep.unresolved_actions.append((symbol, str(event.date()), float(ratio), spread))
+```
+
+Ask "what real history could this rule destroy?" and write a test for exactly that.
+
+---
+id: detector-before-deletion
+trigger: A detector inspects adjacency between rows such as gaps, runs, or jumps, while other cleaning rules also remove rows
+action: Run the detector before any row deletion and document the ordering constraint, because otherwise it fires on gaps created by those deletions
+confidence: 0.9
+scope: project
+domain: quant-research
+---
+Rule C10 keys off the overnight gap to find unadjusted corporate actions. Written
+after C5 (extreme-move removal) and C9 (frozen-run removal), it fired on gaps
+those rules had CREATED by deleting rows: nestleind 2010-01-11 was 3.8% raw but a
+30%+ gap once the adjacent freeze was dropped, and bajajfinsv was 7.0% and 0.0%
+raw. A deletion is not a corporate action.
+
+```python
+# ORDER IS LOAD-BEARING: C10 runs BEFORE C5 and C9, on the raw series.
+df = _apply_c10(df, symbol, rep)   # <- before any row deletion
+```
+
+---
+id: mask-selection-not-prices
+trigger: A point-in-time membership or universe file is used to restrict a backtest
+action: Lag membership to the prior period's publication, mask selection rather than prices, and carry last-known price for held names
+confidence: 0.9
+scope: project
+domain: quant-research
+---
+Two separate bugs, both fixed the same way.
+
+Look-ahead: the first implementation used the CURRENT month's month-end membership
+for every date in that month, letting a name enter up to a month early. The
+membership in force during month M is the one published at the end of M-1.
+
+NaN poisoning: NaN-ing non-members out of the PRICE panel produced 206 NaN equity
+bars and a nonsense -100% MaxDD, because a name dropped from the index on 1 June
+is still held by an annual-rebalance book until January.
+
+```python
+# Membership gates SELECTION only. Prices are always observed.
+live = px.notna() & (px > 0) & tradable.reindex(index=px.index, columns=px.columns)
+p = last_px.get(sym)   # carried, never fabricated
+```
+
+---
+id: benchmark-against-doing-nothing
+trigger: A strategy is being evaluated for whether it is worth running
+action: Benchmark it against the do-nothing alternative with an identical cost stack, because beating a scrambled null is necessary but not sufficient
+confidence: 0.9
+scope: project
+domain: quant-research
+---
+A signal-scrambled null answers "does the ranking carry information?". It does not
+answer "would I have been better off just holding?". Both are required.
+
+Phase 7 built an equal-weight universe benchmark with identical treatment (PIT
+membership, 32.32 bp round trip, FIFO lots, STCG/LTCG, annual rebalance) and
+found the book beat it in 8/13 folds on CAGR, 8/13 on Sharpe, 8/13 on MaxDD --
+a coin flip, p=0.240. Without that comparison, "no edge vs a scrambled null"
+would have been reported as mild alpha.
+
+A cost-free benchmark flatters the strategy and is worthless. The decision
+metric is risk-adjusted: Sharpe of book minus Sharpe of benchmark, and MaxDD of
+book minus MaxDD of benchmark.
+
+---
+id: exposure-is-the-first-order-driver
+trigger: A long-only equity book's measured median return is near zero or negative
+action: Bucket every result by exposure before optimising anything, because the high-exposure bucket is typically the only profitable one and turnover cuts are usually the wrong lever
+confidence: 0.85
+scope: project
+domain: quant-research
+---
+Phase 1, 9024 runs, bucketed every result by exposure:
+
+    <30%    n=1612  median CAGR  0.000   30.6% positive
+    30-40%  n= 624  median CAGR -0.029   32.7% positive
+    40-50%  n=1001  median CAGR -0.046   24.1% positive
+    50-60%  n= 732  median CAGR -0.016   39.1% positive
+    >60%    n= 543  median CAGR +0.019   58.0% positive
+
+The >60% bucket was the only one with a positive median. A book in cash 55% of
+the time cannot earn an absolute return however cheap the trading is, and
+cutting turnover 55x (daily to annual) bought only about 0.8%/yr.
+
+Measure exposure before optimising anything else.
+
+---
+id: mandate-conflict-is-a-human-decision
+trigger: A measured strategy's drawdown exceeds a hard-coded risk limit that the code cannot widen
+action: Stop and report it as a mandate conflict for a human decision, quantify whether any exposure level satisfies the limit, and never quietly widen the limit
+confidence: 0.9
+scope: project
+domain: quant-research
+---
+`nsealgo/risk/limits.py` hard-codes `max_drawdown_halt = -15%` and
+`max_drawdown_absolute = -25%`, re-asserted at import by `verify_limits()`.
+The money-making book has MaxDD -33.8%. The equal-weight universe spends 28% of
+its time below -10% and has a -67.9% worst drawdown.
+
+Simulating the switch: flattening at -15% and re-entering at -10% gives up 7.4
+pp/yr and STILL leaves a -34.4% drawdown, because a -15% trigger on a -68% asset
+re-enters into a continuing decline. There is no exposure level that satisfies
+-15% while holding this asset, even 25% exposure breaches it in 2008.
+
+The -15% halt was written for a single-stock 5-60 day book where a 15% drawdown
+means something is broken. Inherited unchanged into a diversified always-invested
+book, obeying it destroys 60% of the return.
+
+Report the conflict with numbers; do not engineer around a deliberate
+constitutional guard.
+
+---
+id: incomplete-correction-is-a-floor
+trigger: A survivorship or coverage correction is applied but the corrected data is incomplete
+action: State the coverage fraction next to the correction and label the result a floor or ceiling rather than an estimate
+confidence: 0.85
+scope: project
+domain: quant-research
+---
+Only 68.8% of point-in-time NIFTY-50 members have price history in the panel
+(23/50 in 2009 rising to 47/50 in 2026). The unpriceable names are
+disproportionately the collapsed and delisted ones, so the corrected universe is
+biased optimistically and the measured 8.9 pp/yr is a FLOOR on the true bias, not
+an estimate of it.
+
+Same discipline applies to the membership file itself, whose rows for
+2025-09 through 2026-08 come from a single unverified reconstruction and are
+forward-filled, and which is unverified before 2017-10.
+
+---
+id: measure-the-risk-control-before-trusting-it
+trigger: A risk control such as a regime filter, stop, or overlay is proposed to improve a strategy
+action: Simulate the control end to end and measure it, because a filter that engages early and stays engaged can make results worse while appearing to help
+confidence: 0.8
+scope: project
+domain: quant-research
+---
+The market-level regime filter looked obviously right: cut exposure when the
+market is in a downtrend. Simulated, it went flat in January 2008, six months
+before the crash, and sat in cash for 626 days of a losing market. It also
+changed the result not at all.
+
+A risk control is an empirical claim about a mechanism, not a design intuition.
+Simulate it on the actual data, and check WHEN it engages and for HOW LONG, not
+just whether it fires at all.
+
+---
+id: units-typo-in-the-verification-script
+trigger: Writing a verification script to independently confirm a hand-computed value
+action: Use unmistakable decimal literals such as 0.001 for 0.1 percent, and print the derived total before comparing
+confidence: 0.8
+scope: project
+domain: python
+---
+The whole point of a verification script is independence. In the 2026-10-19
+session the check written to confirm the cost model produced a 101x error
+because it wrote `stt = 0.100 + 0.100` meaning "0.1% + 0.1%", which is actually
+10% + 10%. The script contradicted the code correctly, and the contradiction was
+in the script.
+
+Print the derived total in the same units you intend to compare before drawing
+any conclusion from a mismatch.
+
+---
+id: reproduce-in-isolation-before-attributing
+trigger: Tests fail after a change and it is unclear whether the change caused it
+action: Reproduce the failures in isolation and compare against stashed HEAD, because ordering-dependent pollution in a full-suite run is common and pre-existing
+confidence: 0.8
+scope: project
+domain: testing
+---
+Three crypto tests failed in a full-suite run. They passed in isolation, and they
+failed DIFFERENTLY against stashed HEAD. The 791 unrelated in-flight crypto
+changes in the working tree made attribution non-obvious, and the instinct to
+assume "my change caused this" would have sent the investigation in the wrong
+direction.
+
+Also: when a large unrelated working tree exists, stage only the specific files
+for a commit. Never reset or bulk-stage the user's in-flight work.
+
+---
+id: sanity-check-grouping-before-printing
+trigger: Producing grouped or aggregated output for analysis
+action: Assert the group count and inspect the first few groups before printing, because a bad grouping key floods the context
+confidence: 0.75
+scope: project
+domain: python
+---
+A drawdown-episode analysis used a cumsum that incremented per bar, producing 762
+one-bar "episodes" and flooding the output with hundreds of lines. The useful
+number was in the same script: Indian largecaps sit below -10% for 28% of the
+time and worst drawdown is -67.9%.
+
+Print `nunique()` of the group key, and the first few groups, before the full
+listing.
+
+---
+id: deliver-the-thing-not-the-research-program
+trigger: A long research programme has falsified its own hypothesis and the remaining work is deployment rather than discovery
+action: Check the measured result against the hard-coded risk limits early, and pivot to shipping rather than adding more search
+confidence: 0.85
+scope: project
+domain: quant-research
+---
+By the 2026-10-19 session, four independent tests had agreed that price-only
+technical signals on Indian largecaps are not a source of return after costs:
+scrambled null p=0.386, walk-forward 6/13, PIT universe edge collapses to +0.41
+pp, and holding the universe 8/13 on every metric. The measurable deliverable
+was a mostly-invested, low-turnover largecap book returning ~17%/yr net, whose
+signal contributes nothing.
+
+The binding constraint turned out to be the mandate, not the strategy. Checking
+`risk/limits.py` against the measured MaxDD at the START would have saved two
+phases. When the constitution and the asset class are incompatible, that is a
+human decision to be surfaced with numbers, not a problem to engineer around.
+
+Also: report the honest characterisation. The return comes from being invested
+cheaply. That is capital efficiency, not alpha, and must never be relabelled as
+alpha in a later report.

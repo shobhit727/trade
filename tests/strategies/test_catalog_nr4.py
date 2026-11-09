@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.nr4 import Nr4Strategy
+from cryptobot.strategies.catalog.nr4_pattern import Nr4Strategy
 
 
 def _series(up: bool):

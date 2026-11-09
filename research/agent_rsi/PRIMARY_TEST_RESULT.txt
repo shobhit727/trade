@@ -1,0 +1,17 @@
+PRIMARY OOS RESULT (TEST 2024-01-01 -> 2026-10-01)
+variant: V3_wide_14_40_deepest_M  (frozen on TRAIN, Sharpe -0.09)
+bars=684  symbols=48
+CAGR            3.38%
+Sharpe          -0.41
+Sortino         -0.55
+MaxDD           -8.63%  (27d)
+Calmar          0.39
+Volatility      6.65%
+Turnover        3.96x/yr
+Cost drag       1.84%/yr
+Trades          11.8/yr
+Avg names held  10.3
+Bar long frac   26.66%  (TRAIN-frozen target 23.38%)
+Eligible/rebal  min 0  median 8  mean 12.1  max 33
+Cumulative cost 5.17% over the window
+Positive years  2/3  2024:2.8%  2025:9.1%  2026:-2.2%

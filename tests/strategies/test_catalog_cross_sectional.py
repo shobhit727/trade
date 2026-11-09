@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.cross_sectional import CrossSectionalStrategy
+from cryptobot.strategies.catalog.cross_sectional_strategy import CrossSectionalStrategy
 
 
 def _series(up: bool):

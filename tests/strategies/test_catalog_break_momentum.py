@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.break_momentum import BreakMomentumStrategy
+from cryptobot.strategies.catalog.breakout_momentum_strategy import BreakoutMomentumStrategy
 
 
 def _series(up: bool):
-    s = BreakMomentumStrategy()
+    s = BreakoutMomentumStrategy()
     out = []
     for i in range(200):
         px = (100.0 + i * 0.4) if up else (200.0 - i * 0.4)

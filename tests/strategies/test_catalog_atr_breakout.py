@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.atr_breakout import AtrBreakoutStrategy
+from cryptobot.strategies.catalog.atr_breakout_strategy import AtrBreakoutStrategy
 
 
 def test_atr_breakout_expansion_follows_spike():

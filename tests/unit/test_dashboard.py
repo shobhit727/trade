@@ -64,7 +64,8 @@ def test_trade_tape_renders_fills():
     html = render_dashboard_html(snap_fixture())  # renderer reads snap only for structure
     assert "tt-table" in html
     # trades render via JS from /health; ensure snapshot path doesn't crash
-    assert html.count("tt-table") == 1
+    # tt-table appears twice: once in the table element, once in the JS that references it
+    assert html.count("tt-table") == 2
 
 
 def test_price_chart_renders_line_and_markers():

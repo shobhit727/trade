@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.triangle import TriangleStrategy
+from cryptobot.strategies.catalog.triangle_pattern import TriangleStrategy
 
 
 def _series(up: bool):

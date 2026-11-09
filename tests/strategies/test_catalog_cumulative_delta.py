@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.cumulative_delta import CumulativeDeltaStrategy
+from cryptobot.strategies.catalog.cumulative_delta_strategy import CumulativeDeltaStrategy
 
 
 def _flow(up: bool):

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from cryptobot.strategies.catalog.multi_factor import MultiFactorStrategy
+from cryptobot.strategies.catalog.multi_factor_strategy import MultiFactorStrategy
 
 
 def _series(up: bool):

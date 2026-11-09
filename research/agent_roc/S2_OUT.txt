@@ -1,0 +1,70 @@
+==============================================================================
+TEST (OUT-OF-SAMPLE)  2024-01-01 -> 2026-10-01
+engine 970713f3eecf   panel 684 bars x 48 symbols
+==============================================================================
+
+### 5.1  PRIMARY RESULT — frozen TRAIN winner V3_wide (period 10, threshold 0.0, monthly, rank mom126)
+| V3_wide  [PRIMARY] | 1.27% | -0.42 | -19.79% | 0.06 | 4.02x | 2.02% | 11.8 | names=18.4 |
+  rt_bps charged   : 21.92
+  engine_sha       : 970713f3eecf
+  total return     : 3.61%
+  vol (ann)        : 10.68%
+  sortino          : -0.47
+  win rate         : 50.3%
+  max DD days      : 502
+  years            : 2024 +19.16%, 2025 +0.17%, 2026 -13.20%
+  positive years   : 2 / 3
+  bar long frac    : 52.41%   (TRAIN 50.71%)
+
+### 5.2  Whole declared family on TEST — FAMILY DIAGNOSTIC, NOT A SELECTION
+| book | CAGR | Sharpe | MaxDD | Calmar | Turn/y | Cost/y | Trades/y |
+|---|---|---|---|---|---|---|---|
+
+| V1_base | 0.78% | -0.51 | -16.86% | 0.05 | 4.11x | 1.99% | 11.8 | names=16.9 |
+| V2_tight | -1.41% | -0.69 | -22.85% | -0.06 | 4.14x | 1.99% | 11.8 | names=17.8 |
+| V3_wide | 1.27% | -0.42 | -19.79% | 0.06 | 4.02x | 2.02% | 11.8 | names=18.4 |
+| V4_week | -7.52% | -1.28 | -26.60% | -0.28 | 16.32x | 6.60% | 51.0 | names=16.5 |
+| V5_raw | 0.96% | -0.60 | -13.80% | 0.07 | 4.16x | 2.01% | 11.8 | names=16.9 |
+
+  (for reference the TRAIN Sharpes were: V1_base=0.63, V2_tight=0.28, V3_wide=0.88, V4_week=0.09, V5_raw=0.38)
+
+### 5.3  Buy-and-hold over the identical TEST window (brief §4 rule 5)
+| buy_and_hold (48, unconstrained) | 8.34% | 0.19 | -15.90% | 0.52 | 0.00x | 0.00% | 0.0 |
+  years            : 2024 +20.40%, 2025 +13.35%, 2026 -8.27%
+| nsealgo composite | 6.04% | 0.03 | -15.22% | 0.40 | 2.08x | 1.10% | 11.8 | names=21.3 |
+
+
+### 5.4  TEST vs buy-and-hold / composite
+                           CAGR   Sharpe     MaxDD  Calmar
+ROC V3_wide               1.27%    -0.42   -19.79%    0.06
+buy-and-hold              8.34%     0.19   -15.90%    0.52
+nsealgo composite         6.04%     0.03   -15.22%    0.40
+delta vs B&H             -7.07pp    -0.61    -3.89pp   -0.46
+delta vs composite       -4.77pp    -0.45    -4.56pp   -0.33
+
+### 5.5  NEGATIVE CONTROLS — 100-seed random nulls on TEST
+  random-elig+mom126       CAGR mean  -1.49% sd  1.50  p05  -3.60% p50  -1.62% p95   1.06%   95% band [-3.60, 1.06]
+                           Sharpe mean  -0.96 sd  0.18  p05  -1.19 p50  -0.98 p95  -0.63
+  true coin (random scores) CAGR mean   3.25% sd  1.71  p05   0.73% p50   3.20% p95   5.97%   95% band [0.73, 5.97]
+                           Sharpe mean  -0.32 sd  0.19  p05  -0.62 p50  -0.33 p95  -0.02
+  ROC V3_wide  CAGR 1.27% Sharpe -0.42  vs random-elig+mom126: percentile 97/99   z +1.85/+2.92
+  ROC V3_wide  CAGR 1.27% Sharpe -0.42  vs true coin: percentile 10/30   z -1.16/-0.48
+  paired monthly excess: see s3_posthoc.py section C (this block was buggy)
+
+### 5.6  COST DRAG (brief §6.4) — same signal, cost model varied
+| book | CAGR | Sharpe | MaxDD | Calmar | Turn/y | Cost/y | Trades/y |
+|---|---|---|---|---|---|---|---|
+
+| base | 1.27% | -0.42 | -19.79% | 0.06 | 4.02x | 2.02% | 11.8 |
+| double_slippage | 0.46% | -0.49 | -21.16% | 0.02 | 4.02x | 2.91% | 11.8 |
+| triple_slippage | -0.34% | -0.57 | -22.52% | -0.02 | 4.02x | 3.78% | 11.8 |
+| zero_cost | 2.09% | -0.34 | -18.38% | 0.11 | 4.02x | 1.11% | 11.8 |
+
+### 5.7  Brief §6 sanity checks
+  1 plausibility   CAGR 1.27% (OK) — unlevered long-only NIFTY-50 cap ~40-50%
+  2 weight count  avg names 18.4 (OK) — cap is 22, universe 48
+  3 liveness      52.41% of bar/symbol cells flagged (OK)
+  4 cost drag     2.02%/y vs CAGR 1.27% -> gross 3.29%
+  5 random ctrl   see §5.5
+
+wrote test_results.json

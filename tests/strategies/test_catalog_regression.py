@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.regression import RegressionStrategy
+from cryptobot.strategies.catalog.regression_strategy import RegressionStrategy
 
 
 def _series(up: bool):

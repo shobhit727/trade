@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.resistance import ResistanceStrategy
+from cryptobot.strategies.catalog.resistance_strategy import ResistanceStrategy
 
 
 def _series(up: bool):

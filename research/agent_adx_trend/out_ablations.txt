@@ -1,0 +1,47 @@
+==============================================================================================================
+ABLATIONS (diagnostic only -- frozen selection was already V2_mom252)
+==============================================================================================================
+
+  --- TRAIN ---
+  label                     set       CAGR%  Sharpe   MaxDD%  Calmar  Turn/y  Cost/y%  Names    Total%   Yr+
+  A1 mom252 only (no adx flag)TRAIN     20.54    0.90   -34.57    0.59    1.95     0.95   21.8     353.6  100%
+  A2 adx flag only, all eq-wtTRAIN     20.02    0.90   -33.57    0.60    0.06     0.01   45.8     338.1  100%
+  frozen V2 (flag+rank)     TRAIN     15.96    0.70   -30.70    0.52    3.99     1.57   28.6     231.5  100%
+  A3 equal-weight universe  TRAIN     21.46    0.90   -36.66    0.59    0.12     0.13   48.0     382.5    0%
+
+  --- TEST ---
+  label                     set       CAGR%  Sharpe   MaxDD%  Calmar  Turn/y  Cost/y%  Names    Total%   Yr+
+  A1 mom252 only (no adx flag)TEST       8.82    0.23   -16.18    0.55    1.97     0.53   21.3      26.8   67%
+  A2 adx flag only, all eq-wtTEST       6.66    0.07   -14.40    0.46    0.16     0.04   46.5      19.8   67%
+  frozen V2 (flag+rank)     TEST       5.62   -0.01   -14.69    0.38    4.09     1.07   27.9      16.6   67%
+  A3 equal-weight universe  TEST       8.16    0.18   -15.91    0.51    0.36     0.10   48.0      24.6    0%
+
+==============================================================================================================
+IS THE 1-DAY FLAG PREDICTIVE OF THE NEXT BAR? (TEST window, per-name-day)
+==============================================================================================================
+  bars where close[t]>close[t-1]  : n= 16241  mean ret[t+1] +0.0263%
+  bars where close[t]<=close[t-1] : n= 16589  mean ret[t+1] +0.0459%
+  next-bar spread (flag - no flag): -0.0196%/day = -2.0 bps/day
+  one round trip costs 21.92 bps; a 1-bar signal must beat that EVERY day
+  -> the 1-day sign is NOT predictive of the next bar -- it is noise.
+  CAUTION: the spread is NEGATIVE. In TEST the sign actually points the
+  wrong way -- flagged names underperformed non-flagged ones by 2 bps/day.
+  Any return the strategy shows comes entirely from the ranking layered on
+  top, never from the signal itself.
+
+==============================================================================================================
+DECOMPOSITION (TEST): where does the flag's damage come from?
+==============================================================================================================
+  A1 momentum alone        CAGR   8.82%  turnover 1.97x  cost 0.53%/y
+  V2 momentum + adx flag   CAGR   5.62%  turnover 4.09x  cost 1.07%/y
+  return given up by adding the flag : 3.20pp/yr
+  of which explained by extra costs  : 0.53pp/yr (17%)
+  remainder = worse name SELECTION   : 2.66pp/yr (83%)
+  -> the flag is not merely expensive, it is actively choosing worse names.
+
+==============================================================================================================
+CONTROL 2: pure random signal, no momentum ranking, same % of name-days long
+==============================================================================================================
+  label                     set       CAGR%  Sharpe   MaxDD%  Calmar  Turn/y  Cost/y%  Names    Total%   Yr+
+  random, no ranking (med)  TEST       4.68    0.00     0.00    0.00    0.00     0.00    nan       0.0    0%
+      mean 4.92%  p5 2.32%  p95 8.10%  | frozen strategy beats 14/20

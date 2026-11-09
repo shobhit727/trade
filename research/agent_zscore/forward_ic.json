@@ -1,0 +1,62 @@
+{
+  "time-series z (catalog)|raw|5d": {
+    "ic": -0.026488867580101598,
+    "t": -5.438957728196266,
+    "n": 1909
+  },
+  "time-series z (catalog)|negated (-z, what we buy)|5d": {
+    "ic": 0.026488867580101598,
+    "t": 5.438957728196266,
+    "n": 1909
+  },
+  "cross-sectional z|raw|5d": {
+    "ic": -0.012239336420843338,
+    "t": -2.61719777624443,
+    "n": 1968
+  },
+  "cross-sectional z|negated (-z, what we buy)|5d": {
+    "ic": 0.012239336420843338,
+    "t": 2.61719777624443,
+    "n": 1968
+  },
+  "time-series z (catalog)|raw|21d": {
+    "ic": -0.043217424484606616,
+    "t": -8.950992532657951,
+    "n": 1893
+  },
+  "time-series z (catalog)|negated (-z, what we buy)|21d": {
+    "ic": 0.043217424484606616,
+    "t": 8.950992532657951,
+    "n": 1893
+  },
+  "cross-sectional z|raw|21d": {
+    "ic": -0.03674278635190292,
+    "t": -7.60703249110682,
+    "n": 1952
+  },
+  "cross-sectional z|negated (-z, what we buy)|21d": {
+    "ic": 0.03674278635190292,
+    "t": 7.60703249110682,
+    "n": 1952
+  },
+  "time-series z (catalog)|raw|63d": {
+    "ic": -0.032497430210938885,
+    "t": -7.456799417767659,
+    "n": 1851
+  },
+  "time-series z (catalog)|negated (-z, what we buy)|63d": {
+    "ic": 0.032497430210938885,
+    "t": 7.456799417767659,
+    "n": 1851
+  },
+  "cross-sectional z|raw|63d": {
+    "ic": -0.07598562454051538,
+    "t": -16.696626296648127,
+    "n": 1910
+  },
+  "cross-sectional z|negated (-z, what we buy)|63d": {
+    "ic": 0.07598562454051538,
+    "t": 16.696626296648127,
+    "n": 1910
+  }
+}

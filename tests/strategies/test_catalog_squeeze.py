@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.squeeze import SqueezeStrategy
+from cryptobot.strategies.catalog.squeeze_strategy import SqueezeStrategy
 
 
 def _series(up: bool):

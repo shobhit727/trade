@@ -1,0 +1,12 @@
+{
+  "label": "V4 bb_pure_slow",
+  "period": 60,
+  "n_std": 2.0,
+  "entry": 1.0,
+  "construction": "pure",
+  "train_sharpe": -0.3657015768573642,
+  "train_cagr": 0.021287424167605318,
+  "train_maxdd": -0.3198227140107974,
+  "budget_used": 5,
+  "budget_allowed": 5
+}

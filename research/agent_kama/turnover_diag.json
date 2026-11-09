@@ -1,0 +1,35 @@
+{
+  "0.35": {
+    "invested": 0.7262,
+    "names": 19.0,
+    "cagr": 16.25,
+    "sharpe": 0.85,
+    "maxdd": -16.17
+  },
+  "0.7": {
+    "invested": 0.8726,
+    "names": 19.0,
+    "cagr": 19.55,
+    "sharpe": 0.96,
+    "maxdd": -16.95
+  },
+  "1.0": {
+    "invested": 0.874,
+    "names": 19.0,
+    "cagr": 19.61,
+    "sharpe": 0.96,
+    "maxdd": -16.56
+  },
+  "mom_only_tb0.35": {
+    "invested": 0.8862,
+    "cagr": 17.56,
+    "sharpe": 0.73,
+    "maxdd": -35.21
+  },
+  "mom_only_tb1.0": {
+    "invested": 0.8909,
+    "cagr": 17.79,
+    "sharpe": 0.74,
+    "maxdd": -35.21
+  }
+}

@@ -1,0 +1,36 @@
+
+====================================================================================================
+A) COMPOSITION OF THE CONSTANT-SCORE BOOK
+====================================================================================================
+  names with weight in the last 20 bars : 22
+  of those, in the alphabetical first 22 : 22
+  total names ever given weight         : 22
+  outside the alphabetical first 22     : []
+  mean weight, last 20 bars, per name   : 0.0187 (sums to 0.900, cash buffer 0.10)
+  => constant score ties all 48 names; the stable argsort keeps the first 22,
+     so the 'equal_weight' comparator is really 'alphabetical top-22, forever'.
+
+
+====================================================================================================
+B) 100-SEED NULL: random 22-name book through the identical engine
+====================================================================================================
+  random book  CAGR mean   5.41%  sd  1.39  p05   3.25%  p50   5.38%  p95   7.74%
+  random book  Sharpe mean -0.04  sd  0.12  p05 -0.23  p95  0.16
+  CCI V5_deep   CAGR   4.56%  Sharpe -0.18
+  CCI percentile within the random null : CAGR  24.0th  Sharpe  12.0th
+  z-score vs null (CAGR)  : -0.61
+  z-score vs null (Sharpe): -1.11
+  95% band: [2.91%, 7.96%] CAGR
+
+====================================================================================================
+C) PAIRED MONTHLY EXCESS vs THE MEDIAN RANDOM BOOK
+====================================================================================================
+  median-random seed = 25 (random CAGR 5.42%)
+  monthly excess, n=34:  mean -0.0870%  sd 1.9106%
+  months positive: 16/34
+  t-stat (H0: mean excess = 0) : -0.27
+  => the CCI gate adds no monthly return over a random book of the same shape.
+
+====================================================================================================
+DONE
+====================================================================================================

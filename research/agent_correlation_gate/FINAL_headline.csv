@@ -1,0 +1,6 @@
+what,cagr,sharpe,maxdd,calmar,turnover,drag,names
+correlation_gate (champion),3.53,-0.2,-13.72,0.26,4.13,1.06,28.84
+B&H equal-weight (GROSS),8.25,0.19,-15.91,0.52,2.0,0.0,48.0
+B&H 22-name constrained (net),9.76,0.32,-13.51,0.72,0.64,0.16,21.33
+nsealgo composite (net),6.55,0.07,-14.84,0.44,2.07,0.55,21.33
+random control (mean of 5),5.14,-0.07,-13.06,0.4,4.14,1.07,

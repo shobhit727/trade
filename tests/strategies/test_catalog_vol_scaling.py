@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.vol_scaling import VolScalingStrategy
+from cryptobot.strategies.catalog.volatility_scaling import VolScalingStrategy
 
 
 def test_vol_scaling_expansion_follows_spike():

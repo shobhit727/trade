@@ -1,0 +1,38 @@
+================================================================================================================
+OUT-OF-SAMPLE TEST  2024-01-01 -> 2026-10-01   (685 sessions)
+FROZEN VARIANT: V2_mom252 -- selected on TRAIN, unchanged
+================================================================================================================
+label                     set       CAGR%  Sharpe   MaxDD%  Calmar  Turn/y  Cost/y%  Names    Total%   Yr+
+strategy V2_mom252        TEST       5.62   -0.01   -14.69    0.38    4.09     1.07   27.9      16.6   67%
+buy-and-hold (eq-wt)      TEST       8.16    0.18   -15.91    0.51    0.36     0.10   48.0      24.6   67%
+nsealgo composite         TEST       6.55    0.07   -14.84    0.44    2.07     0.55   21.3      19.5   67%
+random x20 (median)       TEST       5.20    0.00     0.00    0.00    0.00     0.00    nan       0.0    0%
+                                  random CAGR mean   5.37%  p5   3.98%  p95   7.81%  beat by strategy on 12/20 seeds
+
+================================================================================================================
+VIABILITY: gross (zero cost) vs net (full stack) vs cost stress  -- TEST window
+================================================================================================================
+  gross (0 bps, unattainable)       CAGR    6.05%  Sharpe  0.03  MaxDD  -14.48%
+  net  (21.92 bps, live)            CAGR    5.62%  Sharpe -0.01  MaxDD  -14.69%
+  stress (31.92 bps, 2x slippage)   CAGR    5.19%  Sharpe -0.04  MaxDD  -14.90%
+  -> cost drag is 1.07%/yr at 4.09x turnover; gross exceeds net by 0.43pp/yr
+
+================================================================================================================
+SANITY CHECKS
+================================================================================================================
+  [1] plausibility   CAGR 5.6% on an unlevered long-only book -- well inside the 40-50% ceiling, no compounding bug
+  [2] weight count   avg names held 27.9, max top weight 5.7% (cap 12%). PortfolioConfig targets n_positions=22 and hard-bounds max_names=30
+                   diagnostic with max_names=22 -> avg 20.2 names. Not 48: no residual accretion.
+  [3] signal liveness 49.5% of name-days long (floor ~5%) -> genuinely long, not a flat book
+  [4] cost drag      gross 6.05% vs net 5.62% -- see viability line above
+  [5] negative ctrl  strategy beats 12/20 random signals
+  [6] beta to eq-wt market 0.83, daily corr 0.93 -> this is a modestly levered beta book, not an alpha book
+
+================================================================================================================
+TEST YEARLY RETURNS  (Gate 3 wants positive in >=60% of years)
+================================================================================================================
+  strategy        2024: +17.75%  2025:  +8.72%  2026:  -8.93%
+  buy-and-hold    2024: +20.13%  2025: +13.34%  2026:  -8.47%
+  composite       2024: +22.57%  2025:  +7.16%  2026:  -9.01%
+
+  wrote research/agent_adx_trend/test_results.json

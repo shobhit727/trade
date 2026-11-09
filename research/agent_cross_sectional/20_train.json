@@ -1,0 +1,122 @@
+{
+  "declared_variants": [
+    {
+      "tag": "V1",
+      "period": 20,
+      "threshold": 0.015,
+      "rank_days": 20,
+      "rebalance": "M",
+      "note": "catalog defaults, ranked by its own 20d ROC"
+    },
+    {
+      "tag": "V2",
+      "period": 20,
+      "threshold": 0.015,
+      "rank_days": 126,
+      "rebalance": "M",
+      "note": "same flag, ranked by 6m momentum (brief \u00a75)"
+    },
+    {
+      "tag": "V3",
+      "period": 60,
+      "threshold": 0.05,
+      "rank_days": 60,
+      "rebalance": "M",
+      "note": "slower signal, wider deadband"
+    },
+    {
+      "tag": "V4",
+      "period": 126,
+      "threshold": 0.08,
+      "rank_days": 126,
+      "rebalance": "M",
+      "note": "6m signal \u2014 the evidence-backed horizon"
+    },
+    {
+      "tag": "V5",
+      "period": 20,
+      "threshold": 0.015,
+      "rank_days": 20,
+      "rebalance": "W",
+      "note": "catalog defaults but weekly rebalance"
+    }
+  ],
+  "train_rows": [
+    {
+      "tag": "V1",
+      "period": 20,
+      "threshold": 0.015,
+      "rank_days": 20,
+      "rebalance": "M",
+      "cagr": 0.13488955284014525,
+      "sharpe": 0.5732828690194112,
+      "maxdd": -0.2965912670089389,
+      "calmar": 0.4547994760617137,
+      "turnover": 4.089085045804702,
+      "cost_drag": 0.014874840605135364,
+      "avg_names": 29.330632911392406,
+      "mean_eligible": 22.71875
+    },
+    {
+      "tag": "V2",
+      "period": 20,
+      "threshold": 0.015,
+      "rank_days": 126,
+      "rebalance": "M",
+      "cagr": 0.11370702732268612,
+      "sharpe": 0.4214502504565982,
+      "maxdd": -0.3067787953350748,
+      "calmar": 0.37064826204331114,
+      "turnover": 3.8180194825545635,
+      "cost_drag": 0.012243134479673621,
+      "avg_names": 27.18379746835443,
+      "mean_eligible": 22.71875
+    },
+    {
+      "tag": "V3",
+      "period": 60,
+      "threshold": 0.05,
+      "rank_days": 60,
+      "rebalance": "M",
+      "cagr": 0.1404887817026701,
+      "sharpe": 0.5557222424738647,
+      "maxdd": -0.3483365755314668,
+      "calmar": 0.4033133227204822,
+      "turnover": 3.6588603865765523,
+      "cost_drag": 0.013776569864277352,
+      "avg_names": 23.32253164556962,
+      "mean_eligible": 21.520833333333332
+    },
+    {
+      "tag": "V4",
+      "period": 126,
+      "threshold": 0.08,
+      "rank_days": 126,
+      "rebalance": "M",
+      "cagr": 0.1374128660084577,
+      "sharpe": 0.5233920202302189,
+      "maxdd": -0.35437552013774687,
+      "calmar": 0.3877606047817436,
+      "turnover": 2.945359623949322,
+      "cost_drag": 0.010444591860477604,
+      "avg_names": 18.74379746835443,
+      "mean_eligible": 21.96875
+    },
+    {
+      "tag": "V5",
+      "period": 20,
+      "threshold": 0.015,
+      "rank_days": 20,
+      "rebalance": "W",
+      "cagr": 0.1326557466989784,
+      "sharpe": 0.5574932814375999,
+      "maxdd": -0.2111565327716156,
+      "calmar": 0.628234158601464,
+      "turnover": 14.560836839592799,
+      "cost_drag": 0.050488738152626285,
+      "avg_names": 20.832911392405062,
+      "mean_eligible": 23.007177033492823
+    }
+  ],
+  "selected": "V1"
+}

@@ -176,32 +176,81 @@ Final report must state branch/commits/files; architecture; per-track status; da
 
 # GOAL.md — NSE NIFTY-50 Systematic Trading · ₹21,00,000
 
-> **Status:** v1.0 — constitution for this repo. Every design decision, risk limit, and
+> **Status:** v2.0 — constitution for this repo. Every design decision, risk limit, and
 > go/no-go gate below is binding. Changing a number here means changing the strategy,
 > not the number in the code.
+>
+> **⚠️ 2026-10-19 — TARGET REPLACED. READ §0 FIRST.**
+> The 3%/month (42.6%/yr) target is **retired as unreachable**. It is retained in §2 only
+> as a historical record of what was originally aimed for. The binding target is now
+> **§0.1: 12–17% net/yr, conditional on clearing the scrambled null** — which current
+> evidence does **not** clear (p=0.386). **No capital deployment. Band D stands.**
+
+---
+
+## 0. Binding verdict as of 2026-10-19
+
+Superseded by nothing. Full derivation and evidence: `reports/CONSOLIDATION_v1.md`.
+
+### 0.1 The achievable target
+
+| Metric | Value | Status |
+|---|---|---|
+| Net return, all costs + CGT | **12–17%/yr** | measured on the point-in-time universe |
+| MaxDD | **no better than the index** | honest; the book is not a risk reducer |
+| Edge over signal-scrambled null | **must clear q<0.05** | ❌ **p=0.386 — FAILS** |
+| Round trips per year | **1–3** | on Rs21L, 20 names |
+| Exposure | **~100%** | the single biggest driver of the return |
+
+### 0.2 The negative result, stated plainly
+
+Walk-forward, 13 annual folds, point-in-time universe, vs a signal-scrambled null:
+**8/13 folds beat it (61.5%), mean edge +1.49 pp, t-test p=0.386.** A coin flip.
+
+**The signal has no measurable edge.** The return comes from *being invested* — ~100%
+exposure at ~1–3 round trips/yr on a 32.32 bp cost stack. This is capital efficiency,
+not alpha, and it must never be reported as alpha.
+
+### 0.3 What changed the measurement (all prior results are stale)
+
+1. **Cost stack was understated 1.469×.** True delivery round trip is **32.32 bp**, not
+   21.92. Cost drag ~249 bp/yr, not 169. Now derived from `nsealgo.costs.CostModel`.
+2. **TRENT 1:1.5 bonus (2026-01-01)** — a phantom −33% crash inside the TEST window,
+   invisible to C5's 45% bar. Fixed by new loader rule C10.
+3. **Survivorship bias worth 1.6–7.2 pp/yr.** Measured against real NSE membership
+   (validated 9/9 vs archive.org). It inflated the signal *and* the null.
+
+### 0.4 Deployment status
+
+**NO CAPITAL.** Band D. The instrument is research-only. The 7 gates in §5 are not
+waivable and the null gate fails.
 
 ---
 
 ## 1. Mission
 
 Deploy a systematic, rules-based trading system for **all NIFTY-50 constituents on the
-NSE** that trades a **₹21,00,000** capital base, and grow it toward a target of
-**~3% net return per calendar month (~42.6% annualised)** — with a hard, code-enforced
-floor that prevents permanent loss of capital.
+NSE** that trades a **₹21,00,000** capital base, and grow net return toward the
+**12–17%/yr** target in §0.1 — with a hard, code-enforced floor that prevents permanent
+loss of capital.
 
 **The mission has two objectives, in strict priority order:**
 
 | # | Objective | Weight |
 |---|-----------|--------|
 | **P1** | **Do not permanently lose the capital.** Survive. | Non-negotiable |
-| **P2** | Maximise net return, targeting 3%/month. | Optimised, never at P1's expense |
+| **P2** | Maximise net return, targeting 12–17%/yr. | Optimised, never at P1's expense |
 
-A strategy that returns 3%/month for 6 months then loses 40% is a **failure** of this
+A strategy that returns 12%/yr for 6 months then loses 40% is a **failure** of this
 mission, not a success. Drawdown is a first-class objective, not a side effect.
 
 ---
 
-## 2. The 3%/month target — stated honestly
+## 2. The original 3%/month target — RETIRED, retained as history
+
+> **Historical record only. Superseded by §0.1.** Retained because §2's analysis of why
+> 42.6% was never reachable is what justified the reset, and deleting it would lose that
+> reasoning. Nothing below this line is a live target.
 
 ### 2.1 What it means arithmetically
 
@@ -382,6 +431,14 @@ superseded and are quoted only to show the size of the corrections.
 
 ### 🚨 §0.0a THE PER-STOCK SWEEP SETTLED IT — THE EDGE IS SMALLER THAN THE COST
 
+> **⚠️ STALE — superseded by §0. The sweep below predates three corrections:**
+> (1) its cost stack was understated **1.469×** (21.92 bp claimed; true delivery round trip
+> is **32.32 bp**), (2) the panel contained a **TRENT −33% phantom crash** inside the TEST
+> window (now fixed by loader rule C10), and (3) it ran on **today's** NIFTY-50, worth
+> **1.6–7.2 pp/yr** of survivorship bias (measured, §0.3). Its conclusion — no deployable
+> single-stock edge — **stands and is reinforced**, but its numbers are not quotable.
+> Universe is now **47** symbols (`TMPV` excluded: 2025-10-14 demerger, unpriceable).
+
 **This supersedes every speculative reading below.** A 4,032-pair sweep (84 catalog
 strategies × 48 NIFTY-50 symbols, one tuned config each, TRAIN 2016-23 → TEST
 2024-2026 opened once, ₹21,00,000 per pair, 21.92 bps all-in **plus capital gains tax
@@ -418,8 +475,15 @@ four got worse.** The TRAIN sign did not survive out-of-sample.
 **Binding consequences.**
 
 1. **Do NOT escalate the parameter budget.** A deeper search cannot move a
-   +24 bp/yr edge across a ~131 bp/yr bill. With 4,032 hypotheses already tested against
-   a null, more search manufactures false positives rather than removing them.
+   +24 bp/yr edge across a bill that is really **249 bp/yr** once the 1.469× cost
+   understatement is fixed (§0.3). With 4,032 single-stock hypotheses plus 9,024 clock
+   experiments and 528 cross-sectional ones already tested against a scrambled null,
+   more search manufactures false positives rather than removing them.
+
+   > **CONFIRMED 2026-10-19.** Phase 1 (9,024 runs) showed the rebalance clock is worth
+   ~0.8%/yr, not the trade. Phase 2 (528 runs) and Phase 2c/0 walk-forward showed the
+   cross-sectional edge is **p=0.386 against the null**. The decision not to escalate
+   budget was correct and is now evidence-backed rather than assumed.
 2. **Every earlier "beats the null" claim in this repo is void.** The random-timing null
    has a median CAGR of **−15.15%/yr** — beating it is not evidence.
 3. The §0.0 finding below (production sits at the 29th percentile of a random-book null)

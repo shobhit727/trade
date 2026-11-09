@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.roll_cross import RollCrossStrategy
+from cryptobot.strategies.catalog.rolling_cross import RollCrossStrategy
 
 
 def _series(up: bool):

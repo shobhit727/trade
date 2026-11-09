@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.liquidation_hunt import LiquidationHuntStrategy
+from cryptobot.strategies.catalog.liquidation_hunt_strategy import LiquidationHuntStrategy
 
 
 def test_liquidation_hunt_expansion_follows_spike():

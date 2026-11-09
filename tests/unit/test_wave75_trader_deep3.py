@@ -37,7 +37,7 @@ def test_trader_deep3(tmp_path: Path):
     async def _setup():
         await trader._portfolio.update_equity(Decimal("7000"))
     asyncio.run(_setup())
-    tripped = trader._check_breaker()
+    tripped = asyncio.run(trader._check_breaker())
     assert isinstance(tripped, bool)
     tem = tmp_path / "tem" / "trader4.txt"
     tem.parent.mkdir(parents=True, exist_ok=True)

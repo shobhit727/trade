@@ -1,0 +1,72 @@
+TEST  2024-01-01 .. 2026-10-01   bars=685
+costs: 21.92 bps all-in RT
+
+===== HEADLINE TEST RESULT: V3 dev_depth p50 t0.05 =====
+CAGR    1.21%   Vol   9.36%
+Sharpe   -0.50    Sortino  -0.68
+Calmar    0.08    MaxDD -15.19% (104d)
+WinRate   39.1%  Best   3.47%  Worst   -3.07%
+Turnover  3.11x/y  CostDrag  0.71%/y  Trades  11.8/y
+  avg names held    : 15.1
+  avg invested      : 48.5% (rest is the 10% cash buffer + uninvestable cash)
+  rebalances        : 33
+  costs paid (Rs)   : 41,721 on a Rs 21,00,000 book
+
+  GROSS (costs removed): CAGR   1.90%  Sharpe -0.42  -> NET 1.21% / -0.50
+  cost drag          : 0.71%/yr on 3.11x turnover
+
+  calendar-year returns:
+    2024:   -0.37%
+    2025:   11.13%
+    2026:   -6.58%
+
+===== ALL 5 DECLARED VARIANTS, TEST =====
+variant                                CAGR  Sharpe    MaxDD  Calmar  Turn/y  Drag/y  Trd/y
+-------------------------------------------------------------------------------------------
+V1 dev_depth p20 t0.03                2.48%   -0.39  -12.77%    0.19    3.67   0.86%   11.8
+V2 dev_depth p20 t0.05                2.56%   -0.57   -8.94%    0.29    2.80   0.64%   11.8
+V3 dev_depth p50 t0.05                1.21%   -0.50  -15.19%    0.08    3.11   0.71%   11.8
+V4 dev_depth p100 t0.08               0.28%   -0.63  -15.29%    0.02    2.23   0.49%   11.8
+V5 mom_ranked p20 t0.03              -0.05%   -0.73  -12.77%   -0.00    2.94   0.65%   11.8
+
+===== TEST BENCHMARKS =====
+variant                                CAGR  Sharpe    MaxDD  Calmar  Turn/y  Drag/y  Trd/y
+-------------------------------------------------------------------------------------------
+V3 dev_depth p50 t0.05                1.21%   -0.50  -15.19%    0.08    3.11   0.71%   11.8
+buy_and_hold (EW 22)                 10.79%    0.38  -13.86%    0.78    0.00   0.00%    0.0
+buy_and_hold (EW 48)                  7.40%    0.13  -14.40%    0.51    0.00   0.00%    0.0
+nsealgo_composite                     1.99%   -0.31  -14.94%    0.13    2.43   0.57%   11.8
+
+===== HEAD TO HEAD vs buy-and-hold (EW 22) =====
+  return    : strategy    1.21%  vs  B&H   10.79%   ->    -9.58 pp/yr
+  total     : strategy     3.43%  vs  B&H    33.32%  ->    -29.89 pp
+  drawdown  : strategy  -15.19%  vs  B&H  -13.86%  ->  WORSE by 1.33 pp
+  Sharpe    : strategy   -0.50  vs  B&H    0.38
+  vs composite: strategy 1.21% / -0.50  vs  composite 1.99% / -0.31
+
+===== NEGATIVE CONTROL: random signal, same 14.87% of name-days long =====
+variant                                CAGR  Sharpe    MaxDD  Calmar  Turn/y  Drag/y  Trd/y
+-------------------------------------------------------------------------------------------
+random(seed=1)                        2.95%   -0.31  -11.78%    0.25    4.09   0.99%   11.8
+random(seed=2)                        3.06%   -0.27  -11.18%    0.27    4.12   1.00%   11.8
+random(seed=3)                        4.61%   -0.14  -15.42%    0.30    4.12   1.03%   11.8
+  mean random Sharpe: -0.24   vs strategy -0.50
+
+  reversal composite (literature negative control): CAGR 7.14%  Sharpe 0.11
+
+===== COST STRESS (selected variant, TEST) =====
+  base               CAGR    1.21%  Sharpe  -0.50  drag  0.71%/y
+  double_slippage    CAGR    0.89%  Sharpe  -0.53  drag  1.03%/y
+  triple_slippage    CAGR    0.58%  Sharpe  -0.56  drag  1.34%/y
+  zero_cost          CAGR    1.52%  Sharpe  -0.46  drag  0.39%/y
+
+===== WHERE THE TEST P&L CAME FROM (selected variant) =====
+  fraction of TEST bars where the mean held name rose: 49.4%
+  after a long signal, mean 5d forward return : +0.380%
+  after a long signal, mean 21d forward ret  : +1.191%
+  whole-universe mean 5d forward return      : +0.192%
+  whole-universe mean 21d forward return     : +0.857%
+
+===== TRAIN vs TEST, same signal, 21d forward return =====
+  TRAIN: signalled +2.337%  universe +1.740%  excess +0.597%  (n=189,312)
+  TEST : signalled +1.191%  universe +0.857%  excess +0.334%  (n=32,880)

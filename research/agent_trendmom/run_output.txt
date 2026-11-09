@@ -1,0 +1,51 @@
+CLEANING REPORT
+  rows in            :   274,541
+  rows out           :   208,226
+  dropped pre-2008   :    66,312
+  dropped artifact   :         0
+  dropped non-positive:      0
+  dropped extreme    :         3
+  excluded symbols   : ['adanient', 'jiofin']
+  extreme events     : 3
+
+panel (4625, 48)  2008-01-01 -> 2026-10-01
+n_symbols=48
+all-in round-trip bps on 100,000 = 21.92  (statutory 11.92)
+engine.py sha256 = 6dbee619a0d52b5861b11f41e35cd249e5e90164dce21b2242c0a65306c5b1f4
+
+=== TRAIN 2016-01-01 -> 2023-12-31 (selection only) ===
+       variant   CAGR%  Sharpe  MaxDD% Calmar  Turn  Cost%  Names  Live%  YrPos
+V1                6.25    0.02  -25.57   0.24  4.03   2.14   15.9  41.1%   0.62
+V2               13.98    0.58  -29.81   0.47  3.30   2.41   18.7  52.8%   0.75
+V3               15.01    0.64  -28.11   0.53  3.37   2.63   17.6  46.3%   0.88
+V4                4.31   -0.25  -15.27   0.28  3.90   1.92   10.5  23.9%   0.75
+V5                9.04    0.31  -12.32   0.73  4.10   2.47   16.3  41.4%   0.75
+BH_top22         17.56    0.73  -35.21   0.50  2.64   2.29   21.8   1.00
+EW_BH(all50)     21.49    0.90  -36.66   0.59
+COMPOSITE        20.72    0.93  -32.94   0.63  1.97   1.97   21.8   1.00
+
+SELECTED on TRAIN (max Sharpe): V3 -> Variant(fast=50, slow=200, mom=60, thr=0.01)
+
+=== TEST 2024-01-01 -> 2026-10-01 (untouched until now) ===
+       variant   CAGR%  Sharpe  MaxDD% Calmar  Turn  Cost%  Names  Live%  YrPos
+V1               -1.49   -0.75  -18.87  -0.08  4.11   1.93   15.8  38.1%   0.33
+V2                0.82   -0.39  -19.98   0.04  3.42   1.72   18.2  50.5%   0.67
+V3               -0.27   -0.44  -22.58  -0.01  3.38   1.68   17.2  45.2%   0.67 *
+V4               -1.42   -0.87  -16.55  -0.09  3.93   1.80    9.3  19.3%   0.33
+V5                0.53   -0.62  -18.12   0.03  4.12   2.00   16.1  39.0%   0.33
+BH_top22          1.58   -0.30  -18.82   0.08  2.77   1.39   21.3   0.67
+EW_BH(all50)      8.18    0.18  -15.90   0.51
+COMPOSITE         6.04    0.03  -15.22   0.40  2.08   1.10   21.3   0.67
+
+random control (20 seeds, TEST): CAGR median 2.46% range [-0.00, 4.70]
+  selected V3 beat 0/20 random seeds on CAGR, 8/20 on Sharpe
+cost stress (TEST CAGR%): {'double_slippage_10bps': -0.94, 'triple_slippage_15bps': -1.61, 'zero_cost': 0.41}
+
+--- TEST yearly returns ---
+test_yearly_selected   {'2024': 16.75, '2025': 2.42, '2026': -17.0}
+test_yearly_bh_topn    {'2024': 17.91, '2025': 1.32, '2026': -12.53}
+test_yearly_ew_bh      {'2024': 20.13, '2025': 13.35, '2026': -8.27}
+
+weight detail: {'max_names_observed': 22, 'min_names_observed': 0, 'median_names': 21.0, 'invested_mean': 0.7988, 'max_single_weight': 0.108, 'flagged_names_mean': 21.7, 'flagged_names_min': 3, 'flagged_names_max': 44, 'total_ret_pct': -0.74}
+
+wrote research/agent_trendmom/results.json
