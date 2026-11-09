@@ -110,22 +110,34 @@ def _sha256(path: Path) -> str:
 
 
 def _resolution_delta(resolution: DataResolution) -> pd.Timedelta:
-    # FX close observations from open-stamped bars become available after this interval.
-    durations = {
-        DataResolution.ONE_SECOND: "1s",
-        DataResolution.ONE_MINUTE: "1min",
-        DataResolution.FIVE_MINUTES: "5min",
-        DataResolution.FIFTEEN_MINUTES: "15min",
-        DataResolution.THIRTY_MINUTES: "30min",
-        DataResolution.ONE_HOUR: "1h",
-        DataResolution.FOUR_HOURS: "4h",
-        DataResolution.ONE_DAY: "1d",
-        DataResolution.ONE_WEEK: "7d",
-        DataResolution.ONE_MONTH: "30d",
+    # Fixed-duration bars use explicit seconds, avoiding ambiguous generic timedelta units.
+    durations_seconds = {
+        DataResolution.ONE_SECOND: 1,
+        DataResolution.ONE_MINUTE: 60,
+        DataResolution.FIVE_MINUTES: 5 * 60,
+        DataResolution.FIFTEEN_MINUTES: 15 * 60,
+        DataResolution.THIRTY_MINUTES: 30 * 60,
+        DataResolution.ONE_HOUR: 60 * 60,
+        DataResolution.FOUR_HOURS: 4 * 60 * 60,
+        DataResolution.ONE_DAY: 24 * 60 * 60,
+        DataResolution.ONE_WEEK: 7 * 24 * 60 * 60,
     }
-    if resolution not in durations:
-        raise ValueError(f"{resolution.value} does not have a supported fixed FX bar duration")
-    return pd.Timedelta(durations[resolution])
+    if resolution not in durations_seconds:
+        raise ValueError(
+            f"{resolution.value} is calendar-based or unsupported; "
+            "use _resolution_end_times for its close timestamp"
+        )
+    return pd.Timedelta(seconds=durations_seconds[resolution])
+
+
+def _resolution_end_times(
+    index: pd.DatetimeIndex,
+    resolution: DataResolution,
+) -> pd.DatetimeIndex:
+    # Monthly candles close at the next calendar-month boundary, not after an assumed 30 days.
+    if resolution is DataResolution.ONE_MONTH:
+        return pd.DatetimeIndex(index + pd.DateOffset(months=1))
+    return pd.DatetimeIndex(index + _resolution_delta(resolution))
 
 
 def _crypto_adapter(manifest: Mapping[str, Any], data_root: Path) -> CryptoLocalAdapter:
@@ -240,7 +252,7 @@ def _verified_crypto_frame(
     rates = fx_frame["close"].copy()
     if fx_position == "bar_open":
         # The close of an open-stamped FX candle becomes available only after its interval.
-        rates.index = rates.index + _resolution_delta(resolution)
+        rates.index = _resolution_end_times(rates.index, resolution)
     staleness_seconds = metadata.get("max_fx_staleness_seconds")
     if staleness_seconds is None:
         raise ValueError("crypto manifest must declare max_fx_staleness_seconds")
