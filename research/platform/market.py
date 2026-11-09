@@ -125,12 +125,14 @@ class MarketLedger:
             # Short selling and derivatives require a separate margin-aware ledger.
             if position.quantity == ZERO or fill.quantity > position.quantity:
                 raise ValueError("cash ledger cannot sell more than the existing long position")
-            proceeds = notional - fill.fee_inr
-            if proceeds < ZERO:
-                raise ValueError("sell fees cannot exceed fill notional")
+            # Flat per-scrip charges can exceed a very small fill's proceeds.
+            # Pay the full fee from account cash, but never permit a negative cash balance.
+            cash_after_fee = self.cash_inr + notional - fill.fee_inr
+            if cash_after_fee < ZERO:
+                raise ValueError("insufficient simulated cash to pay sell fees")
             gross_pnl = (fill.price_inr - position.average_entry_inr) * fill.quantity
             self.realised_pnl_inr += gross_pnl - fill.fee_inr
-            self.cash_inr += proceeds
+            self.cash_inr = cash_after_fee
             position.quantity -= fill.quantity
             if position.quantity == ZERO:
                 position.average_entry_inr = ZERO
