@@ -168,31 +168,33 @@ def test_market_ledger_accounting_and_duplicate_fill_guard() -> None:
     assert "MISSING" not in ledger.positions
 
 
-def test_market_ledger_pays_sell_fees_from_cash_when_fee_exceeds_fill_notional() -> None:
-    # Flat per-scrip delivery fees may exceed a tiny fill's proceeds; account cash pays the gap.
+def test_market_ledger_pays_flat_sell_fees_from_cash_when_they_exceed_notional() -> None:
+    # A one-share sale below the flat DP charge is funded from the account's cash reserve.
     ledger = MarketLedger(Market.NSE)
     ledger.apply_fill(
-        make_fill(fill_id="small-position-buy", quantity=Decimal("1"), fee=Decimal("0"))
+        make_fill(fill_id="small-position-buy", quantity=Decimal("1"), price=Decimal("10"),
+                  fee=Decimal("0"))
     )
     ledger.apply_fill(
         make_fill(
             fill_id="small-position-sell",
             side=Side.SELL,
-            quantity=Decimal("0.01"),
-            price=Decimal("100"),
-            fee=Decimal("2"),
+            quantity=Decimal("1"),
+            price=Decimal("10"),
+            fee=Decimal("15"),
         )
     )
-    assert ledger.cash_inr == Decimal("2099899.00")
-    assert ledger.positions["TEST"].quantity == Decimal("0.99")
-    assert ledger.fees_paid_inr == Decimal("2")
+    assert ledger.cash_inr == Decimal("2099985.00")
+    assert ledger.positions["TEST"].quantity == Decimal("0")
+    assert ledger.fees_paid_inr == Decimal("15")
 
-    # A fully invested account cannot pay a sell fee that exceeds both proceeds and cash.
+    # A fully invested account cannot pay a flat sell fee that exceeds proceeds and cash.
     cashless = MarketLedger(Market.NSE)
     cashless.apply_fill(
         make_fill(
             fill_id="fully-invested-buy",
-            quantity=Decimal("21000"),
+            quantity=Decimal("210000"),
+            price=Decimal("10"),
             fee=Decimal("0"),
         )
     )
@@ -201,13 +203,26 @@ def test_market_ledger_pays_sell_fees_from_cash_when_fee_exceeds_fill_notional()
             make_fill(
                 fill_id="unfunded-small-sell",
                 side=Side.SELL,
-                quantity=Decimal("0.01"),
-                price=Decimal("100"),
-                fee=Decimal("2"),
+                quantity=Decimal("1"),
+                price=Decimal("10"),
+                fee=Decimal("15"),
             )
         )
     assert cashless.cash_inr == Decimal("0")
-    assert cashless.positions["TEST"].quantity == Decimal("21000")
+    assert cashless.positions["TEST"].quantity == Decimal("210000")
+
+
+def test_nse_fills_require_whole_shares_but_crypto_allows_fractional_units() -> None:
+    # NSE cash delivery shares are indivisible while crypto spot quantities are fractional.
+    with pytest.raises(ValueError, match="whole shares"):
+        make_fill(fill_id="fractional-nse-share", quantity=Decimal("0.5"))
+    crypto_fill = make_fill(
+        fill_id="fractional-crypto-unit",
+        market=Market.CRYPTO,
+        quantity=Decimal("0.0005"),
+        price=Decimal("100000"),
+    )
+    assert crypto_fill.quantity == Decimal("0.0005")
 
 
 def test_fill_rejects_naive_timestamp_and_invalid_fee() -> None:
