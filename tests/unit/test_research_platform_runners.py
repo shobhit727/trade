@@ -22,6 +22,8 @@ from research.platform.runners import (
     ParetoStrategySearchJobRunner,
     StrategyCompositionJobRunner,
     _build_portfolio_config,
+    _resolution_delta,
+    _resolution_end_times,
     experiment_spec_from_record,
     load_registered_bars,
 )
@@ -344,6 +346,27 @@ def test_crypto_loader_verifies_registered_source_hash_and_quote_currency(tmp_pa
         assert "checksum mismatch" in str(exc)
     else:
         raise AssertionError("modified crypto source was accepted")
+
+
+def test_fx_bar_close_times_use_fixed_and_calendar_resolution_boundaries() -> None:
+    # Fixed intervals use exact seconds; monthly bars end at the next calendar month.
+    hourly = pd.DatetimeIndex(["2025-01-01T00:00:00Z"])
+    assert _resolution_delta(DataResolution.ONE_HOUR) == pd.Timedelta(seconds=3600)
+    monthly = pd.DatetimeIndex([
+        "2025-01-01T00:00:00Z",
+        "2025-02-01T00:00:00Z",
+        "2025-03-01T00:00:00Z",
+    ])
+    actual = _resolution_end_times(monthly, DataResolution.ONE_MONTH)
+    expected = pd.DatetimeIndex([
+        "2025-02-01T00:00:00Z",
+        "2025-03-01T00:00:00Z",
+        "2025-04-01T00:00:00Z",
+    ])
+    assert actual.equals(expected)
+    assert _resolution_end_times(hourly, DataResolution.ONE_HOUR)[0] == (
+        pd.Timestamp("2025-01-01T01:00:00Z")
+    )
 
 
 def test_crypto_loader_converts_usdt_using_prior_fx_close_only(tmp_path) -> None:
