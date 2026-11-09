@@ -281,20 +281,47 @@ class PortfolioSimulator:
                 price, participation, impact = self._execution_price(side, reference, quantity, available)
                 fee = self._fee(side, quantity, price)
                 if side is Side.BUY:
-                    # Binary-search affordability with quantity-dependent impact and flat fees.
-                    affordable_low, affordable_high = D("0"), quantity
-                    for _ in range(64):
-                        middle = (affordable_low + affordable_high) / D("2")
-                        if middle <= 0:
-                            affordable_low = middle
-                            continue
-                        middle_price, _, _ = self._execution_price(side, reference, middle, available)
-                        middle_fee = self._fee(side, middle, middle_price)
-                        if middle * middle_price + middle_fee <= self.ledger.cash_inr:
-                            affordable_low = middle
-                        else:
-                            affordable_high = middle
-                    quantity = self._normalise_order_quantity(affordable_low)
+                    # NSE affordability uses integer bisection so an exact whole-share
+                    # boundary cannot be rounded down by a floating Decimal search.
+                    if self.config.market is Market.NSE:
+                        low_shares, high_shares = 0, int(quantity)
+                        affordable_shares = 0
+                        while low_shares <= high_shares:
+                            middle_shares = (low_shares + high_shares) // 2
+                            if middle_shares == 0:
+                                low_shares = 1
+                                continue
+                            middle_quantity = D(middle_shares)
+                            middle_price, _, _ = self._execution_price(
+                                side, reference, middle_quantity, available
+                            )
+                            middle_fee = self._fee(side, middle_quantity, middle_price)
+                            if (
+                                middle_quantity * middle_price + middle_fee
+                                <= self.ledger.cash_inr
+                            ):
+                                affordable_shares = middle_shares
+                                low_shares = middle_shares + 1
+                            else:
+                                high_shares = middle_shares - 1
+                        quantity = D(affordable_shares)
+                    else:
+                        # Crypto spot supports fractional units; retain decimal bisection.
+                        affordable_low, affordable_high = D("0"), quantity
+                        for _ in range(64):
+                            middle = (affordable_low + affordable_high) / D("2")
+                            if middle <= 0:
+                                affordable_low = middle
+                                continue
+                            middle_price, _, _ = self._execution_price(
+                                side, reference, middle, available
+                            )
+                            middle_fee = self._fee(side, middle, middle_price)
+                            if middle * middle_price + middle_fee <= self.ledger.cash_inr:
+                                affordable_low = middle
+                            else:
+                                affordable_high = middle
+                        quantity = affordable_low
                     if quantity <= 0:
                         continue
                     # Recompute price, participation, impact and fee for the actual fill.
