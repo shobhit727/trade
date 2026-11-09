@@ -67,6 +67,10 @@ def convert_ohlcv_to_inr(
         "fx_timestamp": fx_index.tz_convert("UTC"),
         "inr_per_quote": fx.rates.to_numpy(dtype=np.float64),
     }).sort_values("fx_timestamp")
+    # Resolution shifts can upcast one side (e.g. ms-parsed bars vs us-stamped FX ends);
+    # merge_asof requires both keys in the same datetime unit, so normalise to us.
+    left["bar_timestamp"] = left["bar_timestamp"].astype("datetime64[us, UTC]")
+    right["fx_timestamp"] = right["fx_timestamp"].astype("datetime64[us, UTC]")
     aligned = pd.merge_asof(
         left,
         right,
