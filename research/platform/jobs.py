@@ -127,6 +127,8 @@ class ResearchJobManager:
                 item for item in self.store.list_jobs(limit=1000)
                 if item["status"] in {JobStatus.QUEUED.value, JobStatus.RUNNING.value}
             ]
+            if len(active) >= self.max_workers + self.max_queued:
+                raise RuntimeError("research job queue is full")
             duplicate_active = [
                 item for item in active
                 if item["experiment_id"] == experiment_id
@@ -136,8 +138,6 @@ class ResearchJobManager:
                 raise RuntimeError(
                     "an active job already exists for this experiment and runner"
                 )
-            if len(active) >= self.max_workers + self.max_queued:
-                raise RuntimeError("research job queue is full")
             job_id = str(uuid4())
             self.store.create_job(
                 job_id=job_id,
