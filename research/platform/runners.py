@@ -109,7 +109,7 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _resolution_delta(resolution: DataResolution) -> pd.Timedelta:
+def _resolution_delta(resolution: DataResolution) -> timedelta:
     # Fixed-duration bars use explicit seconds, avoiding ambiguous generic timedelta units.
     durations_seconds = {
         DataResolution.ONE_SECOND: 1,
@@ -127,7 +127,7 @@ def _resolution_delta(resolution: DataResolution) -> pd.Timedelta:
             f"{resolution.value} is calendar-based or unsupported; "
             "use _resolution_end_times for its close timestamp"
         )
-    return pd.Timedelta(seconds=durations_seconds[resolution])
+    return timedelta(seconds=durations_seconds[resolution])
 
 
 def _resolution_end_times(
