@@ -280,7 +280,7 @@ def test_crypto_loader_verifies_registered_source_hash_and_quote_currency(tmp_pa
             "timestamp_position": "bar_open",
         },
     ))
-    bars = load_registered_bars(store, spec, crypto_data_root=tmp_path)
+    bars = load_registered_bars(store, spec, crypto_data_root=tmp_path, require_partitioned=False)
     assert list(bars) == ["BTCINR"]
     assert bars["BTCINR"]["close"].iloc[-1] == 8020000
     assert (bars["BTCINR"].index < spec.oos_end).all()
@@ -288,7 +288,7 @@ def test_crypto_loader_verifies_registered_source_hash_and_quote_currency(tmp_pa
     # A changed local file cannot silently reuse a stale provenance manifest.
     source.write_text(source.read_text(encoding="utf-8") + "\n", encoding="utf-8")
     try:
-        load_registered_bars(store, spec, crypto_data_root=tmp_path)
+        load_registered_bars(store, spec, crypto_data_root=tmp_path, require_partitioned=False)
     except ValueError as exc:
         assert "checksum mismatch" in str(exc)
     else:
@@ -372,7 +372,7 @@ def test_crypto_loader_converts_usdt_using_prior_fx_close_only(tmp_path) -> None
         },
     ))
 
-    bars = load_registered_bars(store, spec, crypto_data_root=tmp_path)
+    bars = load_registered_bars(store, spec, crypto_data_root=tmp_path, require_partitioned=False)
     # Each bar uses the close of the immediately preceding completed FX candle.
     assert bars["BTCUSDT"].index[0] == pd.Timestamp("2025-01-01T00:00:00Z")
     assert len(bars["BTCUSDT"]) == 3
@@ -1231,8 +1231,9 @@ def test_registered_loader_uses_physical_non_holdout_copy_only(tmp_path) -> None
     assert frame.index.tz_convert("UTC").max() < spec.oos_end
 
 
-def test_registered_loader_strict_mode_rejects_combined_source_manifests(tmp_path) -> None:
-    # Strict mode cannot silently fall back to the original combined data file.
+def test_registered_loader_defaults_to_strict_partition_mode(tmp_path, monkeypatch) -> None:
+    # Missing configuration must fail closed instead of parsing a combined source file.
+    monkeypatch.delenv("RESEARCH_REQUIRE_PARTITIONED_DATA", raising=False)
     spec = _spec()
     store = _store(tmp_path / "strict-partition-loader.sqlite3", spec)
     with np.testing.assert_raises_regex(ValueError, "no physical non-holdout partition"):
@@ -1240,5 +1241,4 @@ def test_registered_loader_strict_mode_rejects_combined_source_manifests(tmp_pat
             store,
             spec,
             partition_data_root=tmp_path / "missing-partitions",
-            require_partitioned=True,
         )
