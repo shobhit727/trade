@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.vw_momentum import VwMomentumStrategy
+from cryptobot.strategies.catalog.volume_weighted_momentum import VwMomentumStrategy
 
 
 def _series(up: bool):

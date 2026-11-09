@@ -1,0 +1,48 @@
+================================================================================================
+SELECTION STUDY v2 — re-measure v1 on the fixed tie-break engine
+================================================================================================
+provenance : costs=ba350aef75b3  engine=29764f562cd5  loader=c1badf5f7df8  panel=389b082b832f
+cost model : all-in round trip 21.92 bps
+v1 engine  : d93815344bd3 (cache at /home/ph03n1x/trade/research/_selection_study, read-only)
+v2 cache   : /home/ph03n1x/trade/research/selection_v2/_cache
+panel      : 48 symbols x 4625 days  2008-01-01 -> 2026-10-01
+
+================================================================================================
+SWEEPS
+================================================================================================
+    74 specs -> /home/ph03n1x/trade/research/selection_v2/_cache
+    all 74 sweeps cached
+
+================================================================================================
+DRIVER VALIDATION — scheme (b) vs the untouched walk_forward
+================================================================================================
+  modal cell of the TRAIN selection trace : 15|126|0  {'15|126|0': 1, '15|126|0.35': 1, '22|126|0.35': 1, '22|126|0.6': 1, '22|252|0.6': 1, '30|126|0.6': 1}
+  identical cell picks                    : False (0/6 folds)
+  identical OOS daily series              : True  max|diff| = 0.000e+00
+  walk_forward   CAGR +9.5248%  Sharpe 0.3202
+  this driver    CAGR +9.5248%  Sharpe 0.3202
+
+================================================================================================
+STABILITY CHECK — recompute fold 1 in this process and diff it
+================================================================================================
+  0/18 cells differ, max |dSharpe| = 0.000e+00
+
+================================================================================================
+ANALYSIS v2 (current engine)
+================================================================================================
+  done in 15s
+
+================================================================================================
+ANALYSIS v1 (old engine, v1 cache, same pipeline) — self-check + diff base
+================================================================================================
+  pipeline reproduces v1's published report: 20/20 checks pass
+  driver == walk_forward, fold-for-fold: 6/6 | daily series identical: True
+  v1 verdict was: the signal is real at fixed parameters and the selection layer IS what destroys it — but fixing it buys ~1.7pp/yr, not the 31pp/yr the goal needs
+  v2 verdict is : the signal is real at fixed parameters and the selection layer IS what destroys it — but fixing it buys ~1.7pp/yr, not the 31pp/yr the goal needs
+  diff table: 70/112 entries changed
+
+================================================================================================
+REPORT
+================================================================================================
+
+wrote /home/ph03n1x/trade/reports/SELECTION_STUDY_v2.md

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.time_series import TimeSeriesStrategy
+from cryptobot.strategies.catalog.time_series_strategy import TimeSeriesStrategy
 
 
 def _series(up: bool):

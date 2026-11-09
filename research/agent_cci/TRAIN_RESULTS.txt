@@ -1,0 +1,8 @@
+TRAIN 2016-01-01 -> 2023-12-31
+V1_base    p=20 entry=100 M mom126  CAGR    5.48% Sharpe  -0.02 MaxDD  -35.15% Calmar   0.16 Turn 3.60x Cost 0.94%/y Names 16.3 LongFrac 16.43%
+V2_tight   p=20 entry=150 M mom126  CAGR   -1.43% Sharpe  -0.77 MaxDD  -34.33% Calmar  -0.04 Turn 2.43x Cost 0.50%/y Names 4.5 LongFrac 6.71%
+V3_week    p=20 entry=100 W mom126  CAGR    2.97% Sharpe  -0.20 MaxDD  -36.69% Calmar   0.08 Turn 13.86x Cost 3.24%/y Names 14.2 LongFrac 16.43%
+V4_fast    p=10 entry=100 M mom126  CAGR    3.38% Sharpe  -0.20 MaxDD  -34.28% Calmar   0.10 Turn 3.44x Cost 0.87%/y Names 13.9 LongFrac 17.11%
+V5_deep    p=20 entry=100 M deepest CAGR    7.16% Sharpe   0.11 MaxDD  -32.36% Calmar   0.22 Turn 3.82x Cost 1.08%/y Names 16.9 LongFrac 16.43%
+equal_weight_book CAGR 18.78% Sharpe 0.82 MaxDD -33.27%
+WINNER V5_deep

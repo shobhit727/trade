@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from cryptobot.strategies.catalog.zscore import ZscoreStrategy
+from cryptobot.strategies.catalog.zscore_strategy import ZscoreStrategy
 
 
 def _series(up: bool):

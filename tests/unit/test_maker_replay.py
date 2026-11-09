@@ -30,7 +30,7 @@ def _ramp(n=300, step=1.01):
 
 
 def test_ramp_long_profits():
-    strat = make_strategy("ema_cross", fast=2, slow=6)
+    strat = make_strategy("ema_cross_strategy", fast=2, slow=6)
     targets = collect_signal_targets(_ramp(), strat)
     res = maker_replay(_ramp(), targets)
     assert res["return"] > 0.5
@@ -61,7 +61,7 @@ def test_short_accounting_consistent():
         nc = px * 0.99
         bars.append(Bar(px, max(px, nc) * 1.0005, min(px, nc) * 0.9995, nc))
         px = nc
-    strat = make_strategy("ema_cross", fast=2, slow=6)
+    strat = make_strategy("ema_cross_strategy", fast=2, slow=6)
     targets = collect_signal_targets(bars, strat)
     res = maker_replay(bars, targets)
     assert res["return"] > 0.3

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.obv import ObvStrategy
+from cryptobot.strategies.catalog.on_balance_volume import ObvStrategy
 
 
 def _series(up: bool):

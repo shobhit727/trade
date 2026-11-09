@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.trend_volume import TrendVolumeStrategy
+from cryptobot.strategies.catalog.trend_volume_strategy import TrendVolumeStrategy
 
 
 def _flow(up: bool):

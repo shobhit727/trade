@@ -56,6 +56,24 @@ def audit_reference() -> dict[str, dict[str, str]]:
         return {r["symbol"]: r for r in csv.DictReader(f)}
 
 
+# yfinance hard limits. Intraday requests outside these windows fail outright, which
+# is why the original script (hardcoded start="2000-01-01") cannot fetch anything
+# below 1d. See tools/download_nse.py INTERVAL_LIMITS.
+INTERVAL_LIMIT_DAYS = {
+    "1m": 5, "2m": 50, "5m": 50, "15m": 50, "30m": 50, "60m": 690, "1h": 690,
+    "1d": None, "1wk": None,
+}
+
+
+def _start_for(interval: str) -> str:
+    days = INTERVAL_LIMIT_DAYS.get(interval, 730)
+    if days is None:
+        return "2000-01-01"
+    import datetime as _dt
+
+    return (_dt.datetime.now(_dt.UTC) - _dt.timedelta(days=days)).strftime("%Y-%m-%d")
+
+
 def download(symbol: str, interval: str, out_dir: Path,
              attempts: int = 6) -> tuple[str, int]:
     """Fetch one symbol, retrying both auto_adjust modes with backoff.
@@ -73,7 +91,7 @@ def download(symbol: str, interval: str, out_dir: Path,
         for adjust in (True, False):
             try:
                 df = yf.download(
-                    ticker, start="2000-01-01", interval=interval,
+                    ticker, start=_start_for(interval), interval=interval,
                     auto_adjust=adjust, progress=False, threads=False,
                 )
             except Exception:  # noqa: BLE001 - network flakiness

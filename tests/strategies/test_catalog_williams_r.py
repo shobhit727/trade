@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from cryptobot.strategies.catalog.williams_r import WilliamsRStrategy
+from cryptobot.strategies.catalog.williams_r_strategy import WilliamsRStrategy
 
 
 def _series(up: bool):

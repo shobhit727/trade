@@ -10,6 +10,7 @@ from decimal import Decimal
 
 from cryptobot.config import get_settings
 from cryptobot.core.events import OrderEvent, OrderSide, OrderStatus, OrderType
+from cryptobot.strategies.registry import _STRATEGY_REGISTRY_MAP
 
 
 def _get_server_host() -> str:
@@ -28,7 +29,8 @@ def build_parser() -> argparse.ArgumentParser:
     backtest = sub.add_parser(
         "backtest", help="Run a backtest from synthetic, CSV, Parquet, or TimescaleDB data"
     )
-    backtest.add_argument("--strategy", choices=["mean_reversion", "trend_following", "stat_arb"], default="mean_reversion")
+    strategy_choices = sorted(_STRATEGY_REGISTRY_MAP.keys())
+    backtest.add_argument("--strategy", choices=strategy_choices, default="mean_reversion")
     backtest.add_argument("--source", choices=["synthetic", "csv", "parquet", "timescale"], default="synthetic")
     backtest.add_argument("--path", default=None)
     backtest.add_argument("--bars", type=int, default=200)

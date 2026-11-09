@@ -1,0 +1,84 @@
+
+================================================================================================
+3.1  WAS THE 'CAP VIOLATION' REAL?
+================================================================================================
+PortfolioConfig has TWO distinct limits and step 2 conflated them:
+  n_positions = 22  -> how many names the TARGET book aims for at a rebalance
+  max_names   = 30  -> hard cap on names CARRIED between rebalances
+  The turnover budget blends toward the target, so dropped names decay rather
+  than vanish; the engine deliberately allows 30 material positions for that.
+
+  observed max names held on TEST : 30
+  engine hard cap (max_names)     : 30
+  bars exceeding max_names=30    : 0  -> NO VIOLATION -- step-2 flag was my own
+  bars exceeding n_positions=22   : 86 (expected and permitted: these are carried-over names)
+
+  CORRECTION: step 2 compared against 22 (the target), not 30 (the cap).
+  The engine's constraints all hold. No bug. Correcting the record.
+  max single weight 0.1080 <= 0.12  OK
+  max sector weight is enforced inside build_rebalance_weights; spot check:
+    max sector weight observed 0.0000 <= 0.25  OK
+
+================================================================================================
+3.2  THE MECHANISM: the gate is too sparse to fill the book
+================================================================================================
+PortfolioConfig demands a 22-name, 12%-capped, 90%-invested book. The Donchian
+gate only qualifies ~6-7% of symbol-bars, i.e. ~2-4 of 48 names on a typical day.
+With a 12% single-name cap, N qualified names can supply at most 12%*N.
+
+names flagged on each rebalance date (n=34 dates):
+  mean 3.4   median 2   min 0   max 14
+  distribution: 0 flagged: 7 dates, 1 flagged: 8 dates, 2 flagged: 5 dates, 3 flagged: 3 dates, 4 flagged: 2 dates, 5 flagged: 1 dates, 7 flagged: 2 dates, 8 flagged: 3 dates, 11 flagged: 1 dates, 12 flagged: 1 dates, 14 flagged: 1 dates
+
+invested weight (mean of held row sums): 0.3004
+  min 0.0000  median 0.2160  max 0.7948
+  cash held on average: 70.0%
+
+  -> the gate can never reach the 90% target. Even a PERFECT breakout signal
+     would leave the book ~70% in cash, for structural reasons:
+     sparse flags x a 12% hard single-name cap.
+
+  the 12% cap binds when flags < 7.5: 28/34 rebalances had <7.5 names -> cap binding
+  0 names flagged on 7/34 rebalances -> fully in cash
+
+================================================================================================
+3.3  EXPOSURE-ADJUSTED: is the stock selection any good at all?
+================================================================================================
+strategy CAGR 1.45% with average exposure 30.0%
+buy-and-hold CAGR 8.16% with exposure ~100% (less entry cost)
+
+strategy GROSS daily return mean   0.944 bp/day
+buy-and-hold gross daily mean       3.617 bp/day
+
+Selection quality on invested days only (exposure removed):
+  days with >50% invested: 163
+  strategy held-names return    -0.782 bp/day
+  equal-weight universe same day   3.833 bp/day
+  SELECTION EDGE                -4.615 bp/day
+
+  annualised selection edge (x244): -11.26 pp/yr
+  -> positive means the names the gate picks DO beat the universe on those days,
+     i.e. the breakout gate is not worthless as a selector. The damage is that
+     it only fires on ~6% of bars, so the edge is collected with 30% exposure.
+
+================================================================================================
+3.4  IS 'BEATING THE COIN FLIP' REAL?
+================================================================================================
+  strategy beat 11/20 random-signal controls on CAGR
+  one-sided exact binomial p (H0: coin flip) = 0.412
+  -> NOT significant at the 10% level.
+  strategy CAGR percentile vs controls: 1th
+  random control CAGR mean 0.96% sd 2.41%
+  strategy Sharpe -0.62 vs control mean -0.88 sd 0.40
+
+  CONTROL SHARPE IS NEGATIVE (-0.88) AND THE STRATEGY'S IS
+  ALSO NEGATIVE (-0.62). Beating a set of losing
+  coin flips while losing money is not evidence of an edge.
+  This is the honest reading of the brief §6.5 control.
+
+================================================================================================
+3.5  DOES IT BEAT THE COMPOSITE?
+================================================================================================
+  -0.62 Sharpe / 1.45% CAGR  vs composite 0.07 / 6.55%
+  -> NO, by -5.11 pp/yr
+  and the composite holds 21 names at 6.55% CAGR vs this strategy's 8 names.

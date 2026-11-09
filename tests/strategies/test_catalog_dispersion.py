@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from cryptobot.strategies.catalog.dispersion import DispersionStrategy
+from cryptobot.strategies.catalog.dispersion_strategy import DispersionStrategy
 
 
 def _series(up: bool):

@@ -1,0 +1,81 @@
+
+================================================================================================
+STEP 1  TRAIN SWEEP   window 2016-01-01 -> 2023-12-31  (1975 bars)
+================================================================================================
+finite symbol-bars in TRAIN: 91,391
+all costs net (delivery, 5bps slippage => 21.92bps all-in round trip)
+
+variant              live%     CAGR  Sharpe    MaxDD  Calmar    Turn   Cost/y  Names   TopW  Rebal
+V1 FAITHFUL         0.000%    0.00%    0.00    0.00%    0.00   0.00x    0.00%    0.0    nan     95
+V2 EXCL20           7.303%    6.47%    0.03   -8.01%    0.81   3.16x    0.85%    9.0  0.095     95
+V3 EXCL20_NOMOM     7.303%    6.47%    0.03   -8.01%    0.81   3.16x    0.85%    9.0  0.095     95
+V4 EXCL55           4.782%    3.81%   -0.41   -9.28%    0.41   2.39x    0.58%    4.7  0.101     95
+V5 EXCL55_MOM63     4.656%    3.68%   -0.44   -8.42%    0.44   2.34x    0.57%    4.3  0.101     95
+
+TRAIN benchmarks:
+  buy-and-hold (EW)          CAGR   21.46%  Sharpe   0.90  MaxDD  -36.66%  Calmar   0.59  Turn  0.12x/y  Cost  0.03%/y  Names   nan
+
+================================================================================================
+SANITY CHECKS (brief §6) on TRAIN
+================================================================================================
+
+§6.1 plausibility (unlevered long-only NIFTY-50 ceiling ~40-50% CAGR):
+  V1   CAGR    0.00%
+  V2   CAGR    6.47%
+  V3   CAGR    6.47%
+  V4   CAGR    3.81%
+  V5   CAGR    3.68%
+  ceiling used: 50%
+
+§6.2 weight count (should be ~22, not 48):
+  V1   avg names   0.0   max top weight nan
+  V2   avg names   9.0   max top weight 0.095
+  V3   avg names   9.0   max top weight 0.095
+  V4   avg names   4.7   max top weight 0.101
+  V5   avg names   4.3   max top weight 0.101
+
+§6.3 signal liveness (below ~5% = effectively always-flat):
+  V1    0.000% of TRAIN symbol-bars  -> ALWAYS-FLAT
+  V2    7.303% of TRAIN symbol-bars  -> alive
+  V3    7.303% of TRAIN symbol-bars  -> alive
+  V4    4.782% of TRAIN symbol-bars  -> ALWAYS-FLAT
+  V5    4.656% of TRAIN symbol-bars  -> ALWAYS-FLAT
+
+§6.4 cost drag: gross vs net. Same engine, zero-cost model, for the record.
+  V1   gross(0 cost)    0.00%  net    0.00%  drag  0.00%/y  UNVIABLE (net negative)
+  V2   gross(0 cost)    6.80%  net    6.47%  drag  0.85%/y  VIABLE
+  V3   gross(0 cost)    6.80%  net    6.47%  drag  0.85%/y  VIABLE
+  V4   gross(0 cost)    4.06%  net    3.81%  drag  0.58%/y  VIABLE
+  V5   gross(0 cost)    3.92%  net    3.68%  drag  0.57%/y  VIABLE
+
+§6.5 negative control -- random signal with the SAME % of bars long.
+    (done properly in step 2; here just noting each variant's live rate:)
+  V1   live  0.000%
+  V2   live  7.303%
+  V3   live  7.303%
+  V4   live  4.782%
+  V5   live  4.656%
+
+================================================================================================
+TRAIN YEARLY RETURNS (gate: positive in >=60% of years, GOAL.md §5)
+================================================================================================
+variant                2016     2017     2018     2019     2020     2021     2022     2023
+V1 FAITHFUL             0.0      0.0      0.0      0.0      0.0      0.0      0.0      0.0   pos 0/8
+V2 EXCL20               5.3      3.8      1.5      3.0      9.5     12.4     -1.2     19.5   pos 7/8
+V3 EXCL20_NOMOM         5.3      3.8      1.5      3.0      9.5     12.4     -1.2     19.5   pos 7/8
+V4 EXCL55               4.5      2.3     -3.0     -1.2      3.3     13.2     -0.9     14.1   pos 5/8
+V5 EXCL55_MOM63         4.0      1.7     -3.0     -0.3      3.1     13.2     -0.9     13.2   pos 5/8
+buy-and-hold            8.7     38.4      0.9     15.6     27.8     43.8      7.9     38.6   pos 8/8
+
+================================================================================================
+SELECTION (rule fixed in advance: TRAIN net CAGR, tie-break Sharpe then MaxDD)
+================================================================================================
+  V2   EXCL20           CAGR    6.47%  Sharpe  0.03  MaxDD   -8.01%
+  V3   EXCL20_NOMOM     CAGR    6.47%  Sharpe  0.03  MaxDD   -8.01%
+  V4   EXCL55           CAGR    3.81%  Sharpe -0.41  MaxDD   -9.28%
+  V5   EXCL55_MOM63     CAGR    3.68%  Sharpe -0.44  MaxDD   -8.42%
+  V1   FAITHFUL         CAGR    0.00%  Sharpe  0.00  MaxDD    0.00%
+
+WINNER: V2 (EXCL20) -> will be run UNCHANGED on TEST
+Note: V2 and V3 must be numerically identical (see DECLARED_BUDGET.md fact (c)).
+  V2 CAGR 0.064667722412  V3 CAGR 0.064667722412  identical: True

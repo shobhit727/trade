@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.flag import FlagStrategy
+from cryptobot.strategies.catalog.flag_pattern import FlagStrategy
 
 
 def _series(up: bool):

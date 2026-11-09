@@ -1,0 +1,304 @@
+{
+  "window": {
+    "train": [
+      "2016-01-01",
+      "2023-12-31"
+    ],
+    "train_bars": 1973
+  },
+  "liveness_full_panel": {
+    "period_20": {
+      "frac_bars_long": 0.4973068193366984,
+      "frac_bars_short": 0.5026931806633016,
+      "mean_eligible_names": 22.21837837837838,
+      "median_eligible_names": 22.0,
+      "min_eligible_names": 0.0
+    },
+    "period_50": {
+      "frac_bars_long": 0.500572631619987,
+      "frac_bars_short": 0.49942736838001295,
+      "mean_eligible_names": 22.20843243243243,
+      "median_eligible_names": 22.0,
+      "min_eligible_names": 0.0
+    },
+    "period_100": {
+      "frac_bars_long": 0.5071723382957005,
+      "frac_bars_short": 0.4928276617042995,
+      "mean_eligible_names": 22.238054054054054,
+      "median_eligible_names": 22.0,
+      "min_eligible_names": 0.0
+    }
+  },
+  "fidelity": {
+    "period_20": {
+      "adaniports": {
+        "max_abs": 8.263441486633383e-09,
+        "max_rel": 3.243443869982011e-11,
+        "p99_rel": 7.125868004197931e-12,
+        "signal_disagreements": 19,
+        "n_bars": 4625
+      },
+      "apollohosp": {
+        "max_abs": 3.7986865208949894e-08,
+        "max_rel": 9.353645086196126e-12,
+        "p99_rel": 3.945708811968999e-12,
+        "signal_disagreements": 19,
+        "n_bars": 4625
+      }
+    },
+    "period_50": {
+      "adaniports": {
+        "max_abs": 0.09369276659185743,
+        "max_rel": 0.00038122514566089313,
+        "p99_rel": 0.00012477217089532276,
+        "signal_disagreements": 49,
+        "n_bars": 4625
+      },
+      "apollohosp": {
+        "max_abs": 0.3706378881679484,
+        "max_rel": 0.00010598931453158194,
+        "p99_rel": 4.767500749277515e-05,
+        "signal_disagreements": 52,
+        "n_bars": 4625
+      }
+    },
+    "period_100": {
+      "adaniports": {
+        "max_abs": 7.272017449563236,
+        "max_rel": 0.02580580595284248,
+        "p99_rel": 0.013581720031451177,
+        "signal_disagreements": 149,
+        "n_bars": 4625
+      },
+      "apollohosp": {
+        "max_abs": 30.85240442729082,
+        "max_rel": 0.006967884712807839,
+        "p99_rel": 0.004618534449013033,
+        "signal_disagreements": 149,
+        "n_bars": 4625
+      }
+    }
+  },
+  "train": [
+    {
+      "label": "V1 p20/mom6m",
+      "cagr": 0.11799365418792251,
+      "sharpe": 0.5370732049868447,
+      "sortino": 0.6701379112131024,
+      "calmar": 0.6480930982064075,
+      "max_drawdown": -0.18206281553447956,
+      "vol": 0.09972766872122245,
+      "total_return": 1.4642437697878647,
+      "annual_turnover": 4.0874356462936,
+      "cost_drag_annual": 0.028183719213066536,
+      "trades_per_year": 11.748606183476939,
+      "avg_names": 19.35935124176381,
+      "rt_bps": 21.92,
+      "final_equity": 2.4642437697878647,
+      "variant": "V1",
+      "period": 20,
+      "rank": "mom6m"
+    },
+    {
+      "label": "V1 ZERO-COST",
+      "cagr": 0.1271814604811532,
+      "sharpe": 0.6191799733159448,
+      "sortino": 0.7727759764988299,
+      "calmar": 0.7167201494120368,
+      "max_drawdown": -0.17744926047563592,
+      "vol": 0.0997272630944683,
+      "total_return": 1.6328467180232118,
+      "annual_turnover": 4.0874356462936,
+      "cost_drag_annual": 0.015918131555626373,
+      "trades_per_year": 11.748606183476939,
+      "avg_names": 19.35935124176381,
+      "rt_bps": 11.92,
+      "final_equity": 2.632846718023212,
+      "variant": "V1",
+      "zero_cost": true
+    },
+    {
+      "label": "V2 p50/mom6m",
+      "cagr": 0.09627572700280385,
+      "sharpe": 0.37891383704073167,
+      "sortino": 0.5305722226022472,
+      "calmar": 0.7358765346505405,
+      "max_drawdown": -0.13083135888892572,
+      "vol": 0.08620542648408268,
+      "total_return": 1.102781305029167,
+      "annual_turnover": 4.0911384349396815,
+      "cost_drag_annual": 0.025490133437750986,
+      "trades_per_year": 11.748606183476939,
+      "avg_names": 18.66953877344146,
+      "rt_bps": 21.92,
+      "final_equity": 2.102781305029167,
+      "variant": "V2",
+      "period": 50,
+      "rank": "mom6m"
+    },
+    {
+      "label": "V2 ZERO-COST",
+      "cagr": 0.10529325231948361,
+      "sharpe": 0.47408376140069397,
+      "sortino": 0.6640035016663882,
+      "calmar": 0.8086781894139045,
+      "max_drawdown": -0.13020414510720968,
+      "vol": 0.08618182566329806,
+      "total_return": 1.2467878533799017,
+      "annual_turnover": 4.0911384349396815,
+      "cost_drag_annual": 0.01438117749985495,
+      "trades_per_year": 11.748606183476939,
+      "avg_names": 18.66953877344146,
+      "rt_bps": 11.92,
+      "final_equity": 2.2467878533799017,
+      "variant": "V2",
+      "zero_cost": true
+    },
+    {
+      "label": "V3 p100/mom6m",
+      "cagr": 0.09095660941829076,
+      "sharpe": 0.2962900797347735,
+      "sortino": 0.37774550161632725,
+      "calmar": 0.35616028482297796,
+      "max_drawdown": -0.2553811115225799,
+      "vol": 0.09731374519438521,
+      "total_return": 1.0216861891260192,
+      "annual_turnover": 4.044391573177222,
+      "cost_drag_annual": 0.025576066047099458,
+      "trades_per_year": 11.748606183476939,
+      "avg_names": 17.982767359351243,
+      "rt_bps": 21.92,
+      "final_equity": 2.021686189126019,
+      "variant": "V3",
+      "period": 100,
+      "rank": "mom6m"
+    },
+    {
+      "label": "V3 ZERO-COST",
+      "cagr": 0.09982732976771147,
+      "sharpe": 0.3796409954762946,
+      "sortino": 0.48390126643019166,
+      "calmar": 0.4063551774043205,
+      "max_drawdown": -0.24566520944898407,
+      "vol": 0.09727786683146929,
+      "total_return": 1.1585030966421743,
+      "annual_turnover": 4.044391573177222,
+      "cost_drag_annual": 0.01441062635116107,
+      "trades_per_year": 11.748606183476939,
+      "avg_names": 17.982767359351243,
+      "rt_bps": 11.92,
+      "final_equity": 2.1585030966421743,
+      "variant": "V3",
+      "zero_cost": true
+    },
+    {
+      "label": "V4 p20/mom12_1",
+      "cagr": 0.12238927196646077,
+      "sharpe": 0.5812605881611641,
+      "sortino": 0.7216860982760102,
+      "calmar": 0.6637305063511318,
+      "max_drawdown": -0.18439603241878633,
+      "vol": 0.09873577090164627,
+      "total_return": 1.5436870875462967,
+      "annual_turnover": 4.035763969854324,
+      "cost_drag_annual": 0.02784066572601924,
+      "trades_per_year": 11.748606183476939,
+      "avg_names": 19.330968068930563,
+      "rt_bps": 21.92,
+      "final_equity": 2.5436870875462967,
+      "variant": "V4",
+      "period": 20,
+      "rank": "mom12_1"
+    },
+    {
+      "label": "V4 ZERO-COST",
+      "cagr": 0.13149600621735935,
+      "sharpe": 0.6632381052081348,
+      "sortino": 0.8237482899690881,
+      "calmar": 0.7336498474093183,
+      "max_drawdown": -0.17923537595175842,
+      "vol": 0.09871892318480088,
+      "total_return": 1.715450444168074,
+      "annual_turnover": 4.035763969854324,
+      "cost_drag_annual": 0.015716426600894277,
+      "trades_per_year": 11.748606183476939,
+      "avg_names": 19.330968068930563,
+      "rt_bps": 11.92,
+      "final_equity": 2.715450444168074,
+      "variant": "V4",
+      "zero_cost": true
+    },
+    {
+      "label": "V5 p50/trend200",
+      "cagr": 0.09290291842066911,
+      "sharpe": 0.3439232421655564,
+      "sortino": 0.48357198565582105,
+      "calmar": 0.6214550456554467,
+      "max_drawdown": -0.1494925804692513,
+      "vol": 0.08594798304137334,
+      "total_return": 1.051035756788493,
+      "annual_turnover": 4.076301416160086,
+      "cost_drag_annual": 0.025040921549234256,
+      "trades_per_year": 11.748606183476939,
+      "avg_names": 18.41865179929042,
+      "rt_bps": 21.92,
+      "final_equity": 2.051035756788493,
+      "variant": "V5",
+      "period": 50,
+      "rank": "trend200"
+    },
+    {
+      "label": "V5 ZERO-COST",
+      "cagr": 0.10185992889262385,
+      "sharpe": 0.4391430791805676,
+      "sortino": 0.6171253764636268,
+      "calmar": 0.7068154087039134,
+      "max_drawdown": -0.1441110757324947,
+      "vol": 0.08589476423966334,
+      "total_return": 1.1909715968860373,
+      "annual_turnover": 4.076301416160086,
+      "cost_drag_annual": 0.014120693944156564,
+      "trades_per_year": 11.748606183476939,
+      "avg_names": 18.41865179929042,
+      "rt_bps": 11.92,
+      "final_equity": 2.1909715968860373,
+      "variant": "V5",
+      "zero_cost": true
+    }
+  ],
+  "train_composite": {
+    "label": "nsealgo_composite",
+    "cagr": 0.20443468034659174,
+    "sharpe": 0.9145512466794832,
+    "sortino": 1.0862941443614396,
+    "calmar": 0.6206798953906947,
+    "max_drawdown": -0.329372164081306,
+    "vol": 0.14641082264351993,
+    "total_return": 3.500063823048838,
+    "annual_turnover": 2.0794686912020426,
+    "cost_drag_annual": 0.019850800339863476,
+    "trades_per_year": 11.748606183476939,
+    "avg_names": 21.77698935631019,
+    "rt_bps": 21.92,
+    "final_equity": 4.500063823048838
+  },
+  "selected": {
+    "label": "V4 p20/mom12_1",
+    "cagr": 0.12238927196646077,
+    "sharpe": 0.5812605881611641,
+    "sortino": 0.7216860982760102,
+    "calmar": 0.6637305063511318,
+    "max_drawdown": -0.18439603241878633,
+    "vol": 0.09873577090164627,
+    "total_return": 1.5436870875462967,
+    "annual_turnover": 4.035763969854324,
+    "cost_drag_annual": 0.02784066572601924,
+    "trades_per_year": 11.748606183476939,
+    "avg_names": 19.330968068930563,
+    "rt_bps": 21.92,
+    "final_equity": 2.5436870875462967,
+    "variant": "V4",
+    "period": 20,
+    "rank": "mom12_1"
+  }
+}

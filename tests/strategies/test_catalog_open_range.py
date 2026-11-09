@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.open_range import OpenRangeStrategy
+from cryptobot.strategies.catalog.open_range_breakout import OpenRangeStrategy
 
 
 def _series(up: bool):

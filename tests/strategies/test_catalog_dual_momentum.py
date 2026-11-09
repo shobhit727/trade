@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.dual_momentum import DualMomentumStrategy
+from cryptobot.strategies.catalog.dual_momentum_strategy import DualMomentumStrategy
 
 
 def _series(up: bool):

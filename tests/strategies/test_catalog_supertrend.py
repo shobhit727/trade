@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.supertrend import SupertrendStrategy
+from cryptobot.strategies.catalog.supertrend_strategy import SupertrendStrategy
 
 
 def _series(up: bool):

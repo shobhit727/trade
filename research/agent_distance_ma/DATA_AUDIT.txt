@@ -1,0 +1,33 @@
+CLEANING REPORT
+  rows in            :   274,541
+  rows out           :   208,226
+  dropped pre-2008   :    66,312
+  dropped artifact   :         0
+  dropped non-positive:      0
+  dropped extreme    :         3
+  excluded symbols   : ['adanient', 'jiofin']
+  extreme events     : 3
+
+
+symbols kept      : 48
+panel shape       : (4629, 48)
+index             : 2008-01-01 -> 2026-10-01
+tz                : Asia/Kolkata
+
+--- coverage ---
+TRAIN 2016-01-01..2023-12-31:  1975 bars, names w/ >=90% coverage:  44/48, min bars 604
+TEST  2024-01-01..2026-10-01:   685 bars, names w/ >=90% coverage:  48/48, min bars 684
+
+NaN cells         : 13,966/222,192 (6.29%)
+fully dense names : 1/48
+
+--- cost sanity check (brief §3) ---
+  Rs  50,000 round trip (statutory) : 12.72 bps
+  Rs 100,000 round trip (statutory) : 11.92 bps
+  Rs 500,000 round trip (statutory) : 11.28 bps
+  Rs   100,000 all-in (+ 2x5bps slip) : 21.92 bps
+  brief expects ~11.9 bps at Rs 1L/side
+
+--- market context, equal-weight proxy ---
+  TRAIN:  1975 bars, cum  409.35%, CAGR  22.28%
+  TEST :   685 bars, cum   25.05%, CAGR   8.29%

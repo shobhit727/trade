@@ -1,0 +1,42 @@
+{
+  "overlap_correction": [
+    {
+      "h": 21,
+      "n_naive": 1818,
+      "inflation_factor": 41,
+      "n_effective": 44.34146341463415,
+      "t_naive": -3.6158291825642177,
+      "t_corrected": -0.5646976457876572,
+      "mean_alpha_bp": -24.659712514813794
+    },
+    {
+      "h": 63,
+      "n_naive": 1778,
+      "inflation_factor": 125,
+      "n_effective": 14.224,
+      "t_naive": -3.8163116750859576,
+      "t_corrected": -0.34134129315273165,
+      "mean_alpha_bp": -43.19076121127716
+    },
+    {
+      "h": 126,
+      "n_naive": 1718,
+      "inflation_factor": 251,
+      "n_effective": 6.844621513944223,
+      "t_naive": -2.7565246354974557,
+      "t_corrected": -0.1739902921927206,
+      "mean_alpha_bp": -48.25356638860378
+    }
+  ],
+  "test_sanity": {
+    "final_equity": 0.9748199387765196,
+    "pct_days_over_5pct_underwater": 0.6608187134502924,
+    "pct_days_flat": 0.12426900584795321,
+    "worst_day": -0.06756924156831812,
+    "worst_day_date": "2024-06-04",
+    "max_single_name_weight": 0.108,
+    "symbols_ever_held": 48,
+    "weight_sum_mean": 0.3729082202925265,
+    "weight_sum_max": 0.8999999999999999
+  }
+}

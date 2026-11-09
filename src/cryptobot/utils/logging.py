@@ -103,11 +103,18 @@ def setup_logging(
         stream: Where to emit logs (defaults to stdout; CLI --json modes use stderr
             so machine-readable results on stdout stay clean)
     """
+    # Reset root logger handlers to allow reconfiguration
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        handler.close()
+        root_logger.removeHandler(handler)
+
     # Configure standard library logging
     logging.basicConfig(
         format="%(message)s",
         stream=stream,
         level=getattr(logging, level.upper()),
+        force=True,  # Python 3.8+: force reconfiguration
     )
 
     # Processors for structlog

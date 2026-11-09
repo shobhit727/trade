@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.funding_trend import FundingTrendStrategy
+from cryptobot.strategies.catalog.funding_trend_strategy import FundingTrendStrategy
 
 
 def _series(up: bool):

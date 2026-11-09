@@ -563,6 +563,16 @@ class RealisticVenue(Venue):
         self.book_sim.update_mid_price(symbol, mid_price, volatility)
         self.config.initial_prices[symbol] = mid_price
 
+    def update_volatility(self, symbol: str, volatility: Decimal) -> None:
+        """Update volatility for a symbol."""
+        if symbol in self.book_sim.volatilities:
+            self.book_sim.volatilities[symbol] = volatility
+
+    async def place_protective_stop(self, symbol: str, side: str, quantity: float, stop_price: float) -> None:
+        """Place a protective stop order (no-op for realistic venue)."""
+        # Realistic venue doesn't support protective stops directly
+        pass
+
     @staticmethod
     def _record_round_trip(venue: str, symbol: str, order_type: str, start: float) -> None:
         latency_ms = (time.perf_counter() - start) * 1000.0

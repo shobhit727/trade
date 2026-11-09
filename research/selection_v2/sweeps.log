@@ -1,0 +1,84 @@
+================================================================================================
+SELECTION STUDY v2 — re-measure v1 on the fixed tie-break engine
+================================================================================================
+provenance : costs=ba350aef75b3  engine=29764f562cd5  loader=c1badf5f7df8  panel=389b082b832f
+cost model : all-in round trip 21.92 bps
+v1 engine  : d93815344bd3 (cache at /home/ph03n1x/trade/research/_selection_study, read-only)
+v2 cache   : /home/ph03n1x/trade/research/selection_v2/_cache
+panel      : 48 symbols x 4625 days  2008-01-01 -> 2026-10-01
+
+================================================================================================
+SWEEPS
+================================================================================================
+    74 specs -> /home/ph03n1x/trade/research/selection_v2/_cache
+    sweeping 70 spec(s) on 3 worker(s)
+    done [1/70] SCRAMBLE_C_003 (126s) elapsed 2.1m
+    done [2/70] SCRAMBLE_C_004 (127s) elapsed 2.2m
+    done [3/70] SCRAMBLE_C_002 (128s) elapsed 2.2m
+    done [4/70] SCRAMBLE_C_006 (127s) elapsed 4.3m
+    done [5/70] SCRAMBLE_C_005 (131s) elapsed 4.3m
+    done [6/70] SCRAMBLE_C_007 (132s) elapsed 4.4m
+    done [7/70] SCRAMBLE_C_008 (136s) elapsed 6.5m
+    done [8/70] SCRAMBLE_C_009 (134s) elapsed 6.6m
+    done [9/70] SCRAMBLE_C_010 (137s) elapsed 6.7m
+    done [10/70] SCRAMBLE_C_011 (127s) elapsed 8.6m
+    done [11/70] SCRAMBLE_C_012 (136s) elapsed 8.8m
+    done [12/70] SCRAMBLE_C_013 (131s) elapsed 8.8m
+    done [13/70] SCRAMBLE_C_014 (133s) elapsed 10.9m
+    done [14/70] SCRAMBLE_C_016 (133s) elapsed 11.1m
+    done [15/70] SCRAMBLE_C_015 (140s) elapsed 11.2m
+    done [16/70] SCRAMBLE_C_017 (130s) elapsed 13.0m
+    done [17/70] SCRAMBLE_C_018 (128s) elapsed 13.2m
+    done [18/70] SCRAMBLE_C_019 (129s) elapsed 13.3m
+    done [19/70] SCRAMBLE_C_020 (120s) elapsed 15.0m
+    done [20/70] SCRAMBLE_C_021 (123s) elapsed 15.2m
+    done [21/70] SCRAMBLE_C_022 (122s) elapsed 15.4m
+    done [22/70] SCRAMBLE_C_023 (122s) elapsed 17.1m
+    done [23/70] SCRAMBLE_C_024 (122s) elapsed 17.3m
+    done [24/70] SCRAMBLE_C_025 (121s) elapsed 17.4m
+    done [25/70] SCRAMBLE_C_026 (120s) elapsed 19.1m
+    done [26/70] SCRAMBLE_C_027 (121s) elapsed 19.3m
+    done [27/70] SCRAMBLE_C_028 (123s) elapsed 19.4m
+    done [28/70] SCRAMBLE_C_029 (125s) elapsed 21.1m
+    done [29/70] SCRAMBLE_C_030 (124s) elapsed 21.4m
+    done [30/70] SCRAMBLE_C_031 (123s) elapsed 21.5m
+    done [31/70] SCRAMBLE_C_032 (128s) elapsed 23.3m
+    done [32/70] SCRAMBLE_C_033 (129s) elapsed 23.5m
+    done [33/70] SCRAMBLE_C_034 (135s) elapsed 23.7m
+    done [34/70] SCRAMBLE_C_035 (123s) elapsed 25.3m
+    done [35/70] SCRAMBLE_C_036 (121s) elapsed 25.5m
+    done [36/70] SCRAMBLE_C_037 (119s) elapsed 25.7m
+    done [37/70] SCRAMBLE_C_038 (110s) elapsed 27.2m
+    done [38/70] SCRAMBLE_C_039 (109s) elapsed 27.3m
+    done [39/70] SCRAMBLE_C_040 (112s) elapsed 27.6m
+    done [40/70] SCRAMBLE_C_041 (122s) elapsed 29.2m
+    done [41/70] SCRAMBLE_C_042 (122s) elapsed 29.4m
+    done [42/70] SCRAMBLE_C_043 (121s) elapsed 29.6m
+    done [43/70] SCRAMBLE_C_044 (119s) elapsed 31.2m
+    done [44/70] SCRAMBLE_C_045 (121s) elapsed 31.4m
+    done [45/70] SCRAMBLE_C_046 (120s) elapsed 31.6m
+    done [46/70] SCRAMBLE_C_047 (159s) elapsed 33.8m
+    done [47/70] RANDOM_000 (150s) elapsed 33.9m
+    done [48/70] RANDOM_001 (163s) elapsed 34.3m
+    done [49/70] RANDOM_003 (122s) elapsed 35.9m
+    done [50/70] RANDOM_002 (126s) elapsed 35.9m
+    done [51/70] RANDOM_004 (119s) elapsed 36.3m
+    done [52/70] RANDOM_006 (120s) elapsed 37.9m
+    done [53/70] RANDOM_005 (123s) elapsed 38.0m
+    done [54/70] RANDOM_007 (126s) elapsed 38.4m
+    done [55/70] RANDOM_008 (127s) elapsed 40.1m
+    done [56/70] RANDOM_009 (126s) elapsed 40.1m
+    done [57/70] RANDOM_010 (124s) elapsed 40.4m
+    done [58/70] RANDOM_011 (117s) elapsed 42.0m
+    done [59/70] RANDOM_012 (121s) elapsed 42.1m
+    done [60/70] RANDOM_013 (122s) elapsed 42.5m
+    done [61/70] RANDOM_014 (122s) elapsed 44.0m
+    done [62/70] RANDOM_015 (123s) elapsed 44.2m
+    done [63/70] RANDOM_016 (124s) elapsed 44.5m
+    done [64/70] RANDOM_017 (125s) elapsed 46.1m
+    done [65/70] RANDOM_018 (125s) elapsed 46.2m
+    done [66/70] RANDOM_019 (125s) elapsed 46.6m
+    done [67/70] RANDOM_020 (123s) elapsed 48.2m
+    done [68/70] RANDOM_021 (121s) elapsed 48.3m
+    done [69/70] RANDOM_022 (119s) elapsed 48.6m
+    done [70/70] RANDOM_023 (110s) elapsed 50.0m

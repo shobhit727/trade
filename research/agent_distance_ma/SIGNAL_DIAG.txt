@@ -1,0 +1,23 @@
+TRAIN bars 1975  (2016-01-01 .. 2023-12-31)
+symbols    48
+
+variant                 name-days long  bars w/ >=1  bars w/ >=22 median names   spread
+---------------------------------------------------------------------------------------
+V1 dev_depth p20 t0.03          16.22%         1782           156            6    0.037
+V2 dev_depth p20 t0.05           7.87%         1330            50            3    0.025
+V3 dev_depth p50 t0.05          13.85%         1603           128            5    0.054
+V4 dev_depth p100 t0.08         10.20%         1337            68            4    0.070
+V5 mom_ranked p20 t0.03         16.22%         1782           156            6    0.833
+
+--- what the gate actually looks like, defaults V1 (20, 0.03) ---
+  dev distribution:  p01 -0.129  p05 -0.065  p50 +0.007  p95 +0.082  p99 +0.137
+  |dev| < 3% of the time: 52.1% of name-days   <- the strategy is FLAT most of the time
+  long leg fires on      : 16.2% of name-days
+  short leg fires on     : 27.2%   <- discarded, not tradable in delivery
+
+--- signal persistence (V1 long leg), average consecutive bars long ---
+  3,389 episodes, mean 4.5 bars, median 2, p90 11, max 47
+
+  bars with 0 names long   :  193 (9.8%)  <- book forced to cash
+  bars with 1-5 names long :  875
+  bars with >=22 names long:  156

@@ -1,0 +1,56 @@
+{
+  "panel": {
+    "shape": [
+      4625,
+      48
+    ],
+    "start": "2008-01-01 00:00:00+05:30",
+    "end": "2026-10-01 00:00:00+05:30",
+    "nan_cells": 14455,
+    "symbols": 48
+  },
+  "tema_replication": {
+    "20": {
+      "max_abs": 0.0,
+      "max_rel": 0.0
+    },
+    "50": {
+      "max_abs": 0.0,
+      "max_rel": 0.0
+    },
+    "100": {
+      "max_abs": 0.0,
+      "max_rel": 0.0
+    }
+  },
+  "source_signal": {
+    "matches": true,
+    "rows": [
+      {
+        "bars": 300,
+        "signal": 1,
+        "expected": 1,
+        "tema": 56.32653261085136
+      },
+      {
+        "bars": 800,
+        "signal": 1,
+        "expected": 1,
+        "tema": 124.0890195149628
+      },
+      {
+        "bars": 1500,
+        "signal": -1,
+        "expected": -1,
+        "tema": 133.7486104950831
+      },
+      {
+        "bars": 4625,
+        "signal": -1,
+        "expected": -1,
+        "tema": 1796.3899320681262
+      }
+    ],
+    "warmup": 20
+  }
+}

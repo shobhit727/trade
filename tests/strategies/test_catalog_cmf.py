@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.cmf import CmfStrategy
+from cryptobot.strategies.catalog.cmf_strategy import CmfStrategy
 
 
 def _flow(up: bool):

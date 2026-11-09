@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.keltner_momentum import KeltnerMomentumStrategy
+from cryptobot.strategies.catalog.keltner_momentum_strategy import KeltnerMomentumStrategy
 
 
 def test_keltner_momentum_expansion_follows_spike():

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from cryptobot.strategies.catalog.trend_mr import TrendMrStrategy
+from cryptobot.strategies.catalog.trend_mean_reversion import TrendMrStrategy
 
 
 def _series(up: bool):

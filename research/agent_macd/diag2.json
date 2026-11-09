@@ -1,0 +1,38 @@
+{
+  "V3_5_20_9": {
+    "gross_exposure_mean": 0.5584,
+    "days_below_25pct_exposure_pct": 9.4,
+    "days_below_5pct_exposure_pct": 3.1,
+    "days_zero_names_long_pct": 0.0,
+    "days_lt_5_names_long_pct": 0.7,
+    "final_gross_exposure": 0.5457,
+    "annual_turnover_x": 4.11,
+    "cost_drag_pct_y": 2.03,
+    "cagr_pct": 4.07
+  },
+  "V1_12_26_9": {
+    "gross_exposure_mean": 0.5407,
+    "days_below_25pct_exposure_pct": 9.1,
+    "days_below_5pct_exposure_pct": 3.1,
+    "days_zero_names_long_pct": 0.0,
+    "days_lt_5_names_long_pct": 0.0,
+    "final_gross_exposure": 0.4012,
+    "annual_turnover_x": 4.15,
+    "cost_drag_pct_y": 2.14,
+    "cagr_pct": 6.18
+  },
+  "market_test": {
+    "total_ret_pct": 24.92,
+    "cagr_pct": 8.26,
+    "maxdd_pct": -15.9,
+    "frac_days_up": 53.8
+  },
+  "pnl_concentration_top5": 0.389,
+  "pnl_top5_names": {
+    "shriramfin": 0.087,
+    "sbin": 0.081,
+    "indigo": 0.079,
+    "eternal": 0.073,
+    "m&m": 0.068
+  }
+}

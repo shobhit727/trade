@@ -1,0 +1,31 @@
+TRAIN 2016-01-01 .. 2023-12-31   bars=1975
+costs: 21.92 bps all-in round trip
+
+V1 dev_depth p20 t0.03   avg_names= 17.1  invested= 49.5%  maxw=7.75%  CAGR=   9.51%  Sharpe=  0.27
+V2 dev_depth p20 t0.05   avg_names=  6.7  invested= 26.9%  maxw=7.12%  CAGR=   5.78%  Sharpe=  0.00
+V3 dev_depth p50 t0.05   avg_names= 11.0  invested= 41.4%  maxw=7.49%  CAGR=  11.69%  Sharpe=  0.44
+V4 dev_depth p100 t0.08  avg_names=  6.4  invested= 32.8%  maxw=6.54%  CAGR=   9.75%  Sharpe=  0.30
+V5 mom_ranked p20 t0.03  avg_names= 16.7  invested= 46.8%  maxw=7.21%  CAGR=   8.03%  Sharpe=  0.18
+
+variant                                CAGR  Sharpe    MaxDD  Calmar  Turn/y  Drag/y  Trd/y
+-------------------------------------------------------------------------------------------
+V1 dev_depth p20 t0.03                9.51%    0.27  -30.02%    0.32    3.78   1.15%   11.7
+V2 dev_depth p20 t0.05                5.78%    0.00  -30.90%    0.19    2.54   0.66%   11.7
+V3 dev_depth p50 t0.05               11.69%    0.44  -30.63%    0.38    3.06   1.03%   11.7
+V4 dev_depth p100 t0.08               9.75%    0.30  -29.52%    0.33    2.13   0.65%   11.7
+V5 mom_ranked p20 t0.03               8.03%    0.18  -32.74%    0.25    3.55   1.02%   11.7
+
+--- why: the gate is sparse, the cap is 12% ---
+variant                  avg names   invested   max w
+V1 dev_depth p20 t0.03        17.1     49.5%   7.75%
+V2 dev_depth p20 t0.05         6.7     26.9%   7.12%
+V3 dev_depth p50 t0.05        11.0     41.4%   7.49%
+V4 dev_depth p100 t0.08        6.4     32.8%   6.54%
+V5 mom_ranked p20 t0.03       16.7     46.8%   7.21%
+
+--- TRAIN reference points ---
+nsealgo_composite            CAGR   21.14%  Sharpe   0.96  MaxDD  -32.92%  invested  89.1%
+rank_all_names_by_mom6m      CAGR   16.03%  Sharpe   0.66  MaxDD  -34.92%  invested  83.2%
+buy_and_hold (EW 22)         CAGR   19.28%  Sharpe   0.80  MaxDD  -33.68%
+
+SELECTED ON TRAIN (max Sharpe): V3 dev_depth p50 t0.05  Sharpe=0.44

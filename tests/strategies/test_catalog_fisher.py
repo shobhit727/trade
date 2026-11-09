@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from cryptobot.strategies.catalog.fisher import FisherStrategy
+from cryptobot.strategies.catalog.fisher_transform import FisherStrategy
 
 
 def _series(up: bool):

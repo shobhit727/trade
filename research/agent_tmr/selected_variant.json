@@ -1,0 +1,13 @@
+{
+  "variant": "V4",
+  "slow": 40,
+  "entry": 1.0,
+  "mom_days": 126,
+  "z_window": 300,
+  "selected_on": "TRAIN 2016-01-01..2023-12-31",
+  "rule": "max TRAIN Sharpe, tie-break lower TRAIN MaxDD",
+  "train_sharpe": 0.6892206431544977,
+  "train_cagr": 0.14296589874425503,
+  "train_maxdd": -0.182634797236076,
+  "engine_sha": "d93815344bd3"
+}

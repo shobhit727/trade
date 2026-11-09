@@ -1,0 +1,4 @@
+# Regenerable intermediate results for research/selection_study.py.
+# Safe to delete: the script recomputes everything (~30 min at 5 workers).
+*
+!.gitignore

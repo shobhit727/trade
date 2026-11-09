@@ -1,0 +1,42 @@
+{
+  "checks": [
+    {
+      "check": "atr_parity_reliance",
+      "ok": true
+    },
+    {
+      "check": "atr_parity_tcs",
+      "ok": true
+    },
+    {
+      "check": "atr_parity_hdfcbank",
+      "ok": true
+    },
+    {
+      "check": "atr_parity_infy",
+      "ok": true
+    },
+    {
+      "check": "independent_recursion",
+      "ok": true,
+      "max_abs_diff": 0.0
+    },
+    {
+      "check": "prefix_invariance",
+      "ok": true
+    }
+  ],
+  "failures": [],
+  "liveness_full_panel": {
+    "as_shipped": 0.47121621621621623,
+    "st_p10_m3.0": 0.4670225225225225,
+    "st_p14_m3.0": 0.4687657657657658,
+    "st_p10_m2.0": 0.4562702702702703,
+    "st_p20_m3.0": 0.46646396396396395
+  },
+  "flips_per_year": {
+    "as_shipped": 5569.056,
+    "st_p10_m3.0": 278.45016216216214
+  },
+  "ok": true
+}

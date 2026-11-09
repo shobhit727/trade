@@ -1,0 +1,44 @@
+Forward 21-day return, flagged vs unflagged, equal weight, net of 21.92 bps
+(flipped sign of the return for the SHORT leg is NOT modelled -- long-only)
+
+============================================================================================
+HORIZON 5 trading days
+variant                 window   flag%  fwd ret flag fwd ret unflag  spread bp/yr   t-stat
+--------------------------------------------------------------------------------------------
+V1 p14<-80 state        TRAIN    16.8%         7.39%         22.49%      -1510.0    -2.13
+V1 p14<-80 state        TEST     20.5%         1.01%          8.80%       -778.5     1.19
+
+V2 p14<-80 touch21      TRAIN    69.7%        11.24%         21.16%       -992.5     0.51
+V2 p14<-80 touch21      TEST     76.3%        -1.33%          9.45%      -1077.2    -0.03
+
+V3 p14<-90 touch21      TRAIN    55.3%        11.71%         20.79%       -908.5     1.14
+V3 p14<-90 touch21      TEST     61.1%        -2.18%         10.74%      -1291.7    -1.10
+
+V4 p5<-80 touch21       TRAIN    90.3%        11.21%         18.94%       -772.6     1.13
+V4 p5<-80 touch21       TEST     94.0%        -1.32%          9.54%      -1086.1    -0.04
+
+V5 p28<-80 touch21      TRAIN    50.9%        10.54%         22.26%      -1172.9    -0.73
+V5 p28<-80 touch21      TEST     57.5%        -0.95%          8.91%       -985.9     0.42
+
+============================================================================================
+HORIZON 21 trading days
+variant                 window   flag%  fwd ret flag fwd ret unflag  spread bp/yr   t-stat
+--------------------------------------------------------------------------------------------
+V1 p14<-80 state        TRAIN    16.8%        18.10%         22.90%       -480.4    -2.28
+V1 p14<-80 state        TEST     20.5%         8.02%          9.83%       -180.5     0.63
+
+V2 p14<-80 touch21      TRAIN    69.7%        21.38%         18.80%        257.6     6.91
+V2 p14<-80 touch21      TEST     76.3%         7.30%         10.37%       -306.5    -0.46
+
+V3 p14<-90 touch21      TRAIN    55.3%        22.37%         19.26%        311.2     8.12
+V3 p14<-90 touch21      TEST     61.1%         6.80%         10.93%       -412.3    -1.62
+
+V4 p5<-80 touch21       TRAIN    90.3%        20.06%         21.00%        -94.0     1.29
+V4 p5<-80 touch21       TEST     94.0%         7.37%         10.90%       -352.9    -0.50
+
+V5 p28<-80 touch21      TRAIN    50.9%        21.96%         20.28%        168.1     6.04
+V5 p28<-80 touch21      TEST     57.5%         9.46%          7.33%        212.8     4.87
+
+============================================================================================
+Reading: 'spread' is (flagged - unflagged) annualised return of the raw signal.
+A Williams %R edge would show a positive spread in BOTH windows. It does not.

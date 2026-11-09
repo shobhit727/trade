@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.impl_real_vol import ImplRealVolStrategy
+from cryptobot.strategies.catalog.implied_realized_volatility import ImplRealVolStrategy
 
 
 def test_impl_real_vol_expansion_follows_spike():

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.volume_spike import VolumeSpikeStrategy
+from cryptobot.strategies.catalog.volume_spike_strategy import VolumeSpikeStrategy
 
 
 def test_volume_spike_expansion_follows_spike():

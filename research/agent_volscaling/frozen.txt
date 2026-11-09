@@ -1,0 +1,2 @@
+V4_gateonly_mom126
+{'min_vol': 0.025284, 'ranking': 'mom126', 'period': 14, 'use_direction': False}

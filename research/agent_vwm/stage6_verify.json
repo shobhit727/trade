@@ -1,0 +1,23 @@
+{
+  "train_warmed": {
+    "cagr": 0.1623558161474714,
+    "sharpe": 0.7291419812847911,
+    "max_dd": -0.26822569121287365,
+    "calmar": 0.6052955457522521,
+    "total_return": 2.375485066798841
+  },
+  "test_warmed": {
+    "cagr": 0.006378261950037656,
+    "sharpe": -0.4050313347227041,
+    "max_dd": -0.2196473688742837,
+    "calmar": 0.029038644909460704,
+    "total_return": 0.017983047561073162
+  },
+  "lookahead_free": true,
+  "provenance": {
+    "engine": "d93815344bd3",
+    "loader": "c1badf5f7df8",
+    "costs": "ba350aef75b3",
+    "panel": "389b082b832f"
+  }
+}

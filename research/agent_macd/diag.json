@@ -1,0 +1,66 @@
+{
+  "test_scoreable_names": {
+    "mean": 23.67,
+    "median": 23.0,
+    "p05": 8,
+    "min": 2,
+    "max": 48,
+    "frac_days_lt_22": 0.452
+  },
+  "test_names_long": {
+    "mean": 23.67,
+    "median": 23.0,
+    "min": 2,
+    "max": 48
+  },
+  "test_held_names": {
+    "mean": 17.7,
+    "median": 22.0,
+    "first_bar": 0,
+    "min_after_bar1": 0,
+    "max": 22,
+    "p95": 22
+  },
+  "test_gross_exposure": {
+    "mean": 0.5584,
+    "min": 0.0,
+    "max": 0.9
+  },
+  "selected_V3_5_20_9": {
+    "cagr": 4.07,
+    "sharpe": -0.21,
+    "maxdd": -11.38,
+    "pct_rank_cagr_vs_random": 0.58,
+    "pct_rank_sharpe_vs_random": 0.68,
+    "pct_rank_maxdd_vs_random": 0.54
+  },
+  "catalog_V1_12_26_9": {
+    "cagr": 6.18,
+    "sharpe": 0.0,
+    "maxdd": -11.88,
+    "pct_rank_cagr_vs_random": 0.96,
+    "pct_rank_sharpe_vs_random": 0.96,
+    "pct_rank_maxdd_vs_random": 0.62
+  },
+  "random_n": 50,
+  "random_cagr": {
+    "median": 3.385,
+    "p10": 1.387,
+    "p90": 5.415000000000001,
+    "mean": 3.48
+  },
+  "random_sharpe": {
+    "median": -0.305,
+    "p10": -0.523,
+    "p90": -0.07499999999999993,
+    "mean": -0.29
+  },
+  "random_maxdd": {
+    "median": -11.21,
+    "p10": -13.963000000000001,
+    "p90": -9.283999999999999
+  },
+  "train_live_frac": 0.4852,
+  "train_scoreable_names_mean": 23.17,
+  "train_names_long_mean": 23.29
+}

@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "goals": [],
+  "results": [
+    {
+      "condition": "Validate catalog strategy `zscore_strategy` on NSE NIFTY-50 daily data per research/AGENT_BRIEF.md — TRAIN-select within a declared 5-variant budget, then one-shot TEST evaluation vs buy-and-hold, random control, and nsealgo composite. Deliver research/agent_zscore/REPORT.md with an honest verdict.",
+      "state": "achieved",
+      "reason": "",
+      "evidence": "TEST (2024-01-01 → 2026-10-01, 684 bars, net of 21.92 bps), engine_sha=970713f3eecf stable across all runs:\n- zscore_strategy V5 (L=60, entry=0.5): CAGR 5.17%, Sharpe -0.09, Calmar 0.41, MaxDD -12.52%, turnover 3.87x/y, cost drag 1.90%/y, 13.8 avg names, 61.0% avg invested, 34.5% live.\n- buy-and-hold: CAGR 8.45%, Sharpe 0.20, MaxDD -15.90%. Composite: CAGR 6.04%, Sharpe 0.03.\n- Strategy loses to BH by 3.28 pts CAGR / 0.29 Sharpe; loses to composite by 0.86 pts.\n- Drawdown 'advantage' REVERSES at matched exposure: BH at 61% has MaxDD -8.98% vs strategy -12.52% (3.54 pts better).\n- Random control (20 seeds): strategy at 30th pct on TRAIN, 75th pct on TEST, random CAGR 2.35-6.56% vs BH 8.45% — none beat BH.\n- Alpha +0.22%/y, beta 0.585.\n- TRAIN rank IC +0.043 (t=8.95) at 21d; cross-sectional z at 63d IC +0.076 (t=16.70).\nVariant budget: 5 declared, 5 used. TEST read once (variant frozen, engine_sha asserted).",
+      "blockedReason": "",
+      "turnCount": 0,
+      "totalTokens": 196658,
+      "usage": {
+        "input": 58242,
+        "output": 27023,
+        "reasoning": 10807,
+        "cacheRead": 7471899,
+        "cacheWrite": 0,
+        "cost": 0,
+        "costKnown": true
+      },
+      "startedAt": 1791593270043,
+      "finishedAt": 1791594892100,
+      "lastStatus": "Goal completed.",
+      "lastCheckpoint": null,
+      "checkpoints": [],
+      "history": [
+        {
+          "type": "set",
+          "detail": "Goal created via agent tool with limits: 10 auto-continues, 900s, 200,000 context tokens.",
+          "timestamp": 1791593270050
+        },
+        {
+          "type": "completed",
+          "detail": "Marked complete via tool: TEST (2024-01-01 → 2026-10-01, 684 bars, net of 21.92 bps), engine_sha=970713f3eecf stable across all runs: - zscore_strategy V5 (L=60, entry=0.5): CAGR 5.17%, Sharpe -0.09, Calmar 0.41, MaxDD -12.52%, turnover 3.87x/y, cost drag 1.90%/y, 13.8 avg names, 61.0% avg invested, 34.5% live. - buy-and-hold: CAGR 8.45%, Sharpe 0.20, MaxDD -15.90%. Composite: CAGR 6.04%, Sharpe …",
+          "timestamp": 1791594892100
+        }
+      ],
+      "sessionID": "ses_edcb9aebaffePJ2eLciM6yQk1H"
+    }
+  ],
+  "archives": [
+    {
+      "sessionID": "ses_edcb9aebaffePJ2eLciM6yQk1H",
+      "results": [
+        {
+          "condition": "Validate catalog strategy `zscore_strategy` on NSE NIFTY-50 daily data per research/AGENT_BRIEF.md — TRAIN-select within a declared 5-variant budget, then one-shot TEST evaluation vs buy-and-hold, random control, and nsealgo composite. Deliver research/agent_zscore/REPORT.md with an honest verdict.",
+          "state": "achieved",
+          "reason": "",
+          "evidence": "TEST (2024-01-01 → 2026-10-01, 684 bars, net of 21.92 bps), engine_sha=970713f3eecf stable across all runs:\n- zscore_strategy V5 (L=60, entry=0.5): CAGR 5.17%, Sharpe -0.09, Calmar 0.41, MaxDD -12.52%, turnover 3.87x/y, cost drag 1.90%/y, 13.8 avg names, 61.0% avg invested, 34.5% live.\n- buy-and-hold: CAGR 8.45%, Sharpe 0.20, MaxDD -15.90%. Composite: CAGR 6.04%, Sharpe 0.03.\n- Strategy loses to BH by 3.28 pts CAGR / 0.29 Sharpe; loses to composite by 0.86 pts.\n- Drawdown 'advantage' REVERSES at matched exposure: BH at 61% has MaxDD -8.98% vs strategy -12.52% (3.54 pts better).\n- Random control (20 seeds): strategy at 30th pct on TRAIN, 75th pct on TEST, random CAGR 2.35-6.56% vs BH 8.45% — none beat BH.\n- Alpha +0.22%/y, beta 0.585.\n- TRAIN rank IC +0.043 (t=8.95) at 21d; cross-sectional z at 63d IC +0.076 (t=16.70).\nVariant budget: 5 declared, 5 used. TEST read once (variant frozen, engine_sha asserted).",
+          "blockedReason": "",
+          "turnCount": 0,
+          "totalTokens": 196658,
+          "usage": {
+            "input": 58242,
+            "output": 27023,
+            "reasoning": 10807,
+            "cacheRead": 7471899,
+            "cacheWrite": 0,
+            "cost": 0,
+            "costKnown": true
+          },
+          "startedAt": 1791593270043,
+          "finishedAt": 1791594892100,
+          "lastStatus": "Goal completed.",
+          "lastCheckpoint": null,
+          "checkpoints": [],
+          "history": [
+            {
+              "type": "set",
+              "detail": "Goal created via agent tool with limits: 10 auto-continues, 900s, 200,000 context tokens.",
+              "timestamp": 1791593270050
+            },
+            {
+              "type": "completed",
+              "detail": "Marked complete via tool: TEST (2024-01-01 → 2026-10-01, 684 bars, net of 21.92 bps), engine_sha=970713f3eecf stable across all runs: - zscore_strategy V5 (L=60, entry=0.5): CAGR 5.17%, Sharpe -0.09, Calmar 0.41, MaxDD -12.52%, turnover 3.87x/y, cost drag 1.90%/y, 13.8 avg names, 61.0% avg invested, 34.5% live. - buy-and-hold: CAGR 8.45%, Sharpe 0.20, MaxDD -15.90%. Composite: CAGR 6.04%, Sharpe …",
+              "timestamp": 1791594892100
+            }
+          ],
+          "sessionID": "ses_edcb9aebaffePJ2eLciM6yQk1H"
+        }
+      ]
+    }
+  ],
+  "orderedSessions": []
+}

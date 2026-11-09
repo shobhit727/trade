@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from cryptobot.strategies.catalog.spot_futures import SpotFuturesStrategy
+from cryptobot.strategies.catalog.spot_futures_arbitrage import SpotFuturesStrategy
 
 
 def _series(up: bool):

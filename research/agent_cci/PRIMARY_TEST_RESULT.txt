@@ -1,0 +1,16 @@
+PRIMARY OOS RESULT (TEST 2024-01-01 -> 2026-10-01)
+strategy: CCI(20) < -100 mean-reversion, rank most-oversold-first, monthly
+bars=685  symbols=48
+CAGR            4.56%
+Sharpe          -0.18
+MaxDD           -13.23%  (61d)
+Calmar          0.34
+Turnover        3.77x/yr
+Cost drag       0.91%/yr
+Trades          11.8/yr
+Avg names held  18.7
+Bar long frac   18.64%  (TRAIN: 16.43%)
+Positive years  2/3
+   2024:    6.49%
+   2025:   13.97%
+   2026:   -6.61%

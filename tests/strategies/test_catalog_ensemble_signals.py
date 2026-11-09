@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from cryptobot.strategies.catalog.ensemble_signals import EnsembleSignalsStrategy
+from cryptobot.strategies.catalog.ensemble_signals_strategy import EnsembleSignalsStrategy
 
 
 def _series(up: bool):

@@ -1,0 +1,41 @@
+####################################################################################################################################
+# TEST 2024-01-01 -> 2026-10-01   (out-of-sample; champion chosen on TRAIN only)
+####################################################################################################################################
+V1 p=20  thr=0.01                  CAGR   -0.95%  Sharpe -0.62  MaxDD  -20.77%  Calmar -0.05  Turn  4.13x/y  Drag  0.99%/y  live= 42.0%  names=28.8
+V2 p=10  thr=0.01                  CAGR    3.53%  Sharpe -0.20  MaxDD  -13.72%  Calmar  0.26  Turn  4.13x/y  Drag  1.06%/y  live= 38.2%  names=28.8  <= CHAMPION (selected on TRAIN)
+V3 p=40  thr=0.01                  CAGR    0.56%  Sharpe -0.41  MaxDD  -19.17%  Calmar  0.03  Turn  4.03x/y  Drag  1.01%/y  live= 45.2%  names=27.8
+V4 p=20  thr=0.0                   CAGR   -0.38%  Sharpe -0.56  MaxDD  -19.49%  Calmar -0.02  Turn  4.12x/y  Drag  0.99%/y  live= 45.7%  names=28.8
+V5 p=20  thr=0.03                  CAGR    0.44%  Sharpe -0.49  MaxDD  -18.08%  Calmar  0.02  Turn  4.14x/y  Drag  1.00%/y  live= 33.3%  names=28.8
+
+champion structural diagnostics (TEST)
+  days=685  avg names=28.84 (cap 30) max=30  min=0
+  avg gross exposure 76.2%  cash 23.8%  max single weight 10.01%
+  signal liveness: long 38.2%  short 33.6%  flat 28.1%
+  flagged names/day: median 17 p10 6 p90 33
+  round-trip cost used: 21.92 bps
+  NET 3.53%  vs  zero-cost diagnostic 3.96% -> costs cost 0.43 pp/yr
+  test-year CAGR (net): 2024:   nan%  2025:  7.22%  2026:-10.20%
+
+------------------------------------------------------------------------------------------------------------------------------------
+B&H equal-weight (gross, brief)    CAGR    8.25%  Sharpe  0.19  MaxDD  -15.91%  Calmar  0.52  Turn  2.00x/y  Drag  0.00%/y
+B&H 22-name constrained (net)      CAGR    9.76%  Sharpe  0.32  MaxDD  -13.51%  Calmar  0.72  Turn  0.64x/y  Drag  0.16%/y  names=21.3
+nsealgo composite (net)            CAGR    6.55%  Sharpe  0.07  MaxDD  -14.84%  Calmar  0.44  Turn  2.07x/y  Drag  0.55%/y  names=21.3
+random control #1 (live=38%)       CAGR    4.73%  Sharpe -0.09  MaxDD  -12.18%  Calmar  0.39  Turn  4.15x/y  Drag  1.08%/y
+random control #2 (live=38%)       CAGR    8.32%  Sharpe  0.21  MaxDD  -11.98%  Calmar  0.69  Turn  4.13x/y  Drag  1.12%/y
+random control #3 (live=38%)       CAGR    4.79%  Sharpe -0.10  MaxDD  -12.82%  Calmar  0.37  Turn  4.15x/y  Drag  1.07%/y
+random control #4 (live=38%)       CAGR    3.56%  Sharpe -0.21  MaxDD  -13.62%  Calmar  0.26  Turn  4.13x/y  Drag  1.03%/y
+random control #5 (live=38%)       CAGR    4.30%  Sharpe -0.14  MaxDD  -14.70%  Calmar  0.29  Turn  4.15x/y  Drag  1.04%/y
+
+  control Sharpe mean -0.07 sd 0.16 | control CAGR mean 5.14%
+  strategy Sharpe -0.20 -> beats 1/5 controls
+  strategy CAGR   3.53% -> beats 0/5 controls
+
+####################################################################################################################################
+# HEAD TO HEAD (TEST, all net of the same delivery cost stack unless marked gross)
+####################################################################################################################################
+                             what  cagr  sharpe  maxdd  calmar  turnover  drag  names
+   correlation_gate (champion V2)  3.53   -0.20 -13.72    0.26      4.13  1.06  28.84
+         B&H equal-weight (GROSS)  8.25    0.19 -15.91    0.52      2.00  0.00  48.00
+          B&H 22-name constrained  9.76    0.32 -13.51    0.72      0.64  0.16  21.33
+                nsealgo composite  6.55    0.07 -14.84    0.44      2.07  0.55  21.33
+random-signal control (mean of 5)  5.14   -0.07 -13.06    0.40      4.14  1.07    NaN

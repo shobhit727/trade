@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.hull import HullStrategy
+from cryptobot.strategies.catalog.hull_moving_average import HullStrategy
 
 
 def _series(up: bool):

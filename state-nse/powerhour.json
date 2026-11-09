@@ -1,10 +1,10 @@
 {
  "capital": 100000.0,
- "cash": 100006.22915902254,
+ "cash": 99442.58661299903,
  "peak_equity": 100006.22915902254,
  "breaker_tripped": false,
  "breaker_reason": null,
- "day": "2026-08-31",
+ "day": "2026-09-11",
  "phase": "closed",
  "positions": {},
  "trades": [
@@ -63,12 +63,246 @@
    "side": "SELL",
    "qty": 107,
    "price": 232.37
+  },
+  {
+   "time": "2026-09-01T14:00:21+05:30",
+   "symbol": "WIPRO",
+   "side": "BUY",
+   "qty": 552,
+   "price": 181.1
+  },
+  {
+   "time": "2026-09-01T15:00:23+05:30",
+   "symbol": "WIPRO",
+   "side": "SELL",
+   "qty": 552,
+   "price": 180.72
+  },
+  {
+   "time": "2026-09-02T14:00:23+05:30",
+   "symbol": "AXISBANK",
+   "side": "BUY",
+   "qty": 26,
+   "price": 1258.0
+  },
+  {
+   "time": "2026-09-02T14:00:23+05:30",
+   "symbol": "KOTAKBANK",
+   "side": "BUY",
+   "qty": 78,
+   "price": 422.0
+  },
+  {
+   "time": "2026-09-02T14:00:23+05:30",
+   "symbol": "TATACONSUM",
+   "side": "BUY",
+   "qty": 32,
+   "price": 1016.6
+  },
+  {
+   "time": "2026-09-02T15:00:23+05:30",
+   "symbol": "AXISBANK",
+   "side": "SELL",
+   "qty": 26,
+   "price": 1252.4
+  },
+  {
+   "time": "2026-09-02T15:00:24+05:30",
+   "symbol": "KOTAKBANK",
+   "side": "SELL",
+   "qty": 78,
+   "price": 422.3
+  },
+  {
+   "time": "2026-09-02T15:00:24+05:30",
+   "symbol": "TATACONSUM",
+   "side": "SELL",
+   "qty": 32,
+   "price": 1011.5
+  },
+  {
+   "time": "2026-09-03T14:00:21+05:30",
+   "symbol": "ASIANPAINT",
+   "side": "BUY",
+   "qty": 9,
+   "price": 2522.7
+  },
+  {
+   "time": "2026-09-03T14:00:21+05:30",
+   "symbol": "BAJAJFINSV",
+   "side": "BUY",
+   "qty": 12,
+   "price": 1980.5
+  },
+  {
+   "time": "2026-09-03T14:00:21+05:30",
+   "symbol": "EICHERMOT",
+   "side": "BUY",
+   "qty": 3,
+   "price": 7652.0
+  },
+  {
+   "time": "2026-09-03T14:00:21+05:30",
+   "symbol": "KOTAKBANK",
+   "side": "BUY",
+   "qty": 58,
+   "price": 424.0
+  },
+  {
+   "time": "2026-09-03T15:00:23+05:30",
+   "symbol": "ASIANPAINT",
+   "side": "SELL",
+   "qty": 9,
+   "price": 2538.8
+  },
+  {
+   "time": "2026-09-03T15:00:24+05:30",
+   "symbol": "BAJAJFINSV",
+   "side": "SELL",
+   "qty": 12,
+   "price": 1983.3
+  },
+  {
+   "time": "2026-09-03T15:00:24+05:30",
+   "symbol": "EICHERMOT",
+   "side": "SELL",
+   "qty": 3,
+   "price": 7652.0
+  },
+  {
+   "time": "2026-09-03T15:00:24+05:30",
+   "symbol": "KOTAKBANK",
+   "side": "SELL",
+   "qty": 58,
+   "price": 422.7
+  },
+  {
+   "time": "2026-09-04T14:00:23+05:30",
+   "symbol": "JIOFIN",
+   "side": "BUY",
+   "qty": 207,
+   "price": 239.17
+  },
+  {
+   "time": "2026-09-04T14:00:23+05:30",
+   "symbol": "ULTRACEMCO",
+   "side": "BUY",
+   "qty": 4,
+   "price": 11335.0
+  },
+  {
+   "time": "2026-09-04T15:00:25+05:30",
+   "symbol": "JIOFIN",
+   "side": "SELL",
+   "qty": 207,
+   "price": 239.53
+  },
+  {
+   "time": "2026-09-04T15:00:25+05:30",
+   "symbol": "ULTRACEMCO",
+   "side": "SELL",
+   "qty": 4,
+   "price": 11348.0
+  },
+  {
+   "time": "2026-09-10T14:00:27+05:30",
+   "symbol": "CIPLA",
+   "side": "BUY",
+   "qty": 36,
+   "price": 1373.1
+  },
+  {
+   "time": "2026-09-10T14:00:27+05:30",
+   "symbol": "KOTAKBANK",
+   "side": "BUY",
+   "qty": 120,
+   "price": 414.4
+  },
+  {
+   "time": "2026-09-10T15:00:29+05:30",
+   "symbol": "CIPLA",
+   "side": "SELL",
+   "qty": 36,
+   "price": 1368.7
+  },
+  {
+   "time": "2026-09-10T15:00:29+05:30",
+   "symbol": "KOTAKBANK",
+   "side": "SELL",
+   "qty": 120,
+   "price": 414.95
+  },
+  {
+   "time": "2026-09-11T14:00:22+05:30",
+   "symbol": "HINDUNILVR",
+   "side": "BUY",
+   "qty": 17,
+   "price": 1936.8
+  },
+  {
+   "time": "2026-09-11T14:00:22+05:30",
+   "symbol": "RELIANCE",
+   "side": "BUY",
+   "qty": 26,
+   "price": 1259.3
+  },
+  {
+   "time": "2026-09-11T14:00:22+05:30",
+   "symbol": "TATASTEEL",
+   "side": "BUY",
+   "qty": 181,
+   "price": 182.66
+  },
+  {
+   "time": "2026-09-11T15:00:24+05:30",
+   "symbol": "HINDUNILVR",
+   "side": "SELL",
+   "qty": 17,
+   "price": 1936.0
+  },
+  {
+   "time": "2026-09-11T15:00:24+05:30",
+   "symbol": "RELIANCE",
+   "side": "SELL",
+   "qty": 26,
+   "price": 1262.9
+  },
+  {
+   "time": "2026-09-11T15:00:25+05:30",
+   "symbol": "TATASTEEL",
+   "side": "SELL",
+   "qty": 181,
+   "price": 183.02
   }
  ],
  "equity_curve": [
   {
    "date": "2026-08-28",
    "equity": 100006.23
+  },
+  {
+   "date": "2026-09-01",
+   "equity": 99736.55
+  },
+  {
+   "date": "2026-09-02",
+   "equity": 99392.34
+  },
+  {
+   "date": "2026-09-03",
+   "equity": 99439.0
+  },
+  {
+   "date": "2026-09-04",
+   "equity": 99508.58
+  },
+  {
+   "date": "2026-09-10",
+   "equity": 99356.71
+  },
+  {
+   "date": "2026-09-11",
+   "equity": 99442.59
   }
  ]
 }

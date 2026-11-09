@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from cryptobot.strategies.catalog.gaussian import GaussianStrategy
+from cryptobot.strategies.catalog.gaussian_strategy import GaussianStrategy
 
 
 def _series(up: bool):

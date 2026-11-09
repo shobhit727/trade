@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import math
 
-from cryptobot.strategies.catalog.bollinger import BollingerStrategy
+from cryptobot.strategies.catalog.bollinger_bands import BollingerBandsStrategy
 
 
 def _series(up: bool):
-    s = BollingerStrategy()
+    s = BollingerBandsStrategy()
     out = []
     for i in range(300):
         px = 100.0 + 8.0 * math.sin(i / 6.0) + (0.05 * i if up else -0.05 * i)

@@ -1,0 +1,74 @@
+======================================================================================================================================
+B. TRAIN 2016-01-01 -> 2023-12-31   (TEST window deliberately not loaded here)
+======================================================================================================================================
+V1 (catalog default)  p=20  thr=0.01   CAGR   12.81%  Sharpe  0.55  MaxDD  -28.30%  Calmar  0.45  Turn  4.08x/y  Drag  1.43%/y  live= 44.8%  names=29.0
+V2  p=10  thr=0.01                     CAGR   16.12%  Sharpe  0.83  MaxDD  -13.93%  Calmar  1.16  Turn  4.10x/y  Drag  1.66%/y  live= 40.4%  names=29.6
+V3  p=40  thr=0.01                     CAGR   12.97%  Sharpe  0.51  MaxDD  -30.66%  Calmar  0.42  Turn  4.04x/y  Drag  1.47%/y  live= 48.6%  names=27.8
+V4  p=20  thr=0.0                      CAGR   12.82%  Sharpe  0.54  MaxDD  -28.64%  Calmar  0.45  Turn  4.09x/y  Drag  1.40%/y  live= 47.6%  names=29.0
+V5  p=20  thr=0.03                     CAGR   11.92%  Sharpe  0.48  MaxDD  -26.50%  Calmar  0.45  Turn  4.06x/y  Drag  1.37%/y  live= 37.7%  names=28.8
+
+  TRAIN ranking (selection = best TRAIN Sharpe, tie -> lower MaxDD):
+     period  thr  sharpe  cagr  maxdd  live
+         10 0.01    0.83 16.12 -13.93  40.4
+         20 0.01    0.55 12.81 -28.30  44.8
+         20 0.00    0.54 12.82 -28.64  47.6
+         40 0.01    0.51 12.97 -30.66  48.6
+         20 0.03    0.48 11.92 -26.50  37.7
+
+  CHAMPION -> period=10 threshold=0.01  (V2)
+
+######################################################################################################################################
+# C+D+E. TEST 2024-01-01 -> 2026-10-01  out-of-sample, champion unchanged
+######################################################################################################################################
+correlation_gate CHAMPION p=10         CAGR    3.53%  Sharpe -0.20  MaxDD  -13.72%  Calmar  0.26  Turn  4.13x/y  Drag  1.06%/y  live=38.2%  names=28.8
+
+  sanity checks
+    1 plausibility   CAGR 3.53%  (unlevered long-only bound ~40-50% -> OK)
+    2 weight count   avg names 28.84  max 30  min 0  (n_positions=22, hard cap 30) -> OK
+    3 liveness       long 38.2% of symbol-days (OK)
+      full signal    long 38.2%  short 33.6%  flat 28.1%
+    exposure         gross 76.2%  cash 23.8%  max single weight 10.01% (cap 12%)
+      flagged names/day median 17  p10 6  p90 33
+    cost applied     21.92 bps all-in round trip
+    4 cost drag      net 3.53% vs zero-cost 3.96%  -> +0.43 pp/yr
+      calendar-year net returns: 2024: 14.47%  2025:  7.22%  2026:-10.20%
+
+--------------------------------------------------------------------------------------------------------------------------------------
+D. benchmarks over the identical TEST window
+--------------------------------------------------------------------------------------------------------------------------------------
+B&H equal-weight (GROSS, brief formula) CAGR    8.25%  Sharpe  0.19  MaxDD  -15.91%  Calmar  0.52  Turn  2.00x/y  Drag  0.00%/y
+B&H 22-name constrained (net)          CAGR    9.76%  Sharpe  0.32  MaxDD  -13.51%  Calmar  0.72  Turn  0.64x/y  Drag  0.16%/y  names=21.3
+nsealgo composite (net)                CAGR    6.55%  Sharpe  0.07  MaxDD  -14.84%  Calmar  0.44  Turn  2.07x/y  Drag  0.55%/y  names=21.3
+
+--------------------------------------------------------------------------------------------------------------------------------------
+E. negative controls, 5 draws each, matched on live fraction 38.2%
+--------------------------------------------------------------------------------------------------------------------------------------
+ctrl_tie  # 1 (random mask, equal-weight flags) CAGR    4.73%  Sharpe -0.09  MaxDD  -12.18%  Calmar  0.39  Turn  4.15x/y  Drag  1.08%/y
+ctrl_tie  # 2 (random mask, equal-weight flags) CAGR    8.32%  Sharpe  0.21  MaxDD  -11.98%  Calmar  0.69  Turn  4.13x/y  Drag  1.12%/y
+ctrl_tie  # 3 (random mask, equal-weight flags) CAGR    4.79%  Sharpe -0.10  MaxDD  -12.82%  Calmar  0.37  Turn  4.15x/y  Drag  1.07%/y
+ctrl_tie  # 4 (random mask, equal-weight flags) CAGR    3.56%  Sharpe -0.21  MaxDD  -13.62%  Calmar  0.26  Turn  4.13x/y  Drag  1.03%/y
+ctrl_tie  # 5 (random mask, equal-weight flags) CAGR    4.30%  Sharpe -0.14  MaxDD  -14.70%  Calmar  0.29  Turn  4.15x/y  Drag  1.04%/y
+ctrl_rank # 1 (random mask, REAL roc ranking) CAGR    4.68%  Sharpe -0.10  MaxDD  -12.36%  Calmar  0.38  Turn  4.15x/y  Drag  1.08%/y
+ctrl_rank # 2 (random mask, REAL roc ranking) CAGR    7.85%  Sharpe  0.17  MaxDD  -12.26%  Calmar  0.64  Turn  4.13x/y  Drag  1.12%/y
+ctrl_rank # 3 (random mask, REAL roc ranking) CAGR    4.66%  Sharpe -0.11  MaxDD  -12.82%  Calmar  0.36  Turn  4.15x/y  Drag  1.07%/y
+ctrl_rank # 4 (random mask, REAL roc ranking) CAGR    3.67%  Sharpe -0.19  MaxDD  -13.64%  Calmar  0.27  Turn  4.12x/y  Drag  1.03%/y
+ctrl_rank # 5 (random mask, REAL roc ranking) CAGR    4.12%  Sharpe -0.15  MaxDD  -14.71%  Calmar  0.28  Turn  4.15x/y  Drag  1.03%/y
+
+  ctrl_tie : control CAGR mean   5.14%  Sharpe mean -0.07 (sd 0.16)
+    strategy CAGR 3.53% -> beats 0/5 | Sharpe -0.20 -> beats 1/5
+
+  ctrl_rank: control CAGR mean   5.00%  Sharpe mean -0.08 (sd 0.14)
+    strategy CAGR 3.53% -> beats 0/5 | Sharpe -0.20 -> beats 0/5
+
+######################################################################################################################################
+# HEAD TO HEAD (TEST; net of the same delivery stack unless marked GROSS)
+######################################################################################################################################
+                         what  cagr  sharpe  maxdd  calmar  turnover  drag  names
+  correlation_gate (champion)  3.53   -0.20 -13.72    0.26      4.13  1.06  28.84
+     B&H equal-weight (GROSS)  8.25    0.19 -15.91    0.52      2.00  0.00  48.00
+B&H 22-name constrained (net)  9.76    0.32 -13.51    0.72      0.64  0.16  21.33
+      nsealgo composite (net)  6.55    0.07 -14.84    0.44      2.07  0.55  21.33
+   random control (mean of 5)  5.14   -0.07 -13.06    0.40      4.14  1.07    NaN
+
+  net of 21.92 bps: strategy 3.53% vs B&H-constrained 9.76% -> -6.24 pp
+  drawdown: strategy -13.72% vs B&H-constrained -13.51% -> -0.21 pp

@@ -1,0 +1,41 @@
+PROVENANCE: {'engine': 'd93815344bd3', 'loader': 'c1badf5f7df8', 'costs': 'ba350aef75b3', 'panel': '389b082b832f'}
+
+SELECTED ON TRAIN BY SHARPE: V4 fast-touch21 (period=5, lower=-80, touch-21)
+TRAIN Sharpe 0.76 vs V2 0.53, V5 0.36, V3 0.31, V1 -0.31.
+
+*** TEST 2024-01-01 -> 2026-10-01 — first and only evaluation ***
+
+name                         CAGR%  Sharpe  MaxDD% Calmar  Turn/y Drag%/y  Names   Rs on 21L
+--------------------------------------------------------------------------------------------
+V4 WilliamsR (SELECTED)       2.68   -0.21  -16.21   0.17    3.41    1.75   22.0     161,619
+buy-and-hold                  9.54    0.30  -13.48   0.71    0.50    0.27   22.0     611,103
+nsealgo composite             7.61    0.14  -15.22   0.50    2.04    1.12   22.0     479,138
+random @V4 mask (10 seeds)    3.38   -0.29  -11.54   0.31    4.24    2.08   22.0     206,028
+  random range            CAGR [0.40, 5.05]   Sharpe [-0.57, -0.11]
+
+--- ZERO-COST CONTROL (11.92 bps, statutory charges only) ---
+name                         CAGR%  Sharpe  MaxDD% Calmar  Turn/y Drag%/y  Names   Rs on 21L
+--------------------------------------------------------------------------------------------
+V4 @ zero cost                3.38   -0.16  -15.04   0.22    3.41    0.96   22.0     205,265
+buy-and-hold @ zero cost      9.65    0.31  -13.44   0.72    0.50    0.15   22.0     618,788
+
+--- TEST calendar-year returns ---
+V4 WilliamsR              2024: +19.1%  2025:  +3.8%  2026: -12.9%
+buy-and-hold              2024: +16.5%  2025: +16.0%  2026:  -4.5%
+nsealgo composite         2024: +27.0%  2025:  +6.6%  2026:  -9.3%
+
+==============================================================================
+VERDICT ARITHMETIC (TEST, net of 21.92 bps)
+==============================================================================
+  V4 CAGR                2.68%
+  buy-and-hold CAGR      9.54%   -> V4 is -6.86 pp/yr WORSE
+  V4 MaxDD             -16.21%
+  buy-and-hold MaxDD   -13.48%   -> V4 is -2.73 pp DEEPER
+  V4 Sharpe             -0.21  vs random -0.29 [-0.57,-0.11]
+  V4 vs composite    -4.93 pp/yr, Sharpe -0.36
+
+  Cost drag on V4        : 1.75%/y  (6.5x buy-and-hold)
+  V4 gross-of-cost CAGR  : 3.38%  (zero-cost run; net is 2.68%)
+  cost cliff            : 0.70 pp/yr
+
+  Rs 21,00,000 -> final  : 2,261,619 (book started at Rs 21,00,000)

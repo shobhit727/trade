@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from cryptobot.backtest.runner import make_strategy
-from cryptobot.strategies.catalog.nse_intraday import IST
+from cryptobot.strategies.catalog.nse_intraday_trading import IST
 
 
 def _ts(day: int, hour: int, minute: int) -> int:
@@ -46,7 +46,7 @@ def _feed_all(strat, bars, sym="T"):
 
 
 def test_orb_long_on_breakout():
-    strat = make_strategy("nse_orb", range_bars=2)
+    strat = make_strategy("nse_intraday_trading", range_bars=2)
     # Range forms ~99.5-100.5; price then breaks above.
     bars = _session(1, base=100.0)
     for b in bars[4:]:
@@ -57,7 +57,7 @@ def test_orb_long_on_breakout():
 
 
 def test_orb_flat_by_close():
-    strat = make_strategy("nse_orb", range_bars=2)
+    strat = make_strategy("nse_intraday_trading", range_bars=2)
     bars = _session(1, closes_above=102.0)
     orders = _feed_all(strat, bars)
     # last bar is 15:30 -> force-flat signal 0; ensure no NEW entries after 15:25
@@ -65,7 +65,7 @@ def test_orb_flat_by_close():
 
 
 def test_orb_new_day_resets_range():
-    strat = make_strategy("nse_orb", range_bars=2)
+    strat = make_strategy("nse_intraday_trading", range_bars=2)
     _feed_all(strat, _session(1, closes_above=105.0))
     # Day 2: fresh range should form; no NEW entries during rebuild.
     # (A reduce-only exit of the overnight leg on day-2 bar0 is correct.)

@@ -1,0 +1,46 @@
+==============================================================================
+ENGINE PROVENANCE
+==============================================================================
+engine_sha            = 970713f3eecf
+round_trip_bps(1e5)   = 11.92   (statutory only)
+all_in_rt_bps(1e5)    = 21.92   (what run_backtest charges)
+PortfolioConfig       = PortfolioConfig(n_positions=22, max_weight=0.12, max_sector_weight=0.25, cash_buffer=0.1, vol_lookback=60, turnover_budget=0.35, max_names=30)
+
+==============================================================================
+DATA
+==============================================================================
+CLEANING REPORT
+  rows in            :   274,541
+  rows out           :   207,687
+  dropped pre-2008   :    66,312
+  dropped artifact   :         0
+  dropped non-positive:      0
+  dropped extreme    :         3
+  dropped frozen     :       539
+  frozen runs        :         3  in ['bajajauto', 'nestleind']
+  excluded symbols   : ['adanient', 'jiofin']
+  extreme events     : 3
+
+symbols               = 48
+panel rows            = 4625
+span                  = 2008-01-01 -> 2026-10-01
+TRAIN bars            = 1973  (2016-01-01 -> 2023-12-31)
+TEST bars             = 684  (2024-01-01 -> 2026-10-01)
+
+roc() parity          : 96 probes, max_abs_err = 1.110e-16
+panel NaN cells       : 14455 of 222000
+
+ROC(10) > 0.01  fires on  43.58% of all bar/symbol cells (TRAIN  46.06%)
+ROC(20) > 0.01  fires on  47.63% of all bar/symbol cells (TRAIN  50.97%)
+ROC(10) > 0.0   fires on  50.96% of all bar/symbol cells (TRAIN  53.99%)
+flagged names per bar : mean 20.9  median 21.0  min 0  max 48
+bars with >=1 flag    : 99.16%
+
+ROC distribution (all cells, 2008-2026):
+  roc10: mean +0.78%  sd 6.66%
+     p01 -16.41%  p25 -2.81%  p50 +0.60%  p75 +4.22%  p99 +19.19%
+  roc20: mean +1.55%  sd 9.65%
+     p01 -22.99%  p25 -3.77%  p50 +1.23%  p75 +6.59%  p99 +28.56%
+  corr(roc10, roc20) = 0.7089
+  corr(roc10, mom126) = 0.2624
+

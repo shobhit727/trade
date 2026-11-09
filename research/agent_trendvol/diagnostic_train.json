@@ -1,0 +1,128 @@
+{
+  "event_study": [
+    {
+      "horizon": 21,
+      "n_days": 1818,
+      "mean_alpha_bp": -24.659712514813794,
+      "median_alpha_bp": -26.477536881309806,
+      "t_stat": -3.6158291825642177,
+      "hit_rate": 0.4537953795379538,
+      "mean_fwd_sig_pct": 1.594763688776072,
+      "mean_fwd_mkt_pct": 1.9080279950150068
+    },
+    {
+      "horizon": 63,
+      "n_days": 1778,
+      "mean_alpha_bp": -43.19076121127716,
+      "median_alpha_bp": -41.5391777512613,
+      "t_stat": -3.8163116750859576,
+      "hit_rate": 0.4611923509561305,
+      "mean_fwd_sig_pct": 5.128945298340323,
+      "mean_fwd_mkt_pct": 5.7246696671227335
+    },
+    {
+      "horizon": 126,
+      "n_days": 1718,
+      "mean_alpha_bp": -48.25356638860378,
+      "median_alpha_bp": -67.41412571675833,
+      "t_stat": -2.7565246354974557,
+      "hit_rate": 0.46216530849825377,
+      "mean_fwd_sig_pct": 10.730596036882249,
+      "mean_fwd_mkt_pct": 11.44577239111954
+    }
+  ],
+  "leg_rows": [
+    {
+      "leg": "trend_only(close>SMA)",
+      "horizon": 21,
+      "n_days": 1923,
+      "mean_alpha_bp": -21.737464845175133,
+      "median_alpha_bp": -10.081456471325422,
+      "t_stat": -5.591988680803026,
+      "hit_rate": 0.4539781591263651,
+      "mean_fwd_sig_pct": 1.6525082544828948,
+      "mean_fwd_mkt_pct": 1.9080279950150068
+    },
+    {
+      "leg": "vol_only(vol>avg)",
+      "horizon": 21,
+      "n_days": 1943,
+      "mean_alpha_bp": -1.330742906839166,
+      "median_alpha_bp": -1.870703957776651,
+      "t_stat": -0.3144695098617671,
+      "hit_rate": 0.4971693257848688,
+      "mean_fwd_sig_pct": 1.8992613275196277,
+      "mean_fwd_mkt_pct": 1.9080279950150068
+    },
+    {
+      "leg": "both(=strategy +1 leg)",
+      "horizon": 21,
+      "n_days": 1818,
+      "mean_alpha_bp": -24.659712514813794,
+      "median_alpha_bp": -26.477536881309806,
+      "t_stat": -3.6158291825642177,
+      "hit_rate": 0.4537953795379538,
+      "mean_fwd_sig_pct": 1.594763688776072,
+      "mean_fwd_mkt_pct": 1.9080279950150068
+    }
+  ],
+  "decomposition": [
+    {
+      "label": "B_momentum_no_gate",
+      "cagr": 0.17564232031547355,
+      "sharpe": 0.7332181479090443,
+      "sortino": 0.8541828266700513,
+      "max_dd": -0.3521044912682699,
+      "calmar": 0.49883578503305975,
+      "vol": 0.1504642209409123,
+      "total_return": 2.700411026049579,
+      "annual_turnover": 2.640113483876245,
+      "cost_drag_annual": 0.02292098802542923,
+      "trades_per_year": 11.748606183476939,
+      "avg_names": 21.77698935631019,
+      "avg_top_weight": 0.0622127912080687,
+      "n_rebalances": 95,
+      "round_trip_bps": 21.92,
+      "costs_paid": 389215.2855973809,
+      "avg_names_live": 9.679675620881905
+    },
+    {
+      "label": "C_gate+momentum(declared)",
+      "cagr": 0.07400034965700275,
+      "sharpe": 0.14810256582550071,
+      "sortino": 0.19643212063575657,
+      "max_dd": -0.1440092397417584,
+      "calmar": 0.5138583454068806,
+      "vol": 0.07670260676436493,
+      "total_return": 0.7811635351901716,
+      "annual_turnover": 4.011301733693801,
+      "cost_drag_annual": 0.02224483911981366,
+      "trades_per_year": 11.748606183476939,
+      "avg_names": 9.251900658895083,
+      "avg_top_weight": 0.07407592016492115,
+      "n_rebalances": 95,
+      "round_trip_bps": 21.92,
+      "costs_paid": 377733.7783816555,
+      "avg_names_live": 9.679675620881905
+    },
+    {
+      "label": "D_softgate_momentum",
+      "cagr": 0.1645780732022104,
+      "sharpe": 0.6816093341846957,
+      "sortino": 0.7873672850214223,
+      "max_dd": -0.3521044912682698,
+      "calmar": 0.46741259280563313,
+      "vol": 0.14728061317762325,
+      "total_return": 2.428022869194925,
+      "annual_turnover": 3.62904927788234,
+      "cost_drag_annual": 0.030520806598749232,
+      "trades_per_year": 11.748606183476939,
+      "avg_names": 21.77698935631019,
+      "avg_top_weight": 0.060310074167110206,
+      "n_rebalances": 95,
+      "round_trip_bps": 21.92,
+      "costs_paid": 518265.8113958922,
+      "avg_names_live": 9.679675620881905
+    }
+  ]
+}

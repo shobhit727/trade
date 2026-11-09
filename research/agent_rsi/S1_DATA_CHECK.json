@@ -1,0 +1,62 @@
+{
+  "symbols": 48,
+  "panel": [
+    "2008-01-01",
+    "2026-10-01"
+  ],
+  "bars": 4625,
+  "excluded": [
+    "adanient",
+    "jiofin"
+  ],
+  "fidelity": {
+    "6": {
+      "period": 6,
+      "n_checked": 235,
+      "n_nan_skipped": 15,
+      "max_abs_error": 2.842170943040401e-14,
+      "identical": true
+    },
+    "14": {
+      "period": 14,
+      "n_checked": 235,
+      "n_nan_skipped": 15,
+      "max_abs_error": 1.4210854715202004e-14,
+      "identical": true
+    },
+    "21": {
+      "period": 21,
+      "n_checked": 235,
+      "n_nan_skipped": 15,
+      "max_abs_error": 1.4210854715202004e-14,
+      "identical": true
+    }
+  },
+  "lookahead": [
+    {
+      "label": "rsi_panel(14)",
+      "max_err": 0.0,
+      "ok": true,
+      "worst_at": "None"
+    },
+    {
+      "label": "signal_panel(14,30)",
+      "max_err": 0.0,
+      "ok": true,
+      "worst_at": "None"
+    },
+    {
+      "label": "build_score deepest",
+      "max_err": 0.0,
+      "ok": true,
+      "worst_at": "None"
+    },
+    {
+      "label": "build_score mom126",
+      "max_err": 0.0,
+      "ok": true,
+      "worst_at": "None"
+    }
+  ],
+  "future_corruption_delta": 0.0
+}

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.kama import KamaStrategy
+from cryptobot.strategies.catalog.kama_strategy import KamaStrategy
 
 
 def _series(up: bool):

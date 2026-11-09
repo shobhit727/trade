@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.meta import MetaStrategy
+from cryptobot.strategies.catalog.meta_strategy import MetaStrategy
 
 
 def _series(up: bool):

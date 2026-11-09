@@ -1,0 +1,37 @@
+====================================================================================
+RANDOM-SIGNAL CONTROL — 200 draws, TEST 2024-01-01 -> 2026-10-01
+====================================================================================
+strategy TEST CAGR 7.75%   Sharpe(rf=6.5%) 0.17
+mean deployment 70.3%
+buy&hold @90%   CAGR 7.44%
+buy&hold @70%  CAGR 5.90%  <- cash-matched
+
+rebalance dates matched: 225   mean eligible 12.8
+  50/200 draws  (79s)
+  100/200 draws  (156s)
+  150/200 draws  (226s)
+  200/200 draws  (301s)
+
+random CAGR distribution (200 draws):
+  mean   4.93%  sd  1.82pp  min  -0.30%  max   8.68%
+  percentiles: p1=0.79%  p5=2.12%  p25=3.56%  p50=4.93%  p75=6.29%  p90=7.25%  p95=7.92%  p99=8.52%
+  random Sharpe (rf=6.5%, same basis as step 3): mean -0.10  sd 0.17
+
+(a) vs the coin
+  strategy sits ABOVE 92.5% of draws (92.5th percentile from the bottom); the 7.5 percentile from the top
+  beats 185/200 draws (step 3 with 25 draws said 80%)
+  strategy CAGR 7.75% vs random mean 4.93% -> +2.82 pp
+  random draws that beat buy&hold@90% (7.44%): 8%
+  random draws that beat cash-matched B&H (5.90%): 33%
+
+(b) cash-matched arithmetic excess (the honest test)
+  daily excess +0.73 bps -> +1.79%/yr   t=+0.60  (NOT significant at 5%)
+  vs buy&hold@90%: daily excess +0.02 bps -> +0.06%/yr
+
+------------------------------------------------------------------------------------
+READING
+------------------------------------------------------------------------------------
+  The construction clearly beats a coin: it lands at the 8th percentile.
+  But the *excess return over a cash-matched market* is +1.79%/yr with t=+0.60.
+  That is not distinguishable from zero. Beating the coin is the
+  minimum bar (brief §6.5), not evidence of a tradable edge.

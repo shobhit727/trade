@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.gap import GapStrategy
+from cryptobot.strategies.catalog.gap_strategy import GapStrategy
 
 
 def _series(up: bool):

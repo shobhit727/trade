@@ -29,23 +29,24 @@ def _kline(close: float, open_ms: int, *, closed: bool = True) -> KlineEvent:
     )
 
 
-def _trader(**overrides) -> LiveTrader:
+def _trader(tmp_path, **overrides) -> LiveTrader:
     params = dict(
-        strategy="dual_ma",
+        strategy="dual_moving_average",
         strategy_params={"fast": 3, "slow": 5},
         symbol="BTCUSDT",
         timeframe="1m",
         warmup_bars=0,
         port=0,  # ephemeral: parallel tests / occupied 8080
+        breaker_state_path=str(tmp_path / "breaker.json"),
     )
     params.update(overrides)
     return LiveTrader(LiveTraderConfig(**params))
 
 
 @pytest.mark.asyncio
-async def test_closed_klines_flow_to_venue_and_stats():
-    trader = _trader()
-    # push enough closed bars with alternating direction so dual_ma flips
+async def test_closed_klines_flow_to_venue_and_stats(tmp_path):
+    trader = _trader(tmp_path)
+    # push enough closed bars with alternating direction so dual_moving_average flips
     px = 100.0
     for i in range(40):
         px *= 1.02 if (i // 8) % 2 == 0 else 0.98
@@ -58,8 +59,8 @@ async def test_closed_klines_flow_to_venue_and_stats():
 
 
 @pytest.mark.asyncio
-async def test_unclosed_and_foreign_events_are_ignored():
-    trader = _trader()
+async def test_unclosed_and_foreign_events_are_ignored(tmp_path):
+    trader = _trader(tmp_path)
     await trader._on_kline(_kline(100.0, 0, closed=False))
     assert trader.stats["bars_seen"] == 0
 
@@ -78,8 +79,8 @@ async def test_unclosed_and_foreign_events_are_ignored():
 
 
 @pytest.mark.asyncio
-async def test_duplicate_bar_timestamps_are_deduplicated():
-    trader = _trader()
+async def test_duplicate_bar_timestamps_are_deduplicated(tmp_path):
+    trader = _trader(tmp_path)
     for _ in range(3):
         await trader._on_kline(_kline(100.0, 0))
     assert trader.stats["bars_seen"] == 1
@@ -87,8 +88,8 @@ async def test_duplicate_bar_timestamps_are_deduplicated():
 
 
 @pytest.mark.asyncio
-async def test_rejections_are_counted():
-    trader = _trader()
+async def test_rejections_are_counted(tmp_path):
+    trader = _trader(tmp_path)
     # live-mode risk semantics: qty=1 BTC at ~$100 is $100 notional on $10k equity — fine.
     # Force a rejection by shrinking the venue's tradable price to zero via a bad bar.
     trader._engine.venue.prices.clear()
@@ -102,7 +103,7 @@ async def test_rejections_are_counted():
 
 
 @pytest.mark.asyncio
-async def test_run_starts_ws_stops_cleanly(monkeypatch):
+async def test_run_starts_ws_stops_cleanly(monkeypatch, tmp_path):
     """run() wires the kline callback through a stubbed WS client and exits on max_bars."""
     import cryptobot.live.trader as mod
 
@@ -127,7 +128,7 @@ async def test_run_starts_ws_stops_cleanly(monkeypatch):
 
     monkeypatch.setattr(mod, "_new_ws_client", lambda config=None: _StubWS())
 
-    trader = _trader(max_bars=2)
+    trader = _trader(tmp_path, max_bars=2)
     await asyncio.wait_for(trader.run(), timeout=10)
 
     assert pushed == ["start", "stop"]
@@ -138,7 +139,7 @@ async def test_run_starts_ws_stops_cleanly(monkeypatch):
 def test_fill_lands_in_trade_tape():
     from decimal import Decimal
 
-    cfg = LiveTraderConfig(strategy="dual_ma", warmup_bars=0, max_bars=1,
+    cfg = LiveTraderConfig(strategy="dual_moving_average", warmup_bars=0, max_bars=1,
                            port=18099, gate_enabled=False)
     trader = LiveTrader(cfg)
 
@@ -149,7 +150,7 @@ def test_fill_lands_in_trade_tape():
         price = None
         symbol = "BTCUSDT"
         side = OrderSide.BUY
-        strategy = "dual_ma"
+        strategy = "dual_moving_average"
 
     trader._record_trade(FakeFilled())
     snap = trader.stats_snapshot()
@@ -158,7 +159,7 @@ def test_fill_lands_in_trade_tape():
 
 
 def test_fill_updates_position_book():
-    cfg = LiveTraderConfig(strategy="dual_ma", warmup_bars=0,
+    cfg = LiveTraderConfig(strategy="dual_moving_average", warmup_bars=0,
                            port=18098, gate_enabled=False)
     trader = LiveTrader(cfg)
 
@@ -169,7 +170,7 @@ def test_fill_updates_position_book():
         price = None
         symbol = "BTCUSDT"
         side = OrderSide.BUY
-        strategy = "dual_ma"
+        strategy = "dual_moving_average"
 
     class F2(F):
         side = OrderSide.SELL

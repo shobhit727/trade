@@ -1,0 +1,83 @@
+{
+  "window": "2024-01-01 -> 2026-10-01",
+  "strategy": {
+    "n_periods": 685,
+    "total_return": 0.1592105133426689,
+    "cagr": 0.05403467016256247,
+    "volatility": 0.09335453255883998,
+    "sharpe": -0.054850134141020995,
+    "sortino": -0.07680248497174964,
+    "calmar": 0.44083438905659533,
+    "max_drawdown": -0.12257362743001743,
+    "max_drawdown_days": 110,
+    "win_rate": 0.491970802919708,
+    "best_day": 0.030713144618019772,
+    "worst_day": -0.025388416412930437,
+    "skew": 0.11074911220377527,
+    "kurtosis": 3.1496211181218645,
+    "annual_turnover": 0.0,
+    "cost_drag_annual": 0.0,
+    "trades_per_year": 0.0
+  },
+  "buy_hold": {
+    "n_periods": 685,
+    "total_return": 0.24643763517464068,
+    "cagr": 0.08162886904772226,
+    "volatility": 0.13448666374173054,
+    "sharpe": 0.1852138579815734,
+    "sortino": 0.25395904621027504,
+    "calmar": 0.5131839345512167,
+    "max_drawdown": -0.1590635706846656,
+    "max_drawdown_days": 107,
+    "win_rate": 0.5401459854014599,
+    "best_day": 0.03800481499582409,
+    "worst_day": -0.05155663713311953,
+    "skew": -0.2696284091376849,
+    "kurtosis": 3.5775609701270903,
+    "annual_turnover": 0.0,
+    "cost_drag_annual": 0.0,
+    "trades_per_year": 0.0
+  },
+  "nsealgo_composite": {
+    "n_periods": 685,
+    "total_return": 0.24439233561443774,
+    "cagr": 0.08099632111655186,
+    "volatility": 0.13405335235071492,
+    "sharpe": 0.1797683219881575,
+    "sortino": 0.2227907614681644,
+    "calmar": 0.5458144642980249,
+    "max_drawdown": -0.14839533653752046,
+    "max_drawdown_days": 107,
+    "win_rate": 0.5357664233576642,
+    "best_day": 0.038476809800983336,
+    "worst_day": -0.07528347392014034,
+    "skew": -1.0361607782265132,
+    "kurtosis": 10.306859207307705,
+    "annual_turnover": 0.0,
+    "cost_drag_annual": 0.0,
+    "trades_per_year": 0.0
+  },
+  "random_control": {
+    "seeds": 300,
+    "cagr_mean": 5.439926427886065,
+    "cagr_sd": 1.4753371106594129,
+    "cagr_p05": 2.813988302224757,
+    "cagr_p95": 7.66108049406464,
+    "sharpe_mean": -0.03942897396790934,
+    "sharpe_sd": 0.13005055468727503,
+    "maxdd_mean": -13.366856915484854,
+    "p_cmf_beats_random_on_cagr": 0.49,
+    "p_cmf_beats_random_on_sharpe": 0.43
+  },
+  "strategy_extra": {
+    "turnover_yr": 3.9136240347384774,
+    "cost_drag_yr": 0.011273816428073102,
+    "avg_names": 27.123762376237625,
+    "round_trip_bps": 21.92
+  },
+  "calendar_years": {
+    "2024": 0.17927427712437116,
+    "2025": 0.10137774327871885,
+    "2026": -0.10527985833029485
+  }
+}

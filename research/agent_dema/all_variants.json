@@ -1,0 +1,47 @@
+[
+  {
+    "variant": "V1",
+    "period": 20,
+    "score": "gate+mom126",
+    "train_sharpe": 0.9028119312533569,
+    "test_sharpe": 0.08728356085207511,
+    "test_cagr": 0.06859217397605533,
+    "test_maxdd": -0.12876024751423865
+  },
+  {
+    "variant": "V2",
+    "period": 50,
+    "score": "gate+mom126",
+    "train_sharpe": 0.7397761475574077,
+    "test_sharpe": -0.1613290976744445,
+    "test_cagr": 0.037780923626977714,
+    "test_maxdd": -0.13541464362219302
+  },
+  {
+    "variant": "V3",
+    "period": 100,
+    "score": "gate+mom126",
+    "train_sharpe": 0.6342883102011215,
+    "test_sharpe": -0.31103272968604345,
+    "test_cagr": 0.017890046155141448,
+    "test_maxdd": -0.15527793326534856
+  },
+  {
+    "variant": "V4",
+    "period": 200,
+    "score": "gate+mom126",
+    "train_sharpe": 0.5884570133562567,
+    "test_sharpe": -0.3924178798862484,
+    "test_cagr": 0.006136545638263602,
+    "test_maxdd": -0.20251366527176806
+  },
+  {
+    "variant": "V5",
+    "period": 20,
+    "score": "pure_dema",
+    "train_sharpe": 0.7668303748572792,
+    "test_sharpe": -0.007776319167456057,
+    "test_cagr": 0.05740284071325208,
+    "test_maxdd": -0.14115235288227945
+  }
+]

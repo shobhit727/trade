@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.ema_cross import EmaCrossStrategy
+from cryptobot.strategies.catalog.ema_cross_strategy import EmaCrossStrategy
 
 
 def _series(up: bool):

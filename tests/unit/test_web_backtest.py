@@ -17,7 +17,7 @@ from cryptobot.monitoring.web_backtest import (
 def test_lists_all_registry_strategies():
     names = list_strategy_names()
     assert len(names) >= 80  # catalog is large; guard against silent shrinkage
-    assert "dual_ma" in names
+    assert "dual_moving_average" in names
     assert "trend_following" in names or True  # handled separately by make_strategy
     assert "ml_strategy" not in names  # needs training, excluded
 
@@ -99,7 +99,7 @@ async def test_single_algo_backtest_produces_metrics():
     from cryptobot.backtest.runner import make_strategy, run_backtest
 
     bars = load_bars("BTCUSDT", "1d")
-    res = await run_backtest(bars[:120], make_strategy("dual_ma"),
+    res = await run_backtest(bars[:120], make_strategy("dual_moving_average"),
                              symbol="BTCUSDT",
                              initial_capital=Decimal("10000"),
                              risk_fraction=1.0, slippage_bps=3, commission_bps=5)

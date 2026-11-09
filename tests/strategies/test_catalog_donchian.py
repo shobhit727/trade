@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.donchian import DonchianStrategy
+from cryptobot.strategies.catalog.donchian_channel import DonchianStrategy
 
 
 def _series(up: bool):

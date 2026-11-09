@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptobot.strategies.catalog.macd_momentum import MacdMomentumStrategy
+from cryptobot.strategies.catalog.macd_momentum_strategy import MacdMomentumStrategy
 
 
 def _series(up: bool):
