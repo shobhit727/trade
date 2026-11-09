@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from research.platform.adapters import materialize_non_holdout_partition
+from research.platform.adapters import _normalise_ohlcv, materialize_non_holdout_partition
 from research.platform.data_catalog import DatasetManifest, LicenseStatus, ValueOrigin
 from research.platform.domain import AlgorithmFamily, DataResolution, Market, ResearchTrack
 from research.platform.experiments import ExperimentSpec
@@ -237,6 +237,27 @@ def _write_crypto_csv(path: Path, *, timestamps: list[int], close: list[float]) 
         rows.append(f"{stamp},{price},{price * 1.01},{price * 0.99},{price},1000")
     path.write_text("\n".join(rows) + "\n", encoding="utf-8")
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_ohlcv_normalizer_converts_numeric_timestamp_columns_to_datetime_index() -> None:
+    # Numeric provider timestamps are parsed into a DatetimeIndex, not left as a Series.
+    frame = pd.DataFrame({
+        "timestamp": [1_790_000_000_000, 1_790_000_060_000],
+        "open": [100.0, 101.0],
+        "high": [101.0, 102.0],
+        "low": [99.0, 100.0],
+        "close": [100.5, 101.5],
+        "volume": [10.0, 12.0],
+    })
+    normalised = _normalise_ohlcv(
+        frame,
+        timezone_name="UTC",
+        numeric_timestamp_unit="ms",
+    )
+    assert isinstance(normalised.index, pd.DatetimeIndex)
+    assert normalised.index.tz is not None
+    assert normalised.index.is_monotonic_increasing
+    assert len(normalised) == 2
 
 
 def test_crypto_loader_verifies_registered_source_hash_and_quote_currency(tmp_path) -> None:
