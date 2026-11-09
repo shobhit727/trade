@@ -277,7 +277,7 @@ def load_registered_bars(
         or os.getenv("RESEARCH_PARTITION_DATA_ROOT", "data/research-partitions")
     ).resolve()
     if require_partitioned is None:
-        require_partitioned = os.getenv("RESEARCH_REQUIRE_PARTITIONED_DATA", "0").lower() in {
+        require_partitioned = os.getenv("RESEARCH_REQUIRE_PARTITIONED_DATA", "1").lower() in {
             "1", "true", "yes", "on"
         }
 
