@@ -626,7 +626,12 @@ class CryptoLocalAdapter:
                 "quote_currency": self.quote_currency or "",
                 "fx_dataset_id": self.fx_dataset_id or "",
                 "timestamp_position": self.timestamp_position or "",
-                "quality_report": str(frame.attrs.get("quality_report", {})),
+                "quality_report_json": json.dumps(
+                    frame.attrs.get("quality_report", {}),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                ),
             },
         )
 
