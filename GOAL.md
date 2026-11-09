@@ -1217,7 +1217,7 @@ is a bug in the *setup*, not a strategy.
 
 ---
 
-## Implementation status snapshot — 8 November 2026
+## Implementation status snapshot — 9 November 2026
 
 This branch now connects conventional parameter search, a multi-method search ensemble, bounded
 numerical genetic programming, dense-network neuroevolution, declarative strategy composition
@@ -1233,25 +1233,44 @@ portfolio simulator. No claim is made that the target NVIDIA hardware has been e
 benchmarked.
 
 The TRAIN candidate-family diagnostic path reports PSR-derived p-values, BH FDR, DSR and CSCV/PBO.
-FDR/DSR use all successful TRAIN candidates; PBO uses at most 128 evenly spaced candidates.
+FDR/DSR use all successful TRAIN candidates, including separately classified shipped/user baselines
+because both are eligible for VALIDATION selection; PBO uses at most 128 evenly spaced candidates.
 DSR's independent-Gaussian trial assumption is a simplifying approximation, particularly weak for
 correlated evolutionary candidates. All outputs are diagnostic only and do not alter selection.
+The optimizer returns the diagnostic payload with the job result, and selected OOS evaluations are
+stored in a distinct candidate family linked to the validation-selected parent.
 
-OHLCV ingestion now applies hard price, volume and open-range checks and records the quality
-summary in manifest metadata. The default <20% absolute close-return gate applies to NSE daily
-data only; it is not imposed on crypto. These checks are not a complete data-quality score or a
-substitute for point-in-time constituent history, corporate actions, missing-bar audits or licence
-review.
+OHLCV ingestion applies hard price, volume and open-range checks and records the quality summary
+in manifest metadata. The default strict <20% absolute close-return gate applies to NSE daily data
+only; exact threshold comparisons account for floating-point representation. The gate is not
+imposed on crypto. These checks are not a complete data-quality score or a substitute for
+point-in-time constituent history, corporate actions, missing-bar audits or licence review.
 
-The data layer supports a trusted ingestion step which materialises a physical non-holdout
-copy ending before the declared final-holdout boundary. Production workers now require this
-checksum-verified copy by default; an unset RESEARCH_REQUIRE_PARTITIONED_DATA is strict mode,
-and RESEARCH_PARTITION_DATA_ROOT selects the store. Setting RESEARCH_REQUIRE_PARTITIONED_DATA=0
-is an explicit compatibility override for controlled exploratory work only; it may parse a
-combined source before clipping and must not be used for protected-holdout research. A local
-process can still access other files on the same filesystem. This is not an OS/process security
-boundary; a physically isolated worker/holdout service remains necessary before claiming secure
-final-holdout separation.
+The data layer supports a trusted ingestion step which materialises a physical non-holdout copy
+ending before the declared final-holdout boundary. Production workers require this checksum-verified
+copy by default; an unset RESEARCH_REQUIRE_PARTITIONED_DATA is strict mode, and
+RESEARCH_PARTITION_DATA_ROOT selects the store. Setting RESEARCH_REQUIRE_PARTITIONED_DATA=0 is an
+explicit compatibility override for controlled exploratory work only; it may parse a combined
+source before clipping and must not be used for protected-holdout research. A local process can
+still access other files on the same filesystem. This is not an OS/process security boundary; a
+physically isolated worker/holdout service remains necessary before claiming secure final-holdout
+separation.
+
+Additional correctness hardening on 9 November 2026:
+- NSE delivery fills are constrained to whole shares. The simulator floors target and participation
+  quantities, uses integer affordability search for NSE buys, and preserves fractional crypto units.
+- Flat NSE sell charges may be paid from the market account's remaining cash when they exceed small
+  fill proceeds; a fill is rejected if this would make account cash negative.
+- OHLCV timestamp columns become a DatetimeIndex. Naive text timestamps are localized to the
+  manifest timezone; explicit timezone offsets retain their instant. Crypto quality reports are
+  stored as canonical JSON in manifest metadata.
+- Open-stamped FX candles become available at their actual close time. Fixed intervals use explicit
+  durations; monthly candles use the next calendar-month boundary, not a 30-day approximation.
+- The dashboard uses post-1-October-2026 default NSE OOS dates, market-specific OHLCV resolutions
+  and matching annualisation frequencies.
+- Queue saturation is checked before duplicate-job rejection. Baseline candidate records, search
+  trials and selected OOS evaluations have distinct storage labels without excluding selectable
+  baselines from multiple-testing diagnostics.
 
 No strategy profitability, deployability, live trading or hardware performance is implied by this
 implementation snapshot. Synthetic CI fixtures test software contracts; they are not market
