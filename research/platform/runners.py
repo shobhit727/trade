@@ -931,11 +931,17 @@ class ExistingStrategyOptimizerJobRunner:
                     "status": "failed",
                     "failure_reason": candidate["failure_reason"] or "candidate evaluation failed",
                 }
+            # Keep shipped/user baselines out of the evolutionary/search-trial family.
+            candidate_family = (
+                f"{spec.algorithm_family.value}_baseline"
+                if int(candidate["evaluation_index"]) < 0
+                else spec.algorithm_family.value
+            )
             context.store.append_candidate(
                 candidate_id=candidate["candidate_id"],
                 experiment_id=spec.experiment_id,
                 candidate_digest=candidate["candidate_digest"],
-                family=spec.algorithm_family.value,
+                family=candidate_family,
                 generation=max(int(lineage.get("generation", 0)), 0),
                 parameters={
                     "strategy_name": strategy_name,
