@@ -130,9 +130,15 @@ def _normalise_ohlcv(
                 pd.to_datetime(raw_time, unit=numeric_timestamp_unit, utc=True, errors="coerce")
             )
         else:
-            index = pd.DatetimeIndex(
-                pd.to_datetime(raw_time, utc=True, errors="coerce")
-            )
+            # Naive text timestamps are wall-clock values in the declared source timezone.
+            # Aware strings preserve their instant and are converted below.
+            try:
+                parsed_time = pd.to_datetime(raw_time, errors="coerce")
+                index = pd.DatetimeIndex(parsed_time)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "timestamp column must use one consistent timezone convention"
+                ) from exc
     if index.isna().any():
         raise ValueError("data source contains invalid timestamps")
     if index.tz is None:
