@@ -1173,6 +1173,7 @@ class ExistingStrategyOptimizerJobRunner:
             "search_attempted_candidates": (len(search.candidates) if search.method == "differential_evolution" else len(search.candidates) + len(search.failures)),
             "failed_candidates": len(search.failures),
             "total_train_evaluations": train_calls,
+            "training_candidate_family_diagnostics": statistical_report,
             "validation_shortlist": validation_rows,
             "selected_candidate": selected,
             "bars_sha256": bars_digest,
