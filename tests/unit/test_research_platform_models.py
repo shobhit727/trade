@@ -53,6 +53,18 @@ def _config() -> PortfolioConfig:
     )
 
 
+def test_constant_volume_has_zero_z_score_without_erasing_warmup_rows() -> None:
+    # Constant volume has a valid zero z-score after the lookback; warm-up remains unavailable.
+    index = pd.date_range("2025-01-01", periods=30, freq="D", tz=UTC)
+    frame = _bars(index)
+    output = PointInTimeFeatureEngine(windows=(3, 5)).build(frame)
+    assert output["volume_z_3"].iloc[:2].isna().all()
+    assert output["volume_z_5"].iloc[:4].isna().all()
+    assert np.allclose(output["volume_z_3"].iloc[2:], 0.0)
+    assert np.allclose(output["volume_z_5"].iloc[4:], 0.0)
+    assert np.isfinite(output.iloc[5:].to_numpy()).all()
+
+
 def test_model_feature_panel_maps_predictions_to_exact_instrument_rows() -> None:
     # Each symbol's train-window features are concatenated in stable symbol order.
     index = pd.date_range("2025-01-01", periods=30, freq="D", tz=UTC)
