@@ -155,6 +155,9 @@ def test_existing_strategy_job_runner_executes_and_persists_partition_results(tm
         assert job["status"] == "succeeded", job["error_message"]
         result = job["result"]
         assert result["final_holdout_accessed"] is False
+        lifecycle = store.get_validation_lifecycle(spec.experiment_id, job_id)
+        assert lifecycle["state"] == "oos_recorded"
+        assert lifecycle["oos_passed"] is None
         assert [item["partition"] for item in result["partitions"]] == [
             "train", "validation", "out_of_sample"
         ]
@@ -164,6 +167,7 @@ def test_existing_strategy_job_runner_executes_and_persists_partition_results(tm
         second_job_id = manager.submit(spec.experiment_id, "existing_strategy_evaluation")
         second_job = manager.wait(second_job_id, timeout=20)
         assert second_job["status"] == "succeeded", second_job["error_message"]
+        assert store.get_validation_lifecycle(spec.experiment_id, second_job_id)["state"] == "oos_recorded"
         assert len(store.candidates(spec.experiment_id)) == 1
 
         events = store.events(spec.experiment_id)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -428,6 +429,50 @@ def test_validation_lifecycle_persists_job_scoped_transitions_across_store_insta
         item["payload"]["lifecycle_id"] == "job-persistent-002"
         for item in persisted["events"]
     )
+
+
+def test_validation_lifecycle_serializes_concurrent_oos_authorizations(tmp_path) -> None:
+    # Two worker processes with stale in-memory state cannot both start the same job's OOS.
+    database = tmp_path / "concurrent-validation.sqlite3"
+    setup_store = ExperimentStore(database)
+    spec = make_experiment()
+    setup_store.create_experiment(spec)
+    setup = ValidationLifecycle(
+        store=setup_store,
+        experiment_id=spec.experiment_id,
+        lifecycle_id="job-race-001",
+    )
+    setup.freeze_candidate("d" * 64)
+
+    # Each object loads the same frozen state before either thread attempts authorization.
+    first = ValidationLifecycle(
+        store=ExperimentStore(database),
+        experiment_id=spec.experiment_id,
+        lifecycle_id="job-race-001",
+    )
+    second = ValidationLifecycle(
+        store=ExperimentStore(database),
+        experiment_id=spec.experiment_id,
+        lifecycle_id="job-race-001",
+    )
+
+    def authorize_once(lifecycle: ValidationLifecycle) -> str:
+        # Return the persisted outcome rather than hiding the expected losing transition.
+        try:
+            lifecycle.authorize(AccessRole.OOS_EVALUATOR, Partition.OOS)
+            return "authorized"
+        except PermissionError:
+            return "rejected"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(authorize_once, (first, second)))
+
+    assert sorted(outcomes) == ["authorized", "rejected"]
+    state = setup_store.get_validation_lifecycle(spec.experiment_id, "job-race-001")
+    assert state["state"] == "oos_evaluating"
+    assert [item["event"] for item in state["events"]] == [
+        "candidate_frozen", "oos_evaluation_started"
+    ]
 
 
 def test_validation_lifecycle_rejects_out_of_order_persisted_transitions(tmp_path) -> None:

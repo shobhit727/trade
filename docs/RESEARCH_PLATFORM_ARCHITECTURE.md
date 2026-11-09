@@ -66,10 +66,10 @@ The `ValidationLifecycle` permits:
 | Final auditor | FINAL_HOLDOUT only, after a passing recorded OOS evaluation |
 
 The final holdout can be opened once per persisted job lifecycle. Registered workers now
-  persist candidate freeze and OOS evaluation state; because no explicit OOS acceptance gate
-  is configured, their OOS result is recorded as unknown and cannot unlock the final holdout.
-  The current workers do not load final-holdout rows. A separate service/process boundary with
-  restrictive file permissions is still required before claiming secure holdout separation.
+persist candidate freeze and OOS evaluation state; because no explicit OOS acceptance gate
+is configured, their OOS result is recorded as unknown and cannot unlock the final holdout.
+The current workers do not load final-holdout rows. A separate service/process boundary with
+restrictive file permissions is still required before claiming secure holdout separation.
 
 The old NSE protocol (TRAIN 2016–2023; TEST 2024–2026) is historical and exposed. It must
 not be relabelled as a new, untouched final holdout. New validation/OOS/holdout dates must
@@ -115,16 +115,16 @@ The local crypto adapter imports CSV/Parquet and records source-file hashes, but
 ## API / dashboard operating model
 
 Run `python -m research.platform.app --host 127.0.0.1 --port 8765`. The server binds to loopback by default and refuses a non-loopback host unless `--allow-remote` is supplied. Do not enable remote binding without adding authentication and transport security. The dashboard can create experiment records and queue the allow-listed existing-strategy evaluator,
-  parameter-search/hybrid, genetic-programming, neuroevolution, strategy-composition and Pareto
-  workers, then list, inspect and cooperatively cancel jobs. Job state and logs persist in SQLite; worker execution itself is a local thread pool and interrupted jobs are marked failed after restart.
+parameter-search/hybrid, genetic-programming, neuroevolution, strategy-composition and Pareto
+workers, then list, inspect and cooperatively cancel jobs. Job state and logs persist in SQLite; worker execution itself is a local thread pool and interrupted jobs are marked failed after restart.
 
 ## Validation and statistical interpretation
 
 Experiment specifications persist an embargo in seconds and reject adjacent windows that do not leave the declared gap. `purged_walk_forward_split` uses each sample's label start/end interval to remove training examples overlapping validation plus embargo. These helpers are not yet integrated into every optimiser or model trainer, so callers must explicitly use them.
 
 The runner requires NSE OOS to start after 1 October 2026 because the previous TRAIN/TEST research history is exposed through that date. A trusted ingestion step can now write a physical non-holdout copy with materialize_non_holdout_partition; a manifest with that path makes workers load only the safe copy and verify its SHA-256. Set RESEARCH_PARTITION_DATA_ROOT to the partition store. An unset RESEARCH_REQUIRE_PARTITIONED_DATA
-  is strict mode; setting it to 0 is an explicit exploratory compatibility override that may parse
-  combined source files before row clipping. A local process may still access other files on the same filesystem; a future isolated worker/holdout service with OS-level file permissions remains necessary. The remaining post-2026 sample is currently very short and cannot support a robust strategy claim.
+is strict mode; setting it to 0 is an explicit exploratory compatibility override that may parse
+combined source files before row clipping. A local process may still access other files on the same filesystem; a future isolated worker/holdout service with OS-level file permissions remains necessary. The remaining post-2026 sample is currently very short and cannot support a robust strategy claim.
 
 The workers now attach TRAIN-only PSR/FDR/DSR/CSCV diagnostics to the full successful candidate family. FDR and DSR use all successful candidates; CSCV/PBO uses a deterministic evenly spaced subset capped at 128 candidates. DSR explicitly assumes independent Gaussian trial Sharpe estimates; this is not a realistic model for correlated strategy populations and requires sensitivity analysis. P-values are PSR-derived against a zero per-period Sharpe benchmark. None of these diagnostics affects candidate selection or corrects universe survivorship, publication-time leakage, data-quality, cost or execution bias.
 

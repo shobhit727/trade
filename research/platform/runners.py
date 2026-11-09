@@ -465,6 +465,23 @@ class ExistingStrategyJobRunner:
         context.log(f"loaded {len(bars)} registered instruments for {spec.market.value}")
         config, periods_per_year = _build_portfolio_config(spec, manifests)
         context.log("starting TRAIN, VALIDATION and OOS evaluation; final holdout remains sealed")
+        # The immutable experiment spec is already a frozen candidate for this evaluation job.
+        validation_lifecycle = context.validation_lifecycle(spec.experiment_id)
+        validation_lifecycle.freeze_candidate(spec.fingerprint)
+        oos_started = False
+        oos_recorded = False
+
+        def report_partition_progress(stage: str, completed: int, total: int) -> None:
+            # Authorize OOS at its actual start and persist its completion only after evaluation.
+            nonlocal oos_started, oos_recorded
+            if stage == "out_of_sample" and not oos_started:
+                validation_lifecycle.authorize(AccessRole.OOS_EVALUATOR, Partition.OOS)
+                oos_started = True
+            if stage == "out_of_sample" and completed == total and oos_started and not oos_recorded:
+                validation_lifecycle.record_oos(spec.fingerprint, passed=None)
+                oos_recorded = True
+            context.log(f"{stage}: {completed}/{total} partitions complete")
+
         result: ExistingStrategyEvaluation = evaluate_existing_strategy(
             spec,
             bars,
@@ -472,10 +489,10 @@ class ExistingStrategyJobRunner:
             periods_per_year=periods_per_year,
             store=context.store,
             check_cancelled=context.check_cancelled,
-            progress_callback=lambda stage, completed, total: context.log(
-                f"{stage}: {completed}/{total} partitions complete"
-            ),
+            progress_callback=report_partition_progress,
         )
+        if not oos_recorded:
+            raise RuntimeError("evaluation returned without recording its OOS lifecycle result")
         context.log("evaluation completed; final holdout was not accessed")
         return result.to_dict()
 

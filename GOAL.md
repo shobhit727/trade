@@ -1254,7 +1254,11 @@ explicit compatibility override for controlled exploratory work only; it may par
 source before clipping and must not be used for protected-holdout research. A local process can
 still access other files on the same filesystem. This is not an OS/process security boundary; a
 physically isolated worker/holdout service remains necessary before claiming secure final-holdout
-separation.
+separation. ValidationLifecycle transitions are now persisted append-only per experiment/job and
+reduced atomically under a SQLite write lock; restarts cannot repeat a job's OOS start or one-time
+holdout access. Optimiser/evolution workers and the fixed existing-strategy evaluator record candidate
+freeze and OOS completion. No configured OOS acceptance gate currently exists, so workers persist
+passed=null and cannot unlock final-holdout access. This lifecycle log is not an OS/filesystem boundary.
 
 Additional correctness hardening on 9 November 2026:
 - NSE delivery fills are constrained to whole shares. The simulator floors target and participation
