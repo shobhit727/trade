@@ -50,6 +50,12 @@ immutable; event and candidate tables reject update/delete operations.
 
 ## Validation access policy
 
+The `ValidationLifecycle` can persist its one-way state transitions in the append-only
+experiment event store, keyed by experiment and job ID. Each transition is serialized under
+a SQLite write transaction, so a restarted process cannot repeat the same job's OOS start or
+final-holdout access. This records lifecycle authorization; it does not restrict filesystem
+access or replace a separate worker process/service.
+
 The `ValidationLifecycle` permits:
 
 | Role | Data access |
@@ -59,9 +65,11 @@ The `ValidationLifecycle` permits:
 | OOS evaluator | OOS only, after candidate freeze |
 | Final auditor | FINAL_HOLDOUT only, after a passing recorded OOS evaluation |
 
-The final holdout can be opened once per lifecycle instance. Production use must persist
-lifecycle transitions in the experiment event store and place holdout data behind a
-separate service/process boundary; Python object checks alone are not a security boundary.
+The final holdout can be opened once per persisted job lifecycle. Registered workers now
+  persist candidate freeze and OOS evaluation state; because no explicit OOS acceptance gate
+  is configured, their OOS result is recorded as unknown and cannot unlock the final holdout.
+  The current workers do not load final-holdout rows. A separate service/process boundary with
+  restrictive file permissions is still required before claiming secure holdout separation.
 
 The old NSE protocol (TRAIN 2016–2023; TEST 2024–2026) is historical and exposed. It must
 not be relabelled as a new, untouched final holdout. New validation/OOS/holdout dates must
@@ -82,7 +90,7 @@ The feature branch now contains the following additive modules:
 
 | Capability | Implementation | Limitation |
 |---|---|---|
-| Existing data adapters | `NSELegacyAdapter`, `CryptoLocalAdapter`; OHLCV open-range/price/volume checks, manifest quality JSON and a pre-materialised non-holdout partition reader | Local historical files only; licence review remains required; strict partition mode is opt-in and OS/process isolation remains open |
+| Existing data adapters | `NSELegacyAdapter`, `CryptoLocalAdapter`; OHLCV open-range/price/volume checks, manifest quality JSON and a pre-materialised non-holdout partition reader | Local historical files only; licence review remains required; production partition mode is strict by default and OS/process isolation remains open |
 | Existing strategy discovery | `ExistingStrategyRegistry`, `ExistingStrategySignalAdapter` | Original classes stream bar by bar; only long/flat signals are adapted so far |
 | Cash portfolio simulation | `PortfolioSimulator` | Long-only, INR cash; no derivative margin/liquidation or corporate-action ledger |
 | Execution assumptions | Next-open, prior-completed-bar participation cap, slippage, square-root impact, injected market fee calculators | NSE uses existing itemised delivery cost model; crypto uses explicit venue maker/taker bps; historical fee schedules and intraday changes need sourcing |
@@ -106,19 +114,25 @@ The local crypto adapter imports CSV/Parquet and records source-file hashes, but
 
 ## API / dashboard operating model
 
-Run `python -m research.platform.app --host 127.0.0.1 --port 8765`. The server binds to loopback by default and refuses a non-loopback host unless `--allow-remote` is supplied. Do not enable remote binding without adding authentication and transport security. The dashboard can create experiment records and queue the allow-listed `existing_strategy_evaluation` runner, then list, inspect and cooperatively cancel jobs. Job state and logs persist in SQLite; worker execution itself is a local thread pool and interrupted jobs are marked failed after restart.
+Run `python -m research.platform.app --host 127.0.0.1 --port 8765`. The server binds to loopback by default and refuses a non-loopback host unless `--allow-remote` is supplied. Do not enable remote binding without adding authentication and transport security. The dashboard can create experiment records and queue the allow-listed existing-strategy evaluator,
+  parameter-search/hybrid, genetic-programming, neuroevolution, strategy-composition and Pareto
+  workers, then list, inspect and cooperatively cancel jobs. Job state and logs persist in SQLite; worker execution itself is a local thread pool and interrupted jobs are marked failed after restart.
 
 ## Validation and statistical interpretation
 
 Experiment specifications persist an embargo in seconds and reject adjacent windows that do not leave the declared gap. `purged_walk_forward_split` uses each sample's label start/end interval to remove training examples overlapping validation plus embargo. These helpers are not yet integrated into every optimiser or model trainer, so callers must explicitly use them.
 
-The runner requires NSE OOS to start after 1 October 2026 because the previous TRAIN/TEST research history is exposed through that date. A trusted ingestion step can now write a physical non-holdout copy with materialize_non_holdout_partition; a manifest with that path makes workers load only the safe copy and verify its SHA-256. Set RESEARCH_PARTITION_DATA_ROOT to the partition store and RESEARCH_REQUIRE_PARTITIONED_DATA=1 to make a missing partition a hard error. The default compatibility mode still permits legacy readers that may parse the combined source before clipping, so strict mode must be enabled for runs that require this protection. A local process may still access other files on the same filesystem; a future isolated worker/holdout service with OS-level file permissions remains necessary. The remaining post-2026 sample is currently very short and cannot support a robust strategy claim.
+The runner requires NSE OOS to start after 1 October 2026 because the previous TRAIN/TEST research history is exposed through that date. A trusted ingestion step can now write a physical non-holdout copy with materialize_non_holdout_partition; a manifest with that path makes workers load only the safe copy and verify its SHA-256. Set RESEARCH_PARTITION_DATA_ROOT to the partition store. An unset RESEARCH_REQUIRE_PARTITIONED_DATA
+  is strict mode; setting it to 0 is an explicit exploratory compatibility override that may parse
+  combined source files before row clipping. A local process may still access other files on the same filesystem; a future isolated worker/holdout service with OS-level file permissions remains necessary. The remaining post-2026 sample is currently very short and cannot support a robust strategy claim.
 
 The workers now attach TRAIN-only PSR/FDR/DSR/CSCV diagnostics to the full successful candidate family. FDR and DSR use all successful candidates; CSCV/PBO uses a deterministic evenly spaced subset capped at 128 candidates. DSR explicitly assumes independent Gaussian trial Sharpe estimates; this is not a realistic model for correlated strategy populations and requires sensitivity analysis. P-values are PSR-derived against a zero per-period Sharpe benchmark. None of these diagnostics affects candidate selection or corrects universe survivorship, publication-time leakage, data-quality, cost or execution bias.
 
 ## Remaining implementation priorities
 
-1. Integrate the other optimiser/evolution families with the persistent job manager, candidate storage and budget-equal orchestration. The default runner currently supports existing strategies only.
+1. Integrate the other optimiser/evolution families with the persistent job manager, candidate storage and budget-equal orchestration. The default manager now registers parameter-search/hybrid, GP, neuroevolution,
+  strategy-composition and Pareto runners; a unified mixed-genome population spanning those
+  families remains open.
 2. Add storage-level holdout isolation and streaming reads which do not parse protected future rows into worker memory.
 3. Add portfolio tax lots, corporate actions, dividends, crypto funding, borrow, margin and liquidation models.
 4. Add date-effective cost schedules, broker/venue fee tiers and execution calibration from tick/order-book data.

@@ -53,6 +53,7 @@ from .portfolio import PortfolioConfig
 from .storage import ExperimentStore
 from .statistics import candidate_family_report_from_returns
 from .strategy_catalog import ExistingStrategyRegistry
+from .validation import AccessRole, Partition
 
 
 D = Decimal
@@ -1144,6 +1145,11 @@ class ExistingStrategyOptimizerJobRunner:
         )
         context.check_cancelled()
 
+        # Persist candidate freeze and one-time OOS authorization before reading OOS rows.
+        validation_lifecycle = context.validation_lifecycle(spec.experiment_id)
+        validation_lifecycle.freeze_candidate(selected["candidate_digest"])
+        validation_lifecycle.authorize(AccessRole.OOS_EVALUATOR, Partition.OOS)
+
         # Freeze the selected configuration and send it through the established OOS-only path.
         frozen_parameters = dict(spec.parameters)
         frozen_parameters["strategy_parameters"] = selected["parameters"]
@@ -1169,6 +1175,7 @@ class ExistingStrategyOptimizerJobRunner:
                 "train_parent_candidate_id": selected["train_candidate_id"],
             },
         )
+        validation_lifecycle.record_oos(selected["candidate_id"], passed=None)
         return {
             "experiment_id": spec.experiment_id,
             "search_family": spec.algorithm_family.value,
@@ -1583,6 +1590,10 @@ class GeneticProgrammingJobRunner:
                 "final_holdout_accessed": False,
             },
         )
+        # Persist candidate freeze and OOS authorization before building the OOS panel.
+        validation_lifecycle = context.validation_lifecycle(spec.experiment_id)
+        validation_lifecycle.freeze_candidate(selected["validation_candidate_digest"])
+        validation_lifecycle.authorize(AccessRole.OOS_EVALUATOR, Partition.OOS)
         context.check_cancelled()
 
         # OOS is evaluated once after selection; no final-holdout frame is created.
@@ -1637,6 +1648,7 @@ class GeneticProgrammingJobRunner:
                     "final_holdout_accessed": False,
                 },
             )
+        validation_lifecycle.record_oos(oos_candidate_id, passed=None)
         context.store.append_event(
             spec.experiment_id,
             "genetic_programming_oos_recorded",
@@ -2087,6 +2099,10 @@ class NeuroevolutionJobRunner:
                 "final_holdout_accessed": False,
             },
         )
+        # Persist candidate freeze and OOS authorization before building the OOS panel.
+        validation_lifecycle = context.validation_lifecycle(spec.experiment_id)
+        validation_lifecycle.freeze_candidate(selected["validation_candidate_digest"])
+        validation_lifecycle.authorize(AccessRole.OOS_EVALUATOR, Partition.OOS)
         context.check_cancelled()
 
         # The selected frozen weight vector is evaluated once on OOS; no final holdout is loaded.
@@ -2150,6 +2166,7 @@ class NeuroevolutionJobRunner:
                     "final_holdout_accessed": False,
                 },
             )
+        validation_lifecycle.record_oos(oos_candidate_id, passed=None)
         context.store.append_event(
             spec.experiment_id,
             "neuroevolution_oos_recorded",
@@ -2545,6 +2562,10 @@ class StrategyCompositionJobRunner:
                 "final_holdout_accessed": False,
             },
         )
+        # Persist candidate freeze and OOS authorization before building the OOS panel.
+        validation_lifecycle = context.validation_lifecycle(spec.experiment_id)
+        validation_lifecycle.freeze_candidate(selected["validation_candidate_digest"])
+        validation_lifecycle.authorize(AccessRole.OOS_EVALUATOR, Partition.OOS)
         context.check_cancelled()
 
         # The selected immutable component genome is evaluated once on OOS and never retuned.
@@ -2604,6 +2625,7 @@ class StrategyCompositionJobRunner:
                     "final_holdout_accessed": False,
                 },
             )
+        validation_lifecycle.record_oos(oos_candidate_id, passed=None)
         context.store.append_event(
             spec.experiment_id,
             "strategy_composition_oos_recorded",
@@ -3020,6 +3042,10 @@ class ParetoStrategySearchJobRunner:
                 "final_holdout_accessed": False,
             },
         )
+        # Persist candidate freeze and OOS authorization before OOS evaluation.
+        validation_lifecycle = context.validation_lifecycle(spec.experiment_id)
+        validation_lifecycle.freeze_candidate(selected["candidate_digest"])
+        validation_lifecycle.authorize(AccessRole.OOS_EVALUATOR, Partition.OOS)
         context.check_cancelled()
 
         # Evaluate the chosen validation-Pareto candidate once on OOS after freezing it.
@@ -3045,6 +3071,7 @@ class ParetoStrategySearchJobRunner:
                 "directions": list(directions),
             },
         )
+        validation_lifecycle.record_oos(selected["candidate_id"], passed=None)
         return {
             "experiment_id": spec.experiment_id,
             "algorithm_family": AlgorithmFamily.PARETO_SEARCH.value,

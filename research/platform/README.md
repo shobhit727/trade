@@ -17,7 +17,8 @@ any existing backtest engine.
   and an access lifecycle that separates optimisation, model selection, OOS evaluation
   and one-time final-holdout access.
 - SQLite experiment/event/candidate persistence with append-only event and candidate
-  records, including evolutionary lineage JSON.
+  records, including evolutionary lineage JSON. Candidate freeze, OOS start/result, holdout
+  approval and one-time holdout access are persisted atomically per job and survive restarts.
 - Optional CuPy batch linear-population, dense-neural inference and long/flat fitness
   kernels with NumPy CPU fallback. Dense neural inference is checked against the scalar
   NumPy implementation; the portfolio simulator remains the execution/fee fitness engine.
@@ -80,7 +81,10 @@ system, full NSE tax-lot/corporate-action portfolio simulator, crypto derivative
 liquidation engine, exchange arbitrage simulator, durable distributed worker cluster,
 secured process-isolated holdout service, or full dashboard telemetry/comparison suite.
 The job manager uses local threads and marks in-flight jobs interrupted after process
-restart; interrupted jobs must be resubmitted. Setting RESEARCH_REQUIRE_PARTITIONED_DATA=0 explicitly re-enables legacy source loading,
+restart; interrupted jobs must be resubmitted. Durable lifecycle state does not provide OS-level
+file isolation: registered workers stop at OOS and do not load final-holdout rows. A separate
+worker/service with restrictive filesystem permissions is still required before claiming secure
+final-holdout separation. Setting RESEARCH_REQUIRE_PARTITIONED_DATA=0 explicitly re-enables legacy source loading,
 which can parse a combined file before row clipping and must not be used for protected-holdout research.
 The safe partition copy avoids that normal worker read, but local filesystem access is not
 an OS/process security boundary. GP, neural and composition policies are currently long/flat

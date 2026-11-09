@@ -350,6 +350,107 @@ def test_failed_oos_cannot_unlock_final_holdout() -> None:
         lifecycle.open_final_holdout("not-allowed")
 
 
+def test_validation_lifecycle_persists_job_scoped_transitions_across_store_instances(tmp_path) -> None:
+    # Durable state prevents a restarted worker from repeating an OOS evaluation.
+    database = tmp_path / "persistent-validation.sqlite3"
+    first_store = ExperimentStore(database)
+    spec = make_experiment()
+    first_store.create_experiment(spec)
+
+    lifecycle = ValidationLifecycle(
+        store=first_store,
+        experiment_id=spec.experiment_id,
+        lifecycle_id="job-persistent-001",
+    )
+    lifecycle.freeze_candidate("a" * 64)
+    lifecycle.authorize(AccessRole.OOS_EVALUATOR, Partition.OOS)
+
+    # A second store instance models a new process reopening the same database.
+    restarted_store = ExperimentStore(database)
+    resumed = ValidationLifecycle(
+        store=restarted_store,
+        experiment_id=spec.experiment_id,
+        lifecycle_id="job-persistent-001",
+    )
+    assert resumed.state is EvaluationState.OOS_EVALUATING
+    assert resumed.candidate_digest == "a" * 64
+    with pytest.raises(PermissionError, match="once after candidate freeze"):
+        resumed.authorize(AccessRole.OOS_EVALUATOR, Partition.OOS)
+
+    # Unknown is not a pass; only a separately defined OOS gate may unlock final holdout.
+    resumed.record_oos("oos-evaluation-001", passed=None)
+    with pytest.raises(PermissionError, match="passing recorded OOS"):
+        resumed.open_final_holdout("approval-not-valid")
+
+    # A separately submitted job is an independent, explicit rerun of the same experiment.
+    rerun = ValidationLifecycle(
+        store=restarted_store,
+        experiment_id=spec.experiment_id,
+        lifecycle_id="job-persistent-002",
+    )
+    assert rerun.state is EvaluationState.DISCOVERY
+    rerun.freeze_candidate("b" * 64)
+    rerun.authorize(AccessRole.OOS_EVALUATOR, Partition.OOS)
+    rerun.record_oos("oos-evaluation-002", passed=True)
+    rerun.open_final_holdout("approved-audit-002")
+    rerun.authorize(AccessRole.FINAL_AUDITOR, Partition.FINAL_HOLDOUT)
+
+    # A further worker cannot repeat the final-holdout access for this job.
+    third_store = ExperimentStore(database)
+    reopened = ValidationLifecycle(
+        store=third_store,
+        experiment_id=spec.experiment_id,
+        lifecycle_id="job-persistent-002",
+    )
+    assert reopened.holdout_access_count == 1
+    with pytest.raises(PermissionError, match="only once"):
+        reopened.authorize(AccessRole.FINAL_AUDITOR, Partition.FINAL_HOLDOUT)
+    reopened.complete(passed=True)
+    assert ValidationLifecycle(
+        store=third_store,
+        experiment_id=spec.experiment_id,
+        lifecycle_id="job-persistent-002",
+    ).state is EvaluationState.COMPLETED
+
+    # Every lifecycle event retains the job identity for later audit.
+    persisted = third_store.get_validation_lifecycle(
+        spec.experiment_id, "job-persistent-002"
+    )
+    assert [item["event"] for item in persisted["events"]] == [
+        "candidate_frozen",
+        "oos_evaluation_started",
+        "oos_recorded",
+        "holdout_opened",
+        "holdout_accessed",
+        "completed",
+    ]
+    assert all(
+        item["payload"]["lifecycle_id"] == "job-persistent-002"
+        for item in persisted["events"]
+    )
+
+
+def test_validation_lifecycle_rejects_out_of_order_persisted_transitions(tmp_path) -> None:
+    # An invalid caller cannot skip candidate freeze/OOS to unlock final holdout.
+    store = ExperimentStore(tmp_path / "invalid-validation-order.sqlite3")
+    spec = make_experiment()
+    store.create_experiment(spec)
+    with pytest.raises(PermissionError, match="OOS evaluation is permitted"):
+        store.transition_validation_lifecycle(
+            spec.experiment_id,
+            "job-invalid-order",
+            "oos_evaluation_started",
+            {"candidate_digest": "c" * 64},
+        )
+    with pytest.raises(PermissionError, match="passing recorded OOS"):
+        store.transition_validation_lifecycle(
+            spec.experiment_id,
+            "job-invalid-order",
+            "holdout_opened",
+            {"approval_reference": "not-approved"},
+        )
+
+
 def test_experiment_store_is_append_only_and_persists_lineage(tmp_path) -> None:
     """Experiment definitions, events and candidates persist with immutable history."""
     # Use a disposable test database, separate from all existing runtime/account stores.

@@ -44,6 +44,17 @@ class JobContext:
         if self.cancel_event.is_set():
             raise JobCancelled(f"job {self.job_id} cancellation requested")
 
+    def validation_lifecycle(self, experiment_id: str):
+        """Restore or create this job's persistent candidate/OOS/holdout lifecycle."""
+        # Job identity scopes durable transitions, while a separate job can be an audited rerun.
+        from .validation import ValidationLifecycle
+
+        return ValidationLifecycle(
+            store=self.store,
+            experiment_id=experiment_id,
+            lifecycle_id=self.job_id,
+        )
+
     def log(self, message: str, *, level: str = "info") -> None:
         """Append a structured progress message to persistent job history."""
         # Bound message length and restrict levels to protect the event store.

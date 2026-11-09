@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
-from typing import Sequence
+from typing import Any, Sequence, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .storage import ExperimentStore
 
 
 class Partition(StrEnum):
@@ -172,14 +175,50 @@ def purged_walk_forward_split(
 
 @dataclass(slots=True)
 class ValidationLifecycle:
-    """Enforce freeze-before-OOS and one-time final-holdout opening."""
+    """Enforce freeze-before-OOS and one-time final-holdout opening.
+
+    Supplying an ExperimentStore makes transitions durable and recoverable. The lifecycle
+    is keyed by experiment and job ID so a restart resumes the same evaluation.
+    """
 
     state: EvaluationState = EvaluationState.DISCOVERY
     candidate_digest: str | None = None
     oos_passed: bool | None = None
     oos_evaluation_id: str | None = None
     holdout_access_count: int = 0
-    events: list[dict[str, str]] = field(default_factory=list)
+    events: list[dict[str, Any]] = field(default_factory=list)
+    store: "ExperimentStore | None" = field(default=None, repr=False, compare=False)
+    experiment_id: str | None = None
+    lifecycle_id: str | None = None
+
+    def __post_init__(self) -> None:
+        # Recover state from append-only SQLite events when persistence is configured.
+        if self.store is None:
+            if self.experiment_id is not None or self.lifecycle_id is not None:
+                raise ValueError("experiment_id and lifecycle_id require a persistent store")
+            return
+        if not self.experiment_id or not self.lifecycle_id:
+            raise ValueError("persistent lifecycle requires experiment_id and lifecycle_id")
+        persisted = self.store.get_validation_lifecycle(
+            self.experiment_id, self.lifecycle_id
+        )
+        self.state = EvaluationState(persisted["state"])
+        self.candidate_digest = persisted["candidate_digest"]
+        self.oos_passed = persisted["oos_passed"]
+        self.oos_evaluation_id = persisted["oos_evaluation_id"]
+        self.holdout_access_count = int(persisted["holdout_access_count"])
+        self.events = [
+            {"event": item["event"], **item["payload"]}
+            for item in persisted["events"]
+        ]
+
+    def _persist(self, transition: str, payload: dict[str, Any]) -> None:
+        # Store validation executes before the local object changes state.
+        if self.store is not None:
+            assert self.experiment_id is not None and self.lifecycle_id is not None
+            self.store.transition_validation_lifecycle(
+                self.experiment_id, self.lifecycle_id, transition, payload
+            )
 
     def authorize(self, role: AccessRole, partition: Partition) -> None:
         """Raise PermissionError when a pipeline stage requests a protected partition."""
@@ -197,13 +236,17 @@ class ValidationLifecycle:
         if role is AccessRole.OOS_EVALUATOR:
             if self.state is not EvaluationState.CANDIDATE_FROZEN:
                 raise PermissionError("OOS evaluation is permitted once after candidate freeze")
+            # A restarted worker cannot authorize OOS a second time for the same job.
+            payload = {"candidate_digest": self.candidate_digest or ""}
+            self._persist("oos_evaluation_started", payload)
             self.state = EvaluationState.OOS_EVALUATING
-            self.events.append({"event": "oos_evaluation_started", "candidate_digest": self.candidate_digest or ""})
+            self.events.append({"event": "oos_evaluation_started", **payload})
         if role is AccessRole.FINAL_AUDITOR:
             if self.state is not EvaluationState.HOLDOUT_OPENED:
                 raise PermissionError("final holdout is sealed until explicitly unlocked")
             if self.holdout_access_count != 0:
                 raise PermissionError("final holdout data may be opened only once")
+            self._persist("holdout_accessed", {})
             self.holdout_access_count = 1
 
     def freeze_candidate(self, candidate_digest: str) -> None:
@@ -213,22 +256,26 @@ class ValidationLifecycle:
             raise RuntimeError("candidate can only be frozen once during discovery")
         if len(candidate_digest) < 16:
             raise ValueError("candidate_digest must be a stable cryptographic fingerprint")
+        self._persist("candidate_frozen", {"candidate_digest": candidate_digest})
         self.candidate_digest = candidate_digest
         self.state = EvaluationState.CANDIDATE_FROZEN
         self.events.append({"event": "candidate_frozen", "candidate_digest": candidate_digest})
 
-    def record_oos(self, evaluation_id: str, passed: bool) -> None:
-        """Record one OOS result for the frozen candidate; no repeated tuning loop."""
-        # An OOS failure is still recorded and cannot be used to select a new candidate.
+    def record_oos(self, evaluation_id: str, passed: bool | None) -> None:
+        """Record one OOS result; None means no explicit acceptance gate was evaluated."""
+        # Unknown is deliberately not equivalent to a passing OOS gate.
         if self.state is not EvaluationState.OOS_EVALUATING:
             raise RuntimeError("OOS result requires the single authorised OOS evaluation")
         if not evaluation_id.strip():
             raise ValueError("evaluation_id is required")
+        if passed is not None and not isinstance(passed, bool):
+            raise ValueError("passed must be true, false or null when no OOS gate is defined")
+        payload = {"evaluation_id": evaluation_id, "passed": passed}
+        self._persist("oos_recorded", payload)
         self.oos_evaluation_id = evaluation_id
-        self.oos_passed = bool(passed)
+        self.oos_passed = passed
         self.state = EvaluationState.OOS_RECORDED
-        self.events.append({"event": "oos_recorded", "evaluation_id": evaluation_id,
-                            "passed": str(bool(passed)).lower()})
+        self.events.append({"event": "oos_recorded", **payload})
 
     def open_final_holdout(self, approval_reference: str) -> None:
         """Unlock final holdout exactly once and only after a passing OOS evaluation."""
@@ -237,6 +284,7 @@ class ValidationLifecycle:
             raise PermissionError("final holdout requires a passing recorded OOS evaluation")
         if not approval_reference.strip() or self.holdout_access_count != 0:
             raise PermissionError("holdout approval must be supplied once")
+        self._persist("holdout_opened", {"approval_reference": approval_reference})
         self.state = EvaluationState.HOLDOUT_OPENED
         self.events.append({"event": "holdout_opened", "approval_reference": approval_reference})
 
@@ -245,5 +293,6 @@ class ValidationLifecycle:
         # Completion requires the holdout to have been opened under the audited policy.
         if self.state is not EvaluationState.HOLDOUT_OPENED or self.holdout_access_count != 1:
             raise RuntimeError("lifecycle requires one final holdout review")
+        self._persist("completed", {"passed": bool(passed)})
         self.state = EvaluationState.COMPLETED
-        self.events.append({"event": "completed", "passed": str(bool(passed)).lower()})
+        self.events.append({"event": "completed", "passed": bool(passed)})

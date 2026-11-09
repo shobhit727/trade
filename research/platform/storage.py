@@ -13,6 +13,92 @@ from .data_catalog import DatasetManifest
 from .experiments import ExperimentSpec
 
 
+def _advance_validation_lifecycle(
+    state: dict[str, Any],
+    transition: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate one lifecycle transition and return its next durable state."""
+    # State changes are reduced while SQLite holds a write lock, preventing duplicate access.
+    current = state["state"]
+    updated = dict(state)
+    if transition == "candidate_frozen":
+        digest = payload.get("candidate_digest")
+        if current != "discovery":
+            raise RuntimeError("candidate can only be frozen once during discovery")
+        if not isinstance(digest, str) or len(digest) < 16:
+            raise ValueError("candidate_digest must be a stable cryptographic fingerprint")
+        updated.update(state="candidate_frozen", candidate_digest=digest)
+    elif transition == "oos_evaluation_started":
+        if current != "candidate_frozen":
+            raise PermissionError("OOS evaluation is permitted once after candidate freeze")
+        if payload.get("candidate_digest") != state.get("candidate_digest"):
+            raise PermissionError("OOS candidate digest does not match the frozen candidate")
+        updated["state"] = "oos_evaluating"
+    elif transition == "oos_recorded":
+        evaluation_id = payload.get("evaluation_id")
+        passed = payload.get("passed")
+        if current != "oos_evaluating":
+            raise RuntimeError("OOS result requires the single authorised OOS evaluation")
+        if not isinstance(evaluation_id, str) or not evaluation_id.strip():
+            raise ValueError("evaluation_id is required")
+        if passed is not None and not isinstance(passed, bool):
+            raise ValueError("passed must be true, false or null when no OOS gate is defined")
+        updated.update(state="oos_recorded", oos_evaluation_id=evaluation_id, oos_passed=passed)
+    elif transition == "holdout_opened":
+        approval = payload.get("approval_reference")
+        if current != "oos_recorded" or state.get("oos_passed") is not True:
+            raise PermissionError("final holdout requires a passing recorded OOS evaluation")
+        if not isinstance(approval, str) or not approval.strip():
+            raise PermissionError("holdout approval must be supplied once")
+        updated["state"] = "holdout_opened"
+    elif transition == "holdout_accessed":
+        if current != "holdout_opened":
+            raise PermissionError("final holdout is sealed until explicitly unlocked")
+        if int(state.get("holdout_access_count", 0)) != 0:
+            raise PermissionError("final holdout data may be opened only once")
+        updated["holdout_access_count"] = 1
+    elif transition == "completed":
+        if current != "holdout_opened" or int(state.get("holdout_access_count", 0)) != 1:
+            raise RuntimeError("lifecycle requires one final holdout review")
+        updated["state"] = "completed"
+    else:
+        raise ValueError(f"unknown validation lifecycle transition: {transition}")
+    return updated
+
+
+def _reduce_validation_lifecycle(
+    rows: list[sqlite3.Row],
+    lifecycle_id: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Reconstruct one job's lifecycle from its append-only event history."""
+    # A lifecycle ID is the persistent job ID; independent reruns have independent histories.
+    state: dict[str, Any] = {
+        "state": "discovery",
+        "candidate_digest": None,
+        "oos_passed": None,
+        "oos_evaluation_id": None,
+        "holdout_access_count": 0,
+    }
+    events: list[dict[str, Any]] = []
+    prefix = "validation_lifecycle_"
+    for row in rows:
+        event_type = str(row["event_type"])
+        if not event_type.startswith(prefix):
+            continue
+        payload = json.loads(row["payload_json"])
+        if payload.get("lifecycle_id") != lifecycle_id:
+            continue
+        transition = event_type.removeprefix(prefix)
+        state = _advance_validation_lifecycle(state, transition, payload)
+        events.append({
+            "event": transition,
+            "occurred_at": row["occurred_at"],
+            "payload": payload,
+        })
+    return state, events
+
+
 class ExperimentStore:
     """Persist immutable experiment definitions, events and candidate lineage."""
 
@@ -186,6 +272,75 @@ class ExperimentStore:
                 (experiment_id, event_type, datetime.now(timezone.utc).isoformat(), encoded),
             )
             return int(cursor.lastrowid)
+
+    def transition_validation_lifecycle(
+        self,
+        experiment_id: str,
+        lifecycle_id: str,
+        transition: str,
+        payload: dict[str, Any],
+    ) -> int:
+        """Atomically append one validated, job-scoped lifecycle transition."""
+        # BEGIN IMMEDIATE serializes reduction and insertion across store instances/processes.
+        if not lifecycle_id.strip() or len(lifecycle_id) > 200:
+            raise ValueError("lifecycle_id must contain 1..200 non-whitespace characters")
+        if not isinstance(payload, dict):
+            raise TypeError("validation lifecycle payload must be a dictionary")
+        if "lifecycle_id" in payload and payload["lifecycle_id"] != lifecycle_id:
+            raise ValueError("payload lifecycle_id cannot override the lifecycle key")
+        event_payload = {**payload, "lifecycle_id": lifecycle_id}
+        encoded = json.dumps(
+            event_payload, sort_keys=True, separators=(",", ":"), allow_nan=False
+        )
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                """SELECT event_type, occurred_at, payload_json
+                   FROM experiment_events
+                   WHERE experiment_id = ? AND event_type LIKE 'validation_lifecycle_%'
+                   ORDER BY event_id""",
+                (experiment_id,),
+            ).fetchall()
+            state, _ = _reduce_validation_lifecycle(rows, lifecycle_id)
+            _advance_validation_lifecycle(state, transition, event_payload)
+            cursor = connection.execute(
+                """INSERT INTO experiment_events
+                   (experiment_id, event_type, occurred_at, payload_json)
+                   VALUES (?, ?, ?, ?)""",
+                (
+                    experiment_id,
+                    f"validation_lifecycle_{transition}",
+                    datetime.now(timezone.utc).isoformat(),
+                    encoded,
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def get_validation_lifecycle(
+        self,
+        experiment_id: str,
+        lifecycle_id: str,
+    ) -> dict[str, Any]:
+        """Rebuild one durable validation lifecycle from append-only experiment events."""
+        # No mutable snapshot is trusted; the state is derived from the event stream.
+        if not lifecycle_id.strip() or len(lifecycle_id) > 200:
+            raise ValueError("lifecycle_id must contain 1..200 non-whitespace characters")
+        with self._connection() as connection:
+            exists = connection.execute(
+                "SELECT 1 FROM experiments WHERE experiment_id = ?",
+                (experiment_id,),
+            ).fetchone()
+            if exists is None:
+                raise KeyError(experiment_id)
+            rows = connection.execute(
+                """SELECT event_type, occurred_at, payload_json
+                   FROM experiment_events
+                   WHERE experiment_id = ? AND event_type LIKE 'validation_lifecycle_%'
+                   ORDER BY event_id""",
+                (experiment_id,),
+            ).fetchall()
+        state, events = _reduce_validation_lifecycle(rows, lifecycle_id)
+        return {"lifecycle_id": lifecycle_id, **state, "events": tuple(events)}
 
     def has_candidate(self, experiment_id: str, candidate_digest: str) -> bool:
         """Return whether an immutable candidate fingerprint is already recorded."""
