@@ -1243,13 +1243,14 @@ data only; it is not imposed on crypto. These checks are not a complete data-qua
 substitute for point-in-time constituent history, corporate actions, missing-bar audits or licence
 review.
 
-The data layer now supports a trusted ingestion step which materialises a physical non-holdout
-copy ending before the declared final-holdout boundary. Workers with
-RESEARCH_REQUIRE_PARTITIONED_DATA=1 reject manifests without a checksum-verified safe copy;
-RESEARCH_PARTITION_DATA_ROOT selects the store. The default compatibility mode still permits
-legacy combined-file readers, and a local process can access other files on the same filesystem.
-This is not an OS/process security boundary. Enable strict mode for partitioned-data research and
-retain the requirement for a physically isolated worker/holdout service before claiming secure
+The data layer supports a trusted ingestion step which materialises a physical non-holdout
+copy ending before the declared final-holdout boundary. Production workers now require this
+checksum-verified copy by default; an unset RESEARCH_REQUIRE_PARTITIONED_DATA is strict mode,
+and RESEARCH_PARTITION_DATA_ROOT selects the store. Setting RESEARCH_REQUIRE_PARTITIONED_DATA=0
+is an explicit compatibility override for controlled exploratory work only; it may parse a
+combined source before clipping and must not be used for protected-holdout research. A local
+process can still access other files on the same filesystem. This is not an OS/process security
+boundary; a physically isolated worker/holdout service remains necessary before claiming secure
 final-holdout separation.
 
 No strategy profitability, deployability, live trading or hardware performance is implied by this
