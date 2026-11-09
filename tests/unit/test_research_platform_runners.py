@@ -458,6 +458,11 @@ def test_existing_strategy_optimizer_searches_train_selects_validation_then_eval
         assert {item["lineage"]["operator"] for item in baseline_candidates} == {
             "shipped_default", "user_configured_baseline"
         }
+        assert all(
+            item["lineage"]["origin"] == "existing_strategy_baseline"
+            for item in baseline_candidates
+        )
+        assert result["training_candidate_family_diagnostics"]["candidate_family_size"] == result["budget"]
         validation_candidates = [
             candidate for candidate in stored_candidates
             if candidate["family"] == "random_search_validation"
@@ -948,14 +953,24 @@ def test_pareto_search_worker_persists_nsga2_front_and_oos_evaluation(tmp_path) 
         assert result["final_evaluation"]["final_holdout_accessed"] is False
 
         candidates = store.candidates(spec.experiment_id)
-        assert len(candidates) == 8
-        assert all(item["family"] == "pareto_search" for item in candidates)
-        candidate_ids = {item["candidate_id"] for item in candidates}
+        train_candidates = [
+            item for item in candidates if item["family"] == "pareto_search"
+        ]
+        oos_candidates = [
+            item for item in candidates if item["family"] == "pareto_search_selected_oos"
+        ]
+        assert len(train_candidates) == 8
+        assert len(oos_candidates) == 1
+        assert result["candidate_count"] == len(train_candidates)
+        candidate_ids = {item["candidate_id"] for item in train_candidates}
         assert any(item["lineage"]["operator"] == "nsga2_crossover_mutation"
-                   for item in candidates)
-        for item in candidates:
+                   for item in train_candidates)
+        for item in train_candidates:
             for parent_id in item["lineage"]["parent_candidate_ids"]:
                 assert parent_id in candidate_ids
+        assert oos_candidates[0]["lineage"]["parent_candidate_ids"] == [
+            result["selected_candidate"]["candidate_id"]
+        ]
         assert any(
             event["event_type"] == "pareto_search_candidate_frozen"
             for event in store.events(spec.experiment_id)
