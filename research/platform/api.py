@@ -122,7 +122,18 @@ const tracks = {
   crypto: ["crypto_individual", "crypto_portfolio"]
 };
 const families = ["existing_strategy","random_search","grid_search","bayesian","differential_evolution","genetic_programming","neuroevolution","strategy_composition","pareto_search","hybrid"];
-const resolutions = ["tick","order_book_event","order_book_snapshot","1s","1m","5m","15m","30m","1h","4h","1d","1w","1mo"];
+// Offer only OHLCV intervals supported by the local research adapters.
+const resolutionsByMarket = {
+  nse: [
+    ["1d", 252], ["1w", 52], ["1mo", 12],
+    ["1m", 94500], ["5m", 18900], ["15m", 6300], ["30m", 3150], ["1h", 1575]
+  ],
+  crypto: [
+    ["1d", 365], ["1w", 52], ["1mo", 12],
+    ["1s", 31536000], ["1m", 525600], ["5m", 105120], ["15m", 35040],
+    ["30m", 17520], ["1h", 8760], ["4h", 2190]
+  ]
+};
 const $ = id => document.getElementById(id);
 let strategyCache = null;
 function refreshTrackOptions() {
@@ -132,6 +143,24 @@ function refreshTrackOptions() {
 function fillSelect(id, values) {
   // Populate a controlled select from the server-supported vocabulary.
   $(id).innerHTML = values.map(x => '<option value="' + x + '">' + x + '</option>').join("");
+}
+function refreshResolutionOptions() {
+  // Keep the resolution list aligned with the market adapter's OHLCV support.
+  const choices = resolutionsByMarket[$("market").value];
+  $("resolution").innerHTML = choices.map(item =>
+    '<option value="' + item[0] + '">' + item[0] + '</option>'
+  ).join("");
+  updatePeriodsPerYear();
+}
+function updatePeriodsPerYear() {
+  // Annualisation follows the selected market calendar and the selected bar interval.
+  const market = $("market").value;
+  const resolution = $("resolution").value;
+  const choice = resolutionsByMarket[market].find(item => item[0] === resolution);
+  if (!choice) throw new Error("No annualisation frequency is defined for this market/resolution");
+  const assumptions = JSON.parse($("execution-assumptions").value);
+  assumptions.periods_per_year = choice[1];
+  $("execution-assumptions").value = JSON.stringify(assumptions, null, 2);
 }
 async function api(path, options) {
   // All dashboard data comes from real API records, never embedded sample results.
@@ -277,15 +306,14 @@ async function refresh() {
   });
 }
 $("market").addEventListener("change", () => {
-  // Set the sampling calendar explicitly when switching independent markets.
+  // Switching market updates tracks, valid resolutions and sampling frequency together.
   refreshTrackOptions();
-  const assumptions = JSON.parse($("execution-assumptions").value);
-  assumptions.periods_per_year = $("market").value === "crypto" ? 365 : 252;
-  $("execution-assumptions").value = JSON.stringify(assumptions, null, 2);
+  refreshResolutionOptions();
   if ($("market").value === "nse") {
     $("cost-model").value = "nse-delivery-cost-model";
   }
 });
+$("resolution").addEventListener("change", updatePeriodsPerYear);
 $("filter-market").addEventListener("change", refresh);
 $("compare-button").addEventListener("click", async () => {
   // Submit explicit experiment IDs; the server rejects mixed-market comparisons.
@@ -445,8 +473,8 @@ $("create-form").addEventListener("submit", async event => {
   }
 });
 fillSelect("family", families);
-fillSelect("resolution", resolutions);
 refreshTrackOptions();
+refreshResolutionOptions();
 refresh().catch(error => $("form-status").textContent = "API error: " + error.message);
 </script>
 </body>
