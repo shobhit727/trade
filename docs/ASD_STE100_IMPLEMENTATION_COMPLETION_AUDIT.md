@@ -4861,3 +4861,2130 @@ The current implementation does not establish a profitable strategy.
 The current implementation does not establish live trading readiness.
 
 **Audit result: PARTIAL. Further engineering, independent review, and market-data validation are required.**
+
+
+---
+
+# Deep implementation appendices
+
+## 35. Feature engineering and point-in-time model data flow
+
+### 35.1 Current feature set
+
+The current point-in-time feature engine is in research/platform/features.py.
+
+The default feature windows are 5, 20, and 60 observations.
+
+The engine requires the following input fields:
+
+- open
+- high
+- low
+- close
+- volume
+
+The index must contain unique and increasing timezone-aware timestamps.
+
+The engine rejects missing or non-finite OHLCV input.
+
+The engine rejects non-positive prices.
+
+The engine rejects negative volume.
+
+The engine checks high, low, and close relationships.
+
+The engine does not fill missing values.
+
+The engine does not forward-fill missing observations.
+
+The engine does not create a value for a warm-up row when the complete lookback is not available.
+
+### 35.2 Current feature fields
+
+The output contains these base fields:
+
+| Feature | Meaning in the current implementation | Review point |
+|---|---|---|
+| return_1 | One-observation close return. | Confirm that the bar close is available at the signal time. |
+| range_pct | The current bar range relative to price. | Confirm the exact denominator and timestamp rule. |
+| momentum_N | Close percentage change over N observations. | Confirm that the selected N matches the intended horizon. |
+| volatility_N | Rolling standard deviation of one-observation returns. | Confirm annualisation is not applied twice. |
+| atr_pct_N | Rolling mean true range divided by close. | Confirm behaviour around gaps and corporate actions. |
+| volume_z_N | Rolling volume z-score. | Confirm zero-variance and warm-up behaviour. |
+| close_to_sma_N | Close divided by rolling average close, minus one. | Confirm this is a close-time feature. |
+
+The feature engine records metadata.
+
+The metadata includes maximum lookback.
+
+The metadata includes the window set.
+
+The metadata states that the current feature matrix does not use future data.
+
+### 35.3 Lookback behaviour
+
+The feature engine uses current and prior observations.
+
+It uses a prior close for return and true-range calculations.
+
+It uses rolling windows that end at the current bar.
+
+It requires a complete lookback for the corresponding rolling feature.
+
+This means the first rows of a partition can be present in the source data but can have incomplete feature values.
+
+The model panel keeps pre-window history to calculate features for the first in-window rows.
+
+The model panel then selects only finite feature rows inside the requested half-open time window.
+
+This is the correct general pattern for a trailing feature calculation.
+
+The team must still test every added feature against future-data perturbations.
+
+### 35.4 Forward label behaviour
+
+The feature module also provides a separate next-bar label function.
+
+It calculates a one-bar forward return.
+
+It records a label start timestamp.
+
+It records a label end timestamp.
+
+It marks the labels as using future data.
+
+The label function is intended for model targets. It must not add the label columns to the feature matrix.
+
+The current label horizon is one bar.
+
+A future label horizon must record the actual start and end interval.
+
+A multi-bar label must not use a one-bar purge interval.
+
+### 35.5 Feature and label separation
+
+The required data flow is:
+
+1. Load a timestamped source frame.
+2. Validate the source fields and index.
+3. Build trailing feature values.
+4. Build labels in a separate object.
+5. Preserve label start and end timestamps.
+6. Split the features and labels on the same sample identity.
+7. Purge training labels that overlap validation.
+8. Apply the declared embargo.
+9. Train only on allowed rows.
+10. Evaluate on the declared stage.
+
+The current platform provides the feature engine and a purging helper.
+
+The audit does not establish that every future model trainer follows all ten actions.
+
+### 35.6 Model feature panel
+
+research/platform/model_evaluation.py builds a model feature panel.
+
+The panel stores:
+
+- A combined feature matrix.
+- Per-instrument feature segments.
+- Source-bar row positions.
+- The declared partition start.
+- The declared partition end.
+- The sampling frequency.
+
+The builder uses the same chronological calendar for each portfolio instrument.
+
+It rejects misaligned multi-asset calendars.
+
+It keeps pre-window history for feature warm-up.
+
+It selects finite rows inside the half-open partition.
+
+It retains row mapping so predictions can be placed back on the correct instrument and timestamp.
+
+This mapping is important. A prediction must not be assigned to a different instrument because the concatenated feature matrix changed order.
+
+### 35.7 Model score to target conversion
+
+The current model policy uses a long/flat output.
+
+A positive score activates long exposure.
+
+A zero or negative score leaves the instrument inactive.
+
+For a portfolio row, active instruments share the declared exposure through the current equal-weight target conversion.
+
+This means that the current policy does not use the full magnitude of a positive neural score to set a position weight.
+
+For example, scores of 0.1 and 10.0 both activate a long position. The score magnitude is not a continuous allocation signal in this conversion path.
+
+This is a material scope limit.
+
+Required next work:
+
+- Define whether score magnitude should affect target weight.
+- Define whether the policy should use ranks or normalised scores.
+- Define a cap per instrument.
+- Define a minimum score.
+- Define a maximum score.
+- Define a portfolio normalisation rule.
+- Define cash treatment.
+- Define behaviour when all scores are inactive.
+- Define behaviour when only one instrument is active.
+- Test target weights against the cash-account exposure limit.
+
+Do not change this mapping without a new policy version.
+
+### 35.8 Portfolio calendar and missing observations
+
+The model panel requires a common chronological calendar in the portfolio path.
+
+This is a strict contract.
+
+It avoids an implicit union of unrelated timestamps.
+
+It also means that assets with different trading calendars need a documented alignment policy before a multi-market or multi-exchange portfolio can use them.
+
+Do not fill a missing asset bar with a synthetic close unless the policy identifies the source, mark method, and execution restriction.
+
+A missing mark is not the same as a zero return.
+
+A market holiday is not the same as an exchange outage.
+
+An asset suspension is not the same as an ordinary missing data point.
+
+### 35.9 Feature pipeline versioning
+
+The feature metadata currently records the feature windows and lookback.
+
+A complete feature pipeline identity should also include:
+
+- Feature engine version.
+- Feature schema version.
+- Input field schema.
+- Timezone policy.
+- Timestamp position policy.
+- Rolling window definitions.
+- Rolling standard deviation convention.
+- True-range convention.
+- Missing-row policy.
+- Warm-up policy.
+- Corporate-action adjustment policy.
+- FX conversion policy.
+- Numerical type.
+- Feature column order.
+- Output hash.
+
+The experiment must bind to this identity.
+
+A feature change must not silently reuse an old experiment ID.
+
+## 36. Performance metric formulas and interpretation
+
+### 36.1 Metric input contract
+
+The function compute_portfolio_metrics is in research/platform/metrics.py.
+
+The function accepts a positive equity series or a sequence of equity values.
+
+The function requires an explicit periods_per_year value.
+
+The function does not infer the sampling frequency from the timestamps.
+
+If the input is a pandas Series with a DatetimeIndex, the index must be timezone-aware, increasing, and unique.
+
+The function requires at least two equity observations.
+
+The equity values must be finite and positive.
+
+The function does not fill missing rows.
+
+### 36.2 Period return
+
+The function calculates each return from two consecutive equity observations:
+
+[
+r_t = rac{E_t}{E_{t-1}} - 1
+]
+
+The number of return observations is the number of equity observations minus one.
+
+The function uses this return vector for the reported periodic statistics.
+
+The function does not calculate a trade-level win rate.
+
+The field win_rate is the fraction of positive return periods.
+
+Do not describe it as the percentage of profitable trades.
+
+### 36.3 Total return
+
+The function calculates:
+
+[
+R_{mathrm{total}} = rac{E_{mathrm{last}}}{E_{mathrm{first}}} - 1
+]
+
+This is the return over the supplied equity observations.
+
+It does not include a separate dividend model unless dividends already enter the cash and equity series.
+
+### 36.4 CAGR
+
+The function sets:
+
+[
+T = rac{N}{P}
+]
+
+Where:
+
+- N is the number of return observations.
+- P is periods_per_year.
+
+It then calculates:
+
+[
+CAGR = left(rac{E_{mathrm{last}}}{E_{mathrm{first}}}ight)^{1/T} - 1
+]
+
+This calculation assumes the observation count represents regular periods.
+
+A missing bar can therefore change the annualised result if the missing period is not represented in the return vector.
+
+The function does not infer elapsed calendar time.
+
+The data quality system must detect missing observations before the report uses this metric.
+
+For irregular timestamps, a separate elapsed-time calculation may be required.
+
+The research owner must approve the convention.
+
+### 36.5 Volatility
+
+The function calculates the sample standard deviation of periodic returns.
+
+It uses ddof equal to 1.
+
+It multiplies the periodic standard deviation by the square root of periods_per_year.
+
+[
+sigma_{mathrm{annual}} = s(r_t)sqrt{P}
+]
+
+The function returns zero when there are not enough observations for a sample standard deviation.
+
+A result with very few observations must be marked as insufficient, not interpreted as stable zero volatility.
+
+### 36.6 Risk-free rate conversion
+
+The function converts the annual risk-free rate into a periodic rate:
+
+[
+r_{f,mathrm{period}} = (1+r_{f,mathrm{annual}})^{1/P}-1
+]
+
+It subtracts this periodic rate from each period return.
+
+It then uses the excess return series for Sharpe and Sortino.
+
+The caller must supply a risk-free rate that matches the declared period and market context.
+
+A constant annual risk-free rate is a simplification when rates change through time.
+
+A future implementation can use a dated risk-free series, but that series must have its own source and availability-time rules.
+
+### 36.7 Sharpe
+
+The current implementation calculates the sample standard deviation of excess returns.
+
+It then calculates:
+
+[
+Sharpe = rac{operatorname{mean}(r_t-r_f)}
+{s(r_t-r_f)}sqrt{P}
+]
+
+The function returns zero when the excess-return standard deviation is zero.
+
+Review whether zero is the best representation for a zero-variance series. An explicit not-computable state can be clearer than a numeric zero.
+
+The report must state the sampling frequency and risk-free rate.
+
+### 36.8 Sortino
+
+The current implementation defines downside excess returns as:
+
+[
+d_t = min(r_t-r_f, 0)
+]
+
+It calculates downside deviation as the root mean square of these downside values over all return periods.
+
+[
+DD = sqrt{operatorname{mean}(d_t^2)}
+]
+
+It then calculates:
+
+[
+Sortino = rac{operatorname{mean}(r_t-r_f)}{DD}sqrt{P}
+]
+
+This uses zero values for periods that are above the risk-free rate.
+
+The reviewer must confirm that this is the selected Sortino convention for the project.
+
+Different downside deviation definitions can produce different values.
+
+Do not compare values from different conventions without adjustment.
+
+### 36.9 Maximum drawdown
+
+The function calculates a running high-water mark that includes the initial equity.
+
+[
+Peak_t = max(E_0,ldots,E_t)
+]
+
+It calculates:
+
+[
+DD_t = rac{E_t}{Peak_t}-1
+]
+
+Maximum drawdown is the minimum drawdown value.
+
+It is usually zero or negative.
+
+A less negative value represents a smaller drawdown.
+
+When using this metric as a maximisation objective, the direction must be explicit.
+
+Do not accidentally minimise a negative maximum-drawdown value.
+
+### 36.10 Calmar
+
+The function calculates:
+
+[
+Calmar = rac{CAGR}{|MaxDD|}
+]
+
+When there is no drawdown, the function returns zero.
+
+The reviewer must decide whether zero is the desired result for a zero-drawdown path. Another valid reporting policy may be an explicit not-computable value.
+
+The selected behaviour must remain stable across the optimiser, API, and dashboard.
+
+### 36.11 Frequency assumptions
+
+The current code examples include 252 periods per year for NSE daily data and 365 for calendar-day crypto data.
+
+These are declared examples, not automatic facts for every dataset.
+
+A one-minute market session, a 24-hour crypto day, a weekly series, and a monthly series require different frequencies.
+
+The experiment's execution assumptions include periods_per_year.
+
+The UI has a helper to update this field when the resolution changes.
+
+The stored value must be checked before a job starts.
+
+The report must display the value.
+
+### 36.12 Metric review cases
+
+The following cases need explicit expected outputs:
+
+- Two equity observations.
+- One positive return.
+- One negative return.
+- A flat equity curve.
+- A sequence with no drawdown.
+- A sequence with one drawdown.
+- A sequence with several drawdown cycles.
+- A sequence with a new high after a drawdown.
+- A missing calendar session.
+- A missing crypto candle.
+- A repeated timestamp.
+- A timezone offset change.
+- A very short run.
+- A very long run.
+- A very large positive return.
+- A near-zero positive equity value.
+- A risk-free rate equal to zero.
+- A negative risk-free rate.
+- A positive risk-free rate.
+- A zero-variance return series.
+
+The expected result must come from an independent hand-calculated fixture.
+
+## 37. Worker execution contracts
+
+### 37.1 Common worker stages
+
+The registered research workers follow a common pattern.
+
+The normal pattern is:
+
+1. Read the immutable experiment record.
+2. Validate its algorithm family.
+3. Validate worker settings.
+4. Load registered data.
+5. Validate market and instrument scope.
+6. Create the market-specific portfolio configuration.
+7. Build the TRAIN data view.
+8. Evaluate all discovery candidates on TRAIN.
+9. Record successful candidates.
+10. Record failed candidates.
+11. Run TRAIN-only diagnostic calculations.
+12. Create a bounded validation shortlist.
+13. Evaluate the shortlist on VALIDATION.
+14. Persist validation child records.
+15. Select one candidate using the declared validation objective.
+16. Freeze the selected validation candidate.
+17. Authorise the OOS evaluator.
+18. Evaluate the frozen candidate on OOS.
+19. Persist the OOS child record.
+20. Record the OOS lifecycle event with an unknown pass value when no policy exists.
+21. Return the stage results and classification evidence.
+22. Keep the final holdout sealed.
+
+Every worker must preserve the stage boundaries.
+
+Every new worker must be checked against this sequence.
+
+### 37.2 Existing-strategy evaluator
+
+The fixed existing-strategy evaluator runs a selected strategy configuration over the declared train, validation, and OOS partitions.
+
+It uses the existing strategy registry.
+
+It checks the requested strategy name.
+
+It checks the market and research track.
+
+It checks cost model identity.
+
+It checks execution model identity.
+
+It checks that only registered instruments are supplied.
+
+It stores partition results.
+
+It does not use the final holdout.
+
+The evaluator is not the same as an optimiser.
+
+It does not search for a new parameter set.
+
+This distinction is important for classification.
+
+The current ExistingStrategyEvaluation output sets validation_selected=False. The generic classifier can therefore return training_only even when the evaluator has also calculated VALIDATION and OOS metrics.
+
+This may be intentional because the evaluator did not select a candidate using VALIDATION. It may also be an incomplete label model.
+
+A fixed baseline evaluation needs a clear classification meaning.
+
+The classifier should not describe an OOS calculation as an OOS pass.
+
+It should also not hide the fact that an OOS calculation occurred.
+
+### 37.3 Existing-strategy optimiser
+
+The existing-strategy optimiser uses a parameter space from the registered strategy descriptor.
+
+The current worker supports objective names:
+
+- sharpe
+- sortino
+- cagr
+- calmar
+- total_return
+
+The worker validates the validation shortlist size.
+
+The worker supports random, capped grid, differential evolution, TPE, and the hybrid ensemble.
+
+The search callback evaluates parameters on TRAIN.
+
+The worker stores TRAIN metrics and return vectors.
+
+It evaluates the shipped default baseline.
+
+It evaluates the user-configured baseline.
+
+It includes those baselines in the candidate family used by the worker.
+
+It retains attempted candidates and their failure information.
+
+It resolves parent candidate IDs into stored candidate IDs.
+
+It deduplicates identical effective configurations before VALIDATION.
+
+It sorts the TRAIN candidates by TRAIN score and digest.
+
+It limits the VALIDATION shortlist to the configured count.
+
+It evaluates the shortlist on VALIDATION.
+
+It selects the candidate with the highest declared validation score.
+
+It freezes the selected validation candidate.
+
+It evaluates one selected candidate on OOS.
+
+It records OOS pass as unknown because the acceptance policy is absent.
+
+### 37.4 Search budget review
+
+The hybrid search budget is declared per method.
+
+The DE population and generation settings must satisfy the worker's exact budget formula.
+
+The worker checks the expected count.
+
+A mismatch is rejected.
+
+The team must also decide whether the budget refers to:
+
+- Candidate attempts.
+- Successful candidates.
+- Objective callback calls.
+- Unique effective configurations.
+- Full simulator runs.
+
+The current code records evaluation attempts and candidate traces. The research protocol must define the budget unit so cross-method comparisons remain meaningful.
+
+A method must not receive hidden extra objective calls through retries or duplicate evaluation.
+
+A cache hit must be reported separately from a new simulator run.
+
+### 37.5 GP worker
+
+The GP worker validates its settings.
+
+It checks:
+
+- Population size.
+- Generation count.
+- Maximum depth.
+- Maximum node count.
+- Mutation rate.
+- Validation shortlist.
+- Objective.
+- Feature windows.
+
+It builds the model feature panel.
+
+It evaluates expressions through the closed AST representation.
+
+It records the candidate digest.
+
+It records the expression payload.
+
+It stores the parent candidate IDs.
+
+It caches repeated fitness calculations by a prediction digest.
+
+It calculates TRAIN metrics.
+
+It calculates TRAIN candidate-family diagnostics.
+
+It selects the final TRAIN population for VALIDATION.
+
+It evaluates the bounded shortlist.
+
+It persists VALIDATION child records.
+
+It selects the highest VALIDATION objective.
+
+It freezes the validation digest.
+
+It authorises OOS.
+
+It evaluates the frozen expression on OOS.
+
+It stores the OOS candidate as a child of the validation candidate.
+
+The current worker does not load the final holdout.
+
+### 37.6 Neuroevolution worker
+
+The neural worker validates:
+
+- Hidden-layer size.
+- Population size.
+- Generation count.
+- Learning rate.
+- Noise standard deviation.
+- Weight limit.
+- Validation shortlist.
+- Objective.
+- Feature windows.
+- Inference batch size.
+
+The population size must be even because the method uses mirrored perturbations.
+
+The worker builds a fixed dense neural network.
+
+The worker evaluates fitness through the shared model evaluation path.
+
+The worker may use batched neural inference through the compute engine.
+
+The worker uses TRAIN only for evolution.
+
+It stores candidate vectors and ancestry.
+
+It calculates TRAIN diagnostics.
+
+It selects from the final TRAIN generation.
+
+The current code uses a final generation index of generations minus one.
+
+It evaluates candidates on VALIDATION.
+
+It creates immutable validation child records.
+
+It selects one validation candidate.
+
+It freezes the candidate digest.
+
+It authorises OOS.
+
+It evaluates the selected parameter vector on OOS.
+
+It stores an OOS child record.
+
+The current model topology remains fixed.
+
+### 37.7 Composition worker
+
+The composition worker validates:
+
+- Population size.
+- Generation count.
+- Maximum component count.
+- Mutation rate.
+- Validation shortlist.
+- Objective.
+- Feature windows.
+
+The current candidate-count limit is 10,000 evaluations for the configured population and generations.
+
+The worker builds a fixed component registry from the declared feature windows.
+
+The worker evolves declarative compositions.
+
+The worker caches repeated composition fitness.
+
+The worker uses TRAIN for evolution.
+
+It stores each attempted composition.
+
+It stores candidate lineage.
+
+It calculates TRAIN diagnostics.
+
+It selects from the final TRAIN generation.
+
+It evaluates the validation shortlist.
+
+It stores validation child records.
+
+It selects one validation candidate.
+
+It freezes the selected candidate.
+
+It evaluates OOS once.
+
+It stores the OOS child record.
+
+The current composition rules use a small set of price and volume features.
+
+The current default registry does not provide every role permitted by the generic component type.
+
+### 37.8 Pareto worker
+
+The Pareto worker requires an existing strategy name.
+
+It accepts a parameter genome from that strategy's searchable parameter space.
+
+It validates:
+
+- Population size.
+- Generation count.
+- Mutation rate.
+- Validation shortlist.
+- Objective names.
+- Objective directions.
+
+It requires at least two unique objectives.
+
+It requires one min/max direction for each objective.
+
+It limits the total candidate evaluation count.
+
+It evaluates all objectives from the same TRAIN portfolio result.
+
+It then uses the generic NSGA-II operators.
+
+The current worker is not a mixed GP, neural, and composition Pareto worker.
+
+### 37.9 Worker comparison table
+
+| Worker | Candidate representation | TRAIN objective | VALIDATION action | OOS action | Main limit |
+|---|---|---|---|---|---|
+| Existing evaluator | Fixed strategy and parameters | None; evaluates the supplied configuration. | Reports the partition. | Reports the partition. | No model selection; classification semantics need review. |
+| Existing optimiser | Existing strategy parameter mapping. | Search and baselines. | Selects from a bounded shortlist. | Evaluates one frozen selection. | Legacy adapter compatibility. |
+| GP | Numeric AST expression. | Evolves expressions. | Selects from final population. | Evaluates one frozen expression. | Numeric grammar only. |
+| Neuroevolution | Fixed-topology neural weight vector. | Evolves model weights. | Selects from final population. | Evaluates one frozen weight vector. | No topology evolution. |
+| Composition | Declarative component list. | Evolves allowed component sets. | Selects from final population. | Evaluates one frozen composition. | Limited component registry and roles. |
+| Pareto | Existing strategy parameter mapping. | Evolves objective vectors. | Re-ranks/selects the Pareto candidates. | Uses the selected frozen strategy. | No mixed-family genome. |
+
+### 37.10 Stage boundary enforcement
+
+The worker methods currently use one loaded bars mapping.
+
+The runner loads the non-holdout file up to the OOS end.
+
+The worker then builds TRAIN, VALIDATION, and OOS views from that mapping.
+
+The search algorithm normally receives a search space and objective callback, not a raw frame.
+
+The callback uses the TRAIN window.
+
+This is a useful code boundary.
+
+It is not equivalent to loading TRAIN data in a separate process with no access to VALIDATION or OOS data.
+
+The callback is created inside a worker that can access the broader pre-holdout frame.
+
+A future design should provide a stage-scoped data interface.
+
+The interface should only return the requested partition to the worker that is authorised for that stage.
+
+The search algorithm should not receive a data object that contains later stages.
+
+This is an important defence against accidental data leakage during future code changes.
+
+## 38. Data loader behaviour and trust boundary
+
+### 38.1 Registered data checks
+
+The registered loader checks each dataset against the experiment.
+
+It checks the market.
+
+It checks the resolution.
+
+It checks the licence state.
+
+It checks the OHLCV category.
+
+It rejects duplicate instrument datasets.
+
+It requires approved data for the research worker.
+
+It rejects a missing or empty data frame.
+
+### 38.2 Physical partition path
+
+When the manifest has a research_partition_path, the loader opens the partition copy.
+
+It does not open the original source in that branch.
+
+The partition reader checks:
+
+- The path stays inside the configured root.
+- The file exists.
+- The SHA-256 matches the manifest.
+- The cutoff includes a timezone.
+- The cutoff is before the final-holdout boundary.
+- The row count matches the manifest.
+- Every row is before the final-holdout boundary.
+- Coverage endpoints match the manifest.
+- The materialised coverage is inside the source coverage.
+- The requested end is covered.
+
+These checks provide useful integrity protection.
+
+They do not stop a process with file permissions from opening the original file directly.
+
+### 38.3 Data loaded into worker memory
+
+The loader uses the OOS end as the requested upper bound for the normal research worker.
+
+The resulting frame can therefore contain earlier TRAIN rows, VALIDATION rows, and OOS rows.
+
+It does not contain final-holdout rows when the physical partition path is used.
+
+The stage-specific worker functions then create smaller views.
+
+This is an important difference between:
+
+- File-level exclusion of the final holdout.
+- In-memory stage-level restriction between TRAIN, VALIDATION, and OOS.
+
+The first exists in the normal strict path.
+
+The second is implemented through worker code and callback structure.
+
+A stronger architecture would create a separate data view or service for each stage.
+
+### 38.4 Compatibility path
+
+The explicit opt-out value RESEARCH_REQUIRE_PARTITIONED_DATA=0 enables the legacy combined-source path.
+
+The source may be parsed before the worker clips rows.
+
+The worker records the access mode as legacy_combined_source_clipped_after_read.
+
+This path must not be used for protected-holdout research.
+
+The API and dashboard should display the active access mode clearly.
+
+### 38.5 Licence state
+
+Both the NSE legacy adapter and local crypto adapter can create manifests with REVIEW_REQUIRED licence status.
+
+The normal registered worker loader rejects unapproved datasets.
+
+This is correct as a fail-closed rule.
+
+An operator must complete licence review and register the approved manifest before the worker can use the data.
+
+The act of setting a manifest field to APPROVED is not enough by itself.
+
+The licence reference must be traceable.
+
+The data owner must confirm that the intended research use is permitted.
+
+### 38.6 Data access audit record
+
+Each job should store:
+
+- Dataset ID.
+- Dataset fingerprint.
+- Original source hash.
+- Materialised partition hash.
+- Partition cutoff.
+- Requested end.
+- Actual first and last timestamp loaded.
+- Access mode.
+- Licence state.
+- Licence reference.
+- Data quality report.
+- FX dataset ID where used.
+- FX source hash.
+- Timestamp normalisation rule.
+
+A job report should make the difference between source coverage and worker-visible coverage clear.
+
+## 39. Database schema and persistence contracts
+
+### 39.1 SQLite database role
+
+The ExperimentStore uses SQLite.
+
+It enables WAL mode.
+
+It configures a bounded SQLite lock wait.
+
+It uses foreign-key references.
+
+It stores experiment and candidate JSON.
+
+It stores job results and event payloads as JSON.
+
+### 39.2 Experiments table
+
+The experiments table stores:
+
+- experiment_id.
+- market.
+- track.
+- created_at.
+- fingerprint.
+- spec_json.
+
+The market column has a database check for the supported markets.
+
+The experiment table has update and delete triggers.
+
+A stored experiment definition cannot be modified or deleted through normal SQL statements without removing or bypassing those triggers.
+
+This is a database-level immutability control.
+
+### 39.3 Experiment events table
+
+The experiment_events table stores:
+
+- event_id.
+- experiment_id.
+- event_type.
+- occurred_at.
+- payload_json.
+
+It has an index by experiment and event ID.
+
+The database has update and delete triggers for experiment_events.
+
+The triggers reject updates and deletes.
+
+This is a database-level append-only control.
+
+### 39.4 Candidates table
+
+The candidates table stores:
+
+- candidate_id.
+- experiment_id.
+- candidate_digest.
+- family.
+- generation.
+- parameters_json.
+- metrics_json.
+- lineage_json.
+- created_at.
+
+The table requires a non-negative generation.
+
+It requires a unique candidate digest within an experiment.
+
+The database has update and delete triggers for candidates.
+
+The candidate record is append-only under the database trigger policy.
+
+A new validation or OOS record is stored as a new candidate record. It does not need to overwrite the original TRAIN genome.
+
+### 39.5 Datasets table
+
+The datasets table stores:
+
+- dataset_id.
+- market.
+- exchange.
+- resolution.
+- category.
+- fingerprint.
+- manifest_json.
+- registered_at.
+
+The market has a database check.
+
+The table has a market, exchange, and resolution index.
+
+The dataset table has update and delete triggers.
+
+A corrected data source should use a new dataset ID or a new manifest version rather than modifying the original record.
+
+### 39.6 Jobs table
+
+The jobs table stores:
+
+- job_id.
+- experiment_id.
+- runner_name.
+- status.
+- created_at.
+- started_at.
+- completed_at.
+- parameters_json.
+- result_json.
+- error_message.
+
+The status is constrained to the supported job states.
+
+The jobs table is intentionally mutable because the worker changes job status and result fields.
+
+This is different from the immutable experiment and dataset records.
+
+### 39.7 Job events table
+
+The job_events table stores:
+
+- event_id.
+- job_id.
+- event_type.
+- occurred_at.
+- payload_json.
+
+The database has update and delete triggers for job events.
+
+Job events are append-only.
+
+### 39.8 Persistence guarantees and limits
+
+The database uses SQLite transactions for lifecycle transitions.
+
+The current lifecycle implementation reduces the event history to one durable state.
+
+The store uses a write lock while it validates and writes the next event.
+
+This protects concurrent transitions at the database level.
+
+The database does not make the whole research system a distributed transaction.
+
+The worker's calculation is outside the database transaction.
+
+A process can stop after a calculation and before it stores a result.
+
+The job may then be marked interrupted or failed after restart.
+
+The candidate and event records that already committed remain available.
+
+### 39.9 Backup and recovery requirements
+
+The database should have an explicit backup policy.
+
+A backup must preserve:
+
+- Experiment definitions.
+- Experiment events.
+- Candidate records.
+- Dataset manifests.
+- Job state.
+- Job events.
+- Schema version.
+- Database integrity status.
+
+The backup should be checked by a restore test.
+
+A copied database file is not a tested recovery process.
+
+The team should test restoring a backup while WAL files are present.
+
+The team should document the SQLite backup API or another consistent snapshot method.
+
+### 39.10 Schema versioning
+
+The current database initialisation creates tables and triggers.
+
+A production research platform should also record a schema version.
+
+Required work:
+
+1. Add a schema version record.
+2. Define forward migrations.
+3. Define migration transaction boundaries.
+4. Test upgrades from every released schema.
+5. Test rollback or recovery after a failed migration.
+6. Record the schema version in each experiment artefact.
+7. Reject incompatible worker/database combinations.
+
+## 40. Dashboard implementation details and known usability limits
+
+### 40.1 Current frontend structure
+
+The dashboard is embedded in research/platform/api.py.
+
+It uses HTML, CSS, and browser JavaScript.
+
+The current page includes:
+
+- NSE environment summary.
+- Crypto environment summary.
+- Experiment creation form.
+- Experiment list.
+- Experiment detail view.
+- Experiment comparison form.
+- Job list.
+- Strategy catalogue table.
+- Dataset catalogue table.
+
+It does not use a separate frontend build system.
+
+The current UI is a lightweight local control panel.
+
+### 40.2 Experiment creation form
+
+The form captures:
+
+- Market.
+- Research track.
+- Algorithm family.
+- Resolution.
+- Existing strategy name.
+- Dataset IDs.
+- Experiment ID.
+- Git commit.
+- Cost model ID.
+- Execution model ID.
+- Random seed.
+- Embargo.
+- Objectives.
+- Strategy parameters.
+- Optimiser settings.
+- Hybrid settings.
+- GP settings.
+- Neural settings.
+- Composition settings.
+- Pareto settings.
+- Execution assumptions.
+- Crypto venue.
+- Crypto fee schedule.
+- TRAIN dates.
+- VALIDATION dates.
+- OOS dates.
+- Final-holdout dates.
+
+The form sends an experiment creation request.
+
+The form can then submit a separate job request.
+
+This is a two-step operation.
+
+A successful experiment creation response does not mean that a worker has started.
+
+A successful job submission response means the job has been queued. It does not mean that the job has passed.
+
+### 40.3 Experiment comparison UI
+
+The current dashboard does include a comparison control and comparison table.
+
+The user supplies two to ten experiment IDs.
+
+The browser submits the IDs to the API.
+
+The server rejects a mixed-market comparison.
+
+The table shows:
+
+- Experiment ID.
+- Candidate ID.
+- Candidate family.
+- TRAIN Sharpe.
+- VALIDATION Sharpe.
+- OOS Sharpe.
+
+The table uses an em dash when a metric is absent.
+
+The UI does not show all metrics.
+
+The UI does not show all experiment settings side by side.
+
+The UI does not show data-source and feature differences in a complete structured comparison.
+
+The UI does not provide a complete Pareto comparison view.
+
+The current comparison is therefore real but limited.
+
+### 40.4 Stale date defaults
+
+The dashboard source contains default dates.
+
+The inspected default OOS window is 2 October 2026 to 16 October 2026.
+
+The inspected final-holdout window is 16 October 2026 to 8 November 2026.
+
+The audit date is 10 November 2026.
+
+The default final-holdout end is therefore already in the past.
+
+The default OOS interval is also a historical and short window.
+
+The form note tells the user to adjust the windows to match data coverage, but the defaults still risk producing an outdated experiment.
+
+Required changes:
+
+1. Remove hard-coded historical window defaults.
+2. Require the user to choose dates for protected research.
+3. Display the current data coverage next to the date fields.
+4. Reject dates outside worker-visible coverage.
+5. Reject an OOS window that is too short under the approved policy.
+6. Reject a final-holdout window that is in the past when new future data is required.
+7. Display the exposed historical boundary.
+8. Display the active policy version.
+9. Display whether the final holdout is currently available.
+10. Prevent form submission when the selected policy cannot be satisfied.
+
+Do not automatically move the final holdout dates forward without approval. The research owner must define a valid data boundary.
+
+### 40.5 Placeholder provenance values
+
+The dashboard currently sends:
+
+- code_version = dashboard-api-v1.
+- compute_backend = auto.
+- compute_device = unverified.
+
+These are explicit form-generated values.
+
+The compute device value is not an actual GPU inventory.
+
+The code version value is a UI/API label, not a verified source build identifier.
+
+The actual runtime backend may be discovered by the compute engine later.
+
+Required changes:
+
+1. Obtain the actual source commit from the running process where possible.
+2. Obtain the working tree dirty state.
+3. Obtain the dependency lock hash.
+4. Obtain the actual selected compute backend.
+5. Obtain the actual device name.
+6. Obtain runtime and driver information.
+7. Store the runtime facts with the job result.
+8. Keep requested backend separate from actual backend.
+9. Mark unavailable fields as unknown, not as verified facts.
+
+### 40.6 Dashboard security
+
+The UI is local by default.
+
+The API can return experiment specifications, job results, and dataset metadata.
+
+Before remote access, the system needs authentication and authorisation.
+
+The dashboard must not expose data paths or secrets.
+
+The browser must not display raw exception tracebacks.
+
+The UI must distinguish:
+
+- Created.
+- Queued.
+- Running.
+- Succeeded.
+- Failed.
+- Cancelled.
+- Interrupted.
+- Inconclusive.
+- OOS evaluated.
+- Final holdout not accessed.
+
+These states are not interchangeable.
+
+## 41. Additional confirmed code observations
+
+This section separates source-confirmed observations from review questions.
+
+### OBS-001 — The model output is long/flat
+
+**Files:** research/platform/model_evaluation.py and research/platform/portfolio.py.
+
+The model score conversion activates long exposure when a score is positive.
+
+Inactive scores result in cash.
+
+Portfolio target weights are equalised across active instruments in the current path.
+
+This is not continuous score-based allocation.
+
+**Required action:** Decide whether this is the intended v2 baseline policy or whether a separate continuous position-sizing policy is required.
+
+### OBS-002 — The current feature engine has a fixed price/volume scope
+
+**Files:** research/platform/features.py and research/platform/composition_policy.py.
+
+The current engine creates price and volume-derived features.
+
+The composition registry maps its known component IDs to those feature fields.
+
+The current policy does not include a complete fundamental, news, macro, sentiment, or on-chain feature registry.
+
+**Required action:** Keep this limit visible in all worker reports.
+
+### OBS-003 — The generic composition type permits more roles than the default policy implements
+
+**Files:** research/platform/composition.py and research/platform/composition_policy.py.
+
+The generic component type accepts these roles:
+
+- entry
+- exit
+- filter
+- sizing
+- risk
+- regime
+- allocation
+
+The default component registry currently creates entry, exit, filter, regime, and risk components.
+
+The scoring policy selects entry, exit, and gate components.
+
+It does not currently create a complete sizing or allocation rule.
+
+The scoring function rejects component IDs that do not match its known policy prefixes.
+
+**Required action:** Add a registry-to-role coverage test. Do not treat an allowed role label as proof that the role has a functional implementation.
+
+### OBS-004 — The current crypto portfolio path applies taker fees
+
+**Files:** research/platform/runners.py and research/platform/costs.py.
+
+The crypto portfolio configuration creates a fee calculator with liquidity_role set to taker.
+
+The fee schedule still stores maker and taker rates.
+
+The current market-order path therefore uses the taker rate.
+
+**Required action:** State that the current worker models taker execution. Add a maker execution path only when the simulator models passive orders and their fill probability.
+
+### OBS-005 — Crypto portfolio workers currently require one exchange
+
+**File:** research/platform/runners.py.
+
+The current crypto portfolio configuration collects the exchange values from the registered manifests.
+
+It rejects an experiment when more than one exchange is present.
+
+**Required action:** Keep the single-exchange limit in the API and report. Add cross-exchange portfolio support only after the ledger, FX, fees, transfer, and venue-failure models are defined.
+
+### OBS-006 — Metrics use observation count for elapsed years
+
+**File:** research/platform/metrics.py.
+
+The metric function calculates years as return observation count divided by periods_per_year.
+
+It does not infer elapsed time from the timestamps.
+
+**Required action:** Enforce regular interval coverage before using annualised metrics. Add a calendar-time metric option if irregular intervals must be supported.
+
+### OBS-007 — Win rate is period-based
+
+**File:** research/platform/metrics.py.
+
+The current win_rate is the fraction of positive period returns.
+
+It is not a trade-level win rate.
+
+**Required action:** Use a separate trade metric if the report needs the percentage of profitable trades.
+
+### OBS-008 — The dashboard date defaults are stale
+
+**File:** research/platform/api.py.
+
+The default final-holdout window ends on 8 November 2026.
+
+The audit date is 10 November 2026.
+
+**Required action:** Remove the stale hard-coded date defaults or require a current, data-backed selection.
+
+### OBS-009 — Dashboard provenance contains placeholder values
+
+**File:** research/platform/api.py.
+
+The experiment form sends a fixed dashboard code version and compute_device value of unverified.
+
+**Required action:** Replace placeholder provenance with actual runtime facts or explicit unknown states.
+
+### OBS-010 — Experiment and dataset definitions are immutable in SQLite
+
+**File:** research/platform/storage.py.
+
+The database uses update and delete triggers for experiments and datasets.
+
+It also uses update and delete triggers for experiment events, candidate records, and job events.
+
+**Required action:** Preserve these triggers in every future schema migration. Add tests that attempt direct SQL update and delete operations for every append-only table.
+
+### OBS-011 — Job state is mutable by design
+
+**File:** research/platform/storage.py.
+
+The jobs table stores current status, start time, completion time, result, and error message.
+
+The job_events table stores the event history separately.
+
+**Required action:** Treat the current job row as a materialised status view. Use job_events to reconstruct the sequence of actions.
+
+### OBS-012 — The loader reads non-holdout data through OOS end
+
+**File:** research/platform/runners.py.
+
+The physical non-holdout loader is called with the experiment final-holdout boundary and OOS end.
+
+The worker therefore receives a data frame that can contain TRAIN, VALIDATION, and OOS observations.
+
+The search callback uses the TRAIN window.
+
+**Required action:** Keep the current stage-specific slicing tests. Consider a stage-scoped data provider so the search implementation cannot access later-stage frames by mistake.
+
+### OBS-013 — Worker classification is returned with the job result
+
+**Files:** research/platform/classification.py and research/platform/runners.py.
+
+The evolutionary workers construct candidate evidence after the OOS result.
+
+They set OOS evaluated to true.
+
+They set OOS passed to unknown.
+
+The classifier therefore returns an inconclusive state until an approved acceptance policy is supplied.
+
+**Required action:** Preserve the unknown state. Do not set it to true by default.
+
+### OBS-014 — Fixed evaluation classification differs from optimiser classification
+
+**Files:** research/platform/evaluation.py and research/platform/classification.py.
+
+The fixed existing-strategy evaluator supplies validation_selected=False.
+
+The generic classifier checks validation_selected before it checks whether OOS was evaluated.
+
+The result can therefore be training_only even when the evaluator output contains an OOS partition.
+
+**Required action:** Decide whether the platform needs a separate fixed-baseline-evaluated classification. Add tests that distinguish a fixed baseline from a selected candidate.
+
+### OBS-015 — The dashboard comparison shows only a small metric set
+
+**File:** research/platform/api.py.
+
+The comparison table displays stage Sharpe values and candidate identity fields.
+
+It does not display the complete metric vector or all experiment provenance.
+
+**Required action:** Add a detailed comparison view. Keep all financial values within one market.
+
+## 42. New code review items
+
+These items extend the code review register in Section 8.
+
+### CR-021 — Annualisation and missing observations
+
+**Severity:** High  
+**Status:** Review required.
+
+The metrics function uses observation count.
+
+It does not infer elapsed time.
+
+A missing observation can cause the annualised period count to differ from elapsed time.
+
+Required tests:
+
+- Complete daily series.
+- One missing daily session.
+- Several missing daily sessions.
+- One missing crypto interval.
+- Irregular intervals.
+- Weekend crypto data.
+- Holiday NSE data.
+- A month with a different number of days.
+- A time change in a local timezone.
+
+Acceptance condition: every worker must either reject irregular sampling or use an approved elapsed-time method.
+
+### CR-022 — Score magnitude and allocation
+
+**Severity:** Medium/High  
+**Status:** Design review required.
+
+The model policy treats positive scores as active and other scores as inactive.
+
+It then normalises active target weights.
+
+This discards score magnitude.
+
+Required decision:
+
+- Keep the long/flat activation rule as the v2 baseline.
+- Or introduce a versioned continuous allocation rule.
+
+Do not mix results from the two rules under one model version.
+
+### CR-023 — Composition role coverage
+
+**Severity:** Medium/High  
+**Status:** Review required.
+
+The generic component type permits sizing and allocation roles.
+
+The current default registry and scoring policy do not implement a full sizing or allocation rule.
+
+Required tests:
+
+- Every registered component resolves to one implementation.
+- Every implemented role changes the score or target in a defined way.
+- Unsupported roles fail before a worker begins.
+- A sizing component cannot bypass the portfolio exposure cap.
+- An allocation component cannot cross market boundaries.
+
+### CR-024 — Crypto maker/taker assumption
+
+**Severity:** High  
+**Status:** Review required.
+
+The crypto portfolio configuration selects taker fees.
+
+The maker fee field is still required by the schedule.
+
+The worker currently models market-order taker execution.
+
+Required action:
+
+- Keep the execution model named as taker.
+- Test that the taker rate is applied.
+- Test that maker rates are not accidentally applied.
+- Do not claim passive maker execution.
+- Add a passive order model before using maker fees.
+
+### CR-025 — Dashboard defaults and stale dates
+
+**Severity:** High  
+**Status:** Fix required.
+
+The dashboard OOS and final-holdout defaults are historical.
+
+The final-holdout end date in the inspected source is 8 November 2026.
+
+The audit date is 10 November 2026.
+
+Required action:
+
+- Remove stale date literals.
+- Require valid data coverage.
+- Display the exposed NSE historical boundary.
+- Require an approved policy version.
+- Reject an invalid date window before creating an experiment.
+
+### CR-026 — Runtime provenance placeholders
+
+**Severity:** Medium/High  
+**Status:** Fix required.
+
+The dashboard sets a literal code version and an unverified compute device.
+
+This does not identify the exact runtime environment.
+
+Required action:
+
+- Store the actual code commit.
+- Store dirty state.
+- Store dependency lock hash.
+- Store actual backend.
+- Store actual device.
+- Store driver and runtime.
+- Separate requested and actual values.
+
+### CR-027 — Stage-scoped data access
+
+**Severity:** Critical for strong anti-leakage claims  
+**Status:** Design review required.
+
+The worker loads all data up to the OOS end from the safe non-holdout partition.
+
+It then creates stage-specific panels.
+
+This is controlled worker code, but it is not full process isolation between TRAIN, VALIDATION, and OOS.
+
+Required action:
+
+- Define stage-scoped data interfaces.
+- Ensure search operators cannot read later partitions.
+- Add access events for every stage.
+- Test direct access attempts.
+- Keep final-holdout isolation as a separate control.
+
+### CR-028 — Fixed evaluator classification
+
+**Severity:** Medium  
+**Status:** Fix or document.
+
+The fixed evaluator does not select a candidate on VALIDATION.
+
+The classifier can label it training_only even when OOS was calculated.
+
+Required action:
+
+- Add a fixed-baseline-evaluated state, or
+- Document why training_only is the intended label.
+- Add a regression test for the result.
+
+### CR-029 — Database append-only enforcement
+
+**Severity:** Medium  
+**Status:** Review required.
+
+SQLite triggers enforce immutability for experiment definitions, dataset manifests, experiment events, candidate records, and job events.
+
+Confirm that every future migration preserves the triggers.
+
+Add direct SQL tests for UPDATE and DELETE attempts.
+
+### CR-030 — Dashboard comparison completeness
+
+**Severity:** Medium  
+**Status:** Enhancement required.
+
+The comparison endpoint and table exist.
+
+The table displays only a subset of metrics.
+
+Required action:
+
+- Show all available stage metrics.
+- Show dataset fingerprints.
+- Show feature schema.
+- Show cost model.
+- Show execution model.
+- Show validation policy.
+- Show sample counts.
+- Show diagnostic state.
+- Keep market separation.
+
+## 43. Additional fix backlog
+
+The following items extend the backlog in Section 9.
+
+| ID | Priority | Work | Acceptance condition |
+|---|---|---|---|
+| F-041 | P1 | Add a complete feature schema version and hash. | Every experiment stores and validates the feature identity. |
+| F-042 | P1 | Enforce regular sampling before annualised metrics. | Missing and irregular intervals are rejected or handled by an approved elapsed-time method. |
+| F-043 | P1 | Add explicit trade-level metrics. | Trade win rate is separate from period win rate. |
+| F-044 | P1 | Define continuous or long/flat score semantics. | Each worker has a versioned target-conversion policy. |
+| F-045 | P1 | Complete composition sizing and allocation support. | Every allowed component role has a tested implementation or is removed from allowed roles. |
+| F-046 | P1 | Add stage-scoped data access. | Search code cannot access VALIDATION or OOS frames. |
+| F-047 | P1 | Add fixed-baseline classification semantics. | A fixed OOS evaluation is not mislabeled without explanation. |
+| F-048 | P1 | Replace stale dashboard date defaults. | A form cannot submit expired default dates. |
+| F-049 | P1 | Replace dashboard provenance placeholders. | Actual runtime metadata is stored or marked unknown. |
+| F-050 | P1 | Add maker order simulation before maker fee use. | Maker fees are used only by a passive order path with fill rules. |
+| F-051 | P2 | Expand comparison table. | Users can compare the complete metric and provenance vectors. |
+| F-052 | P2 | Add feature and data schema migration records. | Old experiments retain their original schema identity. |
+| F-053 | P2 | Add experiment restore and backup tests. | A database backup can be restored and verified. |
+| F-054 | P2 | Add job checkpoint schema. | A checkpoint can be rejected when its source fingerprint differs. |
+| F-055 | P2 | Add stage access audit records. | Every data stage request is recorded. |
+
+## 44. CI workflow scope and release implications
+
+### 44.1 Dedicated workflow
+
+The workflow is .github/workflows/research-platform.yml.
+
+It runs on a push to feature/hybrid-evolution-research when selected research, strategy, test, dependency, or workflow paths change.
+
+It also runs for pull requests to main when the selected path filter matches.
+
+It can run manually through workflow_dispatch.
+
+It runs on Ubuntu.
+
+It sets Python 3.13.
+
+It installs requirements/test.txt and requirements/research.txt.
+
+It sets PYTHONPATH to src.
+
+It sets PYTHONHASHSEED to zero.
+
+It sets RESEARCH_REQUIRE_PARTITIONED_DATA to one.
+
+It compiles research/platform.
+
+It runs the focused platform test glob.
+
+### 44.2 CI does not establish release readiness
+
+The workflow does not build a production trading container.
+
+It does not run the complete legacy test suite.
+
+It does not run the full Rust workspace.
+
+It does not run a real data integration test.
+
+It does not query external provider systems.
+
+It does not test a licensed data source.
+
+It does not run the target GPU.
+
+It does not deploy a remote dashboard.
+
+It does not test a protected holdout service.
+
+### 44.3 Pull request requirements
+
+A future pull request should include:
+
+- A link to the requirement being completed.
+- A summary of changed files.
+- The test commands.
+- The test result.
+- The data fixture used.
+- The relevant experiment or schema version.
+- The risks introduced.
+- The risks closed.
+- The remaining limitations.
+
+A documentation-only change should not claim that implementation tests were re-run unless a workflow actually ran.
+
+### 44.4 Required checks before merge
+
+Before the feature branch is merged:
+
+1. Review the diff against main.
+2. Confirm there are no unrelated changes.
+3. Run the dedicated research-platform workflow.
+4. Run the required full repository checks from AGENTS.md.
+5. Run the relevant Rust checks when Rust files changed.
+6. Validate the Docker build when deployment files changed.
+7. Review data licence and secret handling.
+8. Check the branch has no uncommitted local-only change that is missing from GitHub.
+9. Review the updated GOAL.md.
+10. Confirm the final-holdout rules remain intact.
+
+A clean merge does not convert a partial research system into a validated market system.
+
+## 45. Detailed file ownership and modification map
+
+This section identifies where a future engineer should make each type of change.
+
+| Work type | Primary file | Supporting files | Expected tests |
+|---|---|---|---|
+| Market and track definitions | domain.py | experiments.py, market.py | test_research_platform.py, API tests |
+| Experiment identity | experiments.py | storage.py, api.py | test_research_platform.py, API tests |
+| Dataset manifest | data_catalog.py | storage.py, adapters.py | test_research_platform.py, search tests |
+| OHLCV normalisation | adapters.py | runners.py | search tests, runner tests |
+| Safe partition creation | adapters.py | storage.py, runners.py | search tests, runner tests |
+| Registered data loading | runners.py | adapters.py, data_catalog.py | runner tests |
+| FX alignment | fx.py | adapters.py, runners.py | search tests, runner tests |
+| Price and volume features | features.py | model_evaluation.py | search tests, model tests |
+| Feature-to-target mapping | model_evaluation.py | portfolio.py | model tests |
+| Strategy signal conversion | strategy_signals.py | strategy_catalog.py, evaluation.py | signal tests, catalogue tests |
+| Cash accounting | market.py | portfolio.py | foundational tests |
+| Fill and impact assumptions | portfolio.py | costs.py | search tests, foundational tests |
+| NSE fee calculation | costs.py | src/nsealgo/costs.py | search tests |
+| Crypto fee calculation | costs.py | runners.py | search tests, runner tests |
+| Performance metrics | metrics.py | model_evaluation.py, portfolio.py | metrics tests |
+| PSR, DSR, FDR, PBO | statistics.py | runners.py | search tests |
+| Split and lifecycle rules | validation.py | storage.py, runners.py | foundational tests |
+| Experiment persistence | storage.py | experiments.py | foundational tests |
+| Candidate lineage | storage.py | runners.py | foundational tests, runner tests |
+| Conventional optimisation | optimizers.py | runners.py | search tests, runner tests |
+| Existing strategy search | runners.py | strategy_catalog.py, evaluation.py | runner tests |
+| GP grammar | genetic_programming.py | runners.py | search tests, runner tests |
+| Neural evolution | neuroevolution.py | compute.py, model_evaluation.py | search tests, runner tests |
+| Composition genome | composition.py | composition_policy.py, runners.py | search tests, model tests |
+| Pareto search | pareto.py | runners.py | search tests, runner tests |
+| Batch CPU and GPU inference | compute.py | neuroevolution.py | foundational tests, search tests |
+| Job lifecycle | jobs.py | storage.py | job tests, API job tests |
+| API input and output | api.py | experiments.py, storage.py | API tests |
+| Server binding | app.py | api.py | Manual launch and network-boundary tests |
+| Dashboard interface | api.py | API handlers | Dashboard route and browser tests |
+| Architecture documentation | docs/RESEARCH_PLATFORM_ARCHITECTURE.md | research/platform/README.md | Documentation review |
+| Feature status | PROJECT_MEMORY/12_Feature_Status.md | GOAL.md | Documentation review |
+
+A code change should update the matching test and documentation.
+
+Do not place market calculations in the API layer.
+
+Do not place persistent state transitions in dashboard JavaScript.
+
+Do not place provider-specific behaviour in a generic portfolio ledger.
+
+Do not let an evolved genome execute arbitrary source code.
+
+## 46. Implementation sequencing by dependency
+
+Some tasks depend on earlier work.
+
+Do not begin all tasks in parallel without a stable interface.
+
+### 46.1 Protocol dependency chain
+
+The OOS acceptance policy depends on the required metrics and data-quality fields.
+
+The final-holdout service depends on the candidate freeze format and validation lifecycle.
+
+The independent statistical review depends on the declared candidate-family definition.
+
+Therefore:
+
+1. Define the data-quality contract.
+2. Define the candidate-family contract.
+3. Define the metric definitions.
+4. Define the OOS policy.
+5. Define the holdout request and response.
+6. Implement the isolated service.
+7. Test the complete lifecycle.
+
+### 46.2 Data dependency chain
+
+Point-in-time features depend on point-in-time source data.
+
+The point-in-time source data depends on source timestamps and revision history.
+
+Market accounting depends on correct instrument identity and corporate-action records.
+
+Therefore:
+
+1. Select the provider.
+2. Approve the licence.
+3. Define instrument identity.
+4. Build immutable source manifests.
+5. Build point-in-time history.
+6. Add corporate actions and event history.
+7. Add feature availability timestamps.
+8. Add feature joins.
+9. Test future-data perturbations.
+
+### 46.3 Execution dependency chain
+
+A realistic fill model depends on valid market data.
+
+Order-book simulation depends on trades, quotes, and order-book updates.
+
+Fee calculations depend on venue and instrument type.
+
+Therefore:
+
+1. Define the supported instrument type.
+2. Acquire the relevant source data.
+3. Record dated venue rules.
+4. Define the order model.
+5. Define the fill model.
+6. Define the fee schedule.
+7. Define cash and position accounting.
+8. Calibrate against external references.
+9. Test financial invariants.
+
+### 46.4 Mixed evolution dependency chain
+
+Mixed-genome evolution depends on stable candidate identities.
+
+It also depends on a shared fitness contract.
+
+It depends on common resource and evaluation budgets.
+
+Therefore:
+
+1. Define the candidate interface.
+2. Define the genome serialisation format.
+3. Define the lineage format.
+4. Define the fitness input contract.
+5. Define the fitness result contract.
+6. Define the evaluation budget.
+7. Define the candidate archive.
+8. Add each genome adapter.
+9. Add population operators.
+10. Add mixed-family selection.
+11. Add checkpoint support.
+
+### 46.5 GPU dependency chain
+
+GPU acceleration depends on a known workload.
+
+It depends on a known target device.
+
+It depends on CPU reference output.
+
+Therefore:
+
+1. Record target hardware.
+2. Select the first workload.
+3. Define the CPU reference.
+4. Define numerical tolerance.
+5. Implement one GPU kernel.
+6. Test parity.
+7. Benchmark.
+8. Extend to larger workloads.
+9. Implement full portfolio simulation only after the smaller kernels are correct.
+
+## 47. Additional acceptance tests for the next release
+
+The following tests should be added before the platform calls its next engineering increment complete.
+
+### 47.1 Stage-scoped data tests
+
+- A TRAIN worker requests a VALIDATION frame.
+- A TRAIN worker requests an OOS frame.
+- A VALIDATION worker requests an OOS frame before it is selected.
+- An OOS evaluator requests a different candidate digest.
+- A worker asks for final-holdout data.
+- A worker asks for a dataset outside the experiment.
+- A worker changes the experiment's dataset ID.
+- A worker attempts to load a raw source path.
+
+Expected result: the request is rejected and an audit event is written.
+
+### 47.2 Dashboard input tests
+
+- An OOS end date is before its start date.
+- A final-holdout end date is before its start date.
+- A final holdout ends in the past when future data is required.
+- A date is outside data coverage.
+- A selected dataset has no physical partition.
+- A dataset licence is not approved.
+- A cost model ID does not match the schedule.
+- A crypto experiment selects multiple exchanges.
+- The user enters invalid JSON.
+- The user selects a worker that is not registered.
+- The user submits while the API is unavailable.
+- The user submits twice.
+- The job queue is full.
+
+Expected result: no false success message and no partial experiment that appears to be running.
+
+### 47.3 Provenance tests
+
+- A dirty working tree.
+- A missing commit.
+- A missing code version.
+- A dependency hash change.
+- A feature schema change.
+- A cost model change.
+- An execution model change.
+- A backend fallback.
+- A missing GPU.
+- A GPU runtime error.
+- A CPU-only run.
+- A changed timezone database.
+- A resumed job with a different checkpoint fingerprint.
+
+Expected result: the actual environment is stored or the experiment is marked as not reproducible.
+
+### 47.4 Composition tests
+
+- One entry and one exit.
+- Multiple entries.
+- Multiple exits.
+- One filter.
+- Multiple filters.
+- One regime gate.
+- One risk gate.
+- A sizing role.
+- An allocation role.
+- An unknown component ID.
+- A component with an unknown feature window.
+- A component with NaN parameter.
+- A component with infinity parameter.
+- A composition above its maximum component count.
+- A mutation that removes the only entry.
+- A mutation that removes the only exit.
+- A crossover that creates a duplicate.
+- A zero-active-row result.
+- A one-active-asset result.
+
+Expected result: every allowed component has explicit behaviour. Unsupported roles fail before evaluation.
+
+### 47.5 Metric tests
+
+- A complete periodic series.
+- A series with a missing period.
+- A series with irregular timestamps.
+- A series with a flat equity curve.
+- A series with no negative drawdown.
+- A series with one negative return.
+- A series with only positive returns.
+- A series with zero excess-return variance.
+- A series with zero downside deviation.
+- A series with a very short observation count.
+- A series with an invalid annualisation frequency.
+- A series with a non-finite risk-free rate.
+- A series with a risk-free rate equal to negative one.
+- A series where the drawdown is exactly zero.
+- A series where a later equity point recovers to a new high.
+
+Expected result: exact output values are checked against independent calculations.
+
+## 48. Evidence labels for reporting
+
+The platform should use separate labels for code status and research status.
+
+### 48.1 Code status
+
+Use:
+
+- Implemented.
+- Tested.
+- Partial.
+- Designed.
+- Not implemented.
+- Blocked.
+- Not verified.
+
+### 48.2 Data status
+
+Use:
+
+- Source identified.
+- Licence review required.
+- Licence approved.
+- Data registered.
+- Source file verified.
+- Coverage verified.
+- Point-in-time completeness verified.
+- Market quality review passed.
+
+These states must not be collapsed into one green status.
+
+### 48.3 Experiment status
+
+Use:
+
+- Created.
+- Queued.
+- Running.
+- Succeeded.
+- Failed.
+- Cancelled.
+- Interrupted.
+
+### 48.4 Research outcome
+
+Use:
+
+- Failed.
+- Inconclusive.
+- Overfit.
+- Training only.
+- Validation success.
+- Historical OOS success.
+- Requires independent confirmation.
+- Robust research candidate.
+
+These are the existing candidate classification concepts.
+
+### 48.5 Evidence warning
+
+A job can succeed while its research outcome remains inconclusive.
+
+A dataset can be registered while its licence remains under review.
+
+A model can be evaluated on OOS while the OOS result remains unknown.
+
+A GPU backend can be available while GPU speedup remains unmeasured.
+
+The interface must display these combinations correctly.
+
+## 49. Expanded final audit statement
+
+The additional source inspection confirms that the v2 platform contains more implementation detail than the short status tables show.
+
+The feature path includes explicit causal price and volume features, one-bar forward labels with label time intervals, model row mapping, and a long/flat model output policy.
+
+The metric path uses explicit annualisation frequency, sample standard deviation, a periodic risk-free conversion, a downside deviation calculation, high-water-mark drawdown, and an observation-based CAGR.
+
+The worker path stores separate TRAIN, VALIDATION, and OOS candidate records. It freezes the validation-selected candidate before OOS. It records an unknown OOS pass value because the acceptance policy is not defined.
+
+The storage path uses SQLite tables, foreign keys, uniqueness constraints, indexes, and immutability triggers for experiment definitions, data manifests, experiment events, candidates, and job events.
+
+The dashboard includes experiment creation, job submission, experiment inspection, a basic same-market comparison table, strategy discovery, and dataset display.
+
+The additional review found important limits:
+
+- The default feature policy is price and volume only.
+- The model score conversion is long/flat, not continuous allocation.
+- The generic composition type permits sizing and allocation roles, but the current default registry and scoring policy do not implement a complete rule for those roles.
+- The metric function uses observation count for annualisation and does not infer elapsed time.
+- The crypto portfolio path uses taker fees.
+- The crypto portfolio path currently accepts one exchange.
+- The dashboard date defaults are stale.
+- The dashboard sends placeholder code and device provenance.
+- The worker loads non-holdout data through OOS end and relies on worker code to slice the stages.
+- The fixed existing-strategy evaluator has a classification semantic that needs a decision.
+
+The additional review items do not change the main readiness conclusion.
+
+The platform is a substantial but partial research system.
+
+The platform has tested software contracts.
+
+The platform still needs a fixed research policy, secure holdout isolation, complete point-in-time data, complete accounting, validated execution assumptions, independent statistical review, target GPU verification, and full market evidence.
+
+**Final status remains PARTIAL IMPLEMENTATION. No profitability, independent validation, or deployability claim is approved.**
