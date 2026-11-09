@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -351,7 +351,7 @@ def test_crypto_loader_verifies_registered_source_hash_and_quote_currency(tmp_pa
 def test_fx_bar_close_times_use_fixed_and_calendar_resolution_boundaries() -> None:
     # Fixed intervals use exact seconds; monthly bars end at the next calendar month.
     hourly = pd.DatetimeIndex(["2025-01-01T00:00:00Z"])
-    assert _resolution_delta(DataResolution.ONE_HOUR) == pd.Timedelta(seconds=3600)
+    assert _resolution_delta(DataResolution.ONE_HOUR) == timedelta(seconds=3600)
     monthly = pd.DatetimeIndex([
         "2025-01-01T00:00:00Z",
         "2025-02-01T00:00:00Z",
