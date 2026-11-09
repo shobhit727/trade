@@ -4024,7 +4024,7 @@ The file has 6 test function definitions.
 
 File: tests/unit/test_research_platform_runners.py
 
-The file has 26 test function definitions.
+The file has 28 test function definitions.
 
 | Test | Main behaviour |
 |---|---|
@@ -4063,7 +4063,7 @@ Note: The source file contains 28 listed test definitions in this inventory. The
 
 File: tests/unit/test_research_platform_search.py
 
-The file has 40 test function definitions.
+The file has 43 test function definitions.
 
 | Test | Main behaviour |
 |---|---|
