@@ -515,7 +515,8 @@ def test_existing_strategy_optimizer_searches_train_selects_validation_then_eval
             item["lineage"]["origin"] == "existing_strategy_baseline"
             for item in baseline_candidates
         )
-        assert result["training_candidate_family_diagnostics"]["candidate_family_size"] == result["budget"]
+        # Both evaluated baselines are eligible for selection and belong in the correction family.
+        assert result["training_candidate_family_diagnostics"]["candidate_family_size"] == result["budget"] + 2
         validation_candidates = [
             candidate for candidate in stored_candidates
             if candidate["family"] == "random_search_validation"
