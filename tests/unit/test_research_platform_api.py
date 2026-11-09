@@ -138,6 +138,13 @@ def test_research_api_health_markets_and_dashboard(tmp_path) -> None:
     assert b"Create experiment" in body
     assert "Purging embargo (seconds)" in DASHBOARD_HTML
     assert "Loading experiments" in DASHBOARD_HTML
+    # Resolution choices and annualisation are explicit for both market calendars.
+    assert "const resolutionsByMarket = {" in DASHBOARD_HTML
+    assert 'nse: [' in DASHBOARD_HTML and 'crypto: [' in DASHBOARD_HTML
+    assert "function updatePeriodsPerYear()" in DASHBOARD_HTML
+    assert '["1d", 252]' in DASHBOARD_HTML and '["1d", 365]' in DASHBOARD_HTML
+    assert '["1s", 31536000]' in DASHBOARD_HTML
+    assert '["order_book_event"' not in DASHBOARD_HTML
     # The default NSE OOS and holdout windows must respect the exposed historical TEST boundary.
     assert 'id="oos-start" type="datetime-local" value="2026-10-02T00:00"' in DASHBOARD_HTML
     assert 'id="oos-end" type="datetime-local" value="2026-10-16T00:00"' in DASHBOARD_HTML
