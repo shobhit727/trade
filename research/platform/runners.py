@@ -755,7 +755,7 @@ class ExistingStrategyOptimizerJobRunner:
                 population = int(settings.get("de_population_size", 0))
                 generations = int(settings.get("de_generations", 0))
                 if population < 4 or generations < 1 or population * (generations + 1) != budget_each:
-                    raise ValueError("hybrid DE parameters must exactly match budget_per_method")
+                    raise ValueError("hybrid DE population and generations must equal budget_per_method exactly")
             if "bayesian" in methods:
                 startup = int(settings.get("tpe_startup_trials", 0))
                 if not 1 <= startup < budget_each:
