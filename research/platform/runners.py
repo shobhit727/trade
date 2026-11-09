@@ -277,9 +277,16 @@ def load_registered_bars(
         or os.getenv("RESEARCH_PARTITION_DATA_ROOT", "data/research-partitions")
     ).resolve()
     if require_partitioned is None:
-        require_partitioned = os.getenv("RESEARCH_REQUIRE_PARTITIONED_DATA", "1").lower() in {
-            "1", "true", "yes", "on"
-        }
+        # Only recognised truthy values or the exact opt-out value can change the policy.
+        partition_policy = os.getenv("RESEARCH_REQUIRE_PARTITIONED_DATA", "1").strip().lower()
+        if partition_policy in {"1", "true", "yes", "on"}:
+            require_partitioned = True
+        elif partition_policy == "0":
+            require_partitioned = False
+        else:
+            raise ValueError(
+                "RESEARCH_REQUIRE_PARTITIONED_DATA must be 1, true, yes, on or the explicit opt-out 0"
+            )
 
     output: dict[str, pd.DataFrame] = {}
     for dataset_id in spec.dataset_ids:
