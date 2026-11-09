@@ -44,6 +44,12 @@ class Fill:
             raise ValueError("side must be BUY or SELL")
         if self.quantity <= ZERO or self.price_inr <= ZERO or self.fee_inr < ZERO:
             raise ValueError("quantity and price must be positive; fee cannot be negative")
+        # NSE cash delivery trades use whole shares; crypto spot may use fractional units.
+        if (
+            self.market is Market.NSE
+            and self.quantity != self.quantity.to_integral_value()
+        ):
+            raise ValueError("NSE delivery fills must use whole shares")
         if self.timestamp.tzinfo is None or self.timestamp.utcoffset() is None:
             raise ValueError("fill timestamp must be timezone-aware")
         if not self.cost_model_id.strip():
