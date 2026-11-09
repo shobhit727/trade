@@ -168,6 +168,48 @@ def test_market_ledger_accounting_and_duplicate_fill_guard() -> None:
     assert "MISSING" not in ledger.positions
 
 
+def test_market_ledger_pays_sell_fees_from_cash_when_fee_exceeds_fill_notional() -> None:
+    # Flat per-scrip delivery fees may exceed a tiny fill's proceeds; account cash pays the gap.
+    ledger = MarketLedger(Market.NSE)
+    ledger.apply_fill(
+        make_fill(fill_id="small-position-buy", quantity=Decimal("1"), fee=Decimal("0"))
+    )
+    ledger.apply_fill(
+        make_fill(
+            fill_id="small-position-sell",
+            side=Side.SELL,
+            quantity=Decimal("0.01"),
+            price=Decimal("100"),
+            fee=Decimal("2"),
+        )
+    )
+    assert ledger.cash_inr == Decimal("2099899.00")
+    assert ledger.positions["TEST"].quantity == Decimal("0.99")
+    assert ledger.fees_paid_inr == Decimal("2")
+
+    # A fully invested account cannot pay a sell fee that exceeds both proceeds and cash.
+    cashless = MarketLedger(Market.NSE)
+    cashless.apply_fill(
+        make_fill(
+            fill_id="fully-invested-buy",
+            quantity=Decimal("21000"),
+            fee=Decimal("0"),
+        )
+    )
+    with pytest.raises(ValueError, match="insufficient simulated cash to pay sell fees"):
+        cashless.apply_fill(
+            make_fill(
+                fill_id="unfunded-small-sell",
+                side=Side.SELL,
+                quantity=Decimal("0.01"),
+                price=Decimal("100"),
+                fee=Decimal("2"),
+            )
+        )
+    assert cashless.cash_inr == Decimal("0")
+    assert cashless.positions["TEST"].quantity == Decimal("21000")
+
+
 def test_fill_rejects_naive_timestamp_and_invalid_fee() -> None:
     """Accounting cannot silently accept ambiguous event time or negative charges."""
     with pytest.raises(ValueError, match="timezone-aware"):
