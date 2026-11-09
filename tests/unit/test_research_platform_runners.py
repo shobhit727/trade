@@ -1242,3 +1242,16 @@ def test_registered_loader_defaults_to_strict_partition_mode(tmp_path, monkeypat
             spec,
             partition_data_root=tmp_path / "missing-partitions",
         )
+
+
+def test_registered_loader_rejects_unrecognised_partition_policy(tmp_path, monkeypatch) -> None:
+    # A typo must not silently enable reads from a combined source file.
+    monkeypatch.setenv("RESEARCH_REQUIRE_PARTITIONED_DATA", "false")
+    spec = _spec()
+    store = _store(tmp_path / "invalid-partition-policy.sqlite3", spec)
+    with np.testing.assert_raises_regex(ValueError, "must be 1, true, yes, on"):
+        load_registered_bars(
+            store,
+            spec,
+            partition_data_root=tmp_path / "missing-partitions",
+        )
