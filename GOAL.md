@@ -1,9 +1,9 @@
 # GOAL.md — GPU-Accelerated Hybrid Evolutionary Quantitative Research Platform
 
-> **Authoritative v2 specification** — 8 November 2026  
+> **Authoritative v2 specification** — 8 November 2026; implementation status reviewed 10 November 2026  
 > **Repository:** `shobhit727/trade`  
 > **Branch:** `feature/hybrid-evolution-research`  
-> **Status:** Specification update. This describes the intended platform; it does not claim that its capabilities have been implemented.
+> **Status:** The requirements below remain the target specification. A partial implementation is present; the dated implementation snapshot at the end records what is verified, what remains incomplete and the latest successful code CI run. Do not interpret the specification as a claim that every requirement is implemented.
 
 ## 0. Authority, preservation and research standard
 
@@ -1217,7 +1217,7 @@ is a bug in the *setup*, not a strategy.
 
 ---
 
-## Implementation status snapshot — 9 November 2026
+## Implementation status snapshot — 10 November 2026
 
 This branch now connects conventional parameter search, a multi-method search ensemble, bounded
 numerical genetic programming, dense-network neuroevolution, declarative strategy composition
@@ -1260,7 +1260,7 @@ holdout access. Optimiser/evolution workers and the fixed existing-strategy eval
 freeze and OOS completion. No configured OOS acceptance gate currently exists, so workers persist
 passed=null and cannot unlock final-holdout access. This lifecycle log is not an OS/filesystem boundary.
 
-Additional correctness hardening on 9 November 2026:
+Additional correctness hardening verified through 10 November 2026:
 - NSE delivery fills are constrained to whole shares. The simulator floors target and participation
   quantities, uses integer affordability search for NSE buys, and preserves fractional crypto units.
 - Flat NSE sell charges may be paid from the market account's remaining cash when they exceed small
@@ -1281,6 +1281,12 @@ training-only, validation success, historical OOS success, robust research candi
 requires independent confirmation). The classifier requires explicit evidence flags and does
 not invent numeric performance thresholds; without a defined OOS acceptance gate, current OOS
 results remain inconclusive.
+
+Verification: code-bearing commit `7ea38112df28fb91d29c00e5206685281e7fd4c1`
+passed the `research-platform` GitHub Actions workflow on 10 November 2026. The workflow
+installs `requirements/test.txt` and `requirements/research.txt`, compiles
+`research/platform`, and runs `tests/unit/test_research_platform*.py`. Later documentation-only
+changes do not alter that tested code snapshot.
 
 No strategy profitability, deployability, live trading or hardware performance is implied by this
 implementation snapshot. Synthetic CI fixtures test software contracts; they are not market

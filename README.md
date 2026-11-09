@@ -36,6 +36,35 @@ docker compose logs -f cryptobot-paper
 | Observability | Prometheus, Grafana, Loki, Alertmanager |
 | Storage | TimescaleDB, Redis, Parquet |
 
+## Research platform (v2)
+
+This repository also contains a separate research-only quantitative platform in
+`research/platform/`. It is additive: it does not replace the legacy `src/cryptobot`
+runtime, `src/nsealgo`, or the existing backtest engines.
+
+The v2 platform provides market-separated NSE/crypto research environments, immutable
+dataset and experiment records, conventional/hybrid search, bounded GP, neuroevolution,
+strategy composition, NSGA-II search, cost-aware historical simulation and a loopback
+research dashboard. It does not place live orders, connect to brokerage accounts or
+provide real-money execution.
+
+Start with [the v2 specification](GOAL.md), [the architecture and verified limitations](docs/RESEARCH_PLATFORM_ARCHITECTURE.md),
+and the [research-platform operator guide](research/platform/README.md). The legacy
+Docker Compose runbook below is not the launch procedure for this research platform.
+
+Install and run the focused research tests/dashboard from the repository root:
+
+```bash
+# Install the package and the research/test dependency sets.
+python -m pip install -e . -r requirements/test.txt -r requirements/research.txt
+
+# Run the focused v2 platform tests.
+python -m pytest 'tests/unit/test_research_platform*.py' -q
+
+# Start the local research API/dashboard (loopback only by default).
+python -m research.platform.app --host 127.0.0.1 --port 8765
+```
+
 ## Profiles (Docker Compose)
 
 ```bash
@@ -118,8 +147,11 @@ crates/                        # Rust workspace (root Cargo.toml): core, feature
 
 | File | Description |
 |------|-------------|
-| `docs/RUNBOOK.md` | Operations guide (compose, profiles, troubleshooting) |
-| `plan.md` | Master plan with phases & status |
+| `docs/RUNBOOK.md` | Legacy Docker Compose runtime operations |
+| `GOAL.md` | Authoritative v2 research-platform specification and implementation snapshot |
+| `docs/RESEARCH_PLATFORM_ARCHITECTURE.md` | v2 architecture, verified capability matrix and limitations |
+| `research/platform/README.md` | v2 setup, tests, API and operator limitations |
+| `PROJECT_MEMORY/12_Feature_Status.md` | Legacy module audit plus current v2 status |
 | `PROJECT_MEMORY/` | Architecture, configs, bugs, features, API refs |
 | `deploy/k8s/` | Kubernetes manifests |
 

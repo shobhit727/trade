@@ -1,8 +1,9 @@
 # Research platform foundation
 
-This package is the first additive layer for the hybrid evolutionary research platform.
-It deliberately does not replace `research/optimize`, `src/nsealgo`, `src/cryptobot`, or
-any existing backtest engine.
+This package is the additive v2 research platform foundation. It deliberately does not
+replace `research/optimize`, `src/nsealgo`, `src/cryptobot`, or any existing backtest engine.
+The v2 runtime is for historical research and paper portfolios only; it does not place live
+orders or connect to brokerage/exchange accounts.
 
 ## Included in this increment
 
@@ -18,7 +19,9 @@ any existing backtest engine.
   and one-time final-holdout access.
 - SQLite experiment/event/candidate persistence with append-only event and candidate
   records, including evolutionary lineage JSON. Candidate freeze, OOS start/result, holdout
-  approval and one-time holdout access are persisted atomically per job and survive restarts.
+  approval and one-time holdout access are persisted atomically per experiment/job and survive
+  restarts. The store reconstructs state from events and serializes transitions under a write lock;
+  simultaneous OOS authorization and restart recovery have regression tests.
 - Optional CuPy batch linear-population, dense-neural inference and long/flat fitness
   kernels with NumPy CPU fallback. Dense neural inference is checked against the scalar
   NumPy implementation; the portfolio simulator remains the execution/fee fitness engine.
@@ -84,10 +87,11 @@ system, full NSE tax-lot/corporate-action portfolio simulator, crypto derivative
 liquidation engine, exchange arbitrage simulator, durable distributed worker cluster,
 secured process-isolated holdout service, or full dashboard telemetry/comparison suite.
 The job manager uses local threads and marks in-flight jobs interrupted after process
-restart; interrupted jobs must be resubmitted. Durable lifecycle state does not provide OS-level
-file isolation: registered workers stop at OOS and do not load final-holdout rows. A separate
-worker/service with restrictive filesystem permissions is still required before claiming secure
-final-holdout separation. Setting RESEARCH_REQUIRE_PARTITIONED_DATA=0 explicitly re-enables legacy source loading,
+restart; interrupted jobs must be resubmitted. The job's persisted validation-lifecycle event
+history survives that restart, but the computation itself is not resumed. Durable lifecycle state
+does not provide OS-level file isolation: registered workers stop at OOS and do not load
+final-holdout rows. A separate worker/service with restrictive filesystem permissions is still
+required before claiming secure final-holdout separation. Setting RESEARCH_REQUIRE_PARTITIONED_DATA=0 explicitly re-enables legacy source loading,
 which can parse a combined file before row clipping and must not be used for protected-holdout research.
 The safe partition copy avoids that normal worker read, but local filesystem access is not
 an OS/process security boundary. GP, neural and composition policies are currently long/flat
@@ -122,6 +126,12 @@ Use `CryptoLocalAdapter.load_inr(...)` with an explicit `FXRateSeries` for non-I
 The FX converter uses only a prior observation and rejects stale/missing rates. Futures,
 perpetual swaps, short selling, margin and liquidation accounting require separate
 instrument-specific ledgers before those products can be simulated credibly.
+
+## Verification snapshot — 10 November 2026
+
+The latest code-bearing commit verified by the dedicated GitHub Actions workflow is
+`7ea38112df28fb91d29c00e5206685281e7fd4c1` (passed). That workflow installs the test and
+research dependency sets, compiles `research/platform`, and runs the full focused platform suite.
 
 Run the focused tests from the repository root:
 

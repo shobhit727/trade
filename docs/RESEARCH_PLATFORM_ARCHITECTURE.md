@@ -1,4 +1,6 @@
-# Hybrid evolutionary research platform — architecture increment 1
+# Hybrid evolutionary research platform — architecture and implementation status
+
+> Reviewed 10 November 2026. This document distinguishes implemented code from target requirements.
 
 ## Integration strategy
 
@@ -109,9 +111,10 @@ The feature branch now contains the following additive modules:
 | Strategy composition | Closed causal component registry and TRAIN/VALIDATION/OOS evolution worker | Current entries/exits/filters are simple numerical rules; not yet adapters to all production strategy modules |
 | Multi-objective optimisation | NSGA-II worker over existing-strategy parameters; TRAIN Pareto front, VALIDATION re-ranking and frozen OOS run | Does not yet evolve a mixed population spanning GP/neural/component genomes |
 | Statistical diagnostics | TRAIN return-vector PSR-derived p-values, full-family BH FDR/DSR and bounded CSCV/PBO in optimiser, GP, neural, composition and Pareto workers; moving-block bootstrap and label-interval purging | DSR uses an independent-Gaussian trial-family approximation; CSCV uses at most 128 evenly spaced candidates; all diagnostics require independent methodological review and never drive selection |
+| Candidate classification | Evidence-driven failed, inconclusive, overfit, training-only, validation, historical OOS, robust research and independent-confirmation labels in result reports | No numeric v2 performance thresholds are defined; current OOS status is inconclusive until a protocol-approved gate exists |
 | Population compute | Batched linear, long/flat and dense-neural inference, NumPy / optional CuPy, runtime fallback and scalar/batch parity tests | CuPy path has not been exercised on the target GPU; simulator/ledger fitness remains CPU and end-to-end GPU acceleration is not claimed |
 | API and dashboard | Local WSGI API, experiment/data catalogue, strategy explorer, queue/inspect/cancel controls for existing-strategy, search, GP, neural, composition and Pareto workers | GPU telemetry, experiment comparison and full evolution monitoring remain incomplete |
-| Job lifecycle | Bounded local thread pool, SQLite status/events/results, cooperative cancellation and interrupted-job recovery | Jobs are not durable across process death; interrupted work is marked failed and must be resubmitted |
+| Job lifecycle | Bounded local thread pool, SQLite job status/events/results, cooperative cancellation, plus append-only per-job candidate-freeze/OOS/holdout lifecycle transitions | Worker execution is not resumable after process death; interrupted jobs are marked failed and must be resubmitted. Lifecycle records survive restart but do not provide filesystem isolation |
 
 ## Execution and accounting limitations
 
@@ -125,7 +128,10 @@ The local crypto adapter imports CSV/Parquet and records source-file hashes, but
 
 Run `python -m research.platform.app --host 127.0.0.1 --port 8765`. The server binds to loopback by default and refuses a non-loopback host unless `--allow-remote` is supplied. Do not enable remote binding without adding authentication and transport security. The dashboard can create experiment records and queue the allow-listed existing-strategy evaluator,
 parameter-search/hybrid, genetic-programming, neuroevolution, strategy-composition and Pareto
-workers, then list, inspect and cooperatively cancel jobs. Job state and logs persist in SQLite; worker execution itself is a local thread pool and interrupted jobs are marked failed after restart.
+workers, then list, inspect and cooperatively cancel jobs. Job state, logs and per-job validation
+lifecycle transitions persist in SQLite. Worker execution itself is a local thread pool; an
+interrupted job is marked failed after restart and must be resubmitted. Its prior lifecycle event
+history remains available for audit but does not resume the computation.
 
 ## Validation and statistical interpretation
 
@@ -135,13 +141,13 @@ The runner requires NSE OOS to start after 1 October 2026 because the previous T
 is strict mode; setting it to 0 is an explicit exploratory compatibility override that may parse
 combined source files before row clipping. A local process may still access other files on the same filesystem; a future isolated worker/holdout service with OS-level file permissions remains necessary. The remaining post-2026 sample is currently very short and cannot support a robust strategy claim.
 
-The workers now attach TRAIN-only PSR/FDR/DSR/CSCV diagnostics to the full successful candidate family. FDR and DSR use all successful candidates; CSCV/PBO uses a deterministic evenly spaced subset capped at 128 candidates. DSR explicitly assumes independent Gaussian trial Sharpe estimates; this is not a realistic model for correlated strategy populations and requires sensitivity analysis. P-values are PSR-derived against a zero per-period Sharpe benchmark. None of these diagnostics affects candidate selection or corrects universe survivorship, publication-time leakage, data-quality, cost or execution bias.
+The workers attach TRAIN-only PSR/FDR/DSR/CSCV diagnostics to the full successful candidate family. FDR and DSR use all successful candidates; CSCV/PBO uses a deterministic evenly spaced subset capped at 128 candidates. DSR explicitly assumes independent Gaussian trial Sharpe estimates; this is not a realistic model for correlated strategy populations and requires sensitivity analysis. P-values are PSR-derived against a zero per-period Sharpe benchmark. None of these diagnostics affects candidate selection or corrects universe survivorship, publication-time leakage, data-quality, cost or execution bias.
+
+Candidate reports include an evidence-driven classification and the evidence fields used to derive it. Explicit execution failure and detected overfit take precedence; unknown OOS pass/fail remains inconclusive. A historical/exposed OOS success is distinguished from independent confirmation. A robust research candidate requires explicit positive OOS, independent confirmation, data-integrity, robustness and diagnostics evidence. The classifier contains no numeric thresholds: v2 acceptance thresholds must be approved and versioned in the research protocol before they are supplied. These labels are research evidence, not trading permission.
 
 ## Remaining implementation priorities
 
-1. Integrate the other optimiser/evolution families with the persistent job manager, candidate storage and budget-equal orchestration. The default manager now registers parameter-search/hybrid, GP, neuroevolution,
-  strategy-composition and Pareto runners; a unified mixed-genome population spanning those
-  families remains open.
+1. Implement a unified mixed-genome population and budget-equal co-evolution across existing strategies, GP, neural and component genomes; current workers are registered separately.
 2. Add storage-level holdout isolation and streaming reads which do not parse protected future rows into worker memory.
 3. Add portfolio tax lots, corporate actions, dividends, crypto funding, borrow, margin and liquidation models.
 4. Add date-effective cost schedules, broker/venue fee tiers and execution calibration from tick/order-book data.
@@ -151,5 +157,13 @@ The workers now attach TRAIN-only PSR/FDR/DSR/CSCV diagnostics to the full succe
 8. Audit DSR/PBO/FDR implementations against independent published fixtures and test dependence assumptions under candidate correlation.
 9. Add dashboard experiment comparisons, GPU/CPU telemetry, population monitoring and job-level artefacts.
 10. Run all four tracks only when sufficient licence-cleared post-exposed-boundary data is available; publish negative as well as positive results.
+
+## Verification snapshot — 10 November 2026
+
+The latest code-bearing commit reviewed here is `7ea38112df28fb91d29c00e5206685281e7fd4c1`.
+Its `research-platform` GitHub Actions run passed dependency installation, Python compilation
+and the complete focused platform test suite. The workflow uses Python 3.13 and runs
+`python -m pytest tests/unit/test_research_platform*.py -q --tb=short --maxfail=1`.
+Documentation-only changes after that code commit do not change the tested implementation.
 
 A successful build is not a strategy result. A profitable historical simulation is not evidence of a deployable edge.

@@ -1,9 +1,32 @@
 # 12. Feature Status
 
-> **Last Updated**: 2026-08-22 (full audit: 34 bugs filed as GitHub #20–#53 — see `13_Bug_Tracker.md`. ✅ below means *implemented with passing tests*, not *correct*: several core modules carry verified math/semantics bugs.)
-> **Confidence**: High for existence; medium for behavior (post-audit).
+> **Legacy module audit**: 2026-08-22 (34 bugs filed as GitHub #20–#53 — see `13_Bug_Tracker.md`). The module table below remains the historical legacy-runtime audit; it has not been re-audited by the v2 platform work.
+> **Current v2 status**: 2026-11-10 — `feature/hybrid-evolution-research`, code snapshot `7ea38112df28fb91d29c00e5206685281e7fd4c1`; focused research-platform CI passed.
 
-## Verified module status
+## v2 research-platform status (2026-11-10)
+
+The new `research/platform/` package is additive to the legacy runtime. The last code-bearing
+commit listed above passed the dedicated `research-platform` workflow, which compiles the
+platform and runs the focused `tests/unit/test_research_platform*.py` suite.
+
+| Area | Verified implementation | Not complete / not established |
+|---|---|---|
+| Market separation | Explicit NSE/crypto domains and tracks; separate INR simulated capital; market-bound cash ledgers | No combined financial portfolio; no derivatives, margin or liquidation ledger |
+| Data and provenance | Immutable manifests; local NSE and crypto CSV/Parquet adapters; quality summaries; source hashes; checksum-verified non-holdout copies; backward-only FX alignment | No automated market-data acquisition; licence review still required; no complete point-in-time universe or fundamental/news/on-chain ingestion |
+| Search and evolution | Random/grid/differential-evolution/TPE and equal-budget hybrid ensemble; bounded GP; dense-network neuroevolution; declarative composition; NSGA-II existing-strategy parameter search | No unified mixed-genome population; GP grammar is numeric-only; network topology evolution is not integrated |
+| Simulation | Next-open cash portfolio simulator, participation limits, slippage/impact assumptions and market-specific fee calculators | Long-only INR cash; no tax lots, corporate actions, dividends, crypto funding/borrow/margin/liquidation or order-book execution |
+| Statistical diagnostics | TRAIN-only PSR-derived p-values, BH FDR, DSR and bounded CSCV/PBO attached to research workers | Diagnostic implementations need independent methodological validation; diagnostics do not prove an edge or alter selection |
+| Candidate classification | Evidence-driven failed/inconclusive/overfit/training-only/validation/OOS/robust/confirmation labels | No numeric v2 OOS acceptance policy is configured; current OOS outcomes therefore remain inconclusive |
+| Lifecycle and persistence | SQLite append-only experiment, candidate, job and per-job validation-lifecycle events; atomic transitions survive process restart; concurrent OOS authorisation is tested | Running work is not resumed after process death; lifecycle persistence is not filesystem or OS isolation |
+| API and dashboard | Loopback WSGI API/dashboard; allow-listed existing-strategy, parameter/hybrid, GP, neuroevolution, composition and Pareto jobs; inspect/cancel operations | No remote authentication, distributed workers, full telemetry, experiment comparison or GPU monitoring |
+| Compute | NumPy paths and optional CuPy batched inference with fallback/parity tests | Target NVIDIA hardware has not been benchmarked; portfolio execution/fitness remains CPU-based |
+
+The final holdout remains locked. Current workers record OOS as unknown because the v2
+specification has not yet approved an acceptance gate. A separate process/service with
+restrictive filesystem permissions is still required before claiming secure holdout isolation.
+No profitability, deployability, live trading or hardware-speedup claim follows from passing CI.
+
+## Verified legacy module status
 
 | Module | Status | Notes |
 |--------|--------|-------|

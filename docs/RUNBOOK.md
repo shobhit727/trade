@@ -1,6 +1,34 @@
 # Cryptobot Runbook
 
-> How to run this trading bot with Docker Compose. Keep this file next to `docker-compose.yml`.
+> How to run the **legacy Cryptobot Docker Compose runtime**. Keep this file next to
+> `docker-compose.yml`. This is not the launch guide for the v2 research platform.
+
+> **Important system boundary:** the v2 `research/platform/` package is a separate, research-only
+> runtime for historical simulations and paper portfolios. It must not use the legacy live
+> brokerage/exchange execution paths described later in this historical runbook. Use
+> `GOAL.md`, `docs/RESEARCH_PLATFORM_ARCHITECTURE.md` and
+> `research/platform/README.md` for v2 requirements, setup and current limitations.
+
+## v2 research platform quick start
+
+This section is separate from the legacy Docker Compose commands below. From the repository
+root, install the research dependencies, run the focused tests and start the loopback dashboard:
+
+```bash
+# Install package, test and research dependencies.
+python -m pip install -e . -r requirements/test.txt -r requirements/research.txt
+
+# Run the v2 platform test suite.
+python -m pytest 'tests/unit/test_research_platform*.py' -q
+
+# Start the local research API/dashboard (127.0.0.1 only by default).
+python -m research.platform.app --host 127.0.0.1 --port 8765
+```
+
+Open `http://127.0.0.1:8765`. The default server bind is loopback. Do not enable remote
+binding without a separately reviewed authentication and transport-security design. The
+local thread-pool worker is not resumable after process death; persisted experiment and
+validation-lifecycle events remain available for audit.
 
 ## 1. Prerequisites
 

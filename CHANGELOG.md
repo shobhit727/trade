@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Additive v2 research platform for market-separated NSE and crypto historical research.
+- Persistent experiment, candidate, job and job-scoped validation-lifecycle event records.
+- Conventional and equal-budget hybrid search, bounded genetic programming, neuroevolution,
+  strategy composition and NSGA-II existing-strategy parameter search.
+- Evidence-driven candidate classification with explicit unknown states and no invented
+  numeric v2 OOS acceptance thresholds.
+- Loopback research API/dashboard and a dedicated research-platform CI workflow.
+
+### Changed
+- Document that the legacy Docker Compose runtime and v2 research platform are separate systems.
+- Clarify that persisted lifecycle state survives restarts but local worker execution is not resumable.
+- Refresh architecture, feature status, setup and verification notes as of 10 November 2026.
+
+### Limitations
+- No live order placement, brokerage access or real-money execution in the v2 research platform.
+- No secure OS-level final-holdout isolation, unified mixed-genome population, complete market
+  data acquisition, full derivatives ledger or verified target-GPU speedup.
+
 ## [0.3.0] - 2026-08-31
 
 ### Added
