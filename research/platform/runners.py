@@ -914,8 +914,13 @@ class ExistingStrategyOptimizerJobRunner:
                 candidate_id_map.get(str(parent), str(parent))
                 for parent in raw_parents
             ] if isinstance(raw_parents, list) else []
+            is_search_trial = int(candidate["evaluation_index"]) >= 0
             lineage.update({
-                "origin": "existing_strategy_parameter_search",
+                "origin": (
+                    "existing_strategy_parameter_search"
+                    if is_search_trial
+                    else "existing_strategy_baseline"
+                ),
                 "parent_candidate_ids": mapped_parents,
                 "source_candidate_id": candidate["source_candidate_id"],
                 "selection": "train_objective",
@@ -959,7 +964,8 @@ class ExistingStrategyOptimizerJobRunner:
         # Statistical diagnostics use only TRAIN returns and never affect validation ranking.
         statistical_rows = [
             candidate for candidate in successful_candidates
-            if self._config_key(candidate["parameters"]) in train_return_vectors
+            if int(candidate["evaluation_index"]) >= 0
+            and self._config_key(candidate["parameters"]) in train_return_vectors
         ]
         statistical_report: dict[str, Any]
         if len(statistical_rows) >= 1:
@@ -3018,10 +3024,10 @@ class ParetoStrategySearchJobRunner:
             progress_callback=lambda stage, completed, total: context.log(
                 f"frozen Pareto candidate {stage}: {completed}/{total}"
             ),
-            candidate_family=AlgorithmFamily.PARETO_SEARCH.value,
+            candidate_family="pareto_search_selected_oos",
             lineage_metadata={
                 "origin": "nsga2_validation_pareto_selection",
-                "parent_candidate_ids": [],
+                "parent_candidate_ids": [selected["candidate_id"]],
                 "selected_pareto_candidate_id": selected["candidate_id"],
                 "objectives": list(objectives),
                 "directions": list(directions),
