@@ -976,8 +976,7 @@ class ExistingStrategyOptimizerJobRunner:
         # Statistical diagnostics use only TRAIN returns and never affect validation ranking.
         statistical_rows = [
             candidate for candidate in successful_candidates
-            if int(candidate["evaluation_index"]) >= 0
-            and self._config_key(candidate["parameters"]) in train_return_vectors
+            if self._config_key(candidate["parameters"]) in train_return_vectors
         ]
         statistical_report: dict[str, Any]
         if len(statistical_rows) >= 1:
