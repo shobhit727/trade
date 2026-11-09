@@ -160,7 +160,9 @@ def grid_search(
         dimensions.append(values)
     count = int(np.prod([len(values) for values in dimensions], dtype=np.int64))
     if count > max_evaluations:
-        raise ValueError(f"grid has {count} configs; cap is {max_evaluations}")
+        raise ValueError(
+            f"grid has {count} configs above max_evaluations cap of {max_evaluations}"
+        )
     names = [parameter.name for parameter in space]
     configs = [dict(zip(names, values, strict=True)) for values in product(*dimensions)]
     return _evaluate("grid", objective, configs, seed)
