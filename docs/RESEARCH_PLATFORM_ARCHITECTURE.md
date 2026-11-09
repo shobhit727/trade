@@ -48,6 +48,15 @@ candidate rows. Candidate lineage is stored with each candidate so parent, mutat
 crossover and selection metadata can be reconstructed. The experiment definition is
 immutable; event and candidate tables reject update/delete operations.
 
+## Candidate classification
+
+The platform labels outcomes as failed, inconclusive, overfit, training-only, validation success,
+historical OOS success, robust research candidate or requires independent confirmation. The
+classifier consumes explicit evidence flags. It defines no return, Sharpe, drawdown or trade-count
+thresholds; those belong in an approved, versioned v2 research protocol. Unknown OOS gate status
+is inconclusive and cannot unlock final-holdout access. A robust research candidate is not a
+real-money suitability label.
+
 ## Validation access policy
 
 The `ValidationLifecycle` can persist its one-way state transitions in the append-only

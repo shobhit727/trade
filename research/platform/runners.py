@@ -21,6 +21,7 @@ from .adapters import (
     load_non_holdout_partition,
 )
 from .composition import Composition, StrategyComposer
+from .classification import CandidateEvidence, classification_report
 from .compute import ComputeEngine
 from .composition_policy import composition_scores, default_component_registry
 from .costs import CryptoVenueFeeCalculator, NSEDeliveryFeeCalculator
@@ -1212,6 +1213,12 @@ class ExistingStrategyOptimizerJobRunner:
             "validation_shortlist": validation_rows,
             "selected_candidate": selected,
             "bars_sha256": bars_digest,
+            **classification_report(CandidateEvidence(
+                train_evaluated=True,
+                validation_selected=True,
+                oos_evaluated=True,
+                oos_passed=None,
+            )),
             "final_holdout_accessed": False,
             "final_evaluation": final_evaluation.to_dict(),
         }
@@ -1682,6 +1689,12 @@ class GeneticProgrammingJobRunner:
         return {
             "experiment_id": spec.experiment_id,
             "algorithm_family": AlgorithmFamily.GENETIC_PROGRAMMING.value,
+            **classification_report(CandidateEvidence(
+                train_evaluated=True,
+                validation_selected=True,
+                oos_evaluated=True,
+                oos_passed=None,
+            )),
             "objective": objective_name,
             "feature_windows": windows,
             "population_size": settings["population_size"],
@@ -2200,6 +2213,12 @@ class NeuroevolutionJobRunner:
         return {
             "experiment_id": spec.experiment_id,
             "algorithm_family": AlgorithmFamily.NEUROEVOLUTION.value,
+            **classification_report(CandidateEvidence(
+                train_evaluated=True,
+                validation_selected=True,
+                oos_evaluated=True,
+                oos_passed=None,
+            )),
             "objective": objective_name,
             "feature_windows": windows,
             "network": {
@@ -2659,6 +2678,12 @@ class StrategyCompositionJobRunner:
         return {
             "experiment_id": spec.experiment_id,
             "algorithm_family": AlgorithmFamily.STRATEGY_COMPOSITION.value,
+            **classification_report(CandidateEvidence(
+                train_evaluated=True,
+                validation_selected=True,
+                oos_evaluated=True,
+                oos_passed=None,
+            )),
             "objective": objective_name,
             "feature_windows": windows,
             "registry_component_count": len(registry),
@@ -3092,6 +3117,12 @@ class ParetoStrategySearchJobRunner:
         return {
             "experiment_id": spec.experiment_id,
             "algorithm_family": AlgorithmFamily.PARETO_SEARCH.value,
+            **classification_report(CandidateEvidence(
+                train_evaluated=True,
+                validation_selected=True,
+                oos_evaluated=True,
+                oos_passed=None,
+            )),
             "strategy_name": strategy_name,
             "objectives": list(objectives),
             "directions": list(directions),

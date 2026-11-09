@@ -10,6 +10,7 @@ from typing import Any, Callable, Mapping
 
 import pandas as pd
 
+from .classification import CandidateEvidence, classification_report
 from .domain import ResearchTrack
 from .experiments import ExperimentSpec
 from .metrics import compute_portfolio_metrics
@@ -51,14 +52,20 @@ class ExistingStrategyEvaluation:
     final_holdout_accessed: bool = False
 
     def to_dict(self) -> dict[str, object]:
-        # Clearly identify the unaccessed final holdout in every returned report.
+        # OOS was evaluated, but no explicit acceptance gate exists; unknown remains inconclusive.
+        evidence = CandidateEvidence(
+            train_evaluated=any(item.partition == "train" for item in self.evaluations),
+            validation_selected=False,
+            oos_evaluated=any(item.partition == "out_of_sample" for item in self.evaluations),
+            oos_passed=None,
+        )
         return {
             "experiment_id": self.experiment_id,
             "strategy_name": self.strategy_name,
             "candidate_digest": self.candidate_digest,
             "partitions": [item.to_dict() for item in self.evaluations],
             "final_holdout_accessed": self.final_holdout_accessed,
-            "classification": "historical_research_candidate_not_deployable",
+            **classification_report(evidence),
         }
 
 
@@ -316,6 +323,13 @@ def evaluate_existing_strategy(
                 "cost_model_id": spec.cost_model_id,
                 "execution_model_id": spec.execution_model_id,
                 "metrics": stage_metrics,
+                # No v2 OOS acceptance gate is configured, so this result remains inconclusive.
+                **classification_report(CandidateEvidence(
+                    train_evaluated=True,
+                    validation_selected=False,
+                    oos_evaluated=True,
+                    oos_passed=None,
+                )),
                 "repeat_evaluation": candidate_already_recorded,
             },
         )

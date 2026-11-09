@@ -61,6 +61,9 @@ any existing backtest engine.
   candidate ancestry, TRAIN Pareto fronts, VALIDATION selection and frozen OOS evaluation.
 - Market-specific fee calculators: the existing itemised NSE delivery cost model and a
   separately configured crypto maker/taker fee schedule.
+- Candidate classifications expose failed, inconclusive, overfit, training-only,
+  validation-success, historical-OOS-success, robust-research-candidate and
+  independent-confirmation states. They are evidence labels, not profitability thresholds.
 - TRAIN-only candidate-family diagnostics across optimiser, GP, neuroevolution, composition
   and Pareto workers: PSR-derived one-sided p-values, Benjamini-Hochberg FDR, DSR and CSCV/PBO.
   FDR/DSR use the full successful candidate family; CSCV uses a deterministic, evenly spaced

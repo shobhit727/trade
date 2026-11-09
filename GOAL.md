@@ -1276,6 +1276,12 @@ Additional correctness hardening on 9 November 2026:
   trials and selected OOS evaluations have distinct storage labels without excluding selectable
   baselines from multiple-testing diagnostics.
 
+The result layer now exposes the v2 candidate classifications (failed, inconclusive, overfit,
+training-only, validation success, historical OOS success, robust research candidate and
+requires independent confirmation). The classifier requires explicit evidence flags and does
+not invent numeric performance thresholds; without a defined OOS acceptance gate, current OOS
+results remain inconclusive.
+
 No strategy profitability, deployability, live trading or hardware performance is implied by this
 implementation snapshot. Synthetic CI fixtures test software contracts; they are not market
 performance evidence.
