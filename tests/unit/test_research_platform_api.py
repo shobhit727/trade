@@ -138,6 +138,10 @@ def test_research_api_health_markets_and_dashboard(tmp_path) -> None:
     assert b"Create experiment" in body
     assert "Purging embargo (seconds)" in DASHBOARD_HTML
     assert "Loading experiments" in DASHBOARD_HTML
+    # The default NSE OOS and holdout windows must respect the exposed historical TEST boundary.
+    assert 'id="oos-start" type="datetime-local" value="2026-10-02T00:00"' in DASHBOARD_HTML
+    assert 'id="oos-end" type="datetime-local" value="2026-10-16T00:00"' in DASHBOARD_HTML
+    assert 'id="hold-start" type="datetime-local" value="2026-10-16T00:00"' in DASHBOARD_HTML
 
 
 def test_research_api_creates_and_lists_real_experiment_records(tmp_path) -> None:
