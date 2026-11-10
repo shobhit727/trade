@@ -223,72 +223,110 @@ class TestRestartSameDenial:
 
 
 class TestConcurrency:
-    """CR-002 item 12 (concurrency): parallel invocations isolate independently."""
+    """CR-002 item 12: parallel invocations isolate independently.
 
-    @pytest.mark.skipif(
-        IS_ROOT, reason="DAC does not bind root; denial semantics are POSIX-user tests"
-    )
+    Each slot gets its OWN protected file and data root, so the two outer
+    processes never share a revoke window (the in-process lock cannot
+    serialise cross-process chmods). Each child records what its worker saw,
+    and every slot is asserted to have observed a real denial.
+    """
+
     def test_two_concurrent_invocations_isolate_independently(
-        self, holdout_layout: dict[str, Path], tmp_path: Path
+        self, tmp_path: Path
     ) -> None:
         import json
         from concurrent.futures import ThreadPoolExecutor
 
-        results_path = tmp_path / "results.json"
+        def build_slot(slot: str) -> dict[str, Path]:
+            protected = tmp_path / f"holdout-{slot}" / "final_holdout.csv"
+            protected.parent.mkdir(parents=True)
+            protected.write_text(f"timestamp,close\n2099-01-01,secret-{slot}\n")
+            protected.chmod(0o600)
+            data_root = tmp_path / f"partitions-{slot}" / "ds1"
+            data_root.mkdir(parents=True)
+            (data_root / "non_holdout.csv").write_text(
+                f"timestamp,close\n2024-01-01,public-{slot}\n"
+            )
+            return {"protected": protected, "data_root": data_root}
+
+        slots = {slot: build_slot(slot) for slot in ("A", "B")}
+        worker_payload = (
+            "import os, sys\n"
+            "try:\n"
+            "    open(os.environ['PROTECTED'], 'r')\n"
+            "    outcome = 'LEAK'\n"
+            "except (PermissionError, OSError):\n"
+            "    outcome = 'DENIED'\n"
+            "print('PROTECTED:' + outcome)\n"
+        )
+        # The outer child runs run_isolated and records its own run's evidence.
         invocation = (
             "import json, os, sys\n"
+            "sys.path.insert(0, {src!r})\n"
+            "from research.platform import sandbox\n"
             "from research.platform.sandbox import run_isolated\n"
-            "worker = [\n"
-            f"    {_python()!r}, '-c',\n"
-            "    \"import os, sys\\n\"\n"
-            "    \"try:\\n\"\n"
-            f"    \"    open({str(holdout_layout['protected'])!r}, 'r')\\n\"\n"
-            "    \"    outcome = 'LEAK'\\n\"\n"
-            "    \"except (PermissionError, OSError):\\n\"\n"
-            "    \"    outcome = 'DENIED'\\n\"\n"
-            "    \"print('PROTECTED:' + outcome)\"\n"
-            "]\n"
+            "worker = [{py!r}, '-c', os.environ['WORKER_PAYLOAD']]\n"
             "exit_code = run_isolated(\n"
             "    worker,\n"
-            f"    [{str(holdout_layout['protected'])!r}],\n"
-            f"    data_root={str(holdout_layout['data_root'])!r},\n"
+            "    [os.environ['PROTECTED']],\n"
+            "    data_root=os.environ['DATA_ROOT'],\n"
             ")\n"
-            "with open(os.environ['RESULTS'], 'a') as handle:\n"
-            "    handle.write(json.dumps(\n"
-            "        {'slot': os.environ['SLOT'], 'exit_code': exit_code}\n"
-            "    ) + '\\n')\n"
-        )
+            "payload = {{\n"
+            "    'slot': os.environ['SLOT'],\n"
+            "    'exit_code': exit_code,\n"
+            "    'worker_stdout': sandbox.last_run.stdout if sandbox.last_run else '',\n"
+            "    'denial_kinds': sorted(\n"
+            "        r.kind for r in sandbox.last_denials\n"
+            "        if r.kind == 'protected_read_denied'\n"
+            "    ),\n"
+            "    'worker_pid': sandbox.last_run.worker_pid if sandbox.last_run else None,\n"
+            "}}\n"
+            "with open(os.environ['RESULTS'], 'w') as handle:\n"
+            "    json.dump(payload, handle)\n"
+        ).format(src=str(Path(__file__).resolve().parents[2] / "src"), py=_python())
+        results = {
+            slot: tmp_path / f"results-{slot}.json" for slot in slots
+        }
         env = dict(os.environ)
-        env["RESULTS"] = str(results_path)
-        env["PYTHONPATH"] = os.pathsep.join(
-            [str(Path(__file__).resolve().parents[2] / "src"), os.getcwd()]
-        )
         with ThreadPoolExecutor(max_workers=2) as pool:
-            futures = [
-                pool.submit(
+            futures = {
+                slot: pool.submit(
                     subprocess.run,
                     [_python(), "-c", invocation],
                     capture_output=True,
                     text=True,
-                    env={**env, "SLOT": slot},
+                    env={
+                        **env,
+                        "SLOT": slot,
+                        "PROTECTED": str(layout["protected"]),
+                        "DATA_ROOT": str(layout["data_root"]),
+                        "WORKER_PAYLOAD": worker_payload,
+                        "RESULTS": str(results[slot]),
+                    },
                     cwd=os.getcwd(),
                 )
-                for slot in ("A", "B")
-            ]
-            outcomes = [future.result() for future in futures]
-        for outcome in outcomes:
-            assert outcome.returncode == 0, outcome.stderr
-        lines = [
-            json.loads(line)
-            for line in results_path.read_text().splitlines()
-            if line.strip()
-        ]
-        assert sorted(entry["slot"] for entry in lines) == ["A", "B"]
-        assert all(entry["exit_code"] == 0 for entry in lines)
-        # Each invocation observed its own worker denial inside its own window.
-        assert len({entry["worker_pid"] for entry in lines if "worker_pid" in entry}) <= 2
+                for slot, layout in slots.items()
+            }
+            outcomes = {slot: future.result() for slot, future in futures.items()}
+        for slot, outcome in outcomes.items():
+            assert outcome.returncode == 0, f"slot {slot}: {outcome.stderr}"
 
+        # F-003: each slot must have observed a genuine denial, not a leak.
+        payloads = {
+            slot: json.loads(results[slot].read_text()) for slot in slots
+        }
+        for slot, payload in payloads.items():
+            assert payload["exit_code"] == 0, payload
+            assert "PROTECTED:DENIED" in payload["worker_stdout"], payload
+            assert payload["denial_kinds"] == ["protected_read_denied"], payload
+            assert payload["worker_pid"] is not None, payload
+        # The two workers were distinct processes, each in its own window.
+        pids = {payload["worker_pid"] for payload in payloads.values()}
+        assert len(pids) == 2
 
+        # CR-002: every protected file restored to its original 0o600.
+        for layout in slots.values():
+            assert stat.S_IMODE(layout["protected"].stat().st_mode) == 0o600
 class TestUnprivilegedTierSemantics:
     """F-002: tier selection and permission restoration after the finally."""
 

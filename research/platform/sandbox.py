@@ -131,18 +131,21 @@ def _depth(path: Path) -> int:
     return len(path.parts)
 
 
-def _revoke_bits(entries: list[Path], target_bits: int) -> dict[Path, int]:
-    """Revoke permission bits and snapshot the originals.
+def _revoke_bits(
+    entries: list[Path], target_bits: int, snapshots: dict[Path, int]
+) -> None:
+    """Revoke permission bits, snapshotting each original into ``snapshots``.
 
     Entries are processed deepest-first so a revoked parent never blocks
-    reaching its not-yet-revoked children. Returns ``{path: original_mode}``.
+    reaching its not-yet-revoked children. Every entry is snapshotted into
+    ``snapshots`` immediately before its own chmod, so an exception part-way
+    through the tree never leaves an already-revoked entry out of the
+    caller's finally-restore.
     """
-    snapshots: dict[Path, int] = {}
     for entry in sorted(entries, key=_depth, reverse=True):
         current = entry.stat().st_mode & 0o777
         snapshots[entry] = current
         entry.chmod(current & target_bits)
-    return snapshots
 
 
 def _restore_bits(snapshots: dict[Path, int]) -> None:
@@ -232,7 +235,7 @@ def _run_privileged(
         for path in protected:
             # Owner-only bits: files 0o600, directories 0o700 (owner is root).
             bits = 0o700 if path.is_dir() else 0o600
-            snapshots.update(_revoke_bits(_tree_entries(path), bits))
+            _revoke_bits(_tree_entries(path), bits, snapshots)
 
         def _drop_privileges() -> None:  # pragma: no cover - runs in the child
             os.setgroups([])
@@ -288,7 +291,7 @@ def _run_unprivileged(
             # Full owner-bit revocation: on a single-user host the worker runs
             # as the file owner, so only removing owner bits denies it (CR-002
             # item 3). Originals are restored in the finally below.
-            snapshots.update(_revoke_bits(_tree_entries(path), 0o000))
+            _revoke_bits(_tree_entries(path), 0o000, snapshots)
         environment = dict(os.environ)
         environment["RESEARCH_SANDBOX_WORKDIR"] = str(staged)
         process = subprocess.Popen(
