@@ -76,7 +76,7 @@ live cycle: kill-switch → target_weights → risk-check every order → CostMo
 - `backtest/engine.py` — vectorized monthly-rebalance long-only; no-lookahead
   t scores → t+1 returns; **blake2b tie-break**; `TRADING_DAYS=244`; provenance SHAs.
 - `walkforward.py` — 6 train / 2 test year folds.
-- `live/engine.py` + `execution/{broker,paper}.py` — **Broker Protocol**:
+- `live/engine.py` + `execution/{broker,paper,kite}.py` — **Broker Protocol**:
   `PaperBroker` vs `KiteBroker` behind one code path; only the adapter differs.
 - `risk/limits.py` — frozen `LIMITS` verified at import (from `GOAL.md` §3.3).
 
@@ -165,7 +165,8 @@ Loader excludes `adanient`, `jiofin`, `tmpv`.
 3. **Walk-forward is the only accepted performance evidence.** In-sample numbers are
    not results; no cost reductions to rescue a result (GOAL.md §6).
 4. **Full Indian cost stack on every fill**: STT, exchange txn, SEBI, stamp duty, DP
-   charges, brokerage, 18% GST — never skip (calibrated 21.92 bps round-trip; CI greps
+   charges, brokerage, 18% GST — never skip (11.65/11.66 bps statutory + slippage;
+   21.92 bps all-in round trip in research/optimize assumptions; CI greps
    costs = 11.92 bps figure in nsealgo).
 5. **Live and paper share one code path** — only the broker adapter differs
    (`PaperBroker` vs `KiteBroker`, Broker Protocol).
