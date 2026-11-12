@@ -8,7 +8,7 @@ from ipaddress import ip_address
 from pathlib import Path
 from wsgiref.simple_server import make_server
 
-from .api import create_app
+from .api import create_app, ensure_local_only_bind
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -28,13 +28,20 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     # Unauthenticated experiment metadata endpoints must not bind publicly by accident.
-    host_is_loopback = args.host == "localhost"
-    try:
-        host_is_loopback = host_is_loopback or ip_address(args.host).is_loopback
-    except ValueError:
-        host_is_loopback = False
-    if not host_is_loopback and not args.allow_remote:
-        parser.error("non-loopback host requires --allow-remote; configure authentication first")
+    remote_allowed = bool(args.allow_remote) or os.getenv(
+        "RESEARCH_ALLOW_REMOTE_API", ""
+    ).strip().lower() == "1"
+    if not remote_allowed:
+        host_is_loopback = args.host == "localhost"
+        try:
+            host_is_loopback = host_is_loopback or ip_address(args.host).is_loopback
+        except ValueError:
+            host_is_loopback = False
+        if not host_is_loopback:
+            parser.error("non-loopback host requires --allow-remote; configure authentication first")
+    else:
+        # The guard logs the deliberate remote-exposure warning before any bind.
+        ensure_local_only_bind(args.host)
     if not 1 <= args.port <= 65535:
         parser.error("port must be between 1 and 65535")
 

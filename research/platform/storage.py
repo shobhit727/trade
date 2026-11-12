@@ -98,6 +98,27 @@ def _reduce_validation_lifecycle(
         })
     return state, events
 
+LICENCE_APPROVAL_EVENT = "dataset_licence_approved"
+
+
+def _apply_licence_decision(
+    manifest: dict[str, Any],
+    event: sqlite3.Row | None,
+) -> dict[str, Any]:
+    """Overlay the latest append-only licence decision onto a parsed manifest copy."""
+    # Registered manifests stay immutable; review state derives from the event stream.
+    if event is None or event["event_type"] != LICENCE_APPROVAL_EVENT:
+        return manifest
+    payload = json.loads(event["payload_json"])
+    manifest["license_status"] = "approved"
+    manifest["license_reference"] = str(
+        payload.get("licence_reference") or manifest.get("license_reference", "")
+    )
+    manifest["licence_reviewed_by"] = str(payload.get("reviewed_by") or "")
+    manifest["licence_decision"] = str(payload.get("decision") or "")
+    manifest["licence_decided_at"] = event["occurred_at"]
+    return manifest
+
 
 class ExperimentStore:
     """Persist immutable experiment definitions, events and candidate lineage."""
@@ -241,6 +262,23 @@ class ExperimentStore:
                 CREATE TRIGGER IF NOT EXISTS immutable_candidates_delete
                 BEFORE DELETE ON candidates BEGIN
                     SELECT RAISE(ABORT, 'candidate records are append-only');
+                END;
+                CREATE TABLE IF NOT EXISTS dataset_licence_events (
+                    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    dataset_id TEXT NOT NULL REFERENCES datasets(dataset_id),
+                    event_type TEXT NOT NULL,
+                    occurred_at TEXT NOT NULL,
+                    payload_json TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_dataset_licence_events_dataset
+                    ON dataset_licence_events(dataset_id, event_id);
+                CREATE TRIGGER IF NOT EXISTS immutable_dataset_licence_events_update
+                BEFORE UPDATE ON dataset_licence_events BEGIN
+                    SELECT RAISE(ABORT, 'dataset licence events are append-only');
+                END;
+                CREATE TRIGGER IF NOT EXISTS immutable_dataset_licence_events_delete
+                BEFORE DELETE ON dataset_licence_events BEGIN
+                    SELECT RAISE(ABORT, 'dataset licence events are append-only');
                 END;
                 """
             )
@@ -472,10 +510,17 @@ class ExperimentStore:
             row = connection.execute(
                 "SELECT * FROM datasets WHERE dataset_id = ?", (dataset_id,)
             ).fetchone()
-        if row is None:
-            raise KeyError(dataset_id)
+            if row is None:
+                raise KeyError(dataset_id)
+            event = connection.execute(
+                """SELECT event_type, occurred_at, payload_json
+                   FROM dataset_licence_events WHERE dataset_id = ?
+                   ORDER BY event_id DESC LIMIT 1""",
+                (dataset_id,),
+            ).fetchone()
         result = dict(row)
-        result["manifest"] = json.loads(result.pop("manifest_json"))
+        manifest = json.loads(result.pop("manifest_json"))
+        result["manifest"] = _apply_licence_decision(manifest, event)
         return result
 
     def list_datasets(
@@ -503,11 +548,27 @@ class ExperimentStore:
                        ORDER BY exchange, dataset_id LIMIT ?""",
                     (market, limit),
                 ).fetchall()
+            # Latest licence decision per dataset keeps dashboard listings current.
+            licence_events = {
+                str(event_row["dataset_id"]): event_row
+                for event_row in connection.execute(
+                    """SELECT e.dataset_id, e.event_type, e.occurred_at, e.payload_json
+                       FROM dataset_licence_events AS e
+                       JOIN (
+                           SELECT dataset_id, MAX(event_id) AS event_id
+                           FROM dataset_licence_events GROUP BY dataset_id
+                       ) AS latest ON latest.dataset_id = e.dataset_id
+                                  AND latest.event_id = e.event_id"""
+                ).fetchall()
+            }
         output = []
         for row in rows:
             # Surface metadata already registered with the immutable dataset manifest.
             item = dict(row)
-            manifest = json.loads(item.pop("manifest_json"))
+            manifest = _apply_licence_decision(
+                json.loads(item.pop("manifest_json")),
+                licence_events.get(str(item["dataset_id"])),
+            )
             # Expose the source coverage and the actual worker-visible partition separately.
             extra = manifest.get("extra_metadata", {})
             partitioned = bool(extra.get("research_partition_path"))
@@ -528,6 +589,8 @@ class ExperimentStore:
                 "timezone": manifest["timezone"],
                 "license_status": manifest["license_status"],
                 "license_reference": manifest["license_reference"],
+                "licence_reviewed_by": manifest.get("licence_reviewed_by"),
+                "licence_decided_at": manifest.get("licence_decided_at"),
                 "quality_score": manifest.get("quality_score"),
                 "known_gap_count": len(manifest.get("known_gaps", [])),
                 "update_frequency": manifest["update_frequency"],
@@ -618,6 +681,33 @@ class ExperimentStore:
                 (job_id, event_type, datetime.now(timezone.utc).isoformat(), encoded),
             )
             return int(cursor.lastrowid)
+
+    def append_dataset_licence_event(
+        self, dataset_id: str, event_type: str, payload: dict[str, Any]
+    ) -> int:
+        """Append an immutable licence-review event for a registered dataset."""
+        # Mirrors the append-only job/experiment event idiom; registered manifests
+        # and their fingerprints are never rewritten by a licence decision.
+        if not event_type.strip():
+            raise ValueError("event_type must be non-empty")
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        with self._connection() as connection:
+            cursor = connection.execute(
+                """INSERT INTO dataset_licence_events
+                   (dataset_id, event_type, occurred_at, payload_json)
+                   VALUES (?, ?, ?, ?)""",
+                (dataset_id, event_type, datetime.now(timezone.utc).isoformat(), encoded),
+            )
+            return int(cursor.lastrowid)
+
+    def dataset_licence_events(self, dataset_id: str) -> tuple[dict[str, Any], ...]:
+        """Read one dataset's licence review history in append order."""
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM dataset_licence_events WHERE dataset_id = ? ORDER BY event_id",
+                (dataset_id,),
+            ).fetchall()
+        return tuple({**dict(row), "payload": json.loads(row["payload_json"])} for row in rows)
 
     def get_job(self, job_id: str) -> dict[str, Any]:
         """Return persisted job status, parameters, result and ordered events."""

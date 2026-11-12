@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
+import logging
+import os
 import sqlite3
 from datetime import datetime
 from http import HTTPStatus
@@ -16,6 +19,10 @@ from .experiments import ExperimentSpec
 from .jobs import ResearchJobManager
 from .storage import ExperimentStore
 from .strategy_catalog import ExistingStrategyRegistry
+
+_LOGGER = logging.getLogger(__name__)
+
+REMOTE_API_ENV_VAR = "RESEARCH_ALLOW_REMOTE_API"
 
 
 DASHBOARD_HTML = """<!doctype html>
@@ -1189,6 +1196,36 @@ class ResearchAPI:
         except Exception as exc:  # noqa: BLE001 - hide internal tracebacks from HTTP clients.
             return self._response(start_response, HTTPStatus.INTERNAL_SERVER_ERROR,
                                   {"error": f"internal error: {type(exc).__name__}"})
+
+
+def ensure_local_only_bind(host: str, *, env_var: str = REMOTE_API_ENV_VAR) -> bool:
+    """Refuse non-loopback API binds unless remote exposure is explicitly enabled.
+
+    The research API serves unauthenticated experiment metadata, so it stays on the
+    loopback interface until remote authentication and transport security exist. A
+    remote bind is allowed only when the environment variable is set to ``1``, and
+    the deliberate override is logged as a warning.
+    """
+    # Accept hostnames such as ``localhost`` as well as literal IP addresses.
+    try:
+        host_is_loopback = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        host_is_loopback = host.strip().lower() in {"localhost", ""}
+    if host_is_loopback:
+        return False
+    override = os.getenv(env_var, "").strip().lower()
+    if override != "1":
+        raise RuntimeError(
+            f"refusing to bind research API to non-loopback host {host!r}: the API has no "
+            f"remote authentication; set {env_var}=1 to accept the risk explicitly"
+        )
+    _LOGGER.warning(
+        "Research API remote exposure enabled via %s=1: binding to %s without "
+        "authentication or transport security",
+        env_var,
+        host,
+    )
+    return True
 
 
 def create_app(
