@@ -203,3 +203,174 @@ def test_existing_strategy_runner_rejects_unregistered_extra_bar_symbols(tmp_pat
         evaluate_existing_strategy(
             spec, bars, config, periods_per_year=252, store=store
         )
+
+
+# --- F-001 / CR-001: versioned OOS acceptance policy -------------------------
+
+from research.platform.classification import OOS_ACCEPTANCE_POLICY_V1
+
+
+def test_existing_strategy_evaluation_without_policy_records_unknown(tmp_path) -> None:
+    # Without an approved policy the stored record must keep the OOS pass unknown.
+    spec = _experiment()
+    store = _registered_store(tmp_path / "no-policy.sqlite3", spec)
+    config = PortfolioConfig(
+        market=Market.NSE,
+        fee_bps=Decimal("0"),
+        slippage_bps=Decimal("1"),
+        impact_coefficient_bps=Decimal("1"),
+        max_participation=Decimal("0.05"),
+        max_gross_exposure=Decimal("1.0"),
+        assumed_timezone="Asia/Kolkata",
+        cost_model_id=spec.cost_model_id,
+        execution_model_id=spec.execution_model_id,
+    )
+    result = evaluate_existing_strategy(spec, _bars(), config, periods_per_year=252, store=store)
+    assert result.oos_policy_version is None
+
+    record = result.to_dict()["oos_acceptance"]
+    assert record["outcome"] == "unknown"
+    assert record["policy_version"] is None
+    assert record["reasons"]
+    assert record is not None  # stored record is fully materialised, not a stub
+
+    persisted = [
+        event for event in store.events(spec.experiment_id)
+        if event["event_type"] == "existing_strategy_evaluated"
+    ]
+    assert len(persisted) == 1
+    payload = persisted[0]["payload"]
+    assert payload["oos_acceptance"]["outcome"] == "unknown"
+    assert payload["oos_policy_version"] is None
+    assert payload["classification_evidence"]["oos_passed"] is None
+    # The existing-strategy evaluator never performs model selection, so the
+    # classification stays training-only; the OOS verdict itself is unknown.
+    assert payload["classification"] == "training_only"
+
+
+def test_existing_strategy_evaluation_with_policy_classifies_verdict(tmp_path) -> None:
+    # The approved policy stamps its version and classifies the OOS partition.
+    spec = _experiment()
+    store = _registered_store(tmp_path / "with-policy.sqlite3", spec)
+    config = PortfolioConfig(
+        market=Market.NSE,
+        fee_bps=Decimal("0"),
+        slippage_bps=Decimal("1"),
+        impact_coefficient_bps=Decimal("1"),
+        max_participation=Decimal("0.05"),
+        max_gross_exposure=Decimal("1.0"),
+        assumed_timezone="Asia/Kolkata",
+        cost_model_id=spec.cost_model_id,
+        execution_model_id=spec.execution_model_id,
+    )
+    result = evaluate_existing_strategy(
+        spec,
+        _bars(),
+        config,
+        periods_per_year=252,
+        store=store,
+        oos_policy_version=OOS_ACCEPTANCE_POLICY_V1.policy_version,
+    )
+    assert result.oos_policy_version == "v1-2026-11-10"
+
+    acceptance = result.oos_acceptance()
+    assert acceptance["policy_version"] == "v1-2026-11-10"
+    assert acceptance["outcome"] in {"pass", "fail"}
+    # The stored classification must agree with the classified verdict.
+    evidence = result.to_dict()["classification_evidence"]
+    if acceptance["outcome"] == "pass":
+        assert evidence["oos_passed"] is True
+    else:
+        assert acceptance["reasons"]
+        assert evidence["oos_passed"] is False
+
+    persisted = [
+        event for event in store.events(spec.experiment_id)
+        if event["event_type"] == "existing_strategy_evaluated"
+    ][-1]["payload"]
+    assert persisted["oos_policy_version"] == "v1-2026-11-10"
+    assert persisted["oos_acceptance"]["outcome"] == acceptance["outcome"]
+    assert persisted["classification_evidence"]["oos_passed"] == evidence["oos_passed"]
+
+
+def test_existing_strategy_evaluation_rejects_unapproved_policy_version(tmp_path) -> None:
+    # A candidate-record version that was never approved cannot silently pass.
+    spec = _experiment()
+    store = _registered_store(tmp_path / "mismatch.sqlite3", spec)
+    config = PortfolioConfig(
+        market=Market.NSE,
+        fee_bps=Decimal("0"),
+        slippage_bps=Decimal("1"),
+        impact_coefficient_bps=Decimal("1"),
+        max_participation=Decimal("0.05"),
+        max_gross_exposure=Decimal("1.0"),
+        assumed_timezone="Asia/Kolkata",
+        cost_model_id=spec.cost_model_id,
+        execution_model_id=spec.execution_model_id,
+    )
+    with pytest.raises(ValueError, match="not an approved OOS acceptance policy"):
+        evaluate_existing_strategy(
+            spec,
+            _bars(),
+            config,
+            periods_per_year=252,
+            store=store,
+            oos_policy_version="v0-never-approved",
+        )
+
+
+def test_existing_strategy_evaluation_repeat_run_is_idempotent_for_candidates(tmp_path) -> None:
+    # A repeated OOS call appends a new immutable evaluation event, never a second candidate.
+    spec = _experiment()
+    store = _registered_store(tmp_path / "repeat.sqlite3", spec)
+    config = PortfolioConfig(
+        market=Market.NSE,
+        fee_bps=Decimal("0"),
+        slippage_bps=Decimal("1"),
+        impact_coefficient_bps=Decimal("1"),
+        max_participation=Decimal("0.05"),
+        max_gross_exposure=Decimal("1.0"),
+        assumed_timezone="Asia/Kolkata",
+        cost_model_id=spec.cost_model_id,
+        execution_model_id=spec.execution_model_id,
+    )
+    policy = OOS_ACCEPTANCE_POLICY_V1.policy_version
+    first = evaluate_existing_strategy(
+        spec, _bars(), config, periods_per_year=252, store=store, oos_policy_version=policy
+    )
+    second = evaluate_existing_strategy(
+        spec, _bars(), config, periods_per_year=252, store=store, oos_policy_version=policy
+    )
+    assert len(store.candidates(spec.experiment_id)) == 1
+    assert first.oos_acceptance() == second.oos_acceptance()
+
+    evaluations = [
+        event for event in store.events(spec.experiment_id)
+        if event["event_type"] == "existing_strategy_evaluated"
+    ]
+    assert len(evaluations) == 2
+    assert [item["payload"]["repeat_evaluation"] for item in evaluations] == [False, True]
+    assert evaluations[1]["payload"]["oos_acceptance"] == first.oos_acceptance()
+
+
+def test_oos_metrics_extracts_only_the_oos_partition(tmp_path) -> None:
+    # The acceptance gate reads the declared OOS partition, never train or validation.
+    spec = _experiment()
+    store = _registered_store(tmp_path / "partition.sqlite3", spec)
+    config = PortfolioConfig(
+        market=Market.NSE,
+        fee_bps=Decimal("0"),
+        slippage_bps=Decimal("1"),
+        impact_coefficient_bps=Decimal("1"),
+        max_participation=Decimal("0.05"),
+        max_gross_exposure=Decimal("1.0"),
+        assumed_timezone="Asia/Kolkata",
+        cost_model_id=spec.cost_model_id,
+        execution_model_id=spec.execution_model_id,
+    )
+    result = evaluate_existing_strategy(
+        spec, _bars(), config, periods_per_year=252, store=store,
+        oos_policy_version=OOS_ACCEPTANCE_POLICY_V1.policy_version,
+    )
+    oos = next(item for item in result.evaluations if item.partition == "out_of_sample")
+    assert result.oos_metrics() == dict(oos.metrics)

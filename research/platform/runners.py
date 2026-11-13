@@ -21,7 +21,13 @@ from .adapters import (
     load_non_holdout_partition,
 )
 from .composition import Composition, StrategyComposer
-from .classification import CandidateEvidence, classification_report
+from .classification import (
+    OOS_ACCEPTANCE_POLICY_V1,
+    OOSAcceptanceOutcome,
+    CandidateEvidence,
+    classification_report,
+    evaluate_oos_acceptance,
+)
 from .compute import ComputeEngine
 from .composition_policy import composition_scores, default_component_registry
 from .costs import CryptoVenueFeeCalculator, NSEDeliveryFeeCalculator
@@ -470,17 +476,16 @@ class ExistingStrategyJobRunner:
         validation_lifecycle = context.validation_lifecycle(spec.experiment_id)
         validation_lifecycle.freeze_candidate(spec.fingerprint)
         oos_started = False
-        oos_recorded = False
+        oos_completed = False
 
         def report_partition_progress(stage: str, completed: int, total: int) -> None:
-            # Authorize OOS at its actual start and persist its completion only after evaluation.
-            nonlocal oos_started, oos_recorded
+            # Authorize OOS at its actual start and observe its completion for the post-run verdict.
+            nonlocal oos_started, oos_completed
             if stage == "out_of_sample" and not oos_started:
                 validation_lifecycle.authorize(AccessRole.OOS_EVALUATOR, Partition.OOS)
                 oos_started = True
-            if stage == "out_of_sample" and completed == total and oos_started and not oos_recorded:
-                validation_lifecycle.record_oos(spec.fingerprint, passed=None)
-                oos_recorded = True
+            if stage == "out_of_sample" and completed == total and oos_started:
+                oos_completed = True
             context.log(f"{stage}: {completed}/{total} partitions complete")
 
         result: ExistingStrategyEvaluation = evaluate_existing_strategy(
@@ -491,9 +496,15 @@ class ExistingStrategyJobRunner:
             store=context.store,
             check_cancelled=context.check_cancelled,
             progress_callback=report_partition_progress,
+            oos_policy_version=OOS_ACCEPTANCE_POLICY_V1.policy_version,
         )
-        if not oos_recorded:
-            raise RuntimeError("evaluation returned without recording its OOS lifecycle result")
+        if not oos_started or not oos_completed:
+            raise RuntimeError("evaluation returned without completing its authorised OOS stage")
+        # Classify the recorded OOS partition under the approved policy.
+        oos_acceptance = evaluate_oos_acceptance(
+            result.oos_metrics(), OOS_ACCEPTANCE_POLICY_V1.policy_version
+        )
+        validation_lifecycle.record_oos(spec.fingerprint, passed=result.evidence_oos_passed())
         context.log("evaluation completed; final holdout was not accessed")
         return result.to_dict()
 
@@ -1192,12 +1203,21 @@ class ExistingStrategyOptimizerJobRunner:
                 "selection": "validation_objective",
                 "train_parent_candidate_id": selected["train_candidate_id"],
             },
+            oos_policy_version=OOS_ACCEPTANCE_POLICY_V1.policy_version,
         )
-        validation_lifecycle.record_oos(selected["candidate_id"], passed=None)
+        final_oos_metrics = final_evaluation.oos_metrics()
+        oos_acceptance = evaluate_oos_acceptance(
+            final_oos_metrics, OOS_ACCEPTANCE_POLICY_V1.policy_version
+        )
+        validation_lifecycle.record_oos(
+            selected["candidate_id"],
+            passed=oos_acceptance.outcome is OOSAcceptanceOutcome.PASS,
+        )
         return {
             "experiment_id": spec.experiment_id,
             "search_family": spec.algorithm_family.value,
             "search_method": search.method,
+            "oos_acceptance": oos_acceptance.to_dict(),
             "objective": objective_name,
             "budget": budget,
             "candidate_count": len(candidate_rows),
@@ -1217,7 +1237,7 @@ class ExistingStrategyOptimizerJobRunner:
                 train_evaluated=True,
                 validation_selected=True,
                 oos_evaluated=True,
-                oos_passed=None,
+                oos_passed=oos_acceptance.outcome is OOSAcceptanceOutcome.PASS,
             )),
             "final_holdout_accessed": False,
             "final_evaluation": final_evaluation.to_dict(),
@@ -1672,7 +1692,12 @@ class GeneticProgrammingJobRunner:
                     "final_holdout_accessed": False,
                 },
             )
-        validation_lifecycle.record_oos(oos_candidate_id, passed=None)
+        oos_acceptance = evaluate_oos_acceptance(
+            dict(oos_result.metrics), OOS_ACCEPTANCE_POLICY_V1.policy_version
+        )
+        validation_lifecycle.record_oos(
+            oos_candidate_id, passed=oos_acceptance.outcome is OOSAcceptanceOutcome.PASS
+        )
         context.store.append_event(
             spec.experiment_id,
             "genetic_programming_oos_recorded",
@@ -1689,11 +1714,12 @@ class GeneticProgrammingJobRunner:
         return {
             "experiment_id": spec.experiment_id,
             "algorithm_family": AlgorithmFamily.GENETIC_PROGRAMMING.value,
+            "oos_acceptance": oos_acceptance.to_dict(),
             **classification_report(CandidateEvidence(
                 train_evaluated=True,
                 validation_selected=True,
                 oos_evaluated=True,
-                oos_passed=None,
+                oos_passed=oos_acceptance.outcome is OOSAcceptanceOutcome.PASS,
             )),
             "objective": objective_name,
             "feature_windows": windows,
@@ -2196,7 +2222,12 @@ class NeuroevolutionJobRunner:
                     "final_holdout_accessed": False,
                 },
             )
-        validation_lifecycle.record_oos(oos_candidate_id, passed=None)
+        oos_acceptance = evaluate_oos_acceptance(
+            dict(oos_result.metrics), OOS_ACCEPTANCE_POLICY_V1.policy_version
+        )
+        validation_lifecycle.record_oos(
+            oos_candidate_id, passed=oos_acceptance.outcome is OOSAcceptanceOutcome.PASS
+        )
         context.store.append_event(
             spec.experiment_id,
             "neuroevolution_oos_recorded",
@@ -2213,11 +2244,12 @@ class NeuroevolutionJobRunner:
         return {
             "experiment_id": spec.experiment_id,
             "algorithm_family": AlgorithmFamily.NEUROEVOLUTION.value,
+            "oos_acceptance": oos_acceptance.to_dict(),
             **classification_report(CandidateEvidence(
                 train_evaluated=True,
                 validation_selected=True,
                 oos_evaluated=True,
-                oos_passed=None,
+                oos_passed=oos_acceptance.outcome is OOSAcceptanceOutcome.PASS,
             )),
             "objective": objective_name,
             "feature_windows": windows,
@@ -2661,7 +2693,12 @@ class StrategyCompositionJobRunner:
                     "final_holdout_accessed": False,
                 },
             )
-        validation_lifecycle.record_oos(oos_candidate_id, passed=None)
+        oos_acceptance = evaluate_oos_acceptance(
+            dict(oos_result.metrics), OOS_ACCEPTANCE_POLICY_V1.policy_version
+        )
+        validation_lifecycle.record_oos(
+            oos_candidate_id, passed=oos_acceptance.outcome is OOSAcceptanceOutcome.PASS
+        )
         context.store.append_event(
             spec.experiment_id,
             "strategy_composition_oos_recorded",
@@ -2678,11 +2715,12 @@ class StrategyCompositionJobRunner:
         return {
             "experiment_id": spec.experiment_id,
             "algorithm_family": AlgorithmFamily.STRATEGY_COMPOSITION.value,
+            "oos_acceptance": oos_acceptance.to_dict(),
             **classification_report(CandidateEvidence(
                 train_evaluated=True,
                 validation_selected=True,
                 oos_evaluated=True,
-                oos_passed=None,
+                oos_passed=oos_acceptance.outcome is OOSAcceptanceOutcome.PASS,
             )),
             "objective": objective_name,
             "feature_windows": windows,
@@ -3112,16 +3150,24 @@ class ParetoStrategySearchJobRunner:
                 "objectives": list(objectives),
                 "directions": list(directions),
             },
+            oos_policy_version=OOS_ACCEPTANCE_POLICY_V1.policy_version,
         )
-        validation_lifecycle.record_oos(selected["candidate_id"], passed=None)
+        oos_acceptance = evaluate_oos_acceptance(
+            oos_evaluation.oos_metrics(), OOS_ACCEPTANCE_POLICY_V1.policy_version
+        )
+        validation_lifecycle.record_oos(
+            selected["candidate_id"],
+            passed=oos_acceptance.outcome is OOSAcceptanceOutcome.PASS,
+        )
         return {
             "experiment_id": spec.experiment_id,
             "algorithm_family": AlgorithmFamily.PARETO_SEARCH.value,
+            "oos_acceptance": oos_acceptance.to_dict(),
             **classification_report(CandidateEvidence(
                 train_evaluated=True,
                 validation_selected=True,
                 oos_evaluated=True,
-                oos_passed=None,
+                oos_passed=oos_acceptance.outcome is OOSAcceptanceOutcome.PASS,
             )),
             "strategy_name": strategy_name,
             "objectives": list(objectives),

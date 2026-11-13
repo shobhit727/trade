@@ -157,7 +157,9 @@ def test_existing_strategy_job_runner_executes_and_persists_partition_results(tm
         assert result["final_holdout_accessed"] is False
         lifecycle = store.get_validation_lifecycle(spec.experiment_id, job_id)
         assert lifecycle["state"] == "oos_recorded"
-        assert lifecycle["oos_passed"] is None
+        # The approved v1 policy classifies the recorded OOS partition explicitly.
+        assert lifecycle["oos_passed"] == (result["oos_acceptance"]["outcome"] == "pass")
+        assert result["oos_acceptance"]["policy_version"] == "v1-2026-11-10"
         assert [item["partition"] for item in result["partitions"]] == [
             "train", "validation", "out_of_sample"
         ]

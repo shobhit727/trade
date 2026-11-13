@@ -10,7 +10,13 @@ from typing import Any, Callable, Mapping
 
 import pandas as pd
 
-from .classification import CandidateEvidence, classification_report
+from .classification import (
+    OOS_ACCEPTANCE_POLICY_V1,
+    OOSAcceptanceOutcome,
+    CandidateEvidence,
+    classification_report,
+    evaluate_oos_acceptance,
+)
 from .domain import ResearchTrack
 from .experiments import ExperimentSpec
 from .metrics import compute_portfolio_metrics
@@ -50,14 +56,39 @@ class ExistingStrategyEvaluation:
     candidate_digest: str
     evaluations: tuple[PartitionEvaluation, ...]
     final_holdout_accessed: bool = False
+    oos_policy_version: str | None = None
+
+    def oos_metrics(self) -> dict[str, float | int]:
+        """Return the metrics of the single declared out-of-sample partition."""
+        for item in self.evaluations:
+            if item.partition == "out_of_sample":
+                return dict(item.metrics)
+        return {}
+
+    def oos_acceptance(self) -> dict[str, object]:
+        """Classify OOS under the configured policy; no policy stays unknown."""
+        record = evaluate_oos_acceptance(self.oos_metrics(), self.oos_policy_version)
+        return record.to_dict()
+
+    def evidence_oos_passed(self) -> bool | None:
+        """Map the acceptance verdict onto the three-valued evidence flag."""
+        outcome = self.oos_acceptance()["outcome"]
+        if outcome == OOSAcceptanceOutcome.PASS.value:
+            return True
+        if outcome == OOSAcceptanceOutcome.FAIL.value:
+            return False
+        # Unknown and mismatch remain non-positive evidence.
+        return None
 
     def to_dict(self) -> dict[str, object]:
-        # OOS was evaluated, but no explicit acceptance gate exists; unknown remains inconclusive.
+        # With no configured policy the OOS pass value stays unknown and inconclusive.
+        acceptance = self.oos_acceptance()
+        oos_passed: bool | None = self.evidence_oos_passed()
         evidence = CandidateEvidence(
             train_evaluated=any(item.partition == "train" for item in self.evaluations),
             validation_selected=False,
             oos_evaluated=any(item.partition == "out_of_sample" for item in self.evaluations),
-            oos_passed=None,
+            oos_passed=oos_passed,
         )
         return {
             "experiment_id": self.experiment_id,
@@ -65,6 +96,8 @@ class ExistingStrategyEvaluation:
             "candidate_digest": self.candidate_digest,
             "partitions": [item.to_dict() for item in self.evaluations],
             "final_holdout_accessed": self.final_holdout_accessed,
+            "oos_policy_version": self.oos_policy_version,
+            "oos_acceptance": acceptance,
             **classification_report(evidence),
         }
 
@@ -166,6 +199,7 @@ def evaluate_existing_strategy(
     progress_callback: Callable[[str, int, int], None] | None = None,
     candidate_family: str = "existing_strategy",
     lineage_metadata: dict[str, Any] | None = None,
+    oos_policy_version: str | None = None,
 ) -> ExistingStrategyEvaluation:
     """Evaluate a frozen existing strategy on TRAIN, VALIDATION and OOS only.
 
@@ -173,6 +207,9 @@ def evaluate_existing_strategy(
     are frozen in ExperimentSpec.parameters and the same candidate is used in every
     reported stage. For an optimised candidate, callers must first complete model
     selection using TRAIN/VALIDATION and create a new immutable ExperimentSpec.
+
+    ``oos_policy_version`` must name an approved OOS acceptance policy or stay None;
+    an unapproved version is rejected instead of silently degrading to unknown.
     """
     # Validate the single-market and cost-provenance contract before evaluating bars.
     if portfolio_config.market is not spec.market:
@@ -189,6 +226,10 @@ def evaluate_existing_strategy(
     strategy_parameters = spec.parameters.get("strategy_parameters", {})
     if not isinstance(strategy_parameters, dict):
         raise ValueError("strategy_parameters must be an object")
+    if oos_policy_version is not None and oos_policy_version != OOS_ACCEPTANCE_POLICY_V1.policy_version:
+        raise ValueError(
+            f"oos_policy_version '{oos_policy_version}' is not an approved OOS acceptance policy"
+        )
 
     # Reproducible evaluation requires persisted, approved manifests for each data input.
     if store is None:
@@ -286,6 +327,7 @@ def evaluate_existing_strategy(
         candidate_digest=candidate_digest,
         evaluations=evaluations,
         final_holdout_accessed=False,
+        oos_policy_version=oos_policy_version,
     )
 
     if store is not None:
@@ -323,13 +365,15 @@ def evaluate_existing_strategy(
                 "cost_model_id": spec.cost_model_id,
                 "execution_model_id": spec.execution_model_id,
                 "metrics": stage_metrics,
-                # No v2 OOS acceptance gate is configured, so this result remains inconclusive.
+                # Classify the stored OOS partition under the configured acceptance policy.
+                "oos_acceptance": result.oos_acceptance(),
                 **classification_report(CandidateEvidence(
                     train_evaluated=True,
                     validation_selected=False,
                     oos_evaluated=True,
-                    oos_passed=None,
+                    oos_passed=result.evidence_oos_passed(),
                 )),
+                "oos_policy_version": oos_policy_version,
                 "repeat_evaluation": candidate_already_recorded,
             },
         )
