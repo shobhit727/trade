@@ -224,7 +224,7 @@ Daily bars only; holding period 5–60 days; weekly/biweekly rebalance.
 | `src/nsealgo/cli.py` | NSE sole CLI entrypoint |
 | `src/nsealgo/data/loader.py` | C1–C10 cleaning + `load_universe` |
 | `src/nsealgo/risk/limits.py` | Frozen hard limits (import-verified) |
-| `src/nsealgo/execution/{broker,paper}.py` | Broker Protocol adapters |
+| `src/nsealgo/execution/{broker,paper,kite}.py` | Broker Protocol adapters |
 | `research/AGENT_BRIEF.md` | Mandatory research setup (`sys.path.insert(0,'src')`) |
 | `docs/RUNBOOK.md` | Ops guide: venv, CLIs, compose paths, provenance |
 | `PROJECT_MEMORY/13_Bug_Tracker.md` | Bugs indexed vs GitHub #20–#53 |
@@ -262,7 +262,7 @@ docker compose -f docker-compose.research.yml run --rm research python research/
 - **Wave files**: `tests/unit/test_waveN_*` are generated try/except-True artifacts —
   low-signal; don't infer code health from them.
 - **`PYTHONPATH=src:.` pattern** for research module runs (crypto imports fail without
-  the `trade` package installed; nsealgo CI slice sets `PYTHONPATH=src` explicitly).
+  `pip install -e .`; nsealgo CI slice sets `PYTHONPATH=src` explicitly).
 - **Coverage gate is CI-only**: `--cov=cryptobot --cov-fail-under=70 --timeout=60`
   (`COVERAGE_THRESHOLD=70`); don't demand coverage locally.
 - **`.cargo/config.toml` must NOT set `-C target-cpu=native`** — breaks cached builds
