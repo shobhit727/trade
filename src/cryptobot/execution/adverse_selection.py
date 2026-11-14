@@ -42,9 +42,11 @@ class QueuePosition:
     book_imbalance_at_place: float = 0.0
 
     def time_in_queue_ms(self, now_ms: float) -> float:
+        """Return non-negative elapsed milliseconds since this order joined the queue."""
         return max(0.0, now_ms - self.placed_at_ms)
 
     def mid_distance_bps(self, mid_now: Decimal) -> float:
+        """Return absolute midpoint movement since placement in basis points."""
         if self.mid_at_place <= 0:
             return 0.0
         return float(abs(mid_now - self.mid_at_place) / self.mid_at_place) * 10_000.0
@@ -60,6 +62,7 @@ class TopOfBook:
 
     @classmethod
     def from_levels(cls, bids: list[Decimal], asks: list[Decimal], top_levels: int = 5) -> TopOfBook:
+        """Build best quotes, spread, and bid/ask volume imbalance from price levels."""
         if not bids or not asks:
             return cls(bid=Decimal("0"), ask=Decimal("0"), mid=Decimal("0"))
         bid = bids[0]
@@ -81,6 +84,7 @@ class AdverseSelectionGuard:
     """
 
     def __init__(self, config: AdverseSelectionConfig | None = None):
+        """Initialize order tracking and bounded recent-book toxicity history."""
         self.config = config or AdverseSelectionConfig()
         self._positions: dict[str, QueuePosition] = {}
         self._toxicity_history: deque[float] = deque(maxlen=self.config.toxicity_lookback)
@@ -88,11 +92,13 @@ class AdverseSelectionGuard:
         self._last_actions: list[str] = []
 
     def note_top(self, snapshot: TopOfBook) -> None:
+        """Add absolute book imbalance to history and refresh its rolling average."""
         self._toxicity_history.append(abs(snapshot.imbalance))
         if self._toxicity_history:
             self._last_toxicity = sum(self._toxicity_history) / len(self._toxicity_history)
 
     def register(self, order: OrderEvent, top: TopOfBook) -> QueuePosition:
+        """Record an order's queue-time quote and imbalance baseline."""
         now_ms = time.time() * 1000.0
         pos = QueuePosition(
             order_id=order.order_id or "",
@@ -109,6 +115,7 @@ class AdverseSelectionGuard:
         return pos
 
     def step(self, order_id: str, top: TopOfBook) -> AdverseAction:
+        """Decide whether midpoint, spread, or toxicity changes warrant cancelling an order."""
         pos = self._positions.get(order_id)
         if pos is None:
             return AdverseAction.NONE
@@ -141,6 +148,7 @@ class AdverseSelectionGuard:
         top: TopOfBook,
         side: str,
     ) -> Decimal | None:
+        """Return the placement midpoint when a valid order remains on the same side."""
         if pos.quantity <= 0 or pos.mid_at_place <= 0:
             return None
         if pos.side == side:
@@ -148,14 +156,17 @@ class AdverseSelectionGuard:
         return None
 
     def forget(self, order_id: str) -> None:
+        """Stop tracking an order after it is cancelled or otherwise completed."""
         self._positions.pop(order_id, None)
 
     @property
     def last_toxicity(self) -> float:
+        """Return the current average absolute imbalance over the lookback window."""
         return self._last_toxicity
 
     @property
     def tracked(self) -> list[str]:
+        """Return IDs of orders currently monitored for adverse selection."""
         return list(self._positions.keys())
 
 
@@ -175,6 +186,7 @@ def _install_guard_hook(engine, guard: AdverseSelectionGuard) -> None:
         return
 
     async def wrapped(order: OrderEvent, *args, **kwargs) -> OrderEvent:
+        """Submit the order and register it against the engine's latest book snapshot."""
         filled = await original_submit(order, *args, **kwargs)
         top = getattr(engine, "_last_top", None)
         if top is not None:

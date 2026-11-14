@@ -18,6 +18,7 @@ from cryptobot.core.state import state_manager
 
 
 def _utcnow() -> datetime:
+    """Return the current UTC time for portfolio state timestamps."""
     return datetime.now(UTC)
 
 
@@ -56,6 +57,7 @@ class PositionMetrics:
     pnl_pct: Decimal = Decimal("0")
 
     def __post_init__(self):
+        """Derive signed percentage P&L from entry and mark prices when entry is positive."""
         if self.entry_price > 0:
             self.pnl_pct = (
                 (self.mark_price - self.entry_price) / self.entry_price * Decimal("100")
@@ -89,6 +91,7 @@ class PortfolioState:
     updated_at: datetime = field(default_factory=_utcnow)
 
     def to_dict(self) -> dict:
+        """Serialize the portfolio snapshot, converting Decimals and time to strings."""
         return {
             "total_equity": str(self.total_equity),
             "available_balance": str(self.available_balance),
@@ -117,6 +120,7 @@ class PortfolioManager:
     """Multi-strategy portfolio management."""
 
     def __init__(self, mode: PortfolioMode = PortfolioMode.PAPER):
+        """Initialize portfolio state, allocation tracking, and synchronization."""
         self.mode = mode
         self._allocations: dict[str, StrategyAllocation] = {}
         self._state = PortfolioState()
@@ -178,9 +182,11 @@ class PortfolioManager:
         )
 
     def get_allocation(self, strategy: str) -> StrategyAllocation | None:
+        """Return one strategy's allocation, or ``None`` if it is not registered."""
         return self._allocations.get(strategy)
 
     def get_all_allocations(self) -> list[StrategyAllocation]:
+        """Return the current allocation records for every registered strategy."""
         return list(self._allocations.values())
 
     async def update_equity(self, equity: Decimal, now: datetime | None = None):
@@ -265,14 +271,17 @@ class PortfolioManager:
         return self._state
 
     def get_equity_curve(self) -> list[tuple[datetime, Decimal]]:
+        """Return a copy of the timestamped equity history."""
         return self._equity_curve.copy()
 
     def get_daily_pnl_pct(self) -> float:
+        """Return daily P&L as a fraction of the equity at the daily baseline."""
         if self._daily_pnl_start > 0:
             return float(self._state.daily_pnl / self._daily_pnl_start)
         return 0.0
 
     def get_drawdown_pct(self) -> float:
+        """Return the maximum drawdown recorded by the portfolio state."""
         return float(self._state.max_drawdown)
 
     def check_kill_switch(self) -> tuple[bool, str]:

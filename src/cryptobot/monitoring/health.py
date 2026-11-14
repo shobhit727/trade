@@ -25,6 +25,7 @@ logger = get_logger(__name__)
 
 
 def _utcnow() -> datetime:
+    """Return the current UTC time used for health timestamps."""
     return datetime.now(UTC)
 
 
@@ -61,6 +62,7 @@ class HealthCheck:
     tags: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
+        """Validate the callback and normalize string component names to the enum."""
         if isinstance(self.check_fn, str):
             raise ValueError("check_fn must be callable, not string")
         if isinstance(self.component, str):
@@ -101,12 +103,14 @@ class ComponentHealth:
 
     @property
     def success_rate(self) -> float:
+        """Return the fraction of completed checks that did not fail."""
         if self.total_checks == 0:
             return 1.0
         return 1.0 - (self.failed_checks / self.total_checks)
 
     @property
     def is_healthy(self) -> bool:
+        """Report whether the aggregated component status is healthy."""
         return self.status == HealthStatus.HEALTHY
 
 
@@ -116,10 +120,12 @@ class HealthChecker(ABC):
     @property
     @abstractmethod
     def component_type(self) -> ComponentType:
+        """Identify the component monitored by this checker implementation."""
         pass
 
     @abstractmethod
     async def check(self) -> HealthResult:
+        """Run the component-specific check and return its normalized result."""
         pass
 
 
@@ -135,6 +141,7 @@ class HealthMonitor:
         check_interval: float = 30.0,
         event_bus: Any | None = None,
     ):
+        """Initialize check registries, status callbacks, and monitor-loop state."""
         self.check_interval = check_interval
         self._event_bus = event_bus
         self._checks: dict[str, HealthCheck] = {}
@@ -457,12 +464,15 @@ class ExchangeHealthChecker(HealthChecker):
 
     @property
     def component_type(self) -> ComponentType:
+        """Identify exchange connectivity as the checked component."""
         return ComponentType.EXCHANGE
 
     def __init__(self, exchange_client: Any):
+        """Store the client whose ping or server-time endpoint will be tested."""
         self.exchange_client = exchange_client
 
     async def check(self) -> HealthResult:
+        """Ping the exchange and report reachability, latency, or the raised error."""
         try:
             # Ping exchange
             start = time.perf_counter()
@@ -495,12 +505,15 @@ class DataFeedHealthChecker(HealthChecker):
 
     @property
     def component_type(self) -> ComponentType:
+        """Identify market-data freshness as the checked component."""
         return ComponentType.DATA_FEED
 
     def __init__(self, market_data_manager: Any):
+        """Store the manager used to inspect ticker timestamps by symbol."""
         self.manager = market_data_manager
 
     async def check(self) -> HealthResult:
+        """Classify feed freshness as healthy, degraded, or unhealthy by configured ages."""
         try:
             # Check data freshness
             staleness = {}
@@ -562,12 +575,15 @@ class DatabaseHealthChecker(HealthChecker):
 
     @property
     def component_type(self) -> ComponentType:
+        """Identify database connectivity as the checked component."""
         return ComponentType.DATABASE
 
     def __init__(self, pool: Any):
+        """Store the database pool used for a lightweight connectivity query."""
         self.pool = pool
 
     async def check(self) -> HealthResult:
+        """Run a SELECT 1 probe and report database latency or failure."""
         try:
             start = time.perf_counter()
             async with self.pool.acquire() as conn:
@@ -596,12 +612,15 @@ class CacheHealthChecker(HealthChecker):
 
     @property
     def component_type(self) -> ComponentType:
+        """Identify cache connectivity as the checked component."""
         return ComponentType.CACHE
 
     def __init__(self, redis_client: Any):
+        """Store the Redis client used for the connectivity ping."""
         self.redis = redis_client
 
     async def check(self) -> HealthResult:
+        """Ping Redis and report cache latency or the raised error."""
         try:
             start = time.perf_counter()
             await self.redis.ping()
@@ -629,13 +648,16 @@ class RiskEngineHealthChecker(HealthChecker):
 
     @property
     def component_type(self) -> ComponentType:
+        """Identify risk controls as the checked component."""
         return ComponentType.RISK_ENGINE
 
     def __init__(self, portfolio_manager: Any, state_manager: Any):
+        """Store portfolio and state interfaces used to inspect risk limits."""
         self.portfolio = portfolio_manager
         self.state = state_manager
 
     async def check(self) -> HealthResult:
+        """Check daily loss against the kill-switch threshold and report exposure details."""
         try:
             # Check portfolio state
             portfolio_state = self.portfolio.get_state()
@@ -689,12 +711,15 @@ class StrategyEngineHealthChecker(HealthChecker):
 
     @property
     def component_type(self) -> ComponentType:
+        """Identify strategy execution as the checked component."""
         return ComponentType.STRATEGY_ENGINE
 
     def __init__(self, strategy_manager: Any):
+        """Store the manager queried for active strategies and error counts."""
         self.manager = strategy_manager
 
     async def check(self) -> HealthResult:
+        """Report strategy-engine health based on active strategies and accumulated errors."""
         try:
             active_strategies = self.manager.get_active_strategies() if hasattr(self.manager, 'get_active_strategies') else []
             error_count = self.manager.get_error_count() if hasattr(self.manager, 'get_error_count') else 0
@@ -744,6 +769,7 @@ def create_standard_checks(
     # Exchange connectivity
     if exchange_client:
         async def _exchange_ping():
+            """Adapt the exchange client probe to the standard check callback shape."""
             return await _ping_exchange(exchange_client)
 
         checks.append(HealthCheck(
@@ -757,6 +783,7 @@ def create_standard_checks(
     # Data feed freshness
     if market_data_manager:
         async def _data_freshness():
+            """Adapt the market-data freshness probe to the standard check callback shape."""
             return await _check_data_freshness(market_data_manager)
 
         checks.append(HealthCheck(
@@ -770,6 +797,7 @@ def create_standard_checks(
     # Database
     if db_pool:
         async def _database_ping():
+            """Adapt the database ping to the standard check callback shape."""
             return await _ping_database(db_pool)
 
         checks.append(HealthCheck(
@@ -783,6 +811,7 @@ def create_standard_checks(
     # Cache
     if redis_client:
         async def _cache_ping():
+            """Adapt the Redis ping to the standard check callback shape."""
             return await _ping_cache(redis_client)
 
         checks.append(HealthCheck(
@@ -842,6 +871,7 @@ _health_monitor: HealthMonitor | None = None
 
 
 def get_health_monitor() -> HealthMonitor:
+    """Return the process-wide health monitor, creating it if needed."""
     global _health_monitor
     if _health_monitor is None:
         _health_monitor = HealthMonitor()

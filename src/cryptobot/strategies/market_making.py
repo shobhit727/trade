@@ -37,6 +37,7 @@ class MarketMakingStrategy:
     name = "market_making"
 
     def __init__(self, config: MarketMakingConfig | None = None):
+        """Initialize inventory, cash, quote state, execution hooks, and result history."""
         self.config = config or MarketMakingConfig()
         self.inventory: Decimal = Decimal("0")
         self._cash: Decimal = Decimal("0")
@@ -54,6 +55,7 @@ class MarketMakingStrategy:
 
     @property
     def equity_curve(self) -> list[float]:
+        """Return the recorded mark-to-market equity values after fills."""
         return self._equity_curve
 
     def attach_execution(
@@ -61,6 +63,7 @@ class MarketMakingStrategy:
         engine: ExecutionEngine,
         guard: AdverseSelectionGuard | None = None,
     ) -> None:
+        """Attach the live execution engine and optionally install adverse-selection handling."""
         self._exec = engine
         self._guard = guard
         if guard is not None:
@@ -70,6 +73,7 @@ class MarketMakingStrategy:
             _install_guard_hook(engine, guard)
 
     def _avellaneda_stoikov(self, mid: float, t_remaining: float) -> tuple[float, float]:
+        """Calculate inventory-adjusted bid and ask quotes from the AS reservation price."""
         gamma = self.config.gamma
         sigma = self.config.sigma
         kappa = self.config.kappa
@@ -81,9 +85,11 @@ class MarketMakingStrategy:
         return bid, ask
 
     def _inventory_to_float(self) -> float:
+        """Convert Decimal inventory to float for the quote formula."""
         return float(self.inventory)
 
     def on_top(self, top: TopOfBook) -> None:
+        """Store the latest book and share it with attached execution and guard hooks."""
         self._last_top = top
         if self._exec is not None:
             # Expose the latest book top to the engine so the adverse-selection
@@ -93,6 +99,7 @@ class MarketMakingStrategy:
             self._guard.note_top(top)
 
     def on_fill(self, order: OrderEvent) -> None:
+        """Update inventory, cash, and marked equity from a completed order event."""
         if order.status != OrderStatus.FILLED:
             return
         qty = order.filled_quantity or order.quantity
@@ -107,6 +114,7 @@ class MarketMakingStrategy:
         self._equity_curve.append(float(self._cash + self.inventory * mid))
 
     def quote(self, mid: Decimal, t_remaining: float = 1.0) -> tuple[Decimal, Decimal]:
+        """Return rounded Decimal bid and ask quotes around the current midpoint."""
         bid_f, ask_f = self._avellaneda_stoikov(float(mid), t_remaining)
         return Decimal(str(round(bid_f, 8))), Decimal(str(round(ask_f, 8)))
 
@@ -136,6 +144,7 @@ class MarketMakingStrategy:
         mid: Decimal,
         timestamp=None,
     ) -> None:
+        """Update quote state and submit buy/sell orders while inventory limits allow."""
         self._last_mid = mid
         snapshot = TopOfBook(bid=bid, ask=ask, mid=mid)
         self.on_top(snapshot)
@@ -167,6 +176,7 @@ class MarketMakingStrategy:
         return None
 
     async def run_on_history(self, bars) -> list[OrderEvent]:
+        """Replay bars as book updates and return only orders created during this call."""
         start = len(self.history)
         for i, bar in enumerate(bars):
             mid = Decimal(str(bar.close))
@@ -181,6 +191,7 @@ class MarketMakingStrategy:
         return list(self.history[start:])
 
     def feed(self, top: TopOfBook) -> None:
+        """Accept a top-of-book update through the strategy-compatible feed interface."""
         self.on_top(top)
         self.last_action = "quoted"
         return None

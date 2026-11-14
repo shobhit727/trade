@@ -35,6 +35,7 @@ class CircuitBreaker:
     config: BreakerConfig = field(default_factory=BreakerConfig)
 
     def __post_init__(self) -> None:
+        """Initialize an untripped breaker and restore persisted state when possible."""
         self.tripped: bool = False
         self.reason: str = ""
         self.tripped_at: str = ""
@@ -54,6 +55,7 @@ class CircuitBreaker:
         return drawdown <= self.config.max_drawdown
 
     def trip(self, reason: str, now_iso: str = "") -> None:
+        """Persist the first trip reason and timestamp; leave an existing trip unchanged."""
         if self.tripped:
             return
         self.tripped = True
@@ -80,6 +82,7 @@ class CircuitBreaker:
         Losing positions go last, most-negative last of all.
         """
         def pnl_key(pos: dict[str, Any]) -> Decimal:
+            """Convert a position's unrealized P&L to a sortable Decimal value."""
             try:
                 return Decimal(str(pos.get("unrealized_pnl", "0")))
             except Exception:  # noqa: BLE001
@@ -90,6 +93,7 @@ class CircuitBreaker:
     # ------------------------------------------------------------ persistence
 
     def save(self) -> None:
+        """Atomically persist breaker state by replacing a temporary JSON file."""
         path = Path(self.config.state_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
@@ -102,6 +106,7 @@ class CircuitBreaker:
         os.replace(tmp, path)
 
     def load(self, path: str | None = None) -> None:
+        """Restore trip status and diagnostics from the configured or supplied JSON path."""
         target = Path(path or self.config.state_path)
         if not target.exists():
             return
@@ -111,6 +116,7 @@ class CircuitBreaker:
         self.tripped_at = data.get("tripped_at", "")
 
     def summary(self) -> dict[str, Any]:
+        """Return the trip status, reason, and configured drawdown threshold."""
         return {
             "tripped": self.tripped,
             "reason": self.reason,

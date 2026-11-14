@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> datetime:
+    """Return the current timezone-aware UTC wall-clock time."""
     return datetime.now(UTC)
 
 
@@ -35,6 +36,7 @@ class Clock:
 
     @property
     def mode(self) -> ClockMode:
+        """Identify the time source implemented by this clock."""
         raise NotImplementedError
 
     def now(self) -> datetime:
@@ -54,20 +56,25 @@ class RealtimeClock(Clock):
     """Real-time wall clock."""
 
     def __init__(self, timezone: str = "UTC"):
+        """Create a wall-clock source; retain the requested timezone label."""
         self._timezone = timezone
         self._mode = ClockMode.REALTIME
 
     @property
     def mode(self) -> ClockMode:
+        """Return the realtime clock mode."""
         return self._mode
 
     def now(self) -> datetime:
+        """Return the current UTC wall-clock time."""
         return _utcnow()
 
     async def sleep(self, seconds: float):
+        """Wait for the requested number of real seconds."""
         await asyncio.sleep(seconds)
 
     async def sleep_until(self, target: datetime):
+        """Wait until the target time if it is later than the current time."""
         now = self.now()
         if target > now:
             await asyncio.sleep((target - now).total_seconds())
@@ -82,6 +89,7 @@ class SimulatedClock(Clock):
         end_time: datetime | None = None,
         speed_factor: float = 1.0,
     ):
+        """Initialize a controllable simulation clock and its waiting tasks."""
         self._current_time = start_time
         self._start_time = start_time
         self._end_time = end_time
@@ -95,25 +103,31 @@ class SimulatedClock(Clock):
 
     @property
     def mode(self) -> ClockMode:
+        """Return the simulated clock mode."""
         return self._mode
 
     @property
     def current_time(self) -> datetime:
+        """Return the clock's current simulated timestamp."""
         return self._current_time
 
     @property
     def start_time(self) -> datetime:
+        """Return the timestamp from which simulated elapsed time is measured."""
         return self._start_time
 
     @property
     def end_time(self) -> datetime | None:
+        """Return the optional upper bound for simulated time."""
         return self._end_time
 
     @property
     def is_paused(self) -> bool:
+        """Report whether calls that advance time are currently paused."""
         return self._paused
 
     def now(self) -> datetime:
+        """Return the current simulated timestamp without advancing it."""
         return self._current_time
 
     def pause(self):
@@ -194,14 +208,17 @@ class SimulatedClock(Clock):
         self._paused = False
 
     def get_elapsed(self) -> timedelta:
+        """Return simulated time elapsed since the configured start."""
         return self._current_time - self._start_time
 
     def get_remaining(self) -> timedelta | None:
+        """Return time remaining to the configured end, or ``None`` without one."""
         if self._end_time:
             return self._end_time - self._current_time
         return None
 
     def is_finished(self) -> bool:
+        """Report whether simulated time has reached its configured end."""
         if self._end_time:
             return self._current_time >= self._end_time
         return False
@@ -211,6 +228,7 @@ class AcceleratedClock(Clock):
     """Accelerated real-time clock."""
 
     def __init__(self, speed_factor: float = 10.0, timezone: str = "UTC"):
+        """Start a clock whose simulated time advances faster than wall time."""
         self._speed_factor = max(0.001, speed_factor)
         self._timezone = timezone
         self._mode = ClockMode.ACCELERATED
@@ -219,22 +237,27 @@ class AcceleratedClock(Clock):
 
     @property
     def mode(self) -> ClockMode:
+        """Return the accelerated clock mode."""
         return self._mode
 
     @property
     def speed_factor(self) -> float:
+        """Return the multiplier applied to elapsed wall-clock time."""
         return self._speed_factor
 
     def now(self) -> datetime:
+        """Map monotonic wall-time elapsed since creation onto simulated time."""
         wall_elapsed = time.monotonic() - self._start_wall
         sim_elapsed = wall_elapsed * self._speed_factor
         return self._start_sim + timedelta(seconds=sim_elapsed)
 
     async def sleep(self, seconds: float):
+        """Wait the wall-time duration corresponding to simulated seconds."""
         real_seconds = seconds / self._speed_factor
         await asyncio.sleep(real_seconds)
 
     async def sleep_until(self, target: datetime):
+        """Wait at the configured speed until the target simulated time."""
         now = self.now()
         if target > now:
             await self.sleep((target - now).total_seconds())
@@ -245,6 +268,7 @@ class ClockFactory:
 
     @staticmethod
     def create(config: ClockConfig) -> Clock:
+        """Build the clock implementation selected by a complete clock config."""
         if config.mode == ClockMode.REALTIME:
             return RealtimeClock(timezone=config.timezone)
         elif config.mode == ClockMode.SIMULATED:
@@ -268,6 +292,7 @@ class ClockFactory:
         end_time: datetime,
         speed_factor: float = 1.0,
     ) -> SimulatedClock:
+        """Create a bounded simulated clock for deterministic backtest replay."""
         return SimulatedClock(
             start_time=start_time,
             end_time=end_time,
@@ -276,12 +301,14 @@ class ClockFactory:
 
     @staticmethod
     def create_for_paper(speed_factor: float = 1.0) -> Clock:
+        """Use realtime for normal paper trading or accelerated time for replay."""
         if speed_factor == 1.0:
             return RealtimeClock()
         return AcceleratedClock(speed_factor=speed_factor)
 
     @staticmethod
     def create_for_live() -> RealtimeClock:
+        """Create the wall-clock source used by live trading."""
         return RealtimeClock()
 
 
@@ -306,12 +333,14 @@ class ClockContext:
         return cls(clock=clock)
 
     async def __aenter__(self) -> Clock:
+        """Install this clock globally and return it for the context body."""
         from cryptobot.core.clock import get_clock, set_clock
         self._original_clock = get_clock()
         set_clock(self.clock)
         return self.clock
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Restore the prior global clock when leaving the context."""
         from cryptobot.core.clock import set_clock
         if self._original_clock:
             set_clock(self._original_clock)

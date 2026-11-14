@@ -32,6 +32,7 @@ class SimulatedVenue(Venue):
         maker_commission_bps: Decimal | None = None,
         funding_rate: Decimal = Decimal("0.0001"),
     ):
+        """Initialize simulated prices, fee/slippage assumptions, and in-memory orders."""
         self.prices = prices or {}
         self.default_slippage_bps = slippage_bps
         self.commission_bps = commission_bps
@@ -41,6 +42,7 @@ class SimulatedVenue(Venue):
         self._position_qty: dict[str, Decimal] = {}
 
     async def submit_order(self, order: OrderEvent) -> OrderEvent:
+        """Fill a priced order with maker/taker costs and update simulated positions."""
         start = time.perf_counter()
         mark = order.price or self.prices.get(order.symbol, Decimal("0"))
         if mark <= 0:
@@ -80,6 +82,7 @@ class SimulatedVenue(Venue):
 
     @staticmethod
     def _record_round_trip(venue: str, symbol: str, order_type: str, start: float) -> None:
+        """Record elapsed execution latency when monitoring is available."""
         latency_ms = (time.perf_counter() - start) * 1000.0
         try:
             from cryptobot.monitoring.metrics import record_execution_latency
@@ -88,6 +91,7 @@ class SimulatedVenue(Venue):
             logger.debug("metrics record skipped: %s", exc)
 
     async def cancel_order(self, order_id: str) -> bool:
+        """Mark a stored order cancelled, returning false when its ID is unknown."""
         order = self.orders.get(order_id)
         if not order:
             return False
@@ -96,6 +100,7 @@ class SimulatedVenue(Venue):
         return True
 
     async def get_price(self, symbol: str) -> Decimal:
+        """Return the configured mark price, or zero when the symbol is unknown."""
         return self.prices.get(symbol, Decimal("0"))
 
 

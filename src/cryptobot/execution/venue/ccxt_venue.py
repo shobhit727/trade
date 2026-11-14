@@ -82,6 +82,7 @@ class CcxtVenue(Venue):
         rate_limit_ms: int = 200,
         max_retries: int = 3,
     ):
+        """Store exchange credentials and market options for lazy client creation."""
         self.exchange_id = exchange_id.lower()
         self.api_key = api_key if api_key is not None else settings.exchange.api_key
         self.api_secret = api_secret if api_secret is not None else settings.exchange.api_secret
@@ -97,6 +98,7 @@ class CcxtVenue(Venue):
     # ------------------------------------------------------------ lifecycle
 
     def _ensure_exchange(self) -> Any:
+        """Return or lazily construct the configured async CCXT exchange client."""
         if ccxt_async is None:
             raise RuntimeError(f"ccxt is not installed: {_IMPORT_ERROR}")
         if self._exchange is not None:
@@ -123,6 +125,7 @@ class CcxtVenue(Venue):
         return self._exchange
 
     async def close(self) -> None:
+        """Close the lazily created exchange client once, logging shutdown failures."""
         if self._exchange is not None and not self._closed:
             try:
                 await self._exchange.close()
@@ -132,9 +135,11 @@ class CcxtVenue(Venue):
 
     @staticmethod
     def _has_credentials(api_key: str, api_secret: str) -> bool:
+        """Report whether both exchange credential strings are non-empty."""
         return bool(api_key and api_secret)
 
     def _reject(self, order: OrderEvent, status: OrderStatus, message: str) -> OrderEvent:
+        """Set a terminal rejection status and attach its reason to the order payload."""
         order.status = status
         order.__post_init__()
         if "error" not in order.payload:
@@ -167,10 +172,12 @@ class CcxtVenue(Venue):
     # --------------------------------------------------------------- mapping
 
     def _map_order_type(self, type_: OrderType) -> str:
+        """Map a normalized order type to the selected exchange's CCXT spelling."""
         table = _ORDER_TYPE_MAPS.get(self.exchange_id, _ORDER_TYPE_DEFAULT)
         return table.get(type_, "limit")
 
     def _map_side(self, side: OrderSide) -> str:
+        """Convert the normalized order side to CCXT's lowercase spelling."""
         return "buy" if side == OrderSide.BUY else "sell"
 
     def _map_symbol(self, symbol: str) -> str:
@@ -185,6 +192,7 @@ class CcxtVenue(Venue):
     # ---------------------------------------------------------- order submit
 
     async def submit_order(self, order: OrderEvent) -> OrderEvent:
+        """Validate, map, and submit an order with idempotency and network-only retries."""
         if not self._has_credentials(self.api_key, self.api_secret):
             return self._reject(
                 order,
@@ -248,6 +256,7 @@ class CcxtVenue(Venue):
 
     @staticmethod
     def _record_round_trip(order_type: str, start: float, venue: str = "ccxt") -> None:
+        """Record execution latency when monitoring is available."""
         latency_ms = (time.perf_counter() - start) * 1000.0
         try:
             from cryptobot.monitoring.metrics import record_execution_latency
@@ -256,6 +265,7 @@ class CcxtVenue(Venue):
             logger.debug("metrics record skipped: %s", exc)
 
     def _apply_fill(self, order: OrderEvent, raw: Mapping[str, Any]) -> OrderEvent:
+        """Translate CCXT's response fields and status into the normalized order event."""
         try:
             filled = Decimal(str(raw.get("filled", raw.get("amount", order.quantity))))
             avg_price = raw.get("average") or raw.get("price")
@@ -294,6 +304,7 @@ class CcxtVenue(Venue):
     # ----------------------------------------------------------- cancels/quotes
 
     async def cancel_order(self, order_id: str) -> bool:
+        """Cancel an exchange order, returning false when unavailable or unsuccessful."""
         if ccxt_async is None or not self._has_credentials(self.api_key, self.api_secret):
             return False
         exchange = self._ensure_exchange()
@@ -344,6 +355,7 @@ class CcxtVenue(Venue):
             return None
 
     async def get_price(self, symbol: str) -> Decimal:
+        """Fetch a ticker and return its last or closing price, or zero on failure."""
         if ccxt_async is None or not self._has_credentials(self.api_key, self.api_secret):
             return Decimal("0")
         exchange = self._ensure_exchange()

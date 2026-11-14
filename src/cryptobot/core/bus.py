@@ -14,6 +14,7 @@ from cryptobot.core.events import Event, EventType
 
 
 def _utcnow() -> datetime:
+    """Return the current timezone-aware UTC time for subscription metadata."""
     return datetime.now(UTC)
 
 
@@ -36,6 +37,7 @@ class Subscription:
 
 class EventBus:
     def __init__(self, max_history: int = 10000, mode: EventBusMode = EventBusMode.LOCAL):
+        """Initialize local subscriptions and bounded history; reject unsupported Redis mode."""
         if mode == EventBusMode.REDIS:
             raise NotImplementedError("Redis-backed event bus not implemented in this build")
         self.mode = mode
@@ -48,6 +50,7 @@ class EventBus:
         self._closed = False
 
     def _normalize_event_type(self, event_type: EventType | str) -> tuple[EventType | None, bool]:
+        """Resolve an event name, treating wildcard and unknown names as all-events."""
         if isinstance(event_type, EventType):
             if event_type == EventType.ALL:
                 return None, True
@@ -67,6 +70,7 @@ class EventBus:
         filter_fn: Callable[[Event], bool] | None = None,
         filter: Callable[[Event], bool] | None = None,
     ) -> str:
+        """Register a filtered sync or async callback and return its subscription ID."""
         et, wildcard = self._normalize_event_type(event_type)
         effective_filter = filter_fn if filter_fn is not None else filter
         sub_id = str(uuid.uuid4())
@@ -89,6 +93,7 @@ class EventBus:
         return sub_id
 
     async def unsubscribe(self, sub_id: str) -> bool:
+        """Remove a subscription and its event-type index entries; report if found."""
         async with self._lock:
             sub = self._subscriptions.pop(sub_id, None)
             if sub is None:
@@ -102,6 +107,7 @@ class EventBus:
             return True
 
     async def publish(self, event_or_topic: Event | str, payload: dict | None = None) -> int:
+        """Publish an event or construct one from a topic and payload, returning deliveries."""
         if isinstance(event_or_topic, Event):
             event = event_or_topic
         else:
@@ -114,12 +120,14 @@ class EventBus:
         return await self._dispatch(event)
 
     async def publish_raw(self, topic: str, payload: dict) -> int:
+        """Publish a topic and payload after normalizing the topic to an event type."""
         et, _ = self._normalize_event_type(topic)
         if et is None:
             et = EventType.ERROR
         return await self._dispatch(Event(type=et, payload=payload or {}))
 
     async def publish_batch(self, events: list[Event]) -> int:
+        """Append and dispatch several events while holding the bus lock."""
         total = 0
         async with self._lock:
             for event in events:
@@ -146,6 +154,7 @@ class EventBus:
         return total
 
     async def _dispatch(self, event: Event) -> int:
+        """Snapshot matching subscribers, invoke their callbacks, and count deliveries."""
         async with self._lock:
             self._history.append(event)
             target_ids: set[str] = set(self._type_index.get(event.type, set()))
@@ -172,6 +181,7 @@ class EventBus:
         return delivered
 
     def get_history(self, limit: int = 100, event_type: EventType | str | None = None) -> list[Event]:
+        """Return the newest history entries, optionally filtered by event type."""
         history = list(self._history)
         if event_type is not None:
             et, wildcard = self._normalize_event_type(event_type)
@@ -182,6 +192,7 @@ class EventBus:
         return history[-limit:]
 
     def get_subscribers(self, event_type: EventType | None = None) -> list[Subscription]:
+        """Return all subscriptions or only those indexed for one event type."""
         if event_type is None:
             return list(self._subscriptions.values())
         return [
@@ -190,11 +201,13 @@ class EventBus:
         ]
 
     def get_subscriber_count(self, event_type: EventType | None = None) -> int:
+        """Count all subscriptions or those registered for a specific event type."""
         if event_type:
             return len(self._type_index.get(event_type, set()))
         return len(self._subscriptions)
 
     async def close(self):
+        """Clear subscription and history state and mark the bus closed."""
         async with self._lock:
             self._subscriptions.clear()
             self._type_index.clear()
@@ -204,10 +217,12 @@ class EventBus:
 
     @property
     def is_closed(self) -> bool:
+        """Report whether this event bus has been closed."""
         return self._closed
 
     @asynccontextmanager
     async def replay(self, from_event: Event | None = None, limit: int = 1000):
+        """Yield recent history, optionally starting after a supplied event timestamp."""
         history = self.get_history(limit=limit)
         if from_event:
             history = [e for e in history if e.timestamp > from_event.timestamp]
@@ -218,6 +233,7 @@ _bus: EventBus | None = None
 
 
 def get_event_bus() -> EventBus:
+    """Return the shared event bus, recreating it if the previous instance was closed."""
     global _bus
     if _bus is None or _bus.is_closed:
         _bus = EventBus()
@@ -225,12 +241,14 @@ def get_event_bus() -> EventBus:
 
 
 async def init_event_bus(max_history: int = 10000) -> EventBus:
+    """Replace the shared event bus with a fresh instance using the requested history size."""
     global _bus
     _bus = EventBus(max_history=max_history)
     return _bus
 
 
 async def close_event_bus() -> None:
+    """Close and clear the shared event bus if one has been initialized."""
     global _bus
     if _bus is not None:
         await _bus.close()

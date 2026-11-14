@@ -38,10 +38,12 @@ class PriceLevel:
     total_quantity: Decimal = Decimal("0")
 
     def add_order(self, order: QueuePosition) -> None:
+        """Append an order to this price level and increase its displayed quantity."""
         self.orders.append(order)
         self.total_quantity += order.quantity
 
     def remove_order(self, order_id: str) -> Decimal:
+        """Remove a queued order by ID and return its remaining quantity, or zero."""
         for order in list(self.orders):
             if order.order_id == order_id:
                 qty = order.quantity
@@ -135,6 +137,7 @@ class OrderBookSimulator:
     """Simulates a realistic limit order book with queue positions."""
 
     def __init__(self, config: RealisticVenueConfig):
+        """Initialize empty per-symbol books and market-state maps."""
         self.config = config
         self.books: dict[str, dict[OrderBookSide, dict[Decimal, PriceLevel]]] = {}
         self.mid_prices: dict[str, Decimal] = {}
@@ -175,21 +178,25 @@ class OrderBookSimulator:
             self.books[symbol][OrderBookSide.ASK][ask_price] = ask_level
 
     def get_best_bid(self, symbol: str) -> Decimal | None:
+        """Return the highest bid level, or ``None`` for an empty or unknown book."""
         bids = self.books.get(symbol, {}).get(OrderBookSide.BID, {})
         if not bids:
             return None
         return max(bids.keys())
 
     def get_best_ask(self, symbol: str) -> Decimal | None:
+        """Return the lowest ask level, or ``None`` for an empty or unknown book."""
         asks = self.books.get(symbol, {}).get(OrderBookSide.ASK, {})
         if not asks:
             return None
         return min(asks.keys())
 
     def get_mid_price(self, symbol: str) -> Decimal:
+        """Return the stored mid price, defaulting to zero for an unknown symbol."""
         return self.mid_prices.get(symbol, Decimal("0"))
 
     def get_spread(self, symbol: str) -> Decimal:
+        """Return the best-quote spread or the configured fallback spread."""
         bid = self.get_best_bid(symbol)
         ask = self.get_best_ask(symbol)
         if bid and ask:
@@ -321,6 +328,7 @@ class RealisticVenue(Venue):
     """
 
     def __init__(self, config: RealisticVenueConfig | None = None):
+        """Create the configured order-book simulator and initialize configured symbols."""
         self.config = config or RealisticVenueConfig()
         self.book_sim = OrderBookSimulator(self.config)
         self.orders: dict[str, OrderEvent] = {}
@@ -393,6 +401,7 @@ class RealisticVenue(Venue):
         return fill_price
 
     async def submit_order(self, order: OrderEvent) -> OrderEvent:
+        """Simulate latency, queue-aware limit or book-matched market execution, and costs."""
         start = time.perf_counter()
 
         # Simulate latency
@@ -542,6 +551,7 @@ class RealisticVenue(Venue):
         return Decimal(str(fill_ratio))
 
     async def cancel_order(self, order_id: str) -> bool:
+        """Cancel a stored order and remove resting limit quantity from its book level."""
         order = self.orders.get(order_id)
         if not order:
             return False
@@ -556,6 +566,7 @@ class RealisticVenue(Venue):
         return True
 
     async def get_price(self, symbol: str) -> Decimal:
+        """Return the current simulated book midpoint for a symbol."""
         return self.book_sim.get_mid_price(symbol)
 
     def update_price(self, symbol: str, mid_price: Decimal, volatility: Decimal | None = None) -> None:
@@ -575,6 +586,7 @@ class RealisticVenue(Venue):
 
     @staticmethod
     def _record_round_trip(venue: str, symbol: str, order_type: str, start: float) -> None:
+        """Record elapsed execution latency when monitoring is available."""
         latency_ms = (time.perf_counter() - start) * 1000.0
         try:
             from cryptobot.monitoring.metrics import record_execution_latency

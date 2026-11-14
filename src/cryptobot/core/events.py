@@ -9,6 +9,7 @@ from uuid import uuid4
 
 
 def _utcnow() -> datetime:
+    """Return the current UTC time used for default event timestamps."""
     return datetime.now(UTC)
 
 
@@ -127,6 +128,7 @@ class Event:
     payload: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize the common event envelope and payload into JSON-ready values."""
         return {
             "id": self.id,
             "type": self.type.value,
@@ -138,6 +140,7 @@ class Event:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Event:
+        """Rebuild an event envelope from its serialized mapping."""
         return cls(
             id=data.get("id", str(uuid4())),
             type=EventType(data["type"]),
@@ -162,6 +165,7 @@ class TickerEvent(Event):
     change_24h: float = 0.0
 
     def __post_init__(self):
+        """Set the ticker event type and encode decimal market values in its payload."""
         self.type = EventType.TICKER
         self.payload = {
             "symbol": self.symbol,
@@ -186,6 +190,7 @@ class OrderBookEvent(Event):
     timestamp: datetime = field(default_factory=_utcnow)
 
     def __post_init__(self):
+        """Set the order-book type and serialize bid and ask levels into payload rows."""
         self.type = EventType.ORDERBOOK
         self.payload = {
             "symbol": self.symbol,
@@ -196,20 +201,24 @@ class OrderBookEvent(Event):
 
     @property
     def best_bid(self) -> Decimal:
+        """Return the highest bid price, or zero when no bid levels exist."""
         return self.bids[0][0] if self.bids else Decimal("0")
 
     @property
     def best_ask(self) -> Decimal:
+        """Return the lowest ask price, or zero when no ask levels exist."""
         return self.asks[0][0] if self.asks else Decimal("0")
 
     @property
     def spread(self) -> Decimal:
+        """Return best ask minus best bid, or zero if either side is empty."""
         if self.bids and self.asks:
             return self.asks[0][0] - self.bids[0][0]
         return Decimal("0")
 
     @property
     def mid_price(self) -> Decimal:
+        """Return the midpoint of the best bid and ask, or zero if either is missing."""
         if self.bids and self.asks:
             return (self.bids[0][0] + self.asks[0][0]) / 2
         return Decimal("0")
@@ -226,6 +235,7 @@ class TradeEvent(Event):
     timestamp: datetime = field(default_factory=_utcnow)
 
     def __post_init__(self):
+        """Set the trade event type and serialize the trade's side and decimal amounts."""
         self.type = EventType.TRADE
         self.payload = {
             "symbol": self.symbol,
@@ -252,6 +262,7 @@ class KlineEvent(Event):
     is_closed: bool = False
 
     def __post_init__(self):
+        """Set the kline type and serialize candle prices, volume, times, and status."""
         self.type = EventType.KLINE
         self.payload = {
             "symbol": self.symbol,
@@ -277,6 +288,7 @@ class FundingRateEvent(Event):
     next_funding_time: datetime = field(default_factory=_utcnow)
 
     def __post_init__(self):
+        """Set the funding-rate type and encode funding, price, and schedule fields."""
         self.type = EventType.FUNDING_RATE
         self.payload = {
             "symbol": self.symbol,
@@ -301,6 +313,7 @@ class SignalEvent(Event):
     expires_at: datetime | None = None
 
     def __post_init__(self):
+        """Keep a recognized signal subtype or default to SIGNAL, then build its payload."""
         if self.type not in (
             EventType.SIGNAL, EventType.SIGNAL_ENTRY, EventType.SIGNAL_EXIT,
             EventType.SIGNAL_SCALE_IN, EventType.SIGNAL_SCALE_OUT, EventType.SIGNAL_HEDGE
@@ -342,6 +355,7 @@ class OrderEvent(Event):
     leverage: int = 1
 
     def __post_init__(self):
+        """Serialize order attributes into the payload while preserving the lifecycle type."""
         self.payload = {
             "order_id": self.order_id,
             "client_order_id": self.client_order_id,
@@ -364,6 +378,7 @@ class OrderEvent(Event):
         }
 
     def to_dict(self) -> dict[str, Any]:
+        """Combine the common event envelope with the order fields at top level."""
         return {**super().to_dict(), **self.payload}
 
 
@@ -383,6 +398,7 @@ class PositionEvent(Event):
     strategy: str = ""
 
     def __post_init__(self):
+        """Serialize position, P&L, and margin fields into the event payload."""
         self.payload = {
             "symbol": self.symbol,
             "side": self.side.value,
@@ -410,6 +426,7 @@ class PnLEvent(Event):
     positions: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def __post_init__(self):
+        """Set the P&L update type and serialize account totals into the payload."""
         self.type = EventType.PNL_UPDATE
         self.payload = {
             "total_unrealized": str(self.total_unrealized),
@@ -433,6 +450,7 @@ class RiskEvent(Event):
     strategy: str = ""
 
     def __post_init__(self):
+        """Choose approved or rejected event type and encode the risk-check result."""
         if not self.passed:
             self.type = EventType.RISK_REJECTED
         else:
@@ -456,6 +474,7 @@ class KillSwitchEvent(Event):
     max_allowed_pct: float = 0.0
 
     def __post_init__(self):
+        """Set the kill-switch event type and serialize its trigger details."""
         self.type = EventType.KILL_SWITCH
         self.payload = {
             "triggered": self.triggered,
@@ -472,6 +491,7 @@ class HeartbeatEvent(Event):
     metrics: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
+        """Set the heartbeat type and serialize component health and metrics."""
         self.type = EventType.HEARTBEAT
         self.payload = {
             "component": self.component,
@@ -490,6 +510,7 @@ class ErrorEvent(Event):
     recoverable: bool = True
 
     def __post_init__(self):
+        """Set the error type and serialize diagnostic and recovery information."""
         self.type = EventType.ERROR
         self.payload = {
             "component": self.component,
@@ -502,6 +523,7 @@ class ErrorEvent(Event):
 
 
 def create_event(event_type: EventType, **kwargs) -> Event:
+    """Construct the typed event class registered for an event type."""
     event_map = {
         EventType.TICKER: TickerEvent,
         EventType.ORDERBOOK: OrderBookEvent,

@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> datetime:
+    """Return the current UTC time for default historical-data query bounds."""
     return datetime.now(UTC)
 
 
@@ -30,29 +31,36 @@ class OhlcvDataset:
     source: str = "memory"
 
     def __len__(self) -> int:
+        """Return the number of bars in this dataset."""
         return len(self.bars)
 
     def __iter__(self):
+        """Iterate over bars in timestamp order."""
         return iter(self.bars)
 
     @property
     def close(self) -> np.ndarray:
+        """Return all close prices as a float64 NumPy array."""
         return np.array([bar.close for bar in self.bars], dtype=np.float64)
 
     @property
     def high(self) -> np.ndarray:
+        """Return all high prices as a float64 NumPy array."""
         return np.array([bar.high for bar in self.bars], dtype=np.float64)
 
     @property
     def low(self) -> np.ndarray:
+        """Return all low prices as a float64 NumPy array."""
         return np.array([bar.low for bar in self.bars], dtype=np.float64)
 
     @property
     def volume(self) -> np.ndarray:
+        """Return all volumes as a float64 NumPy array."""
         return np.array([bar.volume for bar in self.bars], dtype=np.float64)
 
     @property
     def timestamps(self) -> np.ndarray:
+        """Return all bar timestamps as a NumPy datetime64 array."""
         return np.array([bar.timestamp for bar in self.bars], dtype=np.datetime64)
 
     def filter_range(
@@ -60,6 +68,7 @@ class OhlcvDataset:
         start: datetime | None = None,
         end: datetime | None = None,
     ) -> OhlcvDataset:
+        """Return a new dataset containing bars within the inclusive optional bounds."""
         out: list[OhlcvBar] = []
         for bar in self.bars:
             if start is not None and bar.timestamp < start:
@@ -70,10 +79,12 @@ class OhlcvDataset:
         return OhlcvDataset(bars=out, symbol=self.symbol, source=self.source)
 
     def to_runner_bars(self) -> list[OhlcvBar]:
+        """Return a list copy of the bars for the backtest runner."""
         return list(self.bars)
 
 
 def _row_to_bar(row: dict[str, Any], default_symbol: str) -> OhlcvBar:
+    """Parse common timestamp and OHLCV field aliases into one runner bar."""
     ts_raw = row.get("timestamp") or row.get("open_time") or row.get("time") or row.get("datetime")
     if isinstance(ts_raw, str):
         stripped = ts_raw.strip()
@@ -121,6 +132,7 @@ def _row_to_bar(row: dict[str, Any], default_symbol: str) -> OhlcvBar:
 
 
 def load_csv(path: str | Path, symbol: str = "BTCUSDT") -> OhlcvDataset:
+    """Load, normalize, skip invalid, and timestamp-sort bars from a CSV file."""
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(p)
@@ -142,6 +154,7 @@ def load_parquet(
     start: datetime | None = None,
     end: datetime | None = None,
 ) -> OhlcvDataset:
+    """Load and normalize Parquet bars, then filter them to the optional date range."""
     try:
         import pyarrow.parquet as pq
     except ImportError as exc:
@@ -217,6 +230,7 @@ async def load_timescale(
 
 
 def _default_settings():
+    """Return application settings when importable, otherwise signal no configuration."""
     try:
         from cryptobot.config import settings
     except Exception:
@@ -236,6 +250,7 @@ def load_bars(
     timeframe: str = "15m",
     n_bars: int | None = None,
 ) -> OhlcvDataset:
+    """Dispatch a CSV, Parquet, synthetic, or Timescale source into an OHLCV dataset."""
     s = source.lower()
     if s == "csv":
         if path is None:
@@ -265,6 +280,7 @@ def load_bars(
 
 
 def _freq_to_minutes(tf: str) -> int:
+    """Map a supported minute-or-larger timeframe to integer minutes."""
     mapping = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240, "1d": 1440}
     return mapping.get(tf, 15)
 

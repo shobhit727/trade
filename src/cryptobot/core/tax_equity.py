@@ -39,6 +39,7 @@ class GainRecord:
     holding_days: int
 
     def to_dict(self) -> dict:
+        """Serialize the gain record, using ISO calendar dates and rounded amounts."""
         return {
             "symbol": self.symbol, "qty": self.qty,
             "buy_date": self.buy_date.date().isoformat(),
@@ -58,6 +59,7 @@ class TaxLedger:
 
     def on_buy(self, symbol: str, qty: float, price: float,
                when: datetime) -> None:
+        """Append a dated acquisition lot for later FIFO matching."""
         self.lots.setdefault(symbol, []).append(Lot(qty, price, when))
 
     def on_sell(self, symbol: str, qty: float, price: float,
@@ -123,4 +125,5 @@ class TaxLedger:
         }
 
     def to_dicts(self) -> list[dict]:
+        """Serialize every realized gain record for reporting."""
         return [r.to_dict() for r in self.records]

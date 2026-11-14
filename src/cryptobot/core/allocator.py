@@ -29,6 +29,7 @@ class StrategyAllocation:
     weight: Decimal  # fraction of allocatable equity, tiers sum to <= 1
 
     def capital_for(self, allocatable_equity: Decimal) -> Decimal:
+        """Return this strategy's rounded share of allocatable equity."""
         return (allocatable_equity * self.weight).quantize(Decimal("0.01"))
 
 
@@ -42,6 +43,7 @@ class AllocationTier:
     label: str = ""
 
     def contains(self, equity: Decimal) -> bool:
+        """Check whether equity is at least the tier minimum and below its optional maximum."""
         if equity < self.min_equity:
             return False
         return self.max_equity is None or equity < self.max_equity
@@ -51,6 +53,7 @@ class CapitalAllocator:
     """Picks the active strategy set + capital shares for a given equity."""
 
     def __init__(self, tiers: list[AllocationTier]):
+        """Validate allocation weights and sort tiers by their minimum equity."""
         if not tiers:
             raise ValueError("allocator requires at least one tier")
         for t in tiers:
@@ -63,16 +66,19 @@ class CapitalAllocator:
         self.tiers = sorted(tiers, key=lambda t: t.min_equity)
 
     def tier_for(self, equity: Decimal) -> AllocationTier | None:
+        """Return the tier containing the given equity, or ``None`` if it fits none."""
         for tier in self.tiers:
             if tier.contains(equity):
                 return tier
         return None
 
     def allocate(self, equity: Decimal) -> list[StrategyAllocation]:
+        """Return the active strategy allocations for the equity tier."""
         tier = self.tier_for(equity)
         return list(tier.strategies) if tier else []
 
     def describe(self, equity: Decimal) -> dict:
+        """Describe the selected tier and each strategy's weight and capital amount."""
         tier = self.tier_for(equity)
         if tier is None:
             return {"tier": None, "allocatable_equity": str(equity), "strategies": []}

@@ -29,6 +29,7 @@ _QUANT = Decimal("0.00000001")
 
 
 def _utcnow() -> datetime:
+    """Return the current UTC time used for fund-ledger entry timestamps."""
     return datetime.now(UTC)
 
 
@@ -49,6 +50,7 @@ class GlobalFundLedger:
     now_fn: Callable[[], datetime] = _utcnow
 
     def __post_init__(self) -> None:
+        """Initialize an empty fund ledger and restore its saved balance if available."""
         self._balance = Decimal("0")
         self.frozen = False
         self.history: list[dict[str, Any]] = []
@@ -63,6 +65,7 @@ class GlobalFundLedger:
 
     @property
     def fund_balance(self) -> Decimal:
+        """Return the current reserve-pool balance."""
         return self._balance
 
     # ---------------------------------------------------------------- actions
@@ -108,6 +111,7 @@ class GlobalFundLedger:
     # --------------------------------------------------------------- internals
 
     def _daily_drawn(self, algo_id: str) -> Decimal:
+        """Sum this algorithm's draws recorded on the current ledger date."""
         today = self.now_fn().date()
         return sum(
             (Decimal(e["amount"]) for e in self.history
@@ -117,6 +121,7 @@ class GlobalFundLedger:
         )
 
     def _record(self, type_: str, **fields: Any) -> dict[str, Any]:
+        """Append a timestamped ledger entry, stringify money fields, and persist it."""
         entry: dict[str, Any] = {"ts": self.now_fn().isoformat(), "type": type_, **fields}
         for key in ("amount", "realized_pnl"):
             if key in entry:
@@ -128,6 +133,7 @@ class GlobalFundLedger:
     # ------------------------------------------------------------ persistence
 
     def save(self) -> None:
+        """Atomically save balance, freeze status, and history as JSON."""
         path = Path(self.config.state_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
@@ -140,6 +146,7 @@ class GlobalFundLedger:
         os.replace(tmp, path)
 
     def load(self, path: str | None = None) -> None:
+        """Restore balance, freeze status, and entries from a JSON file if it exists."""
         target = Path(path or self.config.state_path)
         if not target.exists():
             return
@@ -149,6 +156,7 @@ class GlobalFundLedger:
         self.history = list(data["history"])
 
     def summary(self) -> dict[str, Any]:
+        """Return the current balance, freeze status, and number of ledger entries."""
         return {
             "fund_balance": str(self._balance),
             "frozen": self.frozen,

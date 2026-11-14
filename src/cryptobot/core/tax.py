@@ -51,10 +51,12 @@ class Disposal:
 
     @property
     def gain(self) -> Decimal:
+        """Return disposal proceeds less the matched FIFO cost basis."""
         return self.proceeds - self.cost_basis
 
     @property
     def taxable_gain(self) -> Decimal:
+        """Return only positive gain, excluding losses from tax offsets."""
         # §115BBH(2): losses are never set off — aggregate positives only.
         return max(self.gain, Decimal("0"))
 
@@ -74,6 +76,7 @@ class TaxEngine:
 
     def buy(self, asset: str, quantity: Decimal, cost_per_unit: Decimal,
             acquired_at: datetime) -> None:
+        """Validate and append an acquisition lot for FIFO cost-basis tracking."""
         quantity = Decimal(quantity)
         if quantity <= 0 or Decimal(cost_per_unit) < 0:
             raise ValueError("buy requires positive quantity and non-negative price")
@@ -131,10 +134,12 @@ class TaxEngine:
     # --------------------------------------------------------------- queries
 
     def holding(self, asset: str) -> Decimal:
+        """Return the remaining quantity held in all open lots for an asset."""
         return sum((lot.quantity for lot in self._lots.get(asset, [])),
                    Decimal("0")).quantize(_QUANT8)
 
     def summary(self) -> dict[str, str]:
+        """Aggregate disposal proceeds, taxable gains, estimated tax, and TDS credits."""
         gross_gain = sum((d.gain for d in self.disposals), Decimal("0"))
         taxable = sum((d.taxable_gain for d in self.disposals), Decimal("0"))
         losses_disallowed = sum((-d.gain for d in self.disposals if d.gain < 0), Decimal("0"))
@@ -154,6 +159,7 @@ class TaxEngine:
     # ---------------------------------------------------------------- export
 
     def to_dict(self) -> dict:
+        """Serialize open lots and disposal records for persistence or restart recovery."""
         return {
             "lots": {
                 asset: [

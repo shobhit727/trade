@@ -13,12 +13,14 @@ import numpy as np
 
 
 def sma(values, period: int) -> float:
+    """Return the mean of the trailing period values, or NaN if history is short."""
     if len(values) < period:
         return float("nan")
     return float(np.mean(values[-period:]))
 
 
 def ema(values, period: int) -> float:
+    """Return the latest exponentially weighted mean using the standard smoothing factor."""
     if len(values) < period:
         return float("nan")
     a = np.asarray(values, dtype=float)
@@ -117,6 +119,7 @@ def kama(values, period: int = 20, fast: int = 2, slow: int = 30) -> float:
 
 
 def rsi(closes, period: int = 14) -> float:
+    """Return trailing relative strength index on a 0-to-100 scale."""
     if len(closes) < period + 1:
         return float("nan")
     a = np.asarray(closes, dtype=float)
@@ -130,6 +133,7 @@ def rsi(closes, period: int = 14) -> float:
 
 
 def stochastic(closes, highs, lows, period: int = 14) -> float:
+    """Return the latest close's position within the trailing high-low range."""
     if len(closes) < period:
         return float("nan")
     hh = max(highs[-period:])
@@ -140,12 +144,14 @@ def stochastic(closes, highs, lows, period: int = 14) -> float:
 
 
 def macd(closes, fast: int = 12, slow: int = 26) -> float:
+    """Return the difference between fast and slow exponential averages."""
     if len(closes) < slow:
         return float("nan")
     return float(ema(closes, fast) - ema(closes, slow))
 
 
 def macd_signal(closes, fast: int = 12, slow: int = 26, sig: int = 9) -> float:
+    """Return the mean of the latest signal-window MACD values using one EMA pass."""
     if len(closes) < slow + sig:
         return float("nan")
     # One-pass equivalent of the original
@@ -171,6 +177,7 @@ def macd_signal(closes, fast: int = 12, slow: int = 26, sig: int = 9) -> float:
 
 
 def atr(highs, lows, closes, period: int = 14) -> float:
+    """Return the mean trailing true range, including gaps from prior closes."""
     if len(closes) < period + 1:
         return float("nan")
     trs = []
@@ -181,10 +188,12 @@ def atr(highs, lows, closes, period: int = 14) -> float:
 
 
 def true_range(high, low, prev_close) -> float:
+    """Return the greatest intrabar range or gap from the previous close."""
     return max(high - low, abs(high - prev_close), abs(low - prev_close))
 
 
 def cci(highs, lows, closes, period: int = 20) -> float:
+    """Return the latest commodity-channel index over typical prices."""
     if len(closes) < period:
         return float("nan")
     tp = [(highs[i] + lows[i] + closes[i]) / 3 for i in range(-period, 0)]
@@ -196,6 +205,7 @@ def cci(highs, lows, closes, period: int = 20) -> float:
 
 
 def williams_r(closes, highs, lows, period: int = 14) -> float:
+    """Return Williams %R for the latest close within the trailing price range."""
     if len(closes) < period:
         return float("nan")
     hh = max(highs[-period:])
@@ -206,6 +216,7 @@ def williams_r(closes, highs, lows, period: int = 14) -> float:
 
 
 def roc(closes, period: int) -> float:
+    """Return fractional close change over the requested lookback period."""
     if len(closes) <= period:
         return float("nan")
     prev = closes[-period - 1]
@@ -215,6 +226,7 @@ def roc(closes, period: int) -> float:
 
 
 def zscore(values) -> float:
+    """Return the latest value's population z-score within the supplied window."""
     a = np.asarray(values, dtype=float)
     if len(a) < 2:
         return float("nan")
@@ -237,6 +249,7 @@ def bollinger_position(closes, period: int = 20, n_std: float = 2.0) -> float:
 
 
 def obv(closes, volumes) -> float:
+    """Return cumulative signed volume, adding on rises and subtracting on declines."""
     if len(closes) < 2 or len(volumes) < len(closes):
         return float("nan")
     v = 0.0
@@ -249,6 +262,7 @@ def obv(closes, volumes) -> float:
 
 
 def mfi(closes, highs, lows, volumes, period: int = 14) -> float:
+    """Return money flow index from positive and negative typical-price volume."""
     if len(closes) < period + 1:
         return float("nan")
     pos = neg = 0.0
@@ -266,18 +280,21 @@ def mfi(closes, highs, lows, volumes, period: int = 14) -> float:
 
 
 def donchian_high(highs, period: int) -> float:
+    """Return the highest value in the trailing period, or NaN if history is short."""
     if len(highs) < period:
         return float("nan")
     return float(max(highs[-period:]))
 
 
 def donchian_low(lows, period: int) -> float:
+    """Return the lowest value in the trailing period, or NaN if history is short."""
     if len(lows) < period:
         return float("nan")
     return float(min(lows[-period:]))
 
 
 def make_order(symbol: str, side, quantity: Decimal, strategy: str, order_type=None):
+    """Create an OrderEvent, defaulting to a market order when type is omitted."""
     from cryptobot.core.events import OrderEvent, OrderType
 
     return OrderEvent(

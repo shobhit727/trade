@@ -17,6 +17,7 @@ from cryptobot.config import settings
 
 
 def _utcnow() -> datetime:
+    """Return the current UTC time for records without an explicit timestamp."""
     return datetime.now(UTC)
 
 
@@ -46,26 +47,32 @@ class StorageBackend(ABC):
 
     @abstractmethod
     async def initialize(self):
+        """Prepare backend resources and schema before reads or writes."""
         pass
 
     @abstractmethod
     async def close(self):
+        """Flush pending writes and release backend resources."""
         pass
 
     @abstractmethod
     async def write_klines(self, klines: list[dict]) -> int:
+        """Store candle records and return the number accepted by the backend."""
         pass
 
     @abstractmethod
     async def write_tickers(self, tickers: list[dict]) -> int:
+        """Store ticker snapshots and return the number accepted by the backend."""
         pass
 
     @abstractmethod
     async def write_trades(self, trades: list[dict]) -> int:
+        """Store trade records and return the number accepted by the backend."""
         pass
 
     @abstractmethod
     async def write_funding_rates(self, rates: list[dict]) -> int:
+        """Store funding-rate records and return the number accepted by the backend."""
         pass
 
     @abstractmethod
@@ -76,6 +83,7 @@ class StorageBackend(ABC):
         start: datetime,
         end: datetime,
     ) -> pd.DataFrame:
+        """Read a symbol/timeframe candle range as a DataFrame."""
         pass
 
     @abstractmethod
@@ -85,6 +93,7 @@ class StorageBackend(ABC):
         start: datetime,
         end: datetime,
     ) -> pd.DataFrame:
+        """Read a symbol's ticker snapshots within the inclusive time range."""
         pass
 
 
@@ -92,10 +101,12 @@ class TimescaleDBStorage(StorageBackend):
     """TimescaleDB storage for time-series data."""
 
     def __init__(self, config: StorageConfig):
+        """Store connection settings and initialize the pool as unavailable."""
         self.config = config
         self.pool: asyncpg.Pool | None = None
 
     async def initialize(self):
+        """Create the asyncpg pool and ensure all time-series tables exist."""
         import asyncpg
         self.pool = await asyncpg.create_pool(
             host=self.config.timescaledb_host,
@@ -109,6 +120,7 @@ class TimescaleDBStorage(StorageBackend):
         await self._create_tables()
 
     async def close(self):
+        """Close the connection pool when it has been initialized."""
         if self.pool:
             await self.pool.close()
 
@@ -206,10 +218,12 @@ class TimescaleDBStorage(StorageBackend):
             """)
 
     async def _execute_batch(self, query: str, records: list[tuple]):
+        """Execute a batch of parameter tuples through one acquired connection."""
         async with self.pool.acquire() as conn:
             await conn.executemany(query, records)
 
     async def write_klines(self, klines: list[dict]) -> int:
+        """Upsert candle rows, replacing prior values for matching timestamps."""
         if not klines:
             return 0
         query = """
@@ -237,6 +251,7 @@ class TimescaleDBStorage(StorageBackend):
         return len(records)
 
     async def write_tickers(self, tickers: list[dict]) -> int:
+        """Upsert ticker snapshots, using current UTC time when timestamp is absent."""
         if not tickers:
             return 0
         query = """
@@ -268,6 +283,7 @@ class TimescaleDBStorage(StorageBackend):
         return len(records)
 
     async def write_trades(self, trades: list[dict]) -> int:
+        """Insert trade rows while ignoring duplicates with the same composite key."""
         if not trades:
             return 0
         query = """
@@ -286,6 +302,7 @@ class TimescaleDBStorage(StorageBackend):
         return len(records)
 
     async def write_funding_rates(self, rates: list[dict]) -> int:
+        """Upsert funding observations and return the number of submitted rows."""
         if not rates:
             return 0
         query = """
@@ -315,6 +332,7 @@ class TimescaleDBStorage(StorageBackend):
         start: datetime,
         end: datetime,
     ) -> pd.DataFrame:
+        """Fetch ordered candles for one symbol and timeframe in the requested range."""
         query = """
             SELECT time as open_time, symbol, timeframe, open_price, high_price, low_price,
                    close_price, volume, trades, is_closed
@@ -332,6 +350,7 @@ class TimescaleDBStorage(StorageBackend):
         start: datetime,
         end: datetime,
     ) -> pd.DataFrame:
+        """Fetch ordered ticker snapshots for one symbol in the requested range."""
         query = """
             SELECT time, symbol, price, bid, ask, bid_qty, ask_qty,
                    high_24h, low_24h, volume_24h, change_24h
@@ -348,15 +367,18 @@ class ParquetStorage(StorageBackend):
     """Parquet file storage (partitioned by symbol/time)."""
 
     def __init__(self, config: StorageConfig):
+        """Initialize partition buffers, pending flush tasks, and write locking."""
         self.config = config
         self._buffers: dict[str, list[dict]] = defaultdict(list)
         self._flush_tasks: dict[str, asyncio.Task] = {}
         self._lock = asyncio.Lock()
 
     async def initialize(self):
+        """Create the configured Parquet root directory."""
         Path(self.config.parquet_base_path).mkdir(parents=True, exist_ok=True)
 
     async def close(self):
+        """Flush every buffered data type before closing the backend."""
         await self.flush_all()
 
     def _get_table_path(self, data_type: str, symbol: str, dt: datetime) -> Path:
@@ -410,28 +432,34 @@ class ParquetStorage(StorageBackend):
                 pq.write_table(table, path, compression=self.config.parquet_compression)
 
     def _buffer_data(self, data_type: str, records: list[dict]):
+        """Append records to a data-type buffer and schedule a flush at batch size."""
         self._buffers[data_type].extend(records)
         if len(self._buffers[data_type]) >= self.config.batch_size:
             if data_type not in self._flush_tasks or self._flush_tasks[data_type].done():
                 self._flush_tasks[data_type] = asyncio.create_task(self._flush_buffer(data_type))
 
     async def write_klines(self, klines: list[dict]) -> int:
+        """Queue candles for Parquet persistence and return the buffered row count."""
         self._buffer_data("klines", klines)
         return len(klines)
 
     async def write_tickers(self, tickers: list[dict]) -> int:
+        """Queue ticker snapshots for Parquet persistence."""
         self._buffer_data("tickers", tickers)
         return len(tickers)
 
     async def write_trades(self, trades: list[dict]) -> int:
+        """Queue trade records for Parquet persistence."""
         self._buffer_data("trades", trades)
         return len(trades)
 
     async def write_funding_rates(self, rates: list[dict]) -> int:
+        """Queue funding-rate records for Parquet persistence."""
         self._buffer_data("funding_rates", rates)
         return len(rates)
 
     async def flush_all(self):
+        """Flush each data type currently present in the in-memory buffers."""
         for data_type in list(self._buffers.keys()):
             await self._flush_buffer(data_type)
 
@@ -442,6 +470,7 @@ class ParquetStorage(StorageBackend):
         start: datetime,
         end: datetime,
     ) -> pd.DataFrame:
+        """Read and combine matching symbol/timeframe candles from relevant partitions."""
         import pyarrow.parquet as pq
         base = Path(self.config.parquet_base_path) / "klines" / symbol
         if not base.exists():
@@ -485,6 +514,7 @@ class ParquetStorage(StorageBackend):
         start: datetime,
         end: datetime,
     ) -> pd.DataFrame:
+        """Read and combine ticker snapshots from year/month partitions in range."""
         import pyarrow.parquet as pq
         base = Path(self.config.parquet_base_path) / "tickers" / symbol
         if not base.exists():
@@ -529,24 +559,29 @@ class ParquetDataFrameStorage:
     """DataFrame-oriented Parquet storage (ohlcv + trades), partitioned by symbol/month."""
 
     def __init__(self, base_path: str = "/app/data/parquet", compression: str = "zstd"):
+        """Create the local DataFrame store and ensure its root directory exists."""
         self.base_path = Path(base_path)
         self.compression = compression
         self.base_path.mkdir(parents=True, exist_ok=True)
 
     def _symbol_dir(self, kind: str, symbol: str) -> Path:
+        """Return the uppercase per-symbol directory for a record kind."""
         p = self.base_path / kind / symbol.upper()
         p.mkdir(parents=True, exist_ok=True)
         return p
 
     def _bar_path(self, symbol: str, ts: Any) -> Path:
+        """Build the monthly OHLCV partition path containing the supplied timestamp."""
         d = self._symbol_dir("ohlcv", symbol)
         return d / f"{symbol.upper()}_{pd.Timestamp(ts).strftime('%Y%m')}.parquet"
 
     def _trades_path(self, symbol: str, ts: Any) -> Path:
+        """Build the monthly trade partition path containing the supplied timestamp."""
         d = self._symbol_dir("trades", symbol)
         return d / f"{symbol.upper()}_{pd.Timestamp(ts).strftime('%Y%m')}.parquet"
 
     def store_ohlcv(self, df: pd.DataFrame) -> Path | None:
+        """Append symbol-grouped OHLCV rows to monthly files, deduplicating by time."""
         if df is None or df.empty:
             return None
         if "symbol" not in df.columns:
@@ -575,6 +610,7 @@ class ParquetDataFrameStorage:
         end: Any | None = None,
         timeframe: str | None = None,
     ) -> pd.DataFrame:
+        """Load a symbol's OHLCV files and filter by optional dates and timeframe."""
         sym_dir = self._symbol_dir("ohlcv", symbol)
         files = sorted(sym_dir.glob("*.parquet"))
         if not files:
@@ -594,6 +630,7 @@ class ParquetDataFrameStorage:
         return df.sort_values(ts_col).reset_index(drop=True)
 
     def store_trades(self, df: pd.DataFrame) -> Path | None:
+        """Append symbol-grouped trade rows to monthly files and deduplicate trade IDs."""
         if df is None or df.empty:
             return None
         if "symbol" not in df.columns:
@@ -623,6 +660,7 @@ class ParquetDataFrameStorage:
         start: Any | None = None,
         end: Any | None = None,
     ) -> pd.DataFrame:
+        """Load a symbol's trade partitions and filter them by optional date bounds."""
         sym_dir = self._symbol_dir("trades", symbol)
         files = sorted(sym_dir.glob("*.parquet"))
         if not files:
@@ -643,36 +681,43 @@ class HybridStorage(StorageBackend):
     """Hybrid storage: recent data in TimescaleDB, historical in Parquet."""
 
     def __init__(self, config: StorageConfig):
+        """Compose TimescaleDB and Parquet backends for recent and historical data."""
         self.config = config
         self.tsdb = TimescaleDBStorage(config)
         self.parquet = ParquetStorage(config)
         self._initialized = False
 
     async def initialize(self):
+        """Initialize both backends and mark the hybrid store ready."""
         await self.tsdb.initialize()
         await self.parquet.initialize()
         self._initialized = True
 
     async def close(self):
+        """Close both backends, flushing the Parquet buffers as part of shutdown."""
         await self.tsdb.close()
         await self.parquet.close()
 
     async def write_klines(self, klines: list[dict]) -> int:
+        """Write candles to both backends and return the input row count."""
         await self.tsdb.write_klines(klines)
         await self.parquet.write_klines(klines)
         return len(klines)
 
     async def write_tickers(self, tickers: list[dict]) -> int:
+        """Write ticker snapshots to both backends and return the input row count."""
         await self.tsdb.write_tickers(tickers)
         await self.parquet.write_tickers(tickers)
         return len(tickers)
 
     async def write_trades(self, trades: list[dict]) -> int:
+        """Write trades to both backends and return the input row count."""
         await self.tsdb.write_trades(trades)
         await self.parquet.write_trades(trades)
         return len(trades)
 
     async def write_funding_rates(self, rates: list[dict]) -> int:
+        """Write funding rates to both backends and return the input row count."""
         await self.tsdb.write_funding_rates(rates)
         await self.parquet.write_funding_rates(rates)
         return len(rates)
@@ -684,6 +729,7 @@ class HybridStorage(StorageBackend):
         start: datetime,
         end: datetime,
     ) -> pd.DataFrame:
+        """Route recent candles to Timescale, old candles to Parquet, or combine both."""
         # Recent data (last 30 days) from TimescaleDB, older from Parquet
         cutoff = _utcnow() - timedelta(days=30)
         if start >= cutoff:
@@ -702,6 +748,7 @@ class HybridStorage(StorageBackend):
         start: datetime,
         end: datetime,
     ) -> pd.DataFrame:
+        """Route recent ticker reads to Timescale and historical reads to Parquet."""
         cutoff = _utcnow() - timedelta(days=7)
         if start >= cutoff:
             return await self.tsdb.read_tickers(symbol, start, end)
@@ -718,6 +765,7 @@ _storage: HybridStorage | None = None
 
 
 def get_storage(config: StorageConfig | None = None) -> HybridStorage:
+    """Return the shared hybrid store, creating it from explicit or app settings."""
     global _storage
     if _storage is None:
         if config is None:
@@ -734,12 +782,14 @@ def get_storage(config: StorageConfig | None = None) -> HybridStorage:
 
 
 async def init_storage(config: StorageConfig | None = None) -> HybridStorage:
+    """Initialize and return the shared hybrid storage instance."""
     storage = get_storage(config)
     await storage.initialize()
     return storage
 
 
 async def shutdown_storage():
+    """Close the shared storage instance and clear the global reference."""
     global _storage
     if _storage:
         await _storage.close()

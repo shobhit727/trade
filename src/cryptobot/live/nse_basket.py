@@ -44,12 +44,15 @@ logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 
 def _get_yahoo_chart_url() -> str:
+    """Read the Yahoo chart endpoint from application settings."""
     return get_settings().external_services.yahoo_finance_chart_url
 
 def _get_http_default_timeout() -> int:
+    """Read the default outbound HTTP timeout from application settings."""
     return get_settings().timeouts.http_default_timeout
 
 def _get_nse_basket_port() -> int:
+    """Read the configured port for the NSE basket dashboard."""
     return get_settings().server.nse_basket_port
 
 DELIVERY_FEE_BPS = Decimal("11")
@@ -82,6 +85,7 @@ def fetch_bars(symbol: str) -> list[dict]:
 
 
 def ema(values: list[float], period: int) -> float:
+    """Return the latest exponential moving average or NaN when history is short."""
     if len(values) < period:
         return float("nan")
     k = 2.0 / (period + 1)
@@ -124,6 +128,7 @@ def _svg_chart(values: list[float], w: int = 260, h: int = 64) -> str:
 
 class BasketState:
     def __init__(self, capital: float):
+        """Initialize basket cash, holdings, breaker state, trade history, and tax ledger."""
         self.capital = capital
         self.cash = capital
         self.peak_equity: float = capital
@@ -137,6 +142,7 @@ class BasketState:
         self.tax = TaxLedger()
 
     def equity(self, marks: dict[str, float]) -> float:
+        """Return cash plus each held position marked at the supplied or entry price."""
         eq = self.cash
         for sym, p in self.positions.items():
             px = marks.get(sym, p["entry"])
@@ -144,6 +150,7 @@ class BasketState:
         return eq
 
     def to_dict(self) -> dict:
+        """Serialize positions, recent history, skipped symbols, and tax ledger state."""
         return {"capital": self.capital, "cash": self.cash,
                 "peak_equity": self.peak_equity,
                 "breaker_tripped": self.breaker_tripped,
@@ -159,6 +166,7 @@ class BasketState:
 
     @classmethod
     def from_dict(cls, d: dict) -> BasketState:
+        """Restore basket state and rebuild missing tax lots from saved positions/trades."""
         s = cls(d["capital"])
         s.cash = d["cash"]
         s.peak_equity = d.get("peak_equity", d["capital"])
@@ -196,6 +204,7 @@ class NseBasket:
                  fast: int = 5, slow: int = 12, port: int | None = None,
                  state_file: Path | None = None,
                  kite_session=None, dry_run: bool = True):
+            """Configure universe, EMA periods, broker mode, persistence path, and runtime state."""
         self.kite_session = kite_session
         self.dry_run = dry_run
         self.symbols = symbols
@@ -212,9 +221,11 @@ class NseBasket:
     # ------------------------------------------------------------ trading
 
     def _ist_today(self) -> str:
+        """Return today's date as an ISO string in the NSE timezone."""
         return self._ist_now().date().isoformat()
 
     def _ist_now(self) -> datetime:
+        """Return the current timezone-aware NSE market time."""
         return datetime.now(IST)
 
     def run_once(self) -> dict:
@@ -330,6 +341,7 @@ class NseBasket:
                         subject_prefix="[nse-basket]")
 
     def _buy(self, sym: str, qty: int, px: float) -> None:
+        """Buy affordable whole shares, charge delivery costs, and update position/tax state."""
         st = self.state
         notional = qty * px
         fee = notional * float(DELIVERY_FEE_BPS + SLIP_BPS) / 10_000
@@ -353,6 +365,7 @@ class NseBasket:
         self.stats["fills"] += 1
 
     def _close(self, sym: str, px: float | None) -> None:
+        """Sell an open position at the supplied mark, book costs/tax, and remove it."""
         st = self.state
         pos = st.positions.get(sym)
         if not pos:
@@ -377,6 +390,7 @@ class NseBasket:
     # ------------------------------------------------------------ serving
 
     def snapshot(self) -> dict:
+        """Return current marked equity, positions, recent trades, gate, and breaker status."""
         with self._lock:
             marks = {s: self._closes[s][-1] for s in self._closes}
             eq = self.state.equity(marks)
@@ -423,6 +437,7 @@ class NseBasket:
             }
 
     def _dashboard_html(self) -> str:
+        """Render the read-only basket dashboard from the latest state snapshot."""
         s = self.snapshot()
         eq = float(s["equity"])
         pnl = eq - self.state.capital
@@ -523,11 +538,13 @@ a{{color:var(--ac)}}
         logger.warning("breaker manually reset; peak re-anchored")
 
     def serve_forever(self) -> None:
+        """Bind the dashboard server and serve health or dashboard GET requests indefinitely."""
         basket = self
         bind_host = "0.0.0.0"  # Always bind to all interfaces for container compatibility
 
         class H(BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802
+                """Serve the JSON health snapshot or HTML dashboard for supported paths."""
                 if self.path.startswith("/health"):
                     body = json.dumps(basket.snapshot()).encode()
                     ctype = "application/json"
@@ -545,6 +562,7 @@ a{{color:var(--ac)}}
                 self.wfile.write(body)
 
             def log_message(self, *a):
+                """Suppress default HTTP server access logging."""
                 pass
 
         ThreadingHTTPServer((bind_host, self.port), H).serve_forever()
@@ -552,6 +570,7 @@ a{{color:var(--ac)}}
     # ------------------------------------------------------------ scheduling
 
     def seconds_until_next_close(self) -> float:
+        """Return seconds until the next weekday 15:36 IST basket run."""
         now = datetime.now(IST)
         target = now.replace(hour=15, minute=36, second=0, microsecond=0)
         if now >= target or now.weekday() >= 5:
@@ -562,6 +581,7 @@ a{{color:var(--ac)}}
 
 
 def main() -> None:
+    """Parse CLI/broker options, load symbols, and run the scheduled basket service."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbols-file", default="tmp/nifty50.csv")
     ap.add_argument("--capital", type=float, default=10_000.0)

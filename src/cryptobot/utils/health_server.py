@@ -13,9 +13,11 @@ from cryptobot.monitoring.web_backtest import get_backtest_manager
 
 
 def _get_server_host() -> str:
+    """Read the health server bind host from application settings."""
     return get_settings().server.host
 
 def _get_server_port() -> int:
+    """Read the health server port from application settings."""
     return get_settings().server.port
 
 logger = logging.getLogger(__name__)
@@ -28,9 +30,11 @@ DASHBOARD_PATH = "/dashboard"
 
 class _HealthSnapshot:
     def __init__(self):
+        """Record the startup time used to calculate service uptime."""
         self.started_at = datetime.now(UTC)
 
     def snapshot(self) -> dict[str, Any]:
+        """Build a JSON-ready service and component health snapshot."""
         uptime = (datetime.now(UTC) - self.started_at).total_seconds()
         base: dict[str, Any] = {
             "status": "ok",
@@ -69,9 +73,11 @@ class _Handler(BaseHTTPRequestHandler):
     server_version = "cryptobot/0.1"
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
+        """Route stdlib HTTP access logs through the application logger."""
         logger.debug("%s - %s", self.address_string(), format % args)
 
     def do_POST(self):  # noqa: N802
+        """Handle the backtest-start API route and return a JSON status response."""
         from urllib.parse import parse_qs, urlparse
 
         parsed = urlparse(self.path)
@@ -92,6 +98,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):  # noqa: N802
+        """Serve health, backtest, dashboard, and metrics GET endpoints."""
         from urllib.parse import urlparse
 
         path = urlparse(self.path).path  # strip query so ?name=... still routes
@@ -160,12 +167,14 @@ class HealthServer:
     """Tiny stdlib HTTP server exposing ``/health`` and ``/metrics``."""
 
     def __init__(self, host: str | None = None, port: int | None = None):
+        """Configure bind address and initialize server/thread state."""
         self.host = host if host is not None else _get_server_host()
         self.port = port if port is not None else _get_server_port()
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: Thread | None = None
 
     def start(self) -> None:
+        """Start the threaded HTTP server once, surfacing address-in-use clearly."""
         if self._httpd is not None:
             return
         snap = _HealthSnapshot()
@@ -185,6 +194,7 @@ class HealthServer:
         logger.info("health server listening on http://%s:%d%s", self.host, self.port, HEALTH_PATH)
 
     def stop(self) -> None:
+        """Shut down and close the HTTP server, then clear its thread reference."""
         if self._httpd is not None:
             self._httpd.shutdown()
             self._httpd.server_close()
@@ -219,6 +229,7 @@ def _price_chart_svg(price_history: list[dict], trades: list[dict],
         return '<div class="spark-empty">collecting price history…</div>'
 
     def tsv(ts: str) -> float:
+        """Parse an ISO timestamp into epoch seconds, returning zero on invalid input."""
         try:
             from datetime import datetime as _dt
             return _dt.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
@@ -233,9 +244,11 @@ def _price_chart_svg(price_history: list[dict], trades: list[dict],
     span_p = (vmax - vmin) or 1.0
 
     def X(ts: float) -> float:
+        """Map an epoch timestamp to its horizontal SVG chart coordinate."""
         return (ts - t0) / span_t * (width - 10) + 5
 
     def Y(v: float) -> float:
+        """Map a price value to its vertical SVG chart coordinate."""
         return height - 14 - ((v - vmin) / span_p) * (height - 24)
 
     poly = " ".join(f"{X(x):.1f},{Y(v):.1f}" for x, v in pts)
@@ -273,6 +286,7 @@ def _price_chart_svg(price_history: list[dict], trades: list[dict],
 
 
 def esc_static(value) -> str:
+    """HTML-escape a value for insertion into static dashboard markup."""
     import html as _h
 
     return _h.escape(str(value))
@@ -283,9 +297,11 @@ def render_dashboard_html(snap: dict) -> str:
     import html as _html
 
     def esc(value):
+        """Escape dynamic dashboard text before adding it to HTML."""
         return _html.escape(str(value))
 
     def money(value):
+        """Format a numeric dashboard value with separators or safely escape it."""
         try:
             return f"{float(value):,.2f}"
         except (TypeError, ValueError):
@@ -668,6 +684,7 @@ def render_dashboard_html(snap: dict) -> str:
 
 
 async def serve_health(host: str | None = None, port: int | None = None) -> None:
+    """Run the health server until cancelled, always stopping it during cleanup."""
     server = HealthServer(host=host, port=port)
     server.start()
     try:

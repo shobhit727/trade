@@ -25,6 +25,7 @@ class DirectionClassifier:
     name = "direction_logreg"
 
     def __init__(self, config: DirectionConfig | None = None):
+        """Initialize an unfitted classifier with the supplied decision configuration."""
         self.config = config or DirectionConfig()
         self._weights: np.ndarray | None = None
         self._bias: float = 0.0
@@ -34,9 +35,11 @@ class DirectionClassifier:
 
     @staticmethod
     def _sigmoid(z: np.ndarray) -> np.ndarray:
+        """Map logits to probabilities using the logistic sigmoid function."""
         return 1.0 / (1.0 + np.exp(-z))
 
     def fit(self, features: np.ndarray, labels: np.ndarray) -> DirectionClassifier:
+        """Normalize features and fit sklearn logistic regression or the local fallback."""
         if features.size == 0:
             self._fitted = False
             return self
@@ -57,6 +60,7 @@ class DirectionClassifier:
 
     @staticmethod
     def _fit_logreg(X: np.ndarray, y: np.ndarray, lr: float = 0.1, epochs: int = 1000) -> tuple[np.ndarray, float]:
+        """Fit logistic-regression weights and bias with batch gradient descent."""
         n, d = X.shape
         w = np.zeros(d)
         b = 0.0
@@ -72,6 +76,7 @@ class DirectionClassifier:
 
     @staticmethod
     def _normalize(X: np.ndarray, means: np.ndarray | None = None, stds: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Standardize feature columns and return the transformed data and scaling values."""
         if means is None:
             means = X.mean(axis=0)
         if stds is None:
@@ -80,6 +85,7 @@ class DirectionClassifier:
         return (X - means) / stds, means, stds
 
     def predict_proba(self, features: np.ndarray) -> np.ndarray:
+        """Return positive-class probabilities, using neutral 0.5 values before fitting."""
         if not self._fitted or self._weights is None:
             return np.full(features.shape[0], 0.5)
         X = self._normalize(features, self._feature_means, self._feature_stds)[0]
@@ -87,6 +93,7 @@ class DirectionClassifier:
         return self._sigmoid(z)
 
     def predict(self, features: np.ndarray) -> np.ndarray:
+        """Convert predicted probabilities to binary classes using the configured threshold."""
         proba = self.predict_proba(features)
         threshold = self.config.threshold
         return (proba > threshold).astype(int)
@@ -97,6 +104,7 @@ class DirectionClassifier:
         labels: np.ndarray | None = None,
         n_splits: int = 4,
     ) -> float:
+        """Measure accuracy across sequential train/test folds without fabricating labels."""
         n = features.shape[0]
         if n <= n_splits + 1:
             return 0.0
@@ -128,6 +136,7 @@ class DirectionClassifier:
         return float(np.mean(scores)) if scores else 0.0
 
     def summary(self) -> dict[str, Any]:
+        """Return the model identity, fit state, threshold, and prediction horizon."""
         return {
             "model": self.name,
             "fitted": self._fitted,
@@ -137,6 +146,7 @@ class DirectionClassifier:
 
 
 def labels_from_returns(returns: np.ndarray, threshold: float = 0.0) -> np.ndarray:
+    """Convert returns above the threshold into positive-direction binary labels."""
     return (returns > threshold).astype(int)
 
 

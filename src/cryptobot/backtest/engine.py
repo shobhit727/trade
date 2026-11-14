@@ -246,21 +246,33 @@ class BacktestEngine:
             if bankruptcy_floor is not None
             else self.initial_capital * Decimal("0.02")
         )
+        pending_order = None
         if getattr(strategy, "name", "") == "trend_following":
             for bar in bars:
                 await self._maybe_settle_funding(bar.timestamp)
+                if pending_order is not None:
+                    await self._run_orders(
+                        pending_order, execution_engine, bar, str(bar.open),
+                        strategy, risk_fraction,
+                    )
+                    pending_order = None
                 await self._mark_to_market(symbol, Decimal(str(bar.close)), bar.timestamp)
                 if await self._check_bankruptcy(symbol, execution_engine, bar,
                                                 str(bar.close), floor):
                     break
                 order = _feed_with_ts(feed, symbol, bar.high, bar.low, bar.close,
                                       ts=int(bar.timestamp.timestamp() * 1000))
-                if order is None:
-                    continue
-                await self._run_orders(order, execution_engine, bar, str(bar.close), strategy, risk_fraction)
+                if order is not None:
+                    pending_order = order
         else:
             for bar in bars:
                 await self._maybe_settle_funding(bar.timestamp)
+                if pending_order is not None:
+                    await self._run_orders(
+                        pending_order, execution_engine, bar, str(bar.open),
+                        strategy, risk_fraction,
+                    )
+                    pending_order = None
                 await self._mark_to_market(symbol, Decimal(str(bar.close)), bar.timestamp)
                 if await self._check_bankruptcy(symbol, execution_engine, bar,
                                                 str(bar.close), floor):
@@ -272,9 +284,8 @@ class BacktestEngine:
                                       float(bar.high), float(bar.low),
                                       float(getattr(bar, "volume", 0.0) or 0.0),
                                       ts=int(bar.timestamp.timestamp() * 1000))
-                if order is None:
-                    continue
-                await self._run_orders(order, execution_engine, bar, str(bar.close), strategy, risk_fraction)
+                if order is not None:
+                    pending_order = order
 
         return self._compute_result()
 

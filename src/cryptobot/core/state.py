@@ -26,6 +26,7 @@ from cryptobot.core.events import (
 
 
 def _utcnow() -> datetime:
+    """Return the current UTC time for persisted state timestamps."""
     return datetime.now(UTC)
 
 try:
@@ -59,6 +60,7 @@ class Order:
     updated_at: datetime = field(default_factory=_utcnow)
 
     def to_event(self) -> OrderEvent:
+        """Convert the stored order fields into the corresponding event model."""
         return OrderEvent(
             order_id=self.order_id,
             client_order_id=self.client_order_id,
@@ -80,6 +82,7 @@ class Order:
         )
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize the order, representing decimals and timestamps as strings."""
         return {
             "order_id": self.order_id,
             "client_order_id": self.client_order_id,
@@ -121,6 +124,7 @@ class Position:
     updated_at: datetime = field(default_factory=_utcnow)
 
     def to_event(self) -> PositionEvent:
+        """Convert the stored position fields into a position event."""
         return PositionEvent(
             symbol=self.symbol,
             side=self.side,
@@ -137,6 +141,7 @@ class Position:
         )
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize the position with decimal quantities and times as strings."""
         return {
             "symbol": self.symbol,
             "side": self.side.value,
@@ -168,6 +173,7 @@ class AccountState:
     updated_at: datetime = field(default_factory=_utcnow)
 
     def to_event(self) -> PnLEvent:
+        """Convert account balances and P&L totals into a P&L event."""
         return PnLEvent(
             total_unrealized=self.total_unrealized_pnl,
             total_realized=self.total_realized_pnl,
@@ -178,6 +184,7 @@ class AccountState:
         )
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize account totals and the update timestamp into a plain mapping."""
         return {
             "total_equity": str(self.total_equity),
             "available_balance": str(self.available_balance),
@@ -196,6 +203,7 @@ class StateManager:
     _lock = threading.Lock()
 
     def __new__(cls):
+        """Return the process-wide StateManager singleton, creating it once safely."""
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -204,6 +212,7 @@ class StateManager:
         return cls._instance
 
     def __init__(self):
+        """Initialize in-memory state and select a writable SQLite data directory."""
         if self._initialized:
             return
         self._initialized = True
@@ -222,6 +231,7 @@ class StateManager:
             self._init_db()
 
     def _init_db(self):
+        """Create the SQLite tables and indexes used for persisted state and events."""
         if sqlite3 is None:
             return
         with self._get_conn() as conn:
@@ -289,6 +299,7 @@ class StateManager:
 
     @contextmanager
     def _get_conn(self):
+        """Yield a SQLite connection that commits on success and rolls back on error."""
         if sqlite3 is None:
             raise RuntimeError("sqlite3 unavailable; StateManager persistence disabled")
         conn = sqlite3.connect(self._db_path)
@@ -303,6 +314,7 @@ class StateManager:
             conn.close()
 
     def load(self):
+        """Load persisted orders, positions, and account totals into memory."""
         if sqlite3 is None:
             return
         with self._get_conn() as conn:
@@ -368,6 +380,7 @@ class StateManager:
                 self._daily_pnl_start = self._account.total_equity - self._account.daily_pnl
 
     def save_order(self, order: Order):
+        """Update an order in memory and persist it when SQLite is available."""
         order.updated_at = _utcnow()
         self._orders[order.order_id] = order
         if sqlite3 is None:
@@ -386,6 +399,7 @@ class StateManager:
             ))
 
     def save_position(self, position: Position):
+        """Update a position in memory and persist it when SQLite is available."""
         position.updated_at = _utcnow()
         self._positions[position.symbol] = position
         if sqlite3 is None:
@@ -404,6 +418,7 @@ class StateManager:
             ))
 
     def save_account(self):
+        """Refresh the account timestamp and persist the current account snapshot."""
         self._account.updated_at = _utcnow()
         if sqlite3 is None:
             return
@@ -421,6 +436,7 @@ class StateManager:
             ))
 
     def save_event(self, event: Event):
+        """Persist an event envelope and JSON-encoded payload when SQLite is available."""
         if sqlite3 is None:
             return
         with self._get_conn() as conn:
@@ -432,9 +448,11 @@ class StateManager:
             ))
 
     def get_order(self, order_id: str) -> Order | None:
+        """Return the order with this ID, or ``None`` when it is not in memory."""
         return self._orders.get(order_id)
 
     def get_orders(self, symbol: str = "", strategy: str = "") -> list[Order]:
+        """Return orders filtered by optional symbol and strategy values."""
         orders = list(self._orders.values())
         if symbol:
             orders = [o for o in orders if o.symbol == symbol]
@@ -443,6 +461,7 @@ class StateManager:
         return orders
 
     def get_open_orders(self, symbol: str = "") -> list[Order]:
+        """Return nonterminal orders, optionally limited to one symbol."""
         orders = [o for o in self._orders.values()
                   if o.status in (OrderStatus.NEW, OrderStatus.PARTIALLY_FILLED, OrderStatus.PENDING_CANCEL)]
         if symbol:
@@ -450,18 +469,22 @@ class StateManager:
         return orders
 
     def get_position(self, symbol: str) -> Position | None:
+        """Return the position for one symbol, or ``None`` if none is stored."""
         return self._positions.get(symbol)
 
     def get_positions(self, strategy: str = "") -> list[Position]:
+        """Return all positions, optionally filtered to one strategy."""
         positions = list(self._positions.values())
         if strategy:
             positions = [p for p in positions if p.strategy == strategy]
         return positions
 
     def get_account(self) -> AccountState:
+        """Return the mutable in-memory account state snapshot."""
         return self._account
 
     def update_account_equity(self, equity: Decimal):
+        """Update equity, peak, drawdown, and daily P&L, then persist the account."""
         self._account.total_equity = equity
         if equity > self._account.peak_equity:
             self._account.peak_equity = equity
@@ -472,16 +495,19 @@ class StateManager:
         self.save_account()
 
     def reset_daily_pnl(self):
+        """Set the current equity as the new daily baseline and clear daily P&L."""
         self._daily_pnl_start = self._account.total_equity
         self._account.daily_pnl = Decimal("0")
         self.save_account()
 
     def get_daily_pnl_pct(self) -> float:
+        """Return daily P&L as a fraction of the stored day-start equity."""
         if self._daily_pnl_start > 0:
             return float(self._account.daily_pnl / self._daily_pnl_start)
         return 0.0
 
     def get_drawdown_pct(self) -> float:
+        """Return the maximum drawdown recorded in the account state."""
         return float(self._account.max_drawdown)
 
 

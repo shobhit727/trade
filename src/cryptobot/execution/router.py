@@ -29,6 +29,7 @@ class VenueScore:
 
     @property
     def score(self) -> float:
+        """Return price adjusted by measured round-trip latency and configured fee."""
         if self.error:
             return float("-inf")
         latency_penalty = self.round_trip_ms
@@ -52,6 +53,7 @@ class RoutedOrder:
 
     @property
     def is_complete(self) -> bool:
+        """Report whether child orders and their fills cover the full parent quantity."""
         if not self.fills:
             return False
         total_child_qty = sum((c.quantity for c in self.children), Decimal("0"))
@@ -60,6 +62,7 @@ class RoutedOrder:
 
 
 def best_price_ranker(symbol: str, scores: Sequence[VenueScore]) -> int:
+    """Choose the lowest valid quote, breaking price ties with lower latency."""
     valid = [(i, s) for i, s in enumerate(scores) if s.error is None and s.price > 0]
     if not valid:
         return -1
@@ -67,6 +70,7 @@ def best_price_ranker(symbol: str, scores: Sequence[VenueScore]) -> int:
 
 
 def latency_aware_ranker(symbol: str, scores: Sequence[VenueScore]) -> int:
+    """Choose the valid venue with the best latency- and fee-adjusted score."""
     valid = [(i, s) for i, s in enumerate(scores) if s.error is None and s.price > 0]
     if not valid:
         return -1
@@ -74,6 +78,7 @@ def latency_aware_ranker(symbol: str, scores: Sequence[VenueScore]) -> int:
 
 
 def best_effort_ranker(symbol: str, scores: Sequence[VenueScore]) -> int:
+    """Use the latency-aware ranker as the default best-effort policy."""
     return latency_aware_ranker(symbol, scores)
 
 
@@ -87,6 +92,7 @@ class SmartOrderRouter:
         ranker: Ranker = best_price_ranker,
         fee_overrides: dict[str, Decimal] | None = None,
     ):
+        """Configure candidate venues, quote ranking, fee overrides, and router limits."""
         if not venues:
             raise ValueError("SmartOrderRouter requires at least one venue")
         self.venues: list[Venue] = list(venues)
@@ -98,6 +104,7 @@ class SmartOrderRouter:
                 v.name = f"venue_{i}"  # type: ignore[attr-defined]
 
     async def _quote(self, venue: Venue, symbol: str) -> VenueScore:
+        """Fetch one venue quote with timeout and latency/error instrumentation."""
         name: str = getattr(venue, "name", "venue")  # type: ignore[attr-defined]
         fee = self.fee_overrides.get(name, Decimal("0"))
         start = time.perf_counter()
@@ -120,6 +127,7 @@ class SmartOrderRouter:
             return VenueScore(name=name, venue=venue, price=Decimal("0"), latency_ms=latency_ms, fee_bps=fee, error=str(exc))
 
     def _record_quote(self, name: str, symbol: str, latency_ms: float) -> None:
+        """Record quote latency when monitoring is available, without failing routing."""
         try:
             from cryptobot.monitoring.metrics import record_venue_quote_latency
             record_venue_quote_latency(venue=name, symbol=symbol, latency=latency_ms / 1000.0)
@@ -127,6 +135,7 @@ class SmartOrderRouter:
             logger.debug("metrics record skipped: %s", exc)
 
     def _record_decision(self, name: str, symbol: str, action: str) -> None:
+        """Record a routing decision when monitoring is available, without failing routing."""
         try:
             from cryptobot.monitoring.metrics import record_routing_decision
             record_routing_decision(venue=name, symbol=symbol, action=action)
@@ -134,14 +143,17 @@ class SmartOrderRouter:
             logger.debug("metrics record skipped: %s", exc)
 
     async def quote_all(self, symbol: str) -> list[VenueScore]:
+        """Request quotes concurrently from every configured venue."""
         scores = await asyncio.gather(*(self._quote(v, symbol) for v in self.venues))
         return list(scores)
 
     def pick(self, scores: Sequence[VenueScore]) -> VenueScore | None:
+        """Apply the configured ranker and return the selected score if any is valid."""
         idx = self.ranker(symbol="", scores=scores)
         return scores[idx] if idx >= 0 else None
 
     async def route(self, order: OrderEvent) -> RoutedOrder:
+        """Route a parent order to the best quoted venue, trying alternatives after failure."""
         routed = RoutedOrder(parent=order)
         scores = await self.quote_all(order.symbol)
         chosen = self.pick(scores)
@@ -203,6 +215,7 @@ class SmartOrderRouter:
         parent: OrderEvent,
         ratio: Sequence[Decimal],
     ) -> RoutedOrder:
+        """Divide a parent order by the supplied ratios and submit children to ranked venues."""
         if not ratio:
             raise ValueError("ratio cannot be empty")
         if len(ratio) > len(self.venues):

@@ -43,14 +43,17 @@ SESSION_FILE = Path("state-nse/kite_session.json")
 
 
 def _get_kite_base() -> str:
+    """Read the Kite API base URL from the current application settings."""
     return get_settings().external_services.kite_base_url
 
 
 def _get_kite_login_url() -> str:
+    """Read the Kite browser login URL from the current application settings."""
     return get_settings().external_services.kite_login_url
 
 
 def _get_http_default_timeout() -> int:
+    """Read the default outbound HTTP timeout from the current settings."""
     return get_settings().timeouts.http_default_timeout
 
 
@@ -59,6 +62,7 @@ class KiteSession:
 
     def __init__(self, api_key: str, api_secret: str = "",
                  session_file: Path = SESSION_FILE):
+        """Initialize session credentials and load a previously saved access token."""
         self.api_key = api_key
         self.api_secret = api_secret
         self.session_file = session_file
@@ -67,9 +71,11 @@ class KiteSession:
             self.access_token = json.loads(session_file.read_text()).get("access_token")
 
     def login_url(self) -> str:
+        """Build the browser URL where the account owner obtains a request token."""
         return (f"{_get_kite_login_url()}?v=3&api_key={self.api_key}")
 
     def exchange_token(self, request_token: str) -> str:
+        """Exchange a request token for an access token and persist the session metadata."""
         checksum = hashlib.sha256(
             f"{self.api_key}{request_token}{self.api_secret}".encode()
         ).hexdigest()
@@ -92,6 +98,7 @@ class KiteSession:
         return self.access_token
 
     def headers(self) -> dict:
+        """Return authenticated Kite headers, raising clearly when no token is loaded."""
         if not self.access_token:
             raise RuntimeError(
                 "Kite access token missing — run tools/kite_login.py after "
@@ -107,6 +114,7 @@ class KiteVenue(Venue):
     def __init__(self, session: KiteSession, dry_run: bool = True,
                  product: str = "CNC", poll_seconds: float = 1.0,
                  poll_timeout: float = 60.0):
+        """Configure dry-run or live order execution, product, polling, and local caches."""
         self.session = session
         self.dry_run = dry_run
         self.product = product            # CNC delivery / MIS intraday
@@ -119,6 +127,7 @@ class KiteVenue(Venue):
 
     def _request(self, path: str, params: dict | None = None,
                  method: str = "GET") -> dict:
+        """Perform one authenticated Kite HTTP request and return its data payload."""
         url = f"{_get_kite_base()}{path}"
         data = urllib.parse.urlencode(params).encode() if params else None
         req = urllib.request.Request(url, data=data, method=method,
@@ -135,11 +144,13 @@ class KiteVenue(Venue):
 
     @staticmethod
     def _qty(order: OrderEvent) -> str:
+        """Convert an order quantity to the positive whole-share string Kite expects."""
         return str(max(1, int(abs(Decimal(str(order.quantity))))))
 
     # ------------------------------------------------------------ Venue API
 
     async def submit_order(self, order: OrderEvent) -> OrderEvent:
+        """Submit a synthetic dry-run fill or place and poll a live NSE order."""
         qty = self._qty(order)
         params = {
             "tradingsymbol": order.symbol,
@@ -209,6 +220,7 @@ class KiteVenue(Venue):
         return order
 
     async def cancel_order(self, order_id: str) -> bool:
+        """Cancel an order through Kite, treating dry-run cancellation as successful."""
         if self.dry_run:
             return True
         try:
@@ -219,6 +231,7 @@ class KiteVenue(Venue):
             return False
 
     async def get_price(self, symbol: str) -> Decimal:
+        """Return a cached price or fetch and cache the NSE last-traded price."""
         if symbol in self.prices:
             return self.prices[symbol]
         if self.dry_run:

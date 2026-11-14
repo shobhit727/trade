@@ -30,8 +30,10 @@ def retry(
     """
 
     def decorator(func: Callable[..., Any]):
+        """Wrap a sync or async callable with the configured retry policy."""
         @wraps(func)
         async def async_wrapper(*args, **kwargs):
+            """Retry the coroutine with exponential backoff, then re-raise its final error."""
             last_exception = None
             for attempt in range(max_attempts):
                 try:
@@ -56,6 +58,7 @@ def retry(
 
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
+            """Retry the synchronous call with exponential backoff, then re-raise its error."""
             last_exception = None
             for attempt in range(max_attempts):
                 try:
@@ -95,8 +98,10 @@ def timeout_decorator(timeout: float):
     """
 
     def decorator(func: Callable[..., Any]):
+        """Wrap an async callable with the requested execution timeout."""
         @wraps(func)
         async def wrapper(*args, **kwargs):
+            """Run the coroutine until completion or raise a normalized timeout error."""
             try:
                 return await asyncio.wait_for(func(*args, **kwargs), timeout=timeout)
             except TimeoutError as err:
@@ -122,6 +127,7 @@ class CircuitBreaker:
         reset_timeout: float = 60.0,
         exceptions: tuple = (Exception,),
     ):
+        """Configure failure thresholds, recovery timeout, and counted exception types."""
         self.failure_threshold = failure_threshold
         self.success_threshold = success_threshold
         self.reset_timeout = reset_timeout
@@ -135,9 +141,11 @@ class CircuitBreaker:
 
     @property
     def state(self) -> str:
+        """Return the current CLOSED, OPEN, or HALF_OPEN state."""
         return self._state
 
     async def call(self, func: Callable[..., Any], *args, **kwargs) -> Any:
+        """Invoke a callable unless open, updating breaker state around its result."""
         async with self._lock:
             if self._state == "OPEN":
                 if self._last_failure_time and (
@@ -165,6 +173,7 @@ class CircuitBreaker:
             raise
 
     def _on_success(self):
+        """Advance half-open recovery or clear failures after a closed-state success."""
         if self._state == "HALF_OPEN":
             self._success_count += 1
             if self._success_count >= self.success_threshold:
@@ -175,6 +184,7 @@ class CircuitBreaker:
             self._failure_count = 0
 
     def _on_failure(self):
+        """Record a failure and open the circuit at the configured threshold."""
         self._failure_count += 1
         self._last_failure_time = asyncio.get_running_loop().time()
 
@@ -221,12 +231,15 @@ def circuit_breaker(
     )
 
     def decorator(func: Callable[..., Any]):
+        """Wrap a function so calls pass through the configured circuit breaker."""
         @wraps(func)
         async def async_wrapper(*args, **kwargs):
+            """Route an async call through the shared breaker instance."""
             return await breaker.call(func, *args, **kwargs)
 
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
+            """Run a sync call through the breaker only when no event loop is active."""
             try:
                 loop = asyncio.get_running_loop()
             except RuntimeError:

@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 class BinanceWSClient:
     def __init__(self, symbols: list[str] | None = None, timeframes: list[str] | None = None,
                  ws_url: str | None = None):
+        """Configure stream symbols, intervals, URL, and reconnect state from arguments or settings."""
         self.ws_url = ws_url if ws_url is not None else settings.exchange.ws_url
         self.session: aiohttp.ClientSession | None = None
         self.ws: aiohttp.ClientWebSocketResponse | None = None
@@ -51,6 +52,7 @@ class BinanceWSClient:
             logger.warning("BinanceWSClient: no timeframes configured; falling back to ['1m']")
 
     async def start(self):
+        """Open the HTTP session and WebSocket, then launch heartbeat and message tasks."""
         import aiohttp
         self.running = True
         self.session = aiohttp.ClientSession()
@@ -59,6 +61,7 @@ class BinanceWSClient:
         asyncio.create_task(self._listen())
 
     async def stop(self):
+        """Stop background loops and close the WebSocket and HTTP session."""
         self.running = False
         if self.ws:
             await self.ws.close()
@@ -66,6 +69,7 @@ class BinanceWSClient:
             await self.session.close()
 
     async def _connect(self):
+        """Connect to the combined-stream URL, falling back to exponential reconnect on error."""
         try:
             streams = self._build_streams()
             url = f"{self.ws_url}/stream?streams={'/'.join(streams)}"
@@ -77,6 +81,7 @@ class BinanceWSClient:
             await self._reconnect()
 
     def _build_streams(self) -> list[str]:
+        """Build ticker, depth, trade, kline, and mark-price stream names."""
         streams = []
         for symbol in self._symbols:
             s = symbol.lower()
@@ -89,6 +94,7 @@ class BinanceWSClient:
         return streams
 
     async def _reconnect(self):
+        """Wait using bounded exponential backoff and retry while the client is running."""
         if not self.running:
             return
         delay = min(self._reconnect_delay, self._max_reconnect_delay)
@@ -98,6 +104,7 @@ class BinanceWSClient:
         await self._connect()
 
     async def _heartbeat(self):
+        """Periodically ping the open socket and reconnect when heartbeat fails."""
         while self.running:
             await asyncio.sleep(self._ping_interval)
             if self.ws and not self.ws.closed:
@@ -108,6 +115,7 @@ class BinanceWSClient:
                     await self._reconnect()
 
     async def _listen(self):
+        """Receive socket frames, dispatch text messages, and reconnect after closure."""
         import aiohttp
         while self.running:
             try:
@@ -124,6 +132,7 @@ class BinanceWSClient:
                 await asyncio.sleep(1)
 
     async def _handle_message(self, data: str):
+        """Decode a combined-stream frame and dispatch its payload by stream suffix."""
         try:
             msg = json.loads(data)
             stream = msg.get("stream", "")
@@ -145,6 +154,7 @@ class BinanceWSClient:
             logger.warning("Message handling error: %s", e)
 
     async def _handle_ticker(self, data: dict):
+        """Convert a Binance ticker payload into a typed ticker event."""
         symbol = data.get("s", "")
         event = TickerEvent(
             symbol=symbol,
@@ -162,6 +172,7 @@ class BinanceWSClient:
         await self._emit(EventType.TICKER, event)
 
     async def _handle_orderbook(self, data: dict):
+        """Convert bid and ask levels from a Binance depth payload into an event."""
         symbol = data.get("s", "")
         bids = [(Decimal(p), Decimal(q)) for p, q in data.get("b", [])]
         asks = [(Decimal(p), Decimal(q)) for p, q in data.get("a", [])]
@@ -175,6 +186,7 @@ class BinanceWSClient:
         await self._emit(EventType.ORDERBOOK, event)
 
     async def _handle_trade(self, data: dict):
+        """Convert a Binance trade payload into a typed trade event."""
         symbol = data.get("s", "")
         from cryptobot.core.events import OrderSide
         event = TradeEvent(
@@ -189,6 +201,7 @@ class BinanceWSClient:
         await self._emit(EventType.TRADE, event)
 
     async def _handle_kline(self, data: dict):
+        """Convert a nested Binance kline payload into a candle event."""
         k = data.get("k", {})
         symbol = k.get("s", "")
         event = KlineEvent(
@@ -208,6 +221,7 @@ class BinanceWSClient:
         await self._emit(EventType.KLINE, event)
 
     async def _handle_mark_price(self, data: dict):
+        """Convert mark-price and funding fields into a funding-rate event."""
         symbol = data.get("s", "")
         event = FundingRateEvent(
             symbol=symbol,
@@ -220,9 +234,11 @@ class BinanceWSClient:
         await self._emit(EventType.FUNDING_RATE, event)
 
     def subscribe(self, event_type: EventType, callback: Callable):
+        """Register a callback for one event type; callbacks may be synchronous or async."""
         self.callbacks[event_type.value].append(callback)
 
     async def _emit(self, event_type: EventType, event: Event):
+        """Invoke registered callbacks for an event while isolating callback failures."""
         for callback in self.callbacks.get(event_type.value, []):
             try:
                 if inspect.iscoroutinefunction(callback):
@@ -235,11 +251,13 @@ class BinanceWSClient:
 
 class MarketDataCache:
     def __init__(self):
+        """Initialize a local cache and configured Redis expiry duration."""
         self.redis: redis.Redis | None = None
         self.local_cache: dict[str, Any] = {}
         self.ttl = settings.market_data.cache_ttl_seconds
 
     async def start(self):
+        """Create the configured async Redis client."""
         self.redis = redis.Redis(
             host=settings.market_data.redis_host,
             port=settings.market_data.redis_port,
@@ -249,10 +267,12 @@ class MarketDataCache:
         )
 
     async def stop(self):
+        """Close the Redis client if it was started."""
         if self.redis:
             await self.redis.close()
 
     async def set_ticker(self, event: TickerEvent):
+        """Cache a ticker payload locally and in Redis when configured."""
         key = f"ticker:{event.symbol}"
         data = event.to_dict()
         self.local_cache[key] = data
@@ -260,6 +280,7 @@ class MarketDataCache:
             await self.redis.setex(key, self.ttl, json.dumps(data))
 
     async def get_ticker(self, symbol: str) -> dict | None:
+        """Return a cached ticker, preferring local memory before Redis."""
         key = f"ticker:{symbol}"
         if key in self.local_cache:
             return self.local_cache[key]
@@ -270,6 +291,7 @@ class MarketDataCache:
         return None
 
     async def set_orderbook(self, event: OrderBookEvent):
+        """Cache an order-book payload locally and in Redis when configured."""
         key = f"orderbook:{event.symbol}"
         data = event.to_dict()
         self.local_cache[key] = data
@@ -277,6 +299,7 @@ class MarketDataCache:
             await self.redis.setex(key, self.ttl, json.dumps(data))
 
     async def get_orderbook(self, symbol: str) -> dict | None:
+        """Return a cached order book, preferring local memory before Redis."""
         key = f"orderbook:{symbol}"
         if key in self.local_cache:
             return self.local_cache[key]
@@ -287,6 +310,7 @@ class MarketDataCache:
         return None
 
     async def set_kline(self, event: KlineEvent):
+        """Cache the latest candle for a symbol and interval locally and in Redis."""
         key = f"kline:{event.symbol}:{event.interval}"
         data = event.to_dict()
         self.local_cache[key] = data
@@ -294,6 +318,7 @@ class MarketDataCache:
             await self.redis.setex(key, self.ttl, json.dumps(data))
 
     async def get_klines(self, symbol: str, interval: str, limit: int = 100) -> list[dict]:
+        """Return the locally cached latest candle as a list, or an empty list on a miss."""
         # In production, use Redis streams or TimescaleDB
         # For now, return from local cache
         key = f"kline:{symbol}:{interval}"
@@ -302,6 +327,7 @@ class MarketDataCache:
         return []
 
     async def set_funding_rate(self, event: FundingRateEvent):
+        """Cache a funding-rate payload locally and in Redis when configured."""
         key = f"funding:{event.symbol}"
         data = event.to_dict()
         self.local_cache[key] = data
@@ -309,6 +335,7 @@ class MarketDataCache:
             await self.redis.setex(key, self.ttl, json.dumps(data))
 
     async def get_funding_rate(self, symbol: str) -> dict | None:
+        """Return a cached funding rate, preferring local memory before Redis."""
         key = f"funding:{symbol}"
         if key in self.local_cache:
             return self.local_cache[key]
@@ -321,11 +348,13 @@ class MarketDataCache:
 
 class MarketDataManager:
     def __init__(self):
+        """Create the WebSocket client, cache, and event callback registry."""
         self.ws_client = BinanceWSClient()
         self.cache = MarketDataCache()
         self._callbacks: dict[EventType, list[Callable]] = defaultdict(list)
 
     async def start(self):
+        """Start the cache, connect event handlers, and launch the WebSocket client."""
         await self.cache.start()
         self.ws_client.subscribe(EventType.TICKER, self._on_ticker)
         self.ws_client.subscribe(EventType.ORDERBOOK, self._on_orderbook)
@@ -335,32 +364,40 @@ class MarketDataManager:
         await self.ws_client.start()
 
     async def stop(self):
+        """Stop the WebSocket client and close the cache backend."""
         await self.ws_client.stop()
         await self.cache.stop()
 
     def subscribe(self, event_type: EventType, callback: Callable):
+        """Register a sync or async callback for events of the requested type."""
         self._callbacks[event_type].append(callback)
 
     async def _on_ticker(self, event: TickerEvent):
+        """Cache a ticker event before forwarding it to manager subscribers."""
         await self.cache.set_ticker(event)
         await self._emit(EventType.TICKER, event)
 
     async def _on_orderbook(self, event: OrderBookEvent):
+        """Cache an order-book event before forwarding it to manager subscribers."""
         await self.cache.set_orderbook(event)
         await self._emit(EventType.ORDERBOOK, event)
 
     async def _on_trade(self, event: TradeEvent):
+        """Forward a trade event to manager subscribers."""
         await self._emit(EventType.TRADE, event)
 
     async def _on_kline(self, event: KlineEvent):
+        """Cache a candle event before forwarding it to manager subscribers."""
         await self.cache.set_kline(event)
         await self._emit(EventType.KLINE, event)
 
     async def _on_funding(self, event: FundingRateEvent):
+        """Cache a funding event before forwarding it to manager subscribers."""
         await self.cache.set_funding_rate(event)
         await self._emit(EventType.FUNDING_RATE, event)
 
     async def _emit(self, event_type: EventType, event: Event):
+        """Invoke subscribers for one event type while isolating callback failures."""
         for callback in self._callbacks.get(event_type, []):
             try:
                 if inspect.iscoroutinefunction(callback):
@@ -371,6 +408,7 @@ class MarketDataManager:
                 logger.warning("Callback error: %s", e)
 
     def get_ticker(self, symbol: str) -> TickerEvent | None:
+        """Rebuild a typed ticker event from the local cache, coercing decimal fields."""
         data = self.cache.local_cache.get(f"ticker:{symbol}")
         if data:
             payload = data.get("payload", data)
@@ -382,6 +420,7 @@ class MarketDataManager:
         return None
 
     def get_orderbook(self, symbol: str) -> OrderBookEvent | None:
+        """Rebuild a typed order-book event from cached bid and ask levels."""
         data = self.cache.local_cache.get(f"orderbook:{symbol}")
         if data:
             payload = data.get("payload", data)
@@ -397,6 +436,7 @@ class MarketDataManager:
 
     @staticmethod
     def _coerce_decimal_fields(payload: dict, fields: set[str]) -> dict:
+        """Copy a payload and convert selected non-Decimal values to Decimal."""
         out = dict(payload)
         for field in fields:
             if field in out and not isinstance(out[field], Decimal):
@@ -404,6 +444,7 @@ class MarketDataManager:
         return out
 
     def get_mid_price(self, symbol: str) -> Decimal:
+        """Return the order-book midpoint, falling back to ticker price or zero."""
         ob = self.get_orderbook(symbol)
         if ob:
             return ob.mid_price

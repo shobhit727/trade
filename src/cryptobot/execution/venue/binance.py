@@ -24,6 +24,7 @@ class BinanceVenue(CcxtVenue):
         rate_limit_ms: int = 200,
         max_retries: int = 3,
     ):
+        """Configure the generic CCXT adapter for Binance and its market settings."""
         super().__init__(
             exchange_id="binance",
             api_key=api_key,

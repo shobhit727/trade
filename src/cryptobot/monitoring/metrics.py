@@ -43,43 +43,54 @@ except Exception:
 
     class _NoOpLabels:
         def __getattr__(self, _name):
+            """Return a no-op label method so unavailable metrics remain harmless."""
             return lambda *_a, **_kw: None
 
     class _NoOpMetric:
         def __init__(self, *_a, **_kw):
+            """Accept metric construction arguments without requiring Prometheus."""
             pass
 
         def labels(self, *_a, **_kw):
+            """Return a no-op label handle for API compatibility."""
             return _NoOpLabels()
 
         def inc(self, *_a, **_kw):
+            """Ignore counter increments when Prometheus is unavailable."""
             return None
 
         def dec(self, *_a, **_kw):
+            """Ignore gauge decrements when Prometheus is unavailable."""
             return None
 
         def set(self, *_a, **_kw):
+            """Ignore gauge updates when Prometheus is unavailable."""
             return None
 
         def observe(self, *_a, **_kw):
+            """Ignore histogram observations when Prometheus is unavailable."""
             return None
 
         def time(self):
+            """Return a no-op context manager for timed metric compatibility."""
             from contextlib import nullcontext
 
             return nullcontext()
 
         def info(self, *_a, **_kw):
+            """Ignore info metric updates when Prometheus is unavailable."""
             return None
 
     class _NoOpRegistry:
         def __init__(self, *_a, **_kw):
+            """Accept registry construction arguments without allocating a registry."""
             pass
 
     _RealCounter = _RealGauge = _RealHistogram = _RealInfo = _NoOpMetric
     _RealCollectorRegistry = _NoOpRegistry
 
     def _real_generate_latest(_registry):
+        """Return empty exposition bytes when Prometheus support is unavailable."""
         return b""
 
 
@@ -98,6 +109,7 @@ else:
     CollectorRegistry = _NoOpRegistry
 
     def generate_latest(_registry):
+        """Return an empty exposition payload when Prometheus is unavailable."""
         return b""
 
 
@@ -728,16 +740,19 @@ class MetricsContext:
     """Context manager for timed metrics collection."""
 
     def __init__(self, histogram: Histogram, **labels):
+        """Capture the histogram labels and initialize the elapsed-time marker."""
         self.histogram = histogram
         self.labels = labels
         self.start_time = 0.0
 
     def __enter__(self):
+        """Record the start time and return this timer context."""
         import time
         self.start_time = time.perf_counter()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        """Observe elapsed duration on the labeled histogram when the context exits."""
         import time
         duration = time.perf_counter() - self.start_time
         self.histogram.labels(**self.labels).observe(duration)
@@ -755,6 +770,7 @@ def timed(histogram: Histogram, **labels) -> MetricsContext:
 
 class _Counter:
     def __init__(self, name: str, help: str = "", labelnames: tuple = ()):
+        """Initialize a thread-safe in-memory counter and its label dimensions."""
         self.name = name
         self.help = help
         self.labelnames = labelnames
@@ -762,16 +778,19 @@ class _Counter:
         self._values: dict[tuple, float] = defaultdict(float)
 
     def inc(self, amount: float = 1.0, **labels):
+        """Add an amount to the counter value for the supplied label set."""
         key = self._key(labels)
         with self._lock:
             self._values[key] += amount
 
     def _key(self, labels: dict) -> tuple:
+        """Build the stable label tuple used as this metric's storage key."""
         return tuple(labels.get(n, "") for n in self.labelnames)
 
 
 class _Gauge:
     def __init__(self, name: str, help: str = "", labelnames: tuple = ()):
+        """Initialize a thread-safe in-memory gauge and its label dimensions."""
         self.name = name
         self.help = help
         self.labelnames = labelnames
@@ -779,19 +798,23 @@ class _Gauge:
         self._values: dict[tuple, float] = {}
 
     def set(self, value: float, **labels):
+        """Replace the gauge value for the supplied label set."""
         key = self._key(labels)
         with self._lock:
             self._values[key] = float(value)
 
     def inc(self, amount: float = 1.0, **labels):
+        """Increase the gauge value for the supplied label set."""
         key = self._key(labels)
         with self._lock:
             self._values[key] = self._values.get(key, 0.0) + amount
 
     def dec(self, amount: float = 1.0, **labels):
+        """Decrease the gauge value by delegating to a negative increment."""
         self.inc(-amount, **labels)
 
     def _key(self, labels: dict) -> tuple:
+        """Build the stable label tuple used as this metric's storage key."""
         return tuple(labels.get(n, "") for n in self.labelnames)
 
 
@@ -799,6 +822,7 @@ class _Histogram:
     DEFAULT_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
 
     def __init__(self, name: str, help: str = "", labelnames: tuple = (), buckets: tuple = ()):
+        """Initialize observation totals and sorted finite buckets for each label set."""
         self.name = name
         self.help = help
         self.labelnames = labelnames
@@ -809,6 +833,7 @@ class _Histogram:
         self._bucket_counts: dict[tuple, list[int]] = {}
 
     def observe(self, value: float, **labels):
+        """Record a value in the first matching bucket and update count and sum."""
         key = self._key(labels)
         with self._lock:
             self._counts[key] += 1
@@ -824,6 +849,7 @@ class _Histogram:
                 bucket_counts[-1] += 1
 
     def _key(self, labels: dict) -> tuple:
+        """Build the stable label tuple used as this metric's storage key."""
         return tuple(labels.get(n, "") for n in self.labelnames)
 
 
@@ -831,28 +857,33 @@ class MetricsCollector:
     """Minimal in-memory metrics collector with Prometheus text export."""
 
     def __init__(self):
+        """Initialize a synchronized registry of in-memory metric objects."""
         self._lock = threading.Lock()
         self._metrics: dict[str, Any] = {}
 
     def counter(self, name: str, help: str = "", labelnames: tuple = ()) -> _Counter:
+        """Return the named counter, creating it once with the requested labels."""
         with self._lock:
             if name not in self._metrics:
                 self._metrics[name] = _Counter(name, help, tuple(labelnames))
             return self._metrics[name]
 
     def gauge(self, name: str, help: str = "", labelnames: tuple = ()) -> _Gauge:
+        """Return the named gauge, creating it once with the requested labels."""
         with self._lock:
             if name not in self._metrics:
                 self._metrics[name] = _Gauge(name, help, tuple(labelnames))
             return self._metrics[name]
 
     def histogram(self, name: str, help: str = "", labelnames: tuple = (), buckets: tuple = ()) -> _Histogram:
+        """Return the named histogram, creating it once with labels and bucket bounds."""
         with self._lock:
             if name not in self._metrics:
                 self._metrics[name] = _Histogram(name, help, tuple(labelnames), tuple(buckets))
             return self._metrics[name]
 
     def to_prometheus_text(self) -> str:
+        """Export all stored counters, gauges, and histograms in Prometheus text format."""
         lines: list[str] = []
         with self._lock:
             for name, metric in self._metrics.items():
@@ -890,12 +921,14 @@ class MetricsCollector:
         return "\n".join(lines) + "\n"
 
     def _format_labels(self, labelnames: tuple, values: tuple) -> str:
+        """Format label names and values as a Prometheus label block."""
         if not labelnames:
             return ""
         parts = ",".join(f'{n}="{v}"' for n, v in zip(labelnames, values, strict=False))
         return "{" + parts + "}"
 
     def reset(self):
+        """Remove all registered in-memory metrics."""
         with self._lock:
             self._metrics.clear()
 
@@ -905,6 +938,7 @@ _collector_lock = threading.Lock()
 
 
 def get_metrics_collector() -> MetricsCollector:
+    """Return the lazily created process-wide in-memory metrics collector."""
     global _collector
     with _collector_lock:
         if _collector is None:

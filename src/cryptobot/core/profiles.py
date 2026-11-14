@@ -52,6 +52,7 @@ PROFILES: dict[str, RiskProfile] = {p.name: p for p in (REALISTIC, AGGRESSIVE)}
 
 
 def get_profile(name: str) -> RiskProfile:
+    """Resolve a named risk profile or raise with the available profile names."""
     try:
         return PROFILES[name.lower()]
     except KeyError:

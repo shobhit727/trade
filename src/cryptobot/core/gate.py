@@ -54,6 +54,7 @@ class PaperGateTracker:
     now_fn: Any = datetime.now
 
     def __post_init__(self) -> None:
+        """Initialize gate progress and restore its persisted snapshot history if possible."""
         self.started_at: date | None = None
         self.window_days: int = self.config.min_days
         self.extensions_used: int = 0
@@ -91,6 +92,7 @@ class PaperGateTracker:
         self.save()
 
     def days_elapsed(self) -> int:
+        """Return the number of unique daily snapshots collected so far."""
         if self.started_at is None or not self.snapshots:
             return 0
         return len(self.snapshots)
@@ -98,6 +100,7 @@ class PaperGateTracker:
     # ------------------------------------------------------------ evaluation
 
     def _daily_returns(self) -> list[float]:
+        """Calculate adjacent snapshot returns, skipping periods with non-positive prior equity."""
         equities = [float(s["equity"]) for s in self.snapshots]
         return [
             equities[i] / equities[i - 1] - 1.0
@@ -145,6 +148,7 @@ class PaperGateTracker:
         return result
 
     def _criteria_snapshot(self) -> dict[str, bool]:
+        """Evaluate profitability, Sharpe, reject-rate, and breaker criteria without changing status."""
         snaps = self.snapshots
         if len(snaps) < 2:
             return {"net_positive": False, "sharpe_ok": False,
@@ -172,6 +176,7 @@ class PaperGateTracker:
         }
 
     def allows_live(self) -> tuple[bool, str]:
+        """Return whether the gate passed and a reason if live trading remains blocked."""
         if self.status == GateStatus.PASSED:
             return True, "gate passed"
         if self.status == GateStatus.FAILED_FINAL:
@@ -182,6 +187,7 @@ class PaperGateTracker:
     # ------------------------------------------------------------ persistence
 
     def save(self) -> None:
+        """Atomically persist gate status, window progress, and daily snapshots."""
         path = Path(self.config.state_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
@@ -197,6 +203,7 @@ class PaperGateTracker:
         os.replace(tmp, path)
 
     def load(self, path: str | None = None) -> None:
+        """Restore gate progress from a JSON file, retaining configured defaults for missing fields."""
         target = Path(path or self.config.state_path)
         if not target.exists():
             return
@@ -209,6 +216,7 @@ class PaperGateTracker:
         self.snapshots = list(data.get("snapshots", []))
 
     def summary(self) -> dict[str, Any]:
+        """Return progress, status, and live-eligibility details for monitoring."""
         allowed, reason = self.allows_live()
         return {
             "status": self.status,
@@ -221,6 +229,7 @@ class PaperGateTracker:
 
 
 def timedelta_to_today(now_fn: Any = datetime.now) -> date:  # pragma: no cover
+    """Return the calendar date from an injectable clock function."""
     return now_fn().date()
 
 

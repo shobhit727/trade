@@ -56,6 +56,7 @@ class RealisticSimVenue(SimulatedVenue):
                  slippage_bps: Decimal = Decimal("1"),
                  maker_commission_bps: Decimal | None = None,
                  config: RealisticConfig | None = None):
+        """Initialize latency, liquidity, impact, and queue state for paper fills."""
         super().__init__(prices=prices or {}, slippage_bps=slippage_bps,
                          commission_bps=commission_bps,
                          maker_commission_bps=maker_commission_bps)
@@ -75,6 +76,7 @@ class RealisticSimVenue(SimulatedVenue):
             self._reference_volume[symbol] = volume
 
     def _impact_slip(self, qty: Decimal, symbol: str) -> Decimal:
+        """Estimate additional slippage in basis points from reference-volume participation."""
         ref = self._reference_volume.get(symbol, 0.0)
         cap_qty = ref * self.cfg.max_participation
         if cap_qty <= 0 or qty <= 0:
@@ -83,6 +85,7 @@ class RealisticSimVenue(SimulatedVenue):
         return Decimal(str(round(self.cfg.impact_mult * ratio * 10, 4)))  # bps
 
     def _quantize(self, px) -> Decimal:
+        """Round a price to the configured exchange tick size."""
         px = Decimal(str(px))
         t = self.cfg.tick_size
         return (px / t).quantize(Decimal("1")) * t
@@ -90,16 +93,19 @@ class RealisticSimVenue(SimulatedVenue):
     # ---------------------------------------------------------------- venue
 
     async def submit_order(self, order: OrderEvent) -> OrderEvent:
+        """Wait modeled network latency, then execute the order against the current mark."""
         # Stage 1: latency queue — nothing fills before latency_ms elapses.
         self.stats["delayed"] += 1
         await self._sleep_latency()
         return await self._execute(order)
 
     async def _sleep_latency(self) -> None:
+        """Wait for the configured one-way submit latency."""
         import asyncio
         await asyncio.sleep(self.cfg.latency_ms / 1000.0)
 
     async def _execute(self, order: OrderEvent) -> OrderEvent:
+        """Apply queue checks or taker slippage, cap liquidity, and update fill state."""
         # Mark ALWAYS comes from the venue book; order.price is a LIMIT's
         # price tag (string payload), never the market reference.
         mark = self.prices.get(order.symbol, Decimal("0"))

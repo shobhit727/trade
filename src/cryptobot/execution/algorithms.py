@@ -10,6 +10,7 @@ VWAP_DEFAULT_SLICES = 12
 
 
 def twap_slices(quantity: Decimal, periods: int) -> list[Decimal]:
+    """Split quantity evenly across periods, assigning rounding residue to the last slice."""
     if periods <= 0 or quantity <= 0:
         return []
     base = quantity / Decimal(periods)
@@ -19,6 +20,7 @@ def twap_slices(quantity: Decimal, periods: int) -> list[Decimal]:
 
 
 def vwap_slices(quantity: Decimal, volume_profile: Sequence[Decimal]) -> list[Decimal]:
+    """Distribute quantity in proportion to the supplied volume profile."""
     total_volume = sum(volume_profile)
     if quantity <= 0 or total_volume <= 0:
         return []
@@ -33,6 +35,7 @@ def pov_quantity(
     remaining_quantity: Decimal,
     cap: Decimal | None = None,
 ) -> Decimal:
+    """Return the participation-based child quantity, bounded by cap and remaining size."""
     if market_volume <= 0 or participation_rate <= 0 or remaining_quantity <= 0:
         return Decimal("0")
     target = market_volume * participation_rate
@@ -48,6 +51,7 @@ def pov_quantity_randomized(
     jitter: float = 0.25,
     seed: int | None = None,
 ) -> Decimal:
+    """Apply reproducible random jitter to a participation-based quantity."""
     raw = pov_quantity(market_volume, participation_rate, remaining_quantity)
     if raw <= 0:
         return Decimal("0")
@@ -95,6 +99,7 @@ class IcebergConfig:
     cap: Decimal | None = None
 
     def __post_init__(self):
+        """Reject non-positive display sizes and randomization outside zero to one."""
         if self.display_quantity <= 0:
             raise ValueError("display_quantity must be > 0")
         if not 0.0 <= self.randomization <= 1.0:
@@ -106,6 +111,7 @@ def iceberg_slices(
     config: IcebergConfig,
     seed: int | None = None,
 ) -> list[Decimal]:
+    """Break a parent order into displayed clips, optionally randomized and capped."""
     if quantity <= 0:
         return []
     rng = random.Random(seed) if seed is not None else None
@@ -133,6 +139,7 @@ class VWAPSchedule:
     horizon_minutes: int = 0
 
     def at(self, minute: int) -> Decimal:
+        """Return the scheduled slice for a minute, or zero outside the horizon."""
         if not self.slices:
             return Decimal("0")
         if self.horizon_minutes <= 0 or len(self.slices) == 1:
@@ -152,6 +159,7 @@ def vwap_schedule(
     volume_profile: Sequence[Decimal],
     horizon_minutes: int,
 ) -> VWAPSchedule:
+    """Create a time-indexed VWAP schedule and record whether volume is constant."""
     slices = vwap_slices(quantity, volume_profile)
     is_constant = len(set(volume_profile)) == 1
     return VWAPSchedule(
@@ -214,6 +222,7 @@ def build_pov_schedule(
     market_volume_per_period: Decimal,
     cap_per_period: Decimal | None = None,
 ) -> list[Decimal]:
+    """Build period quantities from a participation target and optional per-period cap."""
     if quantity <= 0 or duration_periods <= 0 or market_volume_per_period <= 0:
         return []
     out: list[Decimal] = []
@@ -238,6 +247,7 @@ def build_pov_schedule(
 
 
 def slicer_for(name: str):
+    """Return the slicing function registered under a supported algorithm name."""
     mapping = {
         "twap": twap_slices,
         "vwap": vwap_slices,
@@ -252,6 +262,7 @@ def slicer_for(name: str):
 
 
 def _iceberg_default(quantity: Decimal, **kwargs):
+    """Dispatch the default iceberg adapter, requiring an explicit configuration."""
     if "config" not in kwargs:
         raise TypeError("iceberg requires IcebergConfig")
     return iceberg_slices(quantity, kwargs["config"])

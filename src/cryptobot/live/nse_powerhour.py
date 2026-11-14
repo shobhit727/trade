@@ -32,18 +32,22 @@ IST = ZoneInfo("Asia/Kolkata")
 STATE_DIR = Path("state-nse")
 
 def _get_yahoo_chart_url() -> str:
+    """Read the Yahoo chart endpoint from application settings."""
     return get_settings().external_services.yahoo_finance_chart_url
 
 def _get_http_default_timeout() -> int:
+    """Read the default outbound HTTP timeout from application settings."""
     return get_settings().timeouts.http_default_timeout
 
 def _get_nse_powerhour_port() -> int:
+    """Read the configured port for the power-hour dashboard server."""
     return get_settings().server.nse_powerhour_port
 
 FEE_BPS, SLIP_BPS = Decimal("2"), Decimal("1")
 
 
 def _svg_chart(values: list[float], w: int = 260, h: int = 64) -> str:
+    """Render equity values as a compact inline SVG chart or an empty-state label."""
     if len(values) < 2:
         return "<span style=color:#8b98a9>collecting…</span>"
     lo, hi = min(values), max(values)
@@ -64,6 +68,7 @@ def _svg_chart(values: list[float], w: int = 260, h: int = 64) -> str:
 
 
 def fetch_bars(symbol: str) -> list[dict]:
+    """Fetch intraday Yahoo bars and normalize timestamps and OHLCV values for IST session logic."""
     url = f"{_get_yahoo_chart_url()}{symbol}.NS?interval=15m&range=10d"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=_get_http_default_timeout()) as r:
@@ -108,6 +113,7 @@ def pick_power_hour(bars_today: list[dict]) -> bool:
 
 class PowerHourState:
     def __init__(self, capital: float):
+        """Initialize cash, positions, breaker, trade, tax, and equity-curve state."""
         self.capital = capital
         self.cash = capital
         self.peak_equity = capital
@@ -121,6 +127,7 @@ class PowerHourState:
         self.tax = TaxLedger()
 
     def equity(self, marks: dict[str, float] | None = None) -> float:
+        """Return cash plus positions marked at supplied prices or their entry prices."""
         marks = marks or {}
         eq = self.cash
         for sym, p in self.positions.items():
@@ -129,6 +136,7 @@ class PowerHourState:
         return eq
 
     def to_dict(self) -> dict:
+        """Serialize power-hour state with bounded recent trades and equity history."""
         return {"capital": self.capital, "cash": self.cash,
                 "peak_equity": self.peak_equity,
                 "breaker_tripped": self.breaker_tripped,
@@ -138,6 +146,7 @@ class PowerHourState:
 
     @classmethod
     def from_dict(cls, d: dict) -> PowerHourState:
+        """Restore persisted power-hour state while applying defaults to optional fields."""
         s = cls(d["capital"])
         s.cash = d.get("cash", d["capital"])
         s.peak_equity = d.get("peak_equity", d["capital"])
@@ -154,6 +163,7 @@ class PowerHourState:
 class PowerHourTrader:
     def __init__(self, symbols: list[str], capital: float = 100_000.0,
                  port: int | None = None, state_file: Path | None = None):
+    """Configure the symbol universe, state file, dashboard port, and synchronized state."""
         self.symbols = symbols
         self.port = port if port is not None else _get_nse_powerhour_port()
         self.state_file = state_file or (STATE_DIR / "powerhour.json")
@@ -168,12 +178,15 @@ class PowerHourTrader:
     # ------------------------------------------------------------ helpers
 
     def _ist_now(self) -> datetime:
+        """Return the current time in the NSE market timezone."""
         return datetime.now(IST)
 
     def _fee(self, notional: float) -> float:
+        """Estimate one-way transaction costs from configured fee and slippage basis points."""
         return notional * float(FEE_BPS + SLIP_BPS) / 10_000
 
     def _equity(self) -> float:
+        """Mark cash and held quantities at the latest known price or entry price."""
         eq = self.state.cash
         for p in self.state.positions.values():
             mark = self._marks.get(p["sym"], p["entry"])
@@ -277,6 +290,7 @@ class PowerHourTrader:
         return {"status": "ok", "closed": closed, "pnl": round(pnl_day, 2)}
 
     def snapshot(self) -> dict:
+        """Return a lock-protected health payload for positions, equity, gate, and trades."""
         with self._lock:
             eq = self.state.cash + sum(
                 p["qty"] * (self._marks.get(s, p["entry"]) - 0)
@@ -307,6 +321,7 @@ class PowerHourTrader:
             }
 
     def reset_breaker(self) -> None:
+        """Manually clear the breaker and re-anchor peak equity to current account value."""
         with self._lock:
             self.state.breaker_tripped = False
             self.state.breaker_reason = None
@@ -316,6 +331,7 @@ class PowerHourTrader:
     # ------------------------------------------------------------ serving
 
     def _dashboard_html(self) -> str:
+        """Render the read-only power-hour dashboard from the current state snapshot."""
         s = self.snapshot()
         eq = float(s["equity"])
         pnl = eq - self.state.capital
@@ -364,11 +380,13 @@ th{{font-size:10px;text-transform:uppercase;color:#8b98a9;letter-spacing:1px}}
 </div><p class=muted style=margin-top:16px>JSON /health · refresh 15s</p></body></html>"""
 
     def serve_forever(self) -> None:
+        """Bind the dashboard server and serve health or dashboard GET requests indefinitely."""
         trader = self
         bind_host = "0.0.0.0"  # Always bind to all interfaces for container compatibility
 
         class H(BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802
+                """Serve the JSON health snapshot or HTML dashboard for supported paths."""
                 if self.path.startswith("/health"):
                     body = json.dumps(trader.snapshot()).encode()
                     ctype = "application/json"
@@ -386,6 +404,7 @@ th{{font-size:10px;text-transform:uppercase;color:#8b98a9;letter-spacing:1px}}
                 self.wfile.write(body)
 
             def log_message(self, *a):
+                """Suppress default HTTP server access logging."""
                 pass
 
         ThreadingHTTPServer((bind_host, self.port), H).serve_forever()
@@ -393,6 +412,7 @@ th{{font-size:10px;text-transform:uppercase;color:#8b98a9;letter-spacing:1px}}
     # --------------------------------------------------------- scheduling
 
     def _next_at(self, hour: int, minute: int) -> tuple[datetime, float]:
+        """Return the next weekday IST target time and seconds until it."""
         now = self._ist_now()
         target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
         if now >= target or now.weekday() >= 5:
@@ -402,6 +422,7 @@ th{{font-size:10px;text-transform:uppercase;color:#8b98a9;letter-spacing:1px}}
         return target, (target - now).total_seconds()
 
     def loop(self) -> None:
+        """Wait for daily entry/exit times and run each power-hour phase with error isolation."""
         while True:
             _, wait_enter = self._next_at(14, 0)
             _, wait_exit = self._next_at(15, 16)
@@ -421,6 +442,7 @@ th{{font-size:10px;text-transform:uppercase;color:#8b98a9;letter-spacing:1px}}
 
 
 def main() -> None:
+    """Parse CLI options, load the symbol file, and run the dashboard and trading loop."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbols-file", default="tmp/nifty50.csv")
     ap.add_argument("--capital", type=float, default=100_000.0)

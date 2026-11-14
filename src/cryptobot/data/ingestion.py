@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> datetime:
+    """Return the current UTC time for ingestion records and snapshots."""
     return datetime.now(UTC)
 
 
@@ -48,6 +49,7 @@ class OHLCV:
     is_closed: bool = True
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize the candle with ISO timestamps and decimal values as strings."""
         return {
             "symbol": self.symbol,
             "timeframe": self.timeframe,
@@ -77,10 +79,12 @@ class Tick:
 
     @property
     def spread(self) -> Decimal:
+        """Return ask minus bid for this tick."""
         return self.ask - self.bid
 
     @property
     def mid(self) -> Decimal:
+        """Return the arithmetic midpoint of bid and ask."""
         return (self.bid + self.ask) / 2
 
 
@@ -96,6 +100,7 @@ class TradeData:
     is_maker: bool = False
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize the trade print, encoding its timestamp and Decimal fields."""
         return {
             "symbol": self.symbol,
             "trade_id": self.trade_id,
@@ -118,6 +123,7 @@ class FundingRateData:
     next_funding_time: datetime
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize funding values and both timestamps into JSON-ready strings."""
         return {
             "symbol": self.symbol,
             "timestamp": self.timestamp.isoformat(),
@@ -139,25 +145,30 @@ class OrderBookSnapshot:
 
     @property
     def best_bid(self) -> OrderBookLevel | None:
+        """Return the best bid level, assuming bids are stored highest-first."""
         return self.bids[0] if self.bids else None
 
     @property
     def best_ask(self) -> OrderBookLevel | None:
+        """Return the best ask level, assuming asks are stored lowest-first."""
         return self.asks[0] if self.asks else None
 
     @property
     def spread(self) -> Decimal:
+        """Return best ask minus best bid, or zero when either side is empty."""
         if self.best_bid and self.best_ask:
             return self.best_ask.price - self.best_bid.price
         return Decimal("0")
 
     @property
     def mid_price(self) -> Decimal:
+        """Return the best-quote midpoint, or zero when either side is empty."""
         if self.best_bid and self.best_ask:
             return (self.best_bid.price + self.best_ask.price) / 2
         return Decimal("0")
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize the snapshot levels and sequence number into JSON-ready values."""
         return {
             "symbol": self.symbol,
             "timestamp": self.timestamp.isoformat(),
@@ -192,10 +203,12 @@ class DataIngestion(ABC):
 
     @abstractmethod
     async def start(self):
+        """Start the source's required network and background resources."""
         pass
 
     @abstractmethod
     async def stop(self):
+        """Stop background work and release source resources."""
         pass
 
     @abstractmethod
@@ -206,10 +219,12 @@ class DataIngestion(ABC):
         start: datetime,
         end: datetime,
     ) -> list[dict]:
+        """Fetch historical records for one symbol and timeframe in the requested range."""
         pass
 
     @abstractmethod
     async def subscribe_realtime(self, symbol: str, timeframe: str):
+        """Subscribe to realtime data for a symbol and timeframe."""
         pass
 
 
@@ -217,6 +232,7 @@ class OrderBookReconstructor:
     """Reconstructs order book from trade and book ticker streams."""
 
     def __init__(self, symbol: str, max_depth: int = 100):
+        """Initialize an empty bounded book and update-sequence state for one symbol."""
         self.symbol = symbol
         self.max_depth = max_depth
         self.bids: dict[Decimal, OrderBookLevel] = {}
@@ -283,11 +299,13 @@ class OrderBookReconstructor:
         )
 
     def get_best_bid(self) -> OrderBookLevel | None:
+        """Return the highest reconstructed bid level, or ``None`` for an empty side."""
         if not self.bids:
             return None
         return max(self.bids.values(), key=lambda x: x.price)
 
     def get_best_ask(self) -> OrderBookLevel | None:
+        """Return the lowest reconstructed ask level, or ``None`` for an empty side."""
         if not self.asks:
             return None
         return min(self.asks.values(), key=lambda x: x.price)
@@ -297,11 +315,13 @@ class FundingRateTracker:
     """Tracks funding rates for perpetual futures."""
 
     def __init__(self):
+        """Initialize per-symbol funding history with an async access lock."""
         self.rates: dict[str, list[FundingRateData]] = {}
         self._lock = asyncio.Lock()
         self.max_history = 1000
 
     async def add_rate(self, rate: FundingRateData) -> None:
+        """Append a rate for its symbol and retain only the configured history length."""
         async with self._lock:
             if rate.symbol not in self.rates:
                 self.rates[rate.symbol] = []
@@ -311,11 +331,13 @@ class FundingRateTracker:
                 self.rates[rate.symbol] = self.rates[rate.symbol][-self.max_history:]
 
     async def get_latest(self, symbol: str) -> FundingRateData | None:
+        """Return the latest stored rate for a symbol, or ``None`` when absent."""
         async with self._lock:
             rates = self.rates.get(symbol, [])
             return rates[-1] if rates else None
 
     async def get_history(self, symbol: str, since: datetime | None = None, limit: int = 100) -> list[FundingRateData]:
+        """Return the newest rate records, optionally filtering by a starting timestamp."""
         async with self._lock:
             rates = self.rates.get(symbol, [])
             if since:
@@ -340,6 +362,7 @@ class DataQualityValidator:
     """Validates incoming market data for quality issues."""
 
     def __init__(self, max_price_deviation: float = 0.1, max_volume_zscore: float = 5.0):
+        """Initialize outlier thresholds and bounded per-symbol observation histories."""
         self.max_price_deviation = max_price_deviation
         self.max_volume_zscore = max_volume_zscore
         self.price_history: dict[str, deque] = {}
@@ -394,6 +417,7 @@ class DataQualityValidator:
         return len(issues) == 0, issues
 
     def add_trade(self, trade: TradeData) -> None:
+        """Create symbol history buffers if needed and append the validated trade."""
         if trade.symbol not in self.price_history:
             self.price_history[trade.symbol] = deque(maxlen=self.max_history)
             self.volume_history[trade.symbol] = deque(maxlen=self.max_history)
@@ -401,6 +425,7 @@ class DataQualityValidator:
         self.volume_history[trade.symbol].append(trade)
 
     def add_ohlcv(self, ohlcv: OHLCV) -> None:
+        """Create the symbol history buffer if needed and append the validated candle."""
         if ohlcv.symbol not in self.price_history:
             self.price_history[ohlcv.symbol] = deque(maxlen=self.max_history)
         self.price_history[ohlcv.symbol].append(ohlcv)
@@ -410,6 +435,7 @@ class BinanceDataIngestion(DataIngestion):
     """Binance REST + WebSocket data ingestion with enhanced features."""
 
     def __init__(self, config: DataSourceConfig):
+        """Initialize Binance clients, rate limiting, trackers, and per-symbol buffers."""
         self.config = config
         self._session: aiohttp.ClientSession | None = None
         self._ws_client: websockets.WebSocketClientProtocol | None = None
@@ -429,6 +455,7 @@ class BinanceDataIngestion(DataIngestion):
 
     @property
     def session(self) -> aiohttp.ClientSession | None:
+        """Return the current HTTP session, if one has been created."""
         return self._session
 
     async def _ensure_session(self):
@@ -443,11 +470,13 @@ class BinanceDataIngestion(DataIngestion):
             return self._session
 
     async def start(self):
+        """Mark ingestion active, ensure the HTTP session, and initialize rate limiting."""
         self._running = True
         await self._ensure_session()
         self._semaphore = asyncio.Semaphore(self.config.rate_limit // 60)
 
     async def stop(self):
+        """Stop reconnect work and close active HTTP and WebSocket clients."""
         self._running = False
         if self._reconnect_task:
             self._reconnect_task.cancel()
@@ -461,6 +490,7 @@ class BinanceDataIngestion(DataIngestion):
             await self._ws_client.close()
 
     async def _rate_limited_get(self, url: str, params: dict = None) -> dict:
+        """Acquire the request semaphore and return a successful JSON GET response."""
         async with self._semaphore:
             session = await self._ensure_session()
             async with session.get(url, params=params) as resp:
@@ -614,6 +644,7 @@ class BinanceDataIngestion(DataIngestion):
                 await asyncio.sleep(self.config.ws_reconnect_interval)
 
     async def _parse_ws_message(self, msg: dict, symbol: str, timeframe: str) -> Event | None:
+        """Validate and convert one Binance stream payload to its typed event."""
         event_type = msg.get("e")
         if event_type == "kline":
             k = msg.get("k", {})
@@ -751,18 +782,22 @@ class DataIngestionManager:
     """Manages multiple data sources and coordinates ingestion."""
 
     def __init__(self):
+        """Initialize the registered source map and shared event bus reference."""
         self.sources: dict[str, DataIngestion] = {}
         self._event_bus = get_event_bus()
 
     def register_source(self, source: DataIngestion):
+        """Register a data source by its configured name."""
         self.sources[source.config.name] = source
 
     async def start_all(self):
+        """Start each registered source whose configuration enables it."""
         for source in self.sources.values():
             if source.config.enabled:
                 await source.start()
 
     async def stop_all(self):
+        """Stop every registered source."""
         for source in self.sources.values():
             await source.stop()
 
@@ -793,6 +828,7 @@ _ingestion_manager: DataIngestionManager | None = None
 
 
 def get_ingestion_manager() -> DataIngestionManager:
+    """Return the process-wide ingestion manager, creating it on first access."""
     global _ingestion_manager
     if _ingestion_manager is None:
         _ingestion_manager = DataIngestionManager()
