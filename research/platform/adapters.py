@@ -33,6 +33,11 @@ RESOLUTION_MAP = {
     DataResolution.ONE_MONTH: "1mo",
 }
 
+# Exact column schema that acquisition clients must deliver; the standardiser's
+# other accepted timestamp column aliases are deliberately not part of the
+# acquired-data contract.
+OHLCV_ACQUISITION_COLUMNS = ("timestamp", "open", "high", "low", "close", "volume")
+
 
 def validate_ohlcv_quality(
     frame: pd.DataFrame,
@@ -169,6 +174,34 @@ def _normalise_ohlcv(
     # Keep the checks performed with the imported rows for downstream immutable manifests.
     result.attrs["quality_report"] = quality_report
     return result
+
+
+def normalise_acquired_ohlcv(
+    frame: pd.DataFrame,
+    *,
+    timezone_name: str = "UTC",
+    numeric_timestamp_unit: str | None = None,
+) -> pd.DataFrame:
+    """Quality-gate an acquired frame through the standard platform validation.
+
+    Acquisition clients (``research.platform.acquisition``) must call this
+    before their data can be manifested or persisted: the exact acquired
+    schema (``OHLCV_ACQUISITION_COLUMNS``) is enforced, and the frame then
+    passes the same timestamp and OHLCV assertions as every local source, so
+    acquired data can never bypass the platform quality gate. Duplicate or
+    non-chronological timestamps are rejected, never repaired. The timestamp
+    may arrive as the ``timestamp`` column (fresh provider rows, CSV
+    round-trips) or as a DatetimeIndex (already-normalised frames).
+    """
+    present = {str(column).strip().lower() for column in frame.columns}
+    missing = set(OHLCV_ACQUISITION_COLUMNS) - present
+    if missing and (missing != {"timestamp"} or not isinstance(frame.index, pd.DatetimeIndex)):
+        raise ValueError(f"acquired OHLCV schema missing columns: {sorted(missing)}")
+    return _normalise_ohlcv(
+        frame,
+        timezone_name=timezone_name,
+        numeric_timestamp_unit=numeric_timestamp_unit,
+    )
 
 
 def materialize_non_holdout_partition(
