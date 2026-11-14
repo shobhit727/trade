@@ -58,6 +58,10 @@ def _advance_validation_lifecycle(
         if int(state.get("holdout_access_count", 0)) != 0:
             raise PermissionError("final holdout data may be opened only once")
         updated["holdout_access_count"] = 1
+    elif transition == "holdout_access_refused":
+        # Repeated-access refusals are recorded without changing the durable state.
+        if current != "holdout_opened" or int(state.get("holdout_access_count", 0)) == 0:
+            raise PermissionError("final holdout is sealed until explicitly unlocked")
     elif transition == "completed":
         if current != "holdout_opened" or int(state.get("holdout_access_count", 0)) != 1:
             raise RuntimeError("lifecycle requires one final holdout review")

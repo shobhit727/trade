@@ -413,7 +413,8 @@ def test_validation_lifecycle_persists_job_scoped_transitions_across_store_insta
         lifecycle_id="job-persistent-002",
     ).state is EvaluationState.COMPLETED
 
-    # Every lifecycle event retains the job identity for later audit.
+    # Every lifecycle event retains the job identity for later audit. The repeated
+    # holdout access above is durably recorded as a refusal before it is rejected.
     persisted = third_store.get_validation_lifecycle(
         spec.experiment_id, "job-persistent-002"
     )
@@ -423,6 +424,7 @@ def test_validation_lifecycle_persists_job_scoped_transitions_across_store_insta
         "oos_recorded",
         "holdout_opened",
         "holdout_accessed",
+        "holdout_access_refused",
         "completed",
     ]
     assert all(

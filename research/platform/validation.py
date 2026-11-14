@@ -245,6 +245,11 @@ class ValidationLifecycle:
             if self.state is not EvaluationState.HOLDOUT_OPENED:
                 raise PermissionError("final holdout is sealed until explicitly unlocked")
             if self.holdout_access_count != 0:
+                # A repeated holdout access attempt is itself an auditable boundary event;
+                # the refusal is durably recorded before the request is refused.
+                payload = {"access_attempts": self.holdout_access_count}
+                self._persist("holdout_access_refused", payload)
+                self.events.append({"event": "holdout_access_refused", **payload})
                 raise PermissionError("final holdout data may be opened only once")
             self._persist("holdout_accessed", {})
             self.holdout_access_count = 1
