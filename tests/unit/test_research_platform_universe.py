@@ -186,6 +186,10 @@ def test_members_range_returns_contiguous_month_ends(
     assert set(gaps) <= {28, 29, 30, 31}
     # forward-filled 2017-05-31 (absent from the source) equals 2017-04-30's set
     assert dict(pairs)[pd.Timestamp("2017-05-31")] == dict(pairs)[pd.Timestamp("2017-04-30")]
+    # carried boundary month-end: 2017-03-31 is absent from the source, so the
+    # dense row inherits 2017-02-28's recorded set
+    carried = dict(universe.members_range("2017-03-01", "2017-03-31"))
+    assert carried[pd.Timestamp("2017-03-31")] == frozenset(raw_rows["2017-02-28"])
 
 
 def test_members_range_transition_matches_recorded_change(

@@ -34,8 +34,8 @@ Conventions (no look-ahead)
   2009-01-12 or 2019-08-27) never leak in early: the loader keys the dense
   matrix by month-ends only, so a name recorded mid-month first appears at
   that month's month-end.
-* 45 of the 219 source month-ends between 2008-01 and 2026-10 have no records
-  (several are rebalance months). They are enumerated in
+* 45 of the 226 calendar month-ends between 2008-01-31 and 2026-10-31
+  (181 recorded in the source) have no records; several are rebalance months. They are enumerated in
   ``data/nse_membership/membership_meta.json`` and listed here:
 
   2008-03-31, 2008-09-30, 2009-03-31, 2009-06-30, 2009-08-31, 2009-09-30,
@@ -99,7 +99,7 @@ def membership_csv_path() -> Path:
 def _load_membership(csv_path: Path | str | None = None):
     """Import the shared loader and build the dense month-end x symbol matrix."""
     path = Path(csv_path).resolve() if csv_path is not None else membership_csv_path()
-    tools_dir = path.parents[3] / "tools"
+    tools_dir = path.parents[2] / "tools"
     if not (tools_dir / "pit_membership.py").exists():
         # Fall back to this module's own repository root (checkout layouts may differ).
         tools_dir = Path(__file__).resolve().parents[2] / "tools"
