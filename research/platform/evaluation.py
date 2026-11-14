@@ -57,6 +57,9 @@ class ExistingStrategyEvaluation:
     evaluations: tuple[PartitionEvaluation, ...]
     final_holdout_accessed: bool = False
     oos_policy_version: str | None = None
+    # Only workers that performed model selection on the validation partition may
+    # set this; a fixed evaluator that never selects must keep it False.
+    validation_selected: bool = False
 
     def oos_metrics(self) -> dict[str, float | int]:
         """Return the metrics of the single declared out-of-sample partition."""
@@ -86,7 +89,7 @@ class ExistingStrategyEvaluation:
         oos_passed: bool | None = self.evidence_oos_passed()
         evidence = CandidateEvidence(
             train_evaluated=any(item.partition == "train" for item in self.evaluations),
-            validation_selected=False,
+            validation_selected=self.validation_selected,
             oos_evaluated=any(item.partition == "out_of_sample" for item in self.evaluations),
             oos_passed=oos_passed,
         )
@@ -200,6 +203,7 @@ def evaluate_existing_strategy(
     candidate_family: str = "existing_strategy",
     lineage_metadata: dict[str, Any] | None = None,
     oos_policy_version: str | None = None,
+    validation_selected: bool = False,
 ) -> ExistingStrategyEvaluation:
     """Evaluate a frozen existing strategy on TRAIN, VALIDATION and OOS only.
 
@@ -210,6 +214,10 @@ def evaluate_existing_strategy(
 
     ``oos_policy_version`` must name an approved OOS acceptance policy or stay None;
     an unapproved version is rejected instead of silently degrading to unknown.
+
+    ``validation_selected`` records whether THIS worker selected the candidate on the
+    validation partition: True only for optimizer/Pareto workers evaluating a
+    validation-selected candidate, False for fixed evaluators that never select.
     """
     # Validate the single-market and cost-provenance contract before evaluating bars.
     if portfolio_config.market is not spec.market:
@@ -328,6 +336,7 @@ def evaluate_existing_strategy(
         evaluations=evaluations,
         final_holdout_accessed=False,
         oos_policy_version=oos_policy_version,
+        validation_selected=validation_selected,
     )
 
     if store is not None:
@@ -369,7 +378,7 @@ def evaluate_existing_strategy(
                 "oos_acceptance": result.oos_acceptance(),
                 **classification_report(CandidateEvidence(
                     train_evaluated=True,
-                    validation_selected=False,
+                    validation_selected=validation_selected,
                     oos_evaluated=True,
                     oos_passed=result.evidence_oos_passed(),
                 )),

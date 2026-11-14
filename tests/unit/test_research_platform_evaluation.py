@@ -374,3 +374,197 @@ def test_oos_metrics_extracts_only_the_oos_partition(tmp_path) -> None:
     )
     oos = next(item for item in result.evaluations if item.partition == "out_of_sample")
     assert result.oos_metrics() == dict(oos.metrics)
+
+
+# --- F-006 / CR-003: candidate-level classification evidence ------------------
+
+from dataclasses import replace
+
+from research.platform.evaluation import ExistingStrategyEvaluation
+
+
+def _default_config(spec: ExperimentSpec) -> PortfolioConfig:
+    return PortfolioConfig(
+        market=Market.NSE,
+        fee_bps=Decimal("0"),
+        slippage_bps=Decimal("1"),
+        impact_coefficient_bps=Decimal("1"),
+        max_participation=Decimal("0.05"),
+        max_gross_exposure=Decimal("1.0"),
+        assumed_timezone="Asia/Kolkata",
+        cost_model_id=spec.cost_model_id,
+        execution_model_id=spec.execution_model_id,
+    )
+
+
+def test_fixed_evaluator_candidate_evidence_keeps_validation_selected_false(tmp_path) -> None:
+    # The fixed evaluator never performs model selection, so its evidence must keep
+    # validation_selected False even though the run includes a validation partition.
+    spec = _experiment()
+    store = _registered_store(tmp_path / "fixed-evaluator.sqlite3", spec)
+    config = _default_config(spec)
+    result = evaluate_existing_strategy(spec, _bars(), config, periods_per_year=252, store=store)
+
+    payload = result.to_dict()
+    assert payload["classification_evidence"]["validation_selected"] is False
+    assert payload["classification_evidence"]["train_evaluated"] is True
+    assert payload["classification_evidence"]["oos_evaluated"] is True
+    assert payload["classification"] == "training_only"
+
+    persisted = [
+        event for event in store.events(spec.experiment_id)
+        if event["event_type"] == "existing_strategy_evaluated"
+    ][-1]["payload"]
+    assert persisted["classification_evidence"]["validation_selected"] is False
+    assert persisted["classification"] == "training_only"
+
+
+def test_optimizer_selected_candidate_evidence_marks_validation_selected(tmp_path) -> None:
+    # A worker that selected the candidate on VALIDATION must record that fact in
+    # the candidate's own evidence instead of degrading it to training-only.
+    spec = _experiment()
+    store = _registered_store(tmp_path / "optimizer-selected.sqlite3", spec)
+    config = _default_config(spec)
+    policy = OOS_ACCEPTANCE_POLICY_V1.policy_version
+    result = evaluate_existing_strategy(
+        spec,
+        _bars(),
+        config,
+        periods_per_year=252,
+        store=store,
+        oos_policy_version=policy,
+        validation_selected=True,
+    )
+
+    acceptance = result.oos_acceptance()
+    payload = result.to_dict()
+    assert payload["classification_evidence"]["validation_selected"] is True
+    if acceptance["outcome"] == "pass":
+        # historical_or_exposed_oos stays unknown, so the label cannot jump to robust.
+        assert payload["classification"] == "requires_independent_confirmation"
+    else:
+        assert acceptance["reasons"]
+        assert payload["classification"] == "failed"
+
+    persisted = [
+        event for event in store.events(spec.experiment_id)
+        if event["event_type"] == "existing_strategy_evaluated"
+    ][-1]["payload"]
+    assert persisted["classification_evidence"]["validation_selected"] is True
+    assert persisted["classification"] == payload["classification"]
+
+
+def test_candidate_without_oos_partition_never_claims_oos_success(tmp_path) -> None:
+    # Only train/validation partitions: a non-selected candidate stays training-only
+    # and a validation-selected candidate stops at validation_success. Neither may
+    # claim any out-of-sample success label.
+    spec = _experiment()
+    store = _registered_store(tmp_path / "no-oos.sqlite3", spec)
+    config = _default_config(spec)
+    result = evaluate_existing_strategy(
+        spec,
+        _bars(),
+        config,
+        periods_per_year=252,
+        store=store,
+        oos_policy_version=OOS_ACCEPTANCE_POLICY_V1.policy_version,
+    )
+    train_validation_only = tuple(
+        item for item in result.evaluations if item.partition != "out_of_sample"
+    )
+    assert [item.partition for item in train_validation_only] == ["train", "validation"]
+
+    fixed = ExistingStrategyEvaluation(
+        experiment_id=result.experiment_id,
+        strategy_name=result.strategy_name,
+        candidate_digest=result.candidate_digest,
+        evaluations=train_validation_only,
+        oos_policy_version=result.oos_policy_version,
+    )
+    selected = replace(fixed, validation_selected=True)
+
+    fixed_payload = fixed.to_dict()
+    assert fixed_payload["classification_evidence"]["oos_evaluated"] is False
+    assert fixed_payload["classification_evidence"]["validation_selected"] is False
+    assert fixed_payload["classification"] == "training_only"
+
+    selected_payload = selected.to_dict()
+    assert selected_payload["classification_evidence"]["validation_selected"] is True
+    assert selected_payload["classification"] == "validation_success"
+
+    assert fixed_payload["classification"] != "historical_oos_success"
+    assert selected_payload["classification"] != "historical_oos_success"
+
+
+def test_oos_evaluated_without_policy_stays_inconclusive_for_selected_candidate(tmp_path) -> None:
+    # OOS metrics without an approved policy are unknown evidence: a validation-selected
+    # candidate must be inconclusive, never promoted by missing evidence.
+    spec = _experiment()
+    store = _registered_store(tmp_path / "no-policy-selected.sqlite3", spec)
+    config = _default_config(spec)
+    result = evaluate_existing_strategy(spec, _bars(), config, periods_per_year=252, store=store)
+
+    selected = replace(result, validation_selected=True)
+    payload = selected.to_dict()
+    assert payload["classification_evidence"]["oos_evaluated"] is True
+    assert payload["classification_evidence"]["oos_passed"] is None
+    assert payload["classification"] == "inconclusive"
+    assert payload["classification"] != "historical_oos_success"
+
+
+def test_two_candidates_in_one_job_carry_distinct_classification_evidence(tmp_path) -> None:
+    # Two candidates evaluated under one experiment (one job report) must each keep
+    # their own evidence; an aggregate classification must not be copied across.
+    spec = _experiment()
+    store = _registered_store(tmp_path / "two-candidates.sqlite3", spec)
+    config = _default_config(spec)
+    policy = OOS_ACCEPTANCE_POLICY_V1.policy_version
+
+    fixed = evaluate_existing_strategy(
+        spec,
+        _bars(),
+        config,
+        periods_per_year=252,
+        store=store,
+        oos_policy_version=policy,
+        candidate_family="existing_strategy_fixed",
+    )
+    selected = evaluate_existing_strategy(
+        spec,
+        _bars(),
+        config,
+        periods_per_year=252,
+        store=store,
+        oos_policy_version=policy,
+        candidate_family="optimizer_selected_oos",
+        validation_selected=True,
+    )
+
+    assert len(store.candidates(spec.experiment_id)) == 2
+    assert fixed.candidate_digest != selected.candidate_digest
+
+    fixed_payload = fixed.to_dict()
+    selected_payload = selected.to_dict()
+    assert fixed_payload["classification_evidence"]["validation_selected"] is False
+    assert selected_payload["classification_evidence"]["validation_selected"] is True
+    assert fixed_payload["classification_evidence"] != selected_payload["classification_evidence"]
+    assert fixed_payload["classification"] == "training_only"
+    assert fixed_payload["classification"] != selected_payload["classification"]
+
+    events = [
+        event for event in store.events(spec.experiment_id)
+        if event["event_type"] == "existing_strategy_evaluated"
+    ]
+    assert len(events) == 2
+    stored = [event["payload"] for event in events]
+    assert {payload["candidate_digest"] for payload in stored} == {
+        fixed.candidate_digest,
+        selected.candidate_digest,
+    }
+    assert [
+        payload["classification_evidence"]["validation_selected"] for payload in stored
+    ] == [False, True]
+    assert [payload["classification"] for payload in stored] == [
+        fixed_payload["classification"],
+        selected_payload["classification"],
+    ]

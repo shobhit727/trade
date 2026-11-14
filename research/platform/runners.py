@@ -1204,6 +1204,7 @@ class ExistingStrategyOptimizerJobRunner:
                 "train_parent_candidate_id": selected["train_candidate_id"],
             },
             oos_policy_version=OOS_ACCEPTANCE_POLICY_V1.policy_version,
+            validation_selected=True,
         )
         final_oos_metrics = final_evaluation.oos_metrics()
         oos_acceptance = evaluate_oos_acceptance(
@@ -3151,6 +3152,7 @@ class ParetoStrategySearchJobRunner:
                 "directions": list(directions),
             },
             oos_policy_version=OOS_ACCEPTANCE_POLICY_V1.policy_version,
+            validation_selected=True,
         )
         oos_acceptance = evaluate_oos_acceptance(
             oos_evaluation.oos_metrics(), OOS_ACCEPTANCE_POLICY_V1.policy_version
