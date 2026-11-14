@@ -163,7 +163,7 @@ class PowerHourState:
 class PowerHourTrader:
     def __init__(self, symbols: list[str], capital: float = 100_000.0,
                  port: int | None = None, state_file: Path | None = None):
-    """Configure the symbol universe, state file, dashboard port, and synchronized state."""
+        """Configure the symbol universe, state file, dashboard port, and synchronized state."""
         self.symbols = symbols
         self.port = port if port is not None else _get_nse_powerhour_port()
         self.state_file = state_file or (STATE_DIR / "powerhour.json")

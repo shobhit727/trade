@@ -204,7 +204,7 @@ class NseBasket:
                  fast: int = 5, slow: int = 12, port: int | None = None,
                  state_file: Path | None = None,
                  kite_session=None, dry_run: bool = True):
-            """Configure universe, EMA periods, broker mode, persistence path, and runtime state."""
+        """Configure universe, EMA periods, broker mode, persistence path, and runtime state."""
         self.kite_session = kite_session
         self.dry_run = dry_run
         self.symbols = symbols
