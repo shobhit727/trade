@@ -63,7 +63,16 @@ orders or connect to brokerage/exchange accounts.
 - NSGA-II multi-objective search over existing strategy parameters, including persisted
   candidate ancestry, TRAIN Pareto fronts, VALIDATION selection and frozen OOS evaluation.
 - Market-specific fee calculators: the existing itemised NSE delivery cost model and a
-  separately configured crypto maker/taker fee schedule.
+  separately configured crypto maker/taker fee schedule. The NSE calculator additionally
+  resolves every statutory component as of the fill date (audit F-012) through a verified
+  date-effective schedule with an explicit error for dates before the 2013-06-01
+  coverage floor — never a silent default — and exposes its schedule version for
+  experiment records.
+- FIFO tax lots with STCG/LTCG realization (> 365 days is long-term) and explicit-event
+  corporate actions — split (quantity x ratio, basis/ratio) and bonus (zero-cost lots at
+  the ex-date) — applied to both the lot queue and the cash-ledger position with cash
+  unchanged (audit F-013, CR-013 invariants). No corporate-action auto-detection exists;
+  events come only from the caller's list.
 - Candidate classifications expose failed, inconclusive, overfit, training-only,
   validation-success, historical-OOS-success, robust-research-candidate and
   independent-confirmation states. They are evidence labels, not profitability thresholds.
@@ -83,7 +92,7 @@ orders or connect to brokerage/exchange accounts.
 ## Explicit limitations
 
 This increment is not yet a complete point-in-time historical universe, live data-acquisition
-system, full NSE tax-lot/corporate-action portfolio simulator, crypto derivatives/margin/
+system, crypto derivatives/margin/
 liquidation engine, exchange arbitrage simulator, durable distributed worker cluster,
 secured process-isolated holdout service, or full dashboard telemetry/comparison suite.
 The job manager uses local threads and marks in-flight jobs interrupted after process

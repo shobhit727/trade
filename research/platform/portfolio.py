@@ -34,6 +34,9 @@ class PortfolioConfig:
     assumed_timezone: str = "UTC"
     cost_model_id: str = "research-cost-v1"
     execution_model_id: str = "next-open-participation-impact-v1"
+    # NSE delivery calculators additionally expose fee_asof(bars timestamps)
+    # so every historical fill resolves the statutory schedule effective on its
+    # own trade date (audit F-012).
     fee_calculator: FeeCalculator | None = None
 
     def __post_init__(self) -> None:
@@ -100,6 +103,9 @@ class PortfolioResult:
     fees_paid_inr: Decimal
     final_positions: Mapping[str, Decimal]
     cost_model_id: str
+    #: Fee-schedule version (audit 7.13): the dated NSE schedule id when the
+    #: fee calculator exposes one, otherwise the undated cost model id.
+    fee_schedule_version: str
 
     @property
     def total_return(self) -> Decimal:
@@ -135,6 +141,7 @@ class PortfolioResult:
             "fees_paid_inr": str(self.fees_paid_inr),
             "final_positions": {key: str(value) for key, value in self.final_positions.items()},
             "cost_model_id": self.cost_model_id,
+            "fee_schedule_version": self.fee_schedule_version,
         }
 
 
@@ -148,6 +155,12 @@ class PortfolioSimulator:
         self.config = config
         self.initial_capital = MARKET_SPECS[config.market].initial_simulated_capital
         self.ledger = MarketLedger(config.market, self.initial_capital)
+        # Date-effective resolution (audit F-012): a calculator that exposes
+        # fee_asof resolves the schedule effective on each fill's own date.
+        self._fee_asof = getattr(config.fee_calculator, "fee_asof", None)
+        self._fee_schedule_version = getattr(
+            config.fee_calculator, "schedule_version", None
+        ) or config.cost_model_id
 
     def _normalise_order_quantity(self, quantity: Decimal) -> Decimal:
         # NSE shares are indivisible; crypto spot quantities retain decimal precision.
@@ -170,10 +183,22 @@ class PortfolioSimulator:
             raise ValueError("execution assumptions produced a non-positive fill price")
         return price, participation, impact
 
-    def _fee(self, side: Side, quantity: Decimal, price: Decimal) -> Decimal:
+    def _fee(
+        self,
+        side: Side,
+        quantity: Decimal,
+        price: Decimal,
+        when: object | None = None,
+    ) -> Decimal:
         # Prefer the market-specific calculator; use proportional bps only as fallback.
+        # A date-effective calculator (fee_asof) resolves the statutory schedule
+        # effective on the fill's own date; an unknown date is an explicit error,
+        # never a silent default to the current schedule (audit F-012).
         if self.config.fee_calculator is not None:
-            fee = self.config.fee_calculator.fee(side, quantity, price)
+            if when is not None and self._fee_asof is not None:
+                fee = self._fee_asof(when, side, quantity, price)
+            else:
+                fee = self.config.fee_calculator.fee(side, quantity, price)
         else:
             fee = quantity * price * self.config.fee_bps / D("10000")
         if fee < 0:
@@ -275,11 +300,12 @@ class PortfolioSimulator:
 
             # Unwind existing risk first to make proceeds available for new long positions.
             orders.sort(key=lambda item: (0 if item[1] is Side.SELL else 1, item[0]))
+            when = index[row].to_pydatetime()
             for symbol, side, quantity, reference in orders:
                 # The order's participation and impact use the same lagged volume cap.
                 available = D(str(bars[symbol]["volume"].iloc[row - 1]))
                 price, participation, impact = self._execution_price(side, reference, quantity, available)
-                fee = self._fee(side, quantity, price)
+                fee = self._fee(side, quantity, price, when=index[row].to_pydatetime())
                 if side is Side.BUY:
                     # NSE affordability uses integer bisection so an exact whole-share
                     # boundary cannot be rounded down by a floating Decimal search.
@@ -295,7 +321,7 @@ class PortfolioSimulator:
                             middle_price, _, _ = self._execution_price(
                                 side, reference, middle_quantity, available
                             )
-                            middle_fee = self._fee(side, middle_quantity, middle_price)
+                            middle_fee = self._fee(side, middle_quantity, middle_price, when=when)
                             if (
                                 middle_quantity * middle_price + middle_fee
                                 <= self.ledger.cash_inr
@@ -316,7 +342,7 @@ class PortfolioSimulator:
                             middle_price, _, _ = self._execution_price(
                                 side, reference, middle, available
                             )
-                            middle_fee = self._fee(side, middle, middle_price)
+                            middle_fee = self._fee(side, middle, middle_price, when=when)
                             if middle * middle_price + middle_fee <= self.ledger.cash_inr:
                                 affordable_low = middle
                             else:
@@ -328,7 +354,7 @@ class PortfolioSimulator:
                     price, participation, impact = self._execution_price(
                         side, reference, quantity, available
                     )
-                    fee = self._fee(side, quantity, price)
+                    fee = self._fee(side, quantity, price, when=when)
                     if quantity * price + fee > self.ledger.cash_inr:
                         raise RuntimeError("cash affordability solver returned an unaffordable fill")
                 notional = quantity * price
@@ -379,4 +405,5 @@ class PortfolioSimulator:
             fees_paid_inr=self.ledger.fees_paid_inr,
             final_positions=final_positions,
             cost_model_id=self.config.cost_model_id,
+            fee_schedule_version=self._fee_schedule_version,
         )
