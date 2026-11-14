@@ -82,6 +82,58 @@ async def test_run_backtest_trend_following_with_passed_engine():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("strategy_name", ["one_shot", "trend_following"])
+async def test_close_signal_executes_at_next_bar_open(strategy_name):
+    from cryptobot.core.events import OrderEvent, OrderSide, OrderType
+
+    class RecordingVenue(SimulatedVenue):
+        def __init__(self):
+            super().__init__(slippage_bps=Decimal("0"), commission_bps=Decimal("0"))
+            self.submission_marks = []
+
+        async def submit_order(self, order):
+            self.submission_marks.append(self.prices[order.symbol])
+            return await super().submit_order(order)
+
+    class OneShotStrategy:
+        name = strategy_name
+
+        def __init__(self):
+            self.sent = False
+
+        def feed(self, symbol, *args, ts=None, **kwargs):
+            if self.sent:
+                return None
+            self.sent = True
+            return OrderEvent(
+                symbol=symbol,
+                side=OrderSide.BUY,
+                type=OrderType.MARKET,
+                quantity=Decimal("1"),
+                strategy=self.name,
+            )
+
+    bars = [
+        OhlcvBar(datetime(2024, 1, 1) + timedelta(minutes=15 * i),
+                 open=100 + i * 10, high=105 + i * 10,
+                 low=95 + i * 10, close=102 + i * 10, volume=1000)
+        for i in range(3)
+    ]
+    venue = RecordingVenue()
+    engine = ExecutionEngine(venue=venue)
+
+    await run_backtest(
+        bars,
+        strategy=OneShotStrategy(),
+        symbol="BTCUSDT",
+        initial_capital=Decimal("10000"),
+        execution_engine=engine,
+    )
+
+    assert venue.submission_marks == [Decimal(str(bars[1].open))]
+
+
+@pytest.mark.asyncio
 async def test_run_backtest_rejects_empty_bars():
     strategy = make_strategy("mean_reversion")
     with pytest.raises(ValueError, match="no bars"):
