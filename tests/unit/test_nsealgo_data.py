@@ -29,6 +29,7 @@ from nsealgo.data.loader import (
 
 
 def write_csv(tmp_path, name: str, rows: list[tuple]) -> str:
+    """Write fixture rows using the loader's expected OHLCV column names."""
     df = pd.DataFrame(rows, columns=["ts", "open", "high", "low", "close", "vol"])
     path = tmp_path / name
     df.to_csv(path, index=False)
@@ -36,12 +37,14 @@ def write_csv(tmp_path, name: str, rows: list[tuple]) -> str:
 
 
 def ts(year, month, day, hour=0):
+    """Convert a Kolkata calendar date and hour to a UTC epoch-millisecond value."""
     return int(pd.Timestamp(f"{year}-{month:02d}-{day:02d}", tz="Asia/Kolkata")
                .tz_convert("UTC").timestamp() * 1000)
 
 
 class TestC1Pre2008:
     def test_pre_2008_rows_are_dropped(self, tmp_path) -> None:
+        """Verify rows before the clean-history start date are excluded."""
         rows = [
             (ts(2005, 1, 1), 10, 11, 9, 10.0, 100),
             (ts(2010, 1, 1), 10, 11, 9, 10.5, 100),
@@ -55,6 +58,7 @@ class TestC1Pre2008:
 
 class TestC2ArtifactDates:
     def test_2005_artifact_dates_removed(self, tmp_path) -> None:
+        """Verify both known 2005 artifact dates are removed from the series."""
         rows = [
             (ts(2008, 1, 1), 10, 11, 9, 10.0, 100),
             (ts(2005, 7, 28), 10, 11, 9, 100.0, 100),
@@ -70,6 +74,7 @@ class TestC2ArtifactDates:
 
 class TestC4NonPositivePrices:
     def test_nonpositive_prices_dropped_never_filled(self, tmp_path) -> None:
+        """Verify rows with non-positive OHLC values are dropped without filling."""
         rows = [
             (ts(2008, 1, 1), 10, 11, 9, 10.0, 100),
             (ts(2009, 1, 1), -0.01, -0.01, -0.01, -0.01, 100),   # adanient-style
@@ -81,6 +86,7 @@ class TestC4NonPositivePrices:
         assert (out[["open", "high", "low", "close"]] > 0).all().all()
 
     def test_nan_price_dropped(self, tmp_path) -> None:
+        """Verify rows with missing OHLC values are excluded from loaded prices."""
         path = tmp_path / "DDD_1d.csv"
         pd.DataFrame(
             [(ts(2008, 1, 1), 10, 11, 9, 10.0, 100),
@@ -149,6 +155,7 @@ class TestC5ExtremeMoves:
 
 class TestC6Integrity:
     def test_duplicate_timestamps_raise(self, tmp_path) -> None:
+        """Verify duplicate source timestamps raise a data-integrity error."""
         rows = [
             (ts(2009, 1, 1), 10, 11, 9, 10.0, 100),
             (ts(2009, 1, 1), 10, 11, 9, 10.0, 100),
@@ -158,6 +165,7 @@ class TestC6Integrity:
             load_symbol(p, "GGG")
 
     def test_missing_column_raises(self, tmp_path) -> None:
+        """Verify a CSV missing a required OHLCV column is rejected."""
         path = tmp_path / "HHH_1d.csv"
         pd.DataFrame([(ts(2009, 1, 1), 10, 11, 9, 100)],
                      columns=["ts", "open", "high", "low", "vol"]).to_csv(path, index=False)
@@ -165,6 +173,7 @@ class TestC6Integrity:
             load_symbol(str(path), "HHH")
 
     def test_unsorted_input_is_sorted(self, tmp_path) -> None:
+        """Verify accepted source rows are returned in timestamp order."""
         rows = [
             (ts(2010, 1, 1), 10, 11, 9, 11.0, 100),
             (ts(2008, 1, 1), 10, 11, 9, 10.0, 100),
@@ -186,6 +195,7 @@ class TestC9FrozenCloses:
 
     @staticmethod
     def _series(closes: list[float]) -> list[tuple]:
+        """Build daily OHLCV fixture rows whose prices equal each supplied close."""
         rows = []
         for i, px in enumerate(closes):
             d = pd.Timestamp("2010-01-01", tz="Asia/Kolkata") + pd.Timedelta(days=i)
@@ -295,6 +305,7 @@ class TestC9FrozenCloses:
         assert 71.4 in set(out["close"].tolist()), "the real collapse must survive"
 
     def test_report_counter_and_log_increment(self, tmp_path) -> None:
+        """Verify frozen-run counts, details, and summary output are updated together."""
         closes = [100.0, 101.0, 102.0]
         closes += [102.0] * 8
         closes += [103.0, 104.0]
@@ -340,6 +351,7 @@ class TestC9FrozenCloses:
 
 class TestUniverseLoading:
     def _make_universe(self, tmp_path, n: int = 3, days: int = 2000) -> None:
+        """Write the requested number of synthetic symbol files and daily rows."""
         start = pd.Timestamp("2010-01-01", tz="Asia/Kolkata")
         for s in range(n):
             rows = []
@@ -351,6 +363,7 @@ class TestUniverseLoading:
             write_csv(tmp_path, f"SYM{s}_1d.csv", rows)
 
     def test_loads_multiple_symbols(self, tmp_path) -> None:
+        """Verify multiple usable symbol files combine into one reported panel."""
         self._make_universe(tmp_path, n=4)
         panel, syms, rep = load_universe(str(tmp_path))
         assert len(syms) >= 3
@@ -358,12 +371,14 @@ class TestUniverseLoading:
         assert rep.rows_out > 0
 
     def test_excluded_symbol_is_skipped(self, tmp_path) -> None:
+        """Verify excluded symbols are omitted and recorded in the cleaning report."""
         self._make_universe(tmp_path, n=3)
         panel, syms, rep = load_universe(str(tmp_path), exclude=frozenset({"SYM0"}))
         assert "SYM0" not in syms
         assert "SYM0" in rep.excluded_symbols
 
     def test_short_history_symbol_dropped(self, tmp_path) -> None:
+        """Verify symbols below the minimum bar count are excluded from the universe."""
         self._make_universe(tmp_path, n=2)
         rows = [(ts(2020, 1, i + 1), 100, 101, 99, 100.0, 10) for i in range(5)]
         write_csv(tmp_path, "SHORT_1d.csv", rows)
@@ -371,10 +386,12 @@ class TestUniverseLoading:
         assert "SHORT" not in syms
 
     def test_empty_directory_raises(self, tmp_path) -> None:
+        """Verify loading a directory with no usable symbols raises an integrity error."""
         with pytest.raises(DataIntegrityError, match="no usable symbols"):
             load_universe(str(tmp_path))
 
     def test_report_is_auditable(self, tmp_path) -> None:
+        """Verify universe loading returns both machine-readable and readable audit data."""
         self._make_universe(tmp_path, n=2)
         _, _, rep = load_universe(str(tmp_path))
         s = rep.summary()
@@ -398,6 +415,7 @@ class TestRealDataset:
     """Checks against the actual shipped data — the regression net for the audit."""
 
     def test_real_data_loads_and_is_clean(self) -> None:
+        """Verify the mounted panel meets minimum size, date, price, and index checks."""
         panel, syms, rep = load_universe("data/nse")
         assert len(syms) >= 40, "Gate 1 requires >= 40 usable symbols"
         assert panel.index.min().year >= 2008, "C1 must exclude pre-2008"
@@ -407,11 +425,13 @@ class TestRealDataset:
         assert not panel.index.has_duplicates
 
     def test_real_data_has_enough_history(self) -> None:
+        """Verify enough real symbols contain at least fifteen years of observations."""
         panel, syms, _ = load_universe("data/nse")
         long_books = (panel.notna().sum() / 244) >= 15
         assert long_books.sum() >= 40, "Gate 1 requires >= 40 symbols with 15+ years"
 
     def test_no_artifact_survives(self) -> None:
+        """Verify the production data audit reports no remaining artifact rows."""
         _, _, rep = load_universe("data/nse")
         assert rep.dropped_artifact == 0, "artifacts should already be pre-2008"
 
@@ -451,6 +471,7 @@ class TestC10CorporateActions:
 
     @staticmethod
     def _rows(opens: list[float], closes: list[float]) -> list[tuple]:
+        """Build OHLCV rows with valid high and low values around each open and close."""
         out = []
         for i, (o, c) in enumerate(zip(opens, closes)):
             d = pd.Timestamp("2020-01-01", tz="Asia/Kolkata") + pd.Timedelta(days=i)

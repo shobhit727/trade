@@ -153,6 +153,7 @@ class TestEmptyScorePanel:
         assert res.diag["avg_names"] > 0
 
     def test_error_is_a_value_error_so_existing_handlers_still_catch_it(self) -> None:
+        """Verify empty-panel errors remain compatible with ValueError handlers."""
         panel = make_panel(n_days=400, symbols=UNIVERSE[:8])
         score = pd.DataFrame(np.nan, index=panel.index, columns=panel.columns)
         with pytest.raises(ValueError):
@@ -177,6 +178,7 @@ class TestEmptyScorePanel:
 
 
 def tied_binary_weights(score: pd.DataFrame, vol: pd.DataFrame) -> pd.DataFrame:
+    """Build eight-position rebalance weights for the supplied score and volatility."""
     cfg = PortfolioConfig(n_positions=8)
     return build_rebalance_weights(score, list(score.index), vol, cfg)
 
@@ -195,6 +197,7 @@ class TestTieBreakIsUnbiased:
         return score, vol
 
     def test_fully_tied_panel_is_not_the_alphabetically_first_names(self) -> None:
+        """Verify a fully tied score does not select only alphabetically early symbols."""
         score, vol = self._binary_panel()
         w = tied_binary_weights(score, vol)
 
@@ -351,6 +354,7 @@ class TestTieBreakIsUnbiased:
 
 class TestBookDiagnostics:
     def test_avg_invested_weight_is_reported_and_consistent(self) -> None:
+        """Verify diagnostics report the mean total portfolio weight."""
         panel = make_panel()
         score = pd.DataFrame(1.0, index=panel.index, columns=panel.columns)
 

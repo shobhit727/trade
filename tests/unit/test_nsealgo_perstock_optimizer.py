@@ -31,6 +31,7 @@ from research.optimize.catalog import discover, load_strategy
 # Fakes
 # --------------------------------------------------------------------------- #
 def make_bars(n: int = 500, start: str = "2020-01-01", seed: int = 0) -> pd.DataFrame:
+    """Generate seeded business-day OHLCV bars for optimizer tests."""
     import numpy as np
 
     rng = np.random.default_rng(seed)
@@ -44,22 +45,26 @@ class _AlwaysLong:
     """Minimal stand-in for a strategy: buys on the first actionable bar, never exits."""
 
     def __init__(self, config=None):
+        """Initialize an always-long fake strategy with its optional config."""
         self._pos = {}
         self.config = config
 
     def feed(self, symbol, close, high=None, low=None, volume=None, ts=None):
+        """Request a long position for the symbol on every received bar."""
         self._pos[symbol] = 1
         return None
 
 
 class _NeverLong(_AlwaysLong):
     def feed(self, symbol, close, high=None, low=None, volume=None, ts=None):
+        """Keep the strategy flat on every received bar."""
         self._pos[symbol] = 0
         return None
 
 
 class _Cfg:
     def __init__(self, **kw):
+        """Store supplied configuration values, using a small default when empty."""
         self.__dict__.update(kw or {"period": 5})
 
 
@@ -108,6 +113,7 @@ class TestCatalog:
             assert all(p.name != "quantity" for p in s.params), s.name
 
     def test_every_config_field_is_searchable_or_explicitly_held(self):
+        """Verify every strategy configuration exposes searchable parameters."""
         for s in discover():
             assert s.params, f"{s.name} has no searchable params"
 
@@ -125,6 +131,7 @@ class TestBacktestAccounting:
         assert r.equity.iloc[-1] > float(C.CAPITAL_INR) * 0.2
 
     def test_always_long_beats_never_long(self):
+        """Verify the always-long control trades and outperforms the flat control."""
         bars = make_bars(600, seed=3)
         up = run_single_stock(bars, _spec(_AlwaysLong), {}, tax_enabled=False)
         flat = run_single_stock(bars, _spec(_NeverLong), {}, tax_enabled=False)
@@ -133,6 +140,7 @@ class TestBacktestAccounting:
         assert len(flat.trades) == 0
 
     def test_never_trading_costs_nothing(self):
+        """Verify a strategy that never trades pays no fees or tax and retains capital."""
         bars = make_bars(300, seed=7)
         r = run_single_stock(bars, _spec(_NeverLong), {}, tax_enabled=True)
         assert r.total_fees == 0.0
@@ -140,6 +148,7 @@ class TestBacktestAccounting:
         assert r.equity.iloc[-1] == pytest.approx(float(C.CAPITAL_INR))
 
     def test_equity_never_negative_on_a_positive_price_series(self):
+        """Verify equity remains positive for a positive-price series with tax on or off."""
         bars = make_bars(500, seed=11)
         for tax in (False, True):
             r = run_single_stock(bars, _spec(_AlwaysLong), {}, tax_enabled=tax)
@@ -183,6 +192,7 @@ class TestTaxLedger:
         assert r.total_tax == 0.0
 
     def test_ltcg_rate_applies_beyond_365_days(self):
+        """Verify lots held longer than 365 days use the long-term capital-gains rate."""
         import datetime as dt
 
         from research.optimize.backtest import Lot, _settle_tax
@@ -193,6 +203,7 @@ class TestTaxLedger:
         assert tax == pytest.approx(1250.0)
 
     def test_stcg_rate_applies_within_365_days(self):
+        """Verify lots held 365 days or less use the short-term capital-gains rate."""
         import datetime as dt
 
         from research.optimize.backtest import Lot, _settle_tax
@@ -206,16 +217,19 @@ class _Alternating:
     """Long / flat on a 60-bar cycle, so gains are actually realised and taxed."""
 
     def __init__(self, config=None):
+        """Initialize a strategy that alternates between long and flat every 60 bars."""
         self._pos = {}
         self._n = 0
 
     def feed(self, symbol, close, high=None, low=None, volume=None, ts=None):
+        """Advance the cycle and request its current long-or-flat position."""
         self._n += 1
         self._pos[symbol] = (self._n // 60) % 2 == 0
         return None
 
 
 def deque_of(items):
+    """Create a deque for concise FIFO lot fixtures."""
     from collections import deque
 
     return deque(items)
@@ -243,6 +257,7 @@ class TestNoLookahead:
 # --------------------------------------------------------------------------- #
 class TestMetrics:
     def test_flat_equity_has_zero_metrics(self):
+        """Verify constant equity produces zero CAGR, Sharpe, and drawdown."""
         eq = pd.Series(1000.0, index=pd.bdate_range("2020-01-01", periods=250))
         m = M.compute(eq)
         assert m.cagr == pytest.approx(0.0)
@@ -250,6 +265,7 @@ class TestMetrics:
         assert m.max_drawdown == pytest.approx(0.0)
 
     def test_max_drawdown_is_negative(self):
+        """Verify peak-to-trough losses are reported as a negative fraction."""
         eq = pd.Series([100, 120, 60, 90], index=pd.bdate_range("2020-01-01", periods=4))
         assert M.compute(eq).max_drawdown == pytest.approx(-0.5)
 
@@ -264,6 +280,7 @@ class TestMetrics:
         assert share > 0.35, "must breach the GOAL.md 35% year gate"
 
     def test_evenly_distributed_years_stay_under_the_gate(self):
+        """Verify evenly distributed annual gains stay below the concentration gate."""
         idx = pd.to_datetime(["2020-01-01", "2020-06-01", "2021-01-01", "2021-06-01",
                               "2022-01-01", "2022-06-01", "2023-01-01", "2023-06-01"])
         eq = pd.Series([100, 110, 110, 121, 121, 133.1, 133.1, 146.41], index=idx)
@@ -273,6 +290,7 @@ class TestMetrics:
 
 class TestNulls:
     def test_p_value_floor_and_ordering(self):
+        """Verify empirical p-values use the finite-sample floor and expected ordering."""
         import numpy as np
 
         null = np.zeros(199)
@@ -287,6 +305,7 @@ class TestNulls:
         assert all(isinstance(float(x), float) for x in out)
 
     def test_buy_hold_matches_manual(self):
+        """Verify buy-and-hold return matches the first-to-last close calculation."""
         bars = make_bars(300)
         px = bars["close"].to_numpy()
         assert N.buy_and_hold(bars) == pytest.approx(px[-1] / px[0] - 1.0)
@@ -294,6 +313,7 @@ class TestNulls:
 
 class TestSplitter:
     def test_train_and_test_do_not_overlap(self):
+        """Verify configured training and test windows contain no shared dates."""
         syms = S.available_symbols()
         assert syms, "no symbols"
         s = syms[0]
@@ -305,10 +325,12 @@ class TestSplitter:
         assert len(tr.index.intersection(te.index)) == 0
 
     def test_corrupt_symbols_are_excluded(self):
+        """Verify known corrupt instruments are filtered from symbol discovery."""
         assert "adanient" not in S.available_symbols()
         assert "jiofin" not in S.available_symbols()
 
     def test_bars_are_chronological_and_unique(self):
+        """Verify loaded bars are sorted, unique, and have positive closing prices."""
         s = S.available_symbols()[0]
         df = S.bars(s, S.FULL)
         if df.empty:
@@ -320,11 +342,13 @@ class TestSplitter:
 
 class TestFDR:
     def test_no_significance_returns_all_false(self):
+        """Verify non-significant p-values produce no FDR rejections."""
         from research.optimize.analyze import benjamini_hochberg
 
         assert not benjamini_hochberg([0.5, 0.6, 0.7, 0.8]).any()
 
     def test_step_up_detects_the_truly_small_ones(self):
+        """Verify the step-up correction rejects small p-values but not large ones."""
         from research.optimize.analyze import benjamini_hochberg
 
         ps = [0.001, 0.002, 0.6, 0.7, 0.8]
@@ -342,6 +366,7 @@ class TestFastPath:
     """
 
     def test_patched_indicators_match_original(self):
+        """Verify fast-path indicator outputs match the original implementations."""
         import numpy as np
 
         from research.optimize import fastpath
@@ -389,6 +414,7 @@ class TestFastPath:
         )
 
     def test_backtest_results_unchanged_by_fastpath(self):
+        """Verify the indicator fast path leaves equity, tax, and trade count unchanged."""
         from research.optimize import fastpath
         from research.optimize.catalog import load_strategy
 

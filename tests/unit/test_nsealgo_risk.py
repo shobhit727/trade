@@ -24,10 +24,12 @@ from nsealgo.risk.limits import (
 
 class TestConstitution:
     def test_limits_are_frozen(self) -> None:
+        """Verify the global risk-limit constitution cannot be reassigned."""
         with pytest.raises(Exception):
             LIMITS.max_drawdown_halt = D("0.99")  # type: ignore[misc]
 
     def test_values_match_goal_md(self) -> None:
+        """Verify hard-coded risk thresholds match the binding mission values."""
         assert LIMITS.max_drawdown_halt == D("0.15")
         assert LIMITS.max_drawdown_absolute == D("0.25")
         assert LIMITS.per_trade_stop == D("0.08")
@@ -45,6 +47,7 @@ class TestConstitution:
             widened.verify()
 
     def test_verify_catches_widened_drawdown(self) -> None:
+        """Verify validation rejects a drawdown limit widened beyond the constitution."""
         import dataclasses
 
         widened = dataclasses.replace(LIMITS, max_drawdown_halt=D("0.40"))
@@ -52,17 +55,20 @@ class TestConstitution:
             widened.verify()
 
     def test_incoherent_position_bounds_rejected(self) -> None:
+        """Verify limits reject a minimum position count greater than the maximum."""
         bad = RiskLimits(min_positions=50, max_positions=30)
         with pytest.raises(RiskLimitViolation, match="min_positions"):
             bad.verify()
 
     def test_serialisable(self) -> None:
+        """Verify the exported limit mapping preserves Decimal-valued thresholds."""
         d = limits_as_dict()
         assert d["max_daily_loss"] == D("0.02")
 
 
 class TestKillSwitch:
     def test_drawdown_halt_trips_at_15pct(self) -> None:
+        """Verify a drawdown beyond 15 percent engages the halt switch."""
         rm = RiskManager()
         rm.update_equity(D("2100000"))
         assert not rm.is_halted
@@ -74,6 +80,7 @@ class TestKillSwitch:
         assert "DRAWDOWN" in rm.kill_switch_reason
 
     def test_just_under_limit_does_not_trip(self) -> None:
+        """Verify drawdown below the halt threshold leaves the manager tradable."""
         rm = RiskManager()
         rm.update_equity(D("2100000"))
         rm.start_day(D("1800000"))
@@ -82,6 +89,7 @@ class TestKillSwitch:
         assert not rm.is_halted
 
     def test_daily_loss_trips_at_2pct(self) -> None:
+        """Verify the daily-loss switch trips only after the two-percent limit is crossed."""
         rm = RiskManager()
         rm.update_equity(D("2100000"))
         rm.start_day(D("2100000"))
@@ -92,6 +100,7 @@ class TestKillSwitch:
         assert "DAILY LOSS" in rm.kill_switch_reason
 
     def test_weekly_loss_trips_at_4pct(self) -> None:
+        """Verify a weekly loss beyond four percent engages the halt switch."""
         rm = RiskManager()
         rm.update_equity(D("2100000"))
         rm.start_day(D("2010000"))   # isolate weekly: day is already flat
@@ -101,12 +110,14 @@ class TestKillSwitch:
         assert "WEEKLY LOSS" in rm.kill_switch_reason
 
     def test_all_breaches_are_recorded_not_just_the_first(self) -> None:
+        """Verify simultaneous breaches are retained in the risk manager's audit state."""
         rm = RiskManager()
         rm.update_equity(D("2100000"))
         rm.update_equity(D("1600000"))          # breaches DD, daily and weekly
         assert len(rm.breached_limits) >= 3
 
     def test_absolute_drawwdown_takes_precedence_message(self) -> None:
+        """Verify the absolute drawdown breach is reported as the primary halt reason."""
         rm = RiskManager()
         rm.update_equity(D("2100000"))
         rm.start_day(D("1500000"))
@@ -116,6 +127,7 @@ class TestKillSwitch:
         assert len(rm.breached_limits) >= 1
 
     def test_assert_tradable_raises_when_halted(self) -> None:
+        """Verify a halted manager raises when the engine checks whether it may trade."""
         rm = RiskManager()
         rm.update_equity(D("2100000"))
         rm.update_equity(D("1500000"))
@@ -123,6 +135,7 @@ class TestKillSwitch:
             rm.assert_tradable()
 
     def test_peak_is_never_lowered_by_drawdown(self) -> None:
+        """Verify drawdowns do not lower the recorded peak and new highs update it."""
         rm = RiskManager()
         rm.update_equity(D("2100000"))
         rm.update_equity(D("1900000"))
@@ -130,6 +143,7 @@ class TestKillSwitch:
         assert rm.state.equity_peak == D("2200000")
 
     def test_reset_clears_switch(self) -> None:
+        """Verify an explicit reset clears the halt state and re-baselines equity."""
         rm = RiskManager()
         rm.update_equity(D("2100000"))
         rm.update_equity(D("1500000"))
@@ -140,11 +154,13 @@ class TestKillSwitch:
 
 class TestPreTradeChecks:
     def test_oversized_position_rejected(self) -> None:
+        """Verify a proposed position above the single-name cap is rejected."""
         rm = RiskManager()
         with pytest.raises(RiskLimitViolation, match="max single-name"):
             rm.check_order("TCS", D("0.20"), {}, {"TCS": "it"})
 
     def test_sector_cap_enforced(self) -> None:
+        """Verify a proposed order that breaches sector exposure is rejected."""
         rm = RiskManager()
         weights = {f"IT{i}": D("0.06") for i in range(4)}
         sectors = {f"IT{i}": "it" for i in range(4)}
@@ -152,6 +168,7 @@ class TestPreTradeChecks:
             rm.check_order("TCS", D("0.06"), weights, {**sectors, "TCS": "it"})
 
     def test_too_many_positions_rejected(self) -> None:
+        """Verify an order that exceeds the maximum position count is rejected."""
         rm = RiskManager()
         weights = {f"S{i}": D("0.02") for i in range(30)}
         sectors = {f"S{i}": f"s{i % 6}" for i in range(30)}
@@ -159,6 +176,7 @@ class TestPreTradeChecks:
             rm.check_order("NEW", D("0.02"), weights, {**sectors, "NEW": "s1"})
 
     def test_cash_buffer_floor_enforced(self) -> None:
+        """Verify a proposed order cannot reduce cash below the fixed minimum buffer."""
         rm = RiskManager()
         weights = {f"S{i}": D("0.07") for i in range(13)}
         sectors = {f"S{i}": f"s{i % 8}" for i in range(13)}
@@ -166,11 +184,13 @@ class TestPreTradeChecks:
             rm.check_order("NEW", D("0.05"), weights, {**sectors, "NEW": "s8"})
 
     def test_valid_order_passes(self) -> None:
+        """Verify an order within the name and sector limits passes validation."""
         rm = RiskManager()
         rm.check_order("TCS", D("0.05"), {"INFY": D("0.05")},
                        {"TCS": "it", "INFY": "it"})
 
     def test_halted_manager_rejects_all_orders(self) -> None:
+        """Verify the kill switch rejects otherwise valid orders after a halt."""
         rm = RiskManager()
         rm.update_equity(D("2100000"))
         rm.update_equity(D("1500000"))
@@ -178,18 +198,21 @@ class TestPreTradeChecks:
             rm.check_order("TCS", D("0.05"), {}, {"TCS": "it"})
 
     def test_per_trade_stop(self) -> None:
+        """Verify losses inside the stop threshold pass and larger losses are rejected."""
         rm = RiskManager()
         rm.check_stop(D("100"), D("93"))      # -7%, inside the 8% limit
         with pytest.raises(RiskLimitViolation, match="per-trade stop"):
             rm.check_stop(D("100"), D("91"))  # -9%
 
     def test_stop_rejects_bad_entry(self) -> None:
+        """Verify stop checking rejects a non-positive entry price."""
         with pytest.raises(ValueError):
             RiskManager().check_stop(D("0"), D("10"))
 
 
 class TestPaperBroker:
     def test_buy_updates_cash_and_position(self) -> None:
+        """Verify a completed simulated buy creates a position and reduces cash."""
         b = PaperBroker(capital=D("1000000"))
         b.set_quote(Quote("TCS", D("100")))
         r = b.place_market_order("TCS", D("100"), "BUY")
@@ -198,6 +221,7 @@ class TestPaperBroker:
         assert b.cash < D("1000000")
 
     def test_sell_reduces_position(self) -> None:
+        """Verify a partial simulated sale reduces the held quantity."""
         b = PaperBroker(capital=D("1000000"))
         b.set_quote(Quote("TCS", D("100")))
         b.place_market_order("TCS", D("100"), "BUY")
@@ -214,6 +238,7 @@ class TestPaperBroker:
         assert "long-only" in r.message
 
     def test_cannot_oversell(self) -> None:
+        """Verify a sale larger than the held position is rejected."""
         b = PaperBroker(capital=D("1000000"))
         b.set_quote(Quote("TCS", D("100")))
         b.place_market_order("TCS", D("10"), "BUY")
@@ -221,6 +246,7 @@ class TestPaperBroker:
         assert r.status == "REJECTED"
 
     def test_insufficient_cash_rejected(self) -> None:
+        """Verify a purchase whose cost exceeds available cash is rejected."""
         b = PaperBroker(capital=D("10000"))
         b.set_quote(Quote("TCS", D("100")))
         r = b.place_market_order("TCS", D("1000"), "BUY")
@@ -228,11 +254,13 @@ class TestPaperBroker:
         assert "cash" in r.message
 
     def test_zero_quantity_rejected(self) -> None:
+        """Verify zero-quantity orders are rejected by the paper adapter."""
         b = PaperBroker()
         b.set_quote(Quote("TCS", D("100")))
         assert b.place_market_order("TCS", D("0"), "BUY").status == "REJECTED"
 
     def test_bad_side_rejected(self) -> None:
+        """Verify unsupported order sides raise before a paper fill is created."""
         with pytest.raises(ValueError, match="BUY or SELL"):
             PaperBroker().place_market_order("TCS", D("1"), "X")
 
@@ -247,12 +275,14 @@ class TestPaperBroker:
         assert b.account_value() < D("1000000")
 
     def test_costs_are_charged(self) -> None:
+        """Verify successful paper orders accumulate transaction costs."""
         b = PaperBroker(capital=D("1000000"))
         b.set_quote(Quote("TCS", D("100")))
         b.place_market_order("TCS", D("100"), "BUY")
         assert b.total_costs > 0
 
     def test_average_price_after_two_buys(self) -> None:
+        """Verify multiple buys update the position's weighted average entry price."""
         b = PaperBroker(capital=D("1000000"))
         b.set_quote(Quote("TCS", D("100")))
         b.place_market_order("TCS", D("100"), "BUY")
@@ -263,17 +293,20 @@ class TestPaperBroker:
         assert D("140") < pos.average_price < D("160")
 
     def test_reconcile_empty_for_paper(self) -> None:
+        """Verify the paper broker's internally consistent state has no reconciliation diffs."""
         assert PaperBroker().reconcile() == []
 
 
 class TestBrokerContract:
     def test_paper_implements_the_protocol(self) -> None:
+        """Verify the paper adapter implements every method required by the broker protocol."""
         b = PaperBroker()
         for m in ("get_quote", "get_positions", "account_value",
                   "place_market_order", "cancel_all", "is_connected"):
             assert callable(getattr(b, m))
 
     def test_position_math(self) -> None:
+        """Verify position market value and unrealized P&L use quantity and price correctly."""
         p = Position("TCS", D("10"), D("100"), D("120"))
         assert p.market_value == D("1200")
         assert p.unrealised_pnl == D("200")

@@ -33,6 +33,7 @@ class TestScrambleCache:
     """
 
     def test_different_factors_get_different_scrambles(self):
+        """Verify distinct factor scores do not reuse the same scrambled null."""
         a = pd.DataFrame(np.random.default_rng(1).normal(size=(200, 6)),
                          columns=list("abcdef"))
         b = pd.DataFrame(np.random.default_rng(2).normal(size=(200, 6)),
@@ -50,6 +51,7 @@ class TestScrambleCache:
         assert np.allclose(scramble(a, 42).to_numpy(), scramble(a, 42).to_numpy())
 
     def test_different_seed_gives_different_scramble(self):
+        """Verify changing the seed changes the generated score permutation."""
         a = pd.DataFrame(np.random.default_rng(1).normal(size=(200, 6)),
                          columns=list("abcdef"))
         assert not np.allclose(scramble(a, 42).to_numpy(), scramble(a, 43).to_numpy())
@@ -72,6 +74,7 @@ class TestFactorShape:
     """
 
     def test_every_builtin_factor_returns_one_column_per_symbol(self):
+        """Verify each built-in factor preserves the panel's date and symbol dimensions."""
         px = panel()
         for name, fn in FACTORS.items():
             out = fn(px)
@@ -82,6 +85,7 @@ class TestFactorShape:
             assert out.shape[0] == px.shape[0], f"factor {name!r} changed the row count"
 
     def test_wrong_shape_factor_raises_instead_of_returning_an_empty_book(self):
+        """Verify an unknown factor is rejected instead of yielding a silent empty result."""
         cell = Cell(factor="__nonexistent__", n_hold=20, buffer=20, clock="A")
         # A missing factor returns None (unknown name), not a silent empty book.
         assert evaluate(cell, "TEST") is None
@@ -94,12 +98,14 @@ class TestTieBreak:
     """
 
     def test_tie_break_is_not_alphabetical(self):
+        """Verify tied symbol scores are not ordered alphabetically."""
         cols = ["adaniports", "apollohosp", "axisbank", "bajajauto", "tcs"]
         tb = _tiebreak_vector(cols)
         order = [cols[i] for i in np.argsort(-tb)]
         assert order != sorted(cols), "ties must not resolve alphabetically"
 
     def test_tie_break_is_order_independent(self):
+        """Verify each symbol's tie-break value is stable under column reordering."""
         cols = ["adaniports", "apollohosp", "axisbank", "bajajauto", "tcs"]
         shuffled = list(reversed(cols))
         a = dict(zip(cols, _tiebreak_vector(cols)))
@@ -118,6 +124,7 @@ class TestPanelIsCleaned:
     """
 
     def test_trent_has_no_phantom_crash(self):
+        """Verify the cleaned TRENT series contains no single-day phantom bonus crash."""
         px = panel()
         assert "trent" in px.columns
         r = px["trent"].pct_change()
@@ -150,6 +157,7 @@ class TestCosts:
         assert DELIVERY_ALL_IN_BPS == pytest.approx(32.32, abs=0.05)
 
     def test_instrument_stacks_are_ordered(self):
+        """Verify ETF, futures, and delivery costs increase in the expected order."""
         from research.sweep.harness import INSTRUMENT_BPS
 
         assert INSTRUMENT_BPS["etf"] < INSTRUMENT_BPS["futures"] < INSTRUMENT_BPS["delivery"]

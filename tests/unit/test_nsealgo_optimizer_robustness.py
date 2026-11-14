@@ -73,6 +73,7 @@ _C_DEFAULT_TEST_JSONL = str(C.TEST_JSONL)
 # Fakes -- no real sweep, no real backtest, no real data files
 # --------------------------------------------------------------------------- #
 def _bars(n: int = 300, start: str = "2018-01-01", seed: int = 0) -> pd.DataFrame:
+    """Generate a seeded business-day OHLCV frame for isolated sweep tests."""
     rng = np.random.default_rng(seed)
     idx = pd.bdate_range(start, periods=n)
     px = 100.0 * np.exp(np.cumsum(rng.normal(0.0004, 0.01, n)))
@@ -91,6 +92,7 @@ class FakeSpec:
     """
 
     def __init__(self, name: str = "fake", constant: object = None):
+        """Initialize a fake strategy spec with optional constant sampling."""
         self.name = name
         self.module = f"fake.{name}"
         self.config_cls = object
@@ -102,6 +104,7 @@ class FakeSpec:
         self.samples = 0
 
     def sample(self, rng):
+        """Return either the fixed default or a seeded, distinct parameter value."""
         self.samples += 1
         if self._constant is not None:
             return {"period": 0}
@@ -110,6 +113,7 @@ class FakeSpec:
         return {"period": int(rng.integers(1, 100_000))}
 
     def build(self, values):
+        """Satisfy the strategy-spec interface without creating a real strategy."""
         return None
 
 
@@ -184,10 +188,12 @@ def fake_engine(monkeypatch):
 
 @pytest.fixture
 def cfg():
+    """Return a small deterministic configuration for sweep tests."""
     return C.RunConfig(budget=3, null_replicas=4, workers=1)
 
 
 def _rows(path: Path) -> list[dict]:
+    """Load complete JSONL records, returning an empty list for a missing file."""
     if not path.exists():
         return []
     out = []
@@ -199,6 +205,7 @@ def _rows(path: Path) -> list[dict]:
 
 
 def _ok_row(strategy: str, stock: str, **over) -> dict:
+    """Build a representative successful test-stage result with optional overrides."""
     row = {
         "strategy": strategy,
         "stock": stock,
@@ -217,11 +224,13 @@ def _ok_row(strategy: str, stock: str, **over) -> dict:
 
 
 def _failed_row(strategy: str, stock: str, error: str = "boom") -> dict:
+    """Build a failed test-stage result row for the requested strategy-symbol pair."""
     return {"strategy": strategy, "stock": stock, "stage": "test",
             "ok": False, "error": error}
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> Path:
+    """Write result dictionaries as newline-delimited JSON and return the path."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fh:
         for r in rows:
@@ -240,6 +249,7 @@ def _headline(out: dict) -> str:
 # =========================================================================== #
 class TestResume:
     def test_resume_executes_only_the_missing_pairs(self, outdir, fake_engine, cfg):
+        """Verify resume executes missing strategy-symbol pairs without duplicating saved rows."""
         specs = [FakeSpec("a"), FakeSpec("b")]
         stocks = ["tcs", "infy"]
         E.run_sweep([specs[0]], stocks, cfg, resume=False, workers=1)
@@ -255,6 +265,7 @@ class TestResume:
         assert len({(r["strategy"], r["stock"]) for r in rows}) == 4, "no duplicates"
 
     def test_resume_leaves_prior_rows_byte_identical(self, outdir, fake_engine, cfg):
+        """Verify resume appends new rows without rewriting existing result bytes."""
         specs = [FakeSpec("a"), FakeSpec("b")]
         E.run_sweep([specs[0]], ["tcs", "infy"], cfg, resume=False, workers=1)
         before = C.TEST_JSONL.read_text(encoding="utf-8")
@@ -266,6 +277,7 @@ class TestResume:
         assert len(after.splitlines()) == len(before.splitlines()) + 2
 
     def test_fully_resumed_sweep_runs_nothing(self, outdir, fake_engine, cfg):
+        """Verify a fully completed sweep skips every pair and invokes no backtests."""
         specs = [FakeSpec("a")]
         E.run_sweep(specs, ["tcs", "infy"], cfg, resume=False, workers=1)
         m = E.run_sweep(specs, ["tcs", "infy"], cfg, resume=True, workers=1)
@@ -278,6 +290,7 @@ class TestResume:
         real = _fake_backtest
 
         def counting(bars, spec, params, **kw):
+            """Count attempts and fail the selected strategy to exercise resume behavior."""
             calls.append(spec.name)
             if spec.name == "boom":
                 raise RuntimeError("strategy exploded")
@@ -305,12 +318,14 @@ class TestResume:
         assert ("b", "infy") not in done, "a truncated pair must never be marked done"
 
     def test_truncated_line_does_not_discard_earlier_rows(self, outdir, cfg):
+        """Verify an incomplete final JSONL record does not hide earlier complete rows."""
         _write_jsonl(C.TEST_JSONL, [_ok_row("a", "tcs"), _ok_row("a", "infy")])
         with C.TEST_JSONL.open("a", encoding="utf-8") as fh:
             fh.write('{"strategy": "zzz", "stock": "qqq", "stage": "te')
         assert E._read_jsonl(C.TEST_JSONL) == {("a", "tcs"), ("a", "infy")}
 
     def test_blank_and_garbage_lines_are_tolerated(self, outdir, cfg):
+        """Verify JSONL loading skips blank and invalid lines while retaining valid pairs."""
         C.TEST_JSONL.parent.mkdir(parents=True, exist_ok=True)
         C.TEST_JSONL.write_text(
             '\n\n{"strategy":"a","stock":"tcs","stage":"test","ok":true}\n'
@@ -320,6 +335,7 @@ class TestResume:
         assert E._read_jsonl(C.TEST_JSONL) == {("a", "tcs"), ("b", "infy")}
 
     def test_repair_jsonl_truncates_only_the_partial_tail(self, outdir, cfg):
+        """Verify repair removes an incomplete tail and preserves prior bytes exactly."""
         _write_jsonl(C.TEST_JSONL, [_ok_row("a", "tcs"), _ok_row("b", "infy")])
         good = C.TEST_JSONL.read_text(encoding="utf-8")
         with C.TEST_JSONL.open("a", encoding="utf-8") as fh:
@@ -331,12 +347,14 @@ class TestResume:
         )
 
     def test_repair_jsonl_is_idempotent_and_safe_on_clean_files(self, outdir, cfg):
+        """Verify repairing a clean JSONL file makes no changes on repeated calls."""
         _write_jsonl(C.TEST_JSONL, [_ok_row("a", "tcs")])
         assert E.repair_jsonl(C.TEST_JSONL) == 0, "a file ending in newline is clean"
         assert E.repair_jsonl(C.TEST_JSONL) == 0
         assert len(_rows(C.TEST_JSONL)) == 1
 
     def test_repair_jsonl_on_a_missing_or_empty_file(self, outdir, cfg):
+        """Verify missing and empty output files are safe no-op repair cases."""
         assert E.repair_jsonl(C.TEST_JSONL) == 0
         C.TEST_JSONL.parent.mkdir(parents=True, exist_ok=True)
         C.TEST_JSONL.write_text("", encoding="utf-8")
@@ -398,6 +416,7 @@ class TestResume:
 # =========================================================================== #
 class TestNoResume:
     def test_no_resume_removes_the_old_file(self, outdir, fake_engine, cfg):
+        """Verify a fresh run replaces stale result rows instead of appending to them."""
         _write_jsonl(C.TEST_JSONL, [_ok_row("ghost", "ghost")])
         assert C.TEST_JSONL.exists()
 
@@ -408,11 +427,13 @@ class TestNoResume:
         assert pairs == {("a", "tcs")}
 
     def test_no_resume_on_absent_file_is_fine(self, outdir, fake_engine, cfg):
+        """Verify a fresh sweep succeeds when no prior result file exists."""
         assert not C.TEST_JSONL.exists()
         m = E.run_sweep([FakeSpec("a")], ["tcs"], cfg, resume=False, workers=1)
         assert m["n_pairs_run"] == 1
 
     def test_no_resume_still_reports_the_full_pair_count(self, outdir, fake_engine, cfg):
+        """Verify fresh-run totals count every requested pair and skip none."""
         _write_jsonl(C.TEST_JSONL, [_ok_row("ghost", "ghost")])
         m = E.run_sweep([FakeSpec("a"), FakeSpec("b")], ["tcs", "infy"], cfg,
                         resume=False, workers=1)
@@ -441,9 +462,11 @@ class TestNoResume:
 class TestCrashIsolation:
     def test_a_raising_strategy_does_not_kill_the_sweep(self, outdir, fake_engine, cfg,
                                                        monkeypatch):
+        """Verify failed strategy pairs are recorded while other pairs still complete."""
         real = _fake_backtest
 
         def selective(bars, spec, params, **kw):
+            """Fail one strategy and delegate all other backtests to the fake engine."""
             if spec.name == "exploder":
                 raise RuntimeError("kaboom")
             return real(bars, spec, params, **kw)
@@ -460,7 +483,9 @@ class TestCrashIsolation:
 
     def test_the_failure_is_a_row_with_ok_false_and_a_reason(self, outdir, fake_engine,
                                                              cfg, monkeypatch):
+        """Verify a strategy exception becomes an auditable failed result row."""
         def selective(bars, spec, params, **kw):
+            """Raise for the selected strategy to exercise failed-row serialization."""
             if spec.name == "exploder":
                 raise RuntimeError("kaboom")
             return _fake_backtest(bars, spec, params, **kw)
@@ -482,6 +507,7 @@ class TestCrashIsolation:
         state = {"n": 0}
 
         def sometimes(bars, spec, params, **kw):
+            """Fail the first candidate and let later candidates use the fake backtest."""
             state["n"] += 1
             if state["n"] == 1:
                 raise ValueError("first candidate exploded")
@@ -503,6 +529,7 @@ class TestCrashIsolation:
         diagnosis -- the operator had to re-run with their own instrumentation.
         """
         def always_bad(bars, spec, params, **kw):
+            """Raise for every candidate so the all-failed result retains each reason."""
             raise RuntimeError("kaboom")
 
         monkeypatch.setattr(E, "run_single_stock", always_bad)
@@ -524,6 +551,7 @@ class TestCrashIsolation:
         assert rows[0]["strategy"] == "a"
 
     def test_load_rows_can_include_the_failures_on_request(self, outdir, cfg):
+        """Verify failed rows are omitted by default and included when requested."""
         _write_jsonl(C.TEST_JSONL,
                      [_ok_row("a", "tcs"), _failed_row("b", "infy"),
                       _failed_row("c", "hcl")])
@@ -537,6 +565,7 @@ class TestCrashIsolation:
                                                              cfg, monkeypatch):
         """Even a failure *outside* the per-candidate try/except must land as a row."""
         def boom(spec, stock, cfg_, *, timeframe="1d"):
+            """Raise outside candidate handling to exercise top-level pair failure capture."""
             raise ZeroDivisionError("division by zero in optimise_pair")
 
         monkeypatch.setattr(E, "optimise_pair", boom)
@@ -552,7 +581,9 @@ class TestCrashIsolation:
 
     def test_manifest_counts_agree_with_the_rows_on_disk(self, outdir, fake_engine, cfg,
                                                          monkeypatch):
+        """Verify manifest run, success, and failure totals match persisted rows."""
         def selective(bars, spec, params, **kw):
+            """Fail one strategy and delegate the other strategy to the fake backtest."""
             if spec.name == "bad":
                 raise RuntimeError("x")
             return _fake_backtest(bars, spec, params, **kw)
@@ -615,6 +646,7 @@ class TestCrashIsolation:
 # =========================================================================== #
 class TestAnalyseDegenerate:
     def test_missing_results_file(self, tmp_path):
+        """Verify a missing results file produces a no-data verdict and zero counts."""
         out = analyse(load_rows(tmp_path / "nope.jsonl"))
         assert out["n_pairs"] == 0
         assert out["n_failed_pairs"] == 0
@@ -622,6 +654,7 @@ class TestAnalyseDegenerate:
         assert _headline(out) == "NO DATA"
 
     def test_empty_results_file(self, outdir):
+        """Verify an empty results file is not presented as completed or significant data."""
         p = _write_jsonl(C.TEST_JSONL, [])
         out = analyse(load_rows(p))
         assert out["n_pairs"] == 0
@@ -653,6 +686,7 @@ class TestAnalyseDegenerate:
         assert "significant" not in h.lower(), "no survivors, so no significance claim"
 
     def test_all_failed_is_distinguishable_from_an_empty_file(self, outdir):
+        """Verify analysis distinguishes recorded failures from a run with no rows."""
         _write_jsonl(C.TEST_JSONL, [_failed_row(f"s{i}", "tcs") for i in range(3)])
         all_failed = analyse(load_rows(C.TEST_JSONL))
         _write_jsonl(C.TEST_JSONL, [])
@@ -670,6 +704,7 @@ class TestAnalyseDegenerate:
         assert "4 pairs ran and ALL FAILED" in _headline(out)
 
     def test_a_single_working_pair_reports_zero_failures(self, outdir):
+        """Verify one successful pair remains visible alongside a separate failure count."""
         _write_jsonl(C.TEST_JSONL, [_ok_row("a", "tcs"), _failed_row("b", "infy")])
         out = analyse()
         assert out["n_pairs"] == 1
@@ -677,6 +712,7 @@ class TestAnalyseDegenerate:
         assert "NO DATA" not in _headline(out)
 
     def test_single_pair_fdr(self, outdir):
+        """Verify one pair is tested against the configured false-discovery threshold."""
         p = _write_jsonl(C.TEST_JSONL, [_ok_row("solo", "tcs", p_timing=0.01)])
         out = analyse(load_rows(p))
         assert out["n_pairs"] == 1
@@ -696,6 +732,7 @@ class TestAnalyseDegenerate:
         assert isinstance(out["expected_false_positives_at_alpha"], float)
 
     def test_all_p_values_identical(self, outdir):
+        """Verify identical non-significant timing and parameter p-values yield no edge."""
         rows = [_ok_row(f"s{i}", f"stk{i}", p_timing=0.5, p_params=0.5)
                 for i in range(10)]
         out = analyse(rows)
@@ -712,6 +749,7 @@ class TestAnalyseDegenerate:
 
     @pytest.mark.parametrize("bad", [float("nan"), 0.0, 1.0])
     def test_pathological_p_values(self, outdir, bad):
+        """Verify NaN and boundary p-values produce bounded, valid significance counts."""
         rows = [_ok_row(f"s{i}", f"stk{i}", p_timing=bad, p_params=bad)
                 for i in range(6)]
         out = analyse(rows)
@@ -732,6 +770,7 @@ class TestAnalyseDegenerate:
         assert out["n_significant_vs_timing_null"] == 0
 
     def test_exposure_zero_and_one(self, outdir):
+        """Verify analysis summarizes zero, full, and mean strategy exposure correctly."""
         rows = [_ok_row("a", "tcs", test={"cagr": 0.0, "sharpe": 0.0, "exposure": 0.0}),
                 _ok_row("b", "infy", test={"cagr": 0.4, "sharpe": 1.2, "exposure": 1.0})]
         out = analyse(rows)
@@ -740,12 +779,14 @@ class TestAnalyseDegenerate:
         assert out["exposure"]["mean"] == pytest.approx(0.5)
 
     def test_zero_and_negative_alpha(self, outdir):
+        """Verify zero or negative benchmark alpha is not counted as outperformance."""
         rows = [_ok_row("a", "tcs", alpha_vs_buy_hold=0.0),
                 _ok_row("b", "infy", alpha_vs_buy_hold=-0.5)]
         out = analyse(rows)
         assert out["n_beats_buy_hold"] == 0, "alpha of exactly 0 is not 'beats'"
 
     def test_zero_max_year_share(self, outdir):
+        """Verify concentration summaries handle zero and high yearly-return shares."""
         rows = [_ok_row("a", "tcs", test_max_year_share=0.0),
                 _ok_row("b", "infy", test_max_year_share=0.9)]
         out = analyse(rows)
@@ -771,6 +812,7 @@ class TestAnalyseDegenerate:
             )
 
     def test_verdict_states_its_own_denominator(self, outdir):
+        """Verify the verdict states its tested-pair denominator and FDR threshold."""
         rows = [_ok_row(f"s{i}", f"stk{i}", p_timing=0.001) for i in range(40)]
         out = analyse(rows)
         assert "40 of 40 pairs" in out["verdict"]
@@ -785,6 +827,7 @@ class TestAnalyseDegenerate:
         assert [r["strategy"] for r in rows] == ["a", "b"], "prior rows must survive"
 
     def test_load_rows_skips_rows_without_the_test_stage(self, outdir):
+        """Verify train-stage records are excluded even when failed rows are requested."""
         _write_jsonl(C.TEST_JSONL,
                      [_ok_row("a", "tcs"),
                       {"strategy": "b", "stock": "infy", "stage": "train", "ok": True}])
@@ -793,6 +836,7 @@ class TestAnalyseDegenerate:
         assert [r["strategy"] for r in allrows] == ["a"], "a train row is not a result"
 
     def test_write_report_survives_an_empty_result_set(self, outdir):
+        """Verify report generation handles no results and displays zero pair counts."""
         p = _write_jsonl(C.TEST_JSONL, [])
         text = A.write_report(analyse(load_rows(p)))
         assert "NO DATA" in text
@@ -800,6 +844,7 @@ class TestAnalyseDegenerate:
         assert "pairs that failed | 0" in text
 
     def test_write_report_on_a_real_result_set(self, outdir):
+        """Verify a populated analysis report includes pair totals and the test-CAGR table."""
         rows = [_ok_row(f"s{i}", f"stk{i % 3}", p_timing=0.01) for i in range(9)]
         text = A.write_report(analyse(rows))
         assert "pairs completed | 9" in text
@@ -811,14 +856,17 @@ class TestAnalyseDegenerate:
 # =========================================================================== #
 class TestBenjaminiHochberg:
     def test_all_null_rejects_nothing(self):
+        """Verify null and large p-values do not pass the FDR correction."""
         assert benjamini_hochberg([1.0] * 20, 0.05).sum() == 0
         assert benjamini_hochberg([0.9, 0.99, 0.8, 0.7], 0.05).sum() == 0
 
     def test_all_perfect_rejects_everything(self):
+        """Verify zero and near-zero p-values are rejected at the configured level."""
         assert benjamini_hochberg([0.0] * 20, 0.05).all()
         assert benjamini_hochberg([1e-12] * 20, 0.05).all()
 
     def test_empty_input(self):
+        """Verify an empty p-value list returns an empty boolean result."""
         out = benjamini_hochberg([], 0.05)
         assert out.shape == (0,)
         assert out.dtype == bool
@@ -848,6 +896,7 @@ class TestBenjaminiHochberg:
         assert sig.tolist() == [True, True, False]
 
     def test_monotone_in_alpha(self):
+        """Verify increasing FDR alpha never decreases the number of rejected hypotheses."""
         rng = np.random.default_rng(20261013)
         for _ in range(40):
             p = list(rng.uniform(0.0, 1.0, size=int(rng.integers(2, 40))))
@@ -866,6 +915,7 @@ class TestBenjaminiHochberg:
             assert base <= grown, (p, base, grown)
 
     def test_rejected_set_is_always_a_prefix_of_the_sorted_p_values(self):
+        """Verify rejected hypotheses form a prefix when p-values are sorted ascending."""
         rng = np.random.default_rng(99)
         for _ in range(60):
             p = np.asarray(rng.uniform(0.0, 1.0, size=int(rng.integers(1, 60))))
@@ -878,6 +928,7 @@ class TestBenjaminiHochberg:
                 assert srt[:k].max() <= srt[k:].min() + 1e-15, (p, sig)
 
     def test_a_rejected_value_never_exceeds_its_bh_threshold(self):
+        """Verify each rejected p-value is no larger than its rank-specific BH threshold."""
         rng = np.random.default_rng(1234)
         for _ in range(40):
             p = np.asarray(rng.uniform(0.0, 1.0, size=25))
@@ -888,20 +939,24 @@ class TestBenjaminiHochberg:
                     assert p[idx] <= 0.05 * (rank + 1) / len(p) + 1e-15
 
     def test_nan_is_never_rejected(self):
+        """Verify NaN p-values remain rejected neither alone nor beside valid values."""
         assert not benjamini_hochberg([float("nan")] * 5, 0.05).any()
         sig = benjamini_hochberg([0.001, float("nan"), float("nan")], 0.05)
         assert sig.tolist() == [True, False, False]
 
     def test_zero_p_values_are_rejected(self):
+        """Verify zero p-values pass while a large p-value fails the correction."""
         sig = benjamini_hochberg([0.0, 0.0, 0.9], 0.05)
         assert sig.tolist() == [True, True, False]
 
     def test_result_is_a_boolean_array_of_the_right_shape(self):
+        """Verify the correction returns a boolean mask matching the input shape."""
         sig = benjamini_hochberg([0.01] * 7, 0.05)
         assert sig.shape == (7,)
         assert sig.dtype == bool
 
     def test_a_single_p_just_above_alpha_is_not_rejected(self):
+        """Verify a single p-value is rejected only when it falls below alpha."""
         assert not benjamini_hochberg([0.051], 0.05)[0]
         assert benjamini_hochberg([0.049], 0.05)[0]
 
@@ -912,6 +967,7 @@ class TestBenjaminiHochberg:
         assert C.FDR_ALPHA == 0.05
 
     def test_an_explicit_alpha_overrides_the_default(self):
+        """Verify an explicit alpha changes the rejection decision from the default."""
         assert bool(benjamini_hochberg([0.3], 0.05)[0]) is False
         assert bool(benjamini_hochberg([0.3], 0.9)[0]) is True
 
@@ -940,6 +996,7 @@ SAMPLE_FLAGS = {
 
 
 def _argv(flags: dict) -> list[str]:
+    """Flatten flag values into the argument list expected by argparse."""
     out: list[str] = []
     for name, value in flags.items():
         out.append(name)
@@ -950,11 +1007,13 @@ def _argv(flags: dict) -> list[str]:
 
 class TestCliSurface:
     def test_every_flag_in_this_task_parses(self):
+        """Verify every sampled command-line option creates a parsed argument."""
         args = R.build_parser().parse_args(_argv(SAMPLE_FLAGS))
         for name in SAMPLE_FLAGS:
             assert name.lstrip("-").replace("-", "_") in vars(args), name
 
     def test_every_flag_documented_in_readme_and_run_md_parses(self):
+        """Verify every optimizer option shown in documentation is accepted by the parser."""
         documented: set[str] = set()
         for doc in (OPTIMIZE_DIR / "README.md", REPO / "RUN.md"):
             text = doc.read_text(encoding="utf-8")
@@ -968,15 +1027,18 @@ class TestCliSurface:
 
     @pytest.mark.parametrize("name,value", sorted(SAMPLE_FLAGS.items()))
     def test_each_flag_parses_on_its_own(self, name, value):
+        """Verify each sampled option parses independently of the other flags."""
         argv = [name] + ([] if value is None
                          else (value if isinstance(value, list) else [value]))
         assert R.build_parser().parse_args(argv) is not None
 
     def test_rebalance_rejects_an_unknown_frequency(self):
+        """Verify the CLI rejects a rebalance frequency outside its supported choices."""
         with pytest.raises(SystemExit):
             R.build_parser().parse_args(["--rebalance", "Q"])
 
     def test_defaults_match_the_documented_values(self):
+        """Verify parser defaults match the documented optimization configuration."""
         a = R.build_parser().parse_args([])
         assert a.budget == C.DEFAULT_BUDGET
         assert a.rebalance == "M"
@@ -986,11 +1048,13 @@ class TestCliSurface:
         assert a.null_replicas == C.DEFAULT_NULL_REPLICAS
 
     def test_list_exits_zero_and_prints_the_catalog(self, capsys):
+        """Verify listing a selected strategy succeeds and prints its catalog entry."""
         assert R.main(["--list", "--strategies", "rsi_strategy"]) == 0
         out = capsys.readouterr().out
         assert "strategies" in out and "rsi_strategy" in out
 
     def test_dry_run_does_not_backtest(self, outdir, monkeypatch, capsys):
+        """Verify dry-run reports planned pairs without invoking the sweep engine."""
         called: list = []
         monkeypatch.setattr(R, "discover", lambda names=(): [FakeSpec("a")])
         monkeypatch.setattr(R, "run_sweep", lambda *a, **k: called.append(a) or {})
@@ -1002,9 +1066,11 @@ class TestCliSurface:
         assert "would run 2 pairs" in capsys.readouterr().out
 
     def test_unknown_strategy_fails_loudly(self, outdir, monkeypatch):
+        """Verify an unknown strategy name returns the CLI error status."""
         assert R.main(["--strategies", "no_such_strategy", "--dry-run"]) == 2
 
     def test_unknown_symbol_fails_loudly(self, outdir, monkeypatch):
+        """Verify a requested symbol without bars returns the CLI error status."""
         monkeypatch.setattr(R, "discover", lambda names=(): [FakeSpec("a")])
         monkeypatch.setattr(S, "available_symbols", lambda tf="1d": ["no_such_symbol"])
         monkeypatch.setattr(S, "bars", lambda *a, **k: pd.DataFrame())
@@ -1021,6 +1087,7 @@ class TestCliSurface:
         assert "would run 1 pairs" in capsys.readouterr().out
 
     def test_empty_catalog_is_an_error_not_a_zero_pair_sweep(self, outdir, monkeypatch):
+        """Verify an empty strategy catalog fails instead of producing a zero-pair sweep."""
         monkeypatch.setattr(R, "discover", lambda names=(): [])
         assert R.main(["--dry-run"]) == 2
 
@@ -1056,6 +1123,7 @@ class TestCliSurface:
         assert rows and rows[0]["seed"] == E.pair_seed("a", "tcs", 424242)
 
     def test_tax_is_on_by_default(self, outdir, fake_engine, monkeypatch):
+        """Verify the run manifest enables tax unless the user explicitly disables it."""
         monkeypatch.setattr(R, "discover", lambda names=(): [FakeSpec("a")])
         monkeypatch.setattr(S, "bars", lambda *a, **k: _bars(5))
         R.main(["--workers", "1", "--stocks", "tcs", "--no-resume"])
@@ -1073,6 +1141,7 @@ class TestCliSurface:
 
     def test_an_excluded_symbol_poisoning_a_valid_list_is_still_fatal(self, outdir,
                                                                       monkeypatch):
+        """Verify any excluded symbol makes the requested symbol list fail as a whole."""
         monkeypatch.setattr(R, "discover", lambda names=(): [FakeSpec("a")])
         monkeypatch.setattr(S, "bars", lambda *a, **k: _bars(5))
         assert R.main(["--dry-run", "--stocks", "tcs", "adanient"]) == 2
@@ -1099,6 +1168,7 @@ class TestCliSurface:
             assert R.main(["--dry-run", "--timeframe", tf]) == 2, tf
 
     def test_one_d_is_still_accepted(self, outdir, fake_engine, monkeypatch):
+        """Verify the CLI still accepts the supported daily timeframe."""
         monkeypatch.setattr(R, "discover", lambda names=(): [FakeSpec("a")])
         monkeypatch.setattr(S, "bars", lambda *a, **k: _bars(5))
         assert R.main(["--dry-run", "--timeframe", "1d"]) == 0
@@ -1118,12 +1188,14 @@ def data_dir(tmp_path, monkeypatch):
 
 
 def _write_csv(path: Path, **cols) -> Path:
+    """Write the supplied columns to a fixture CSV and return its path."""
     path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(cols).to_csv(path, index=False)
     return path
 
 
 def _ts(dates) -> list[int]:
+    """Convert dates to epoch-millisecond values for synthetic panel files."""
     return [int(pd.Timestamp(d).value // 1_000_000) for d in dates]
 
 
@@ -1135,6 +1207,7 @@ def _rising(n: int, start: float = 100.0) -> list[float]:
 
 class TestDataLoading:
     def test_missing_csv_yields_an_empty_frame_not_an_exception(self, data_dir):
+        """Verify missing symbol files return empty frames from raw and sliced reads."""
         df = S._read("ghost", "1d")
         assert isinstance(df, pd.DataFrame)
         assert df.empty, "a missing file must read as empty, not raise"
@@ -1142,6 +1215,7 @@ class TestDataLoading:
         assert S.train_bars("ghost").empty and S.test_bars("ghost").empty
 
     def test_epoch_ms_numeric_column_is_read_as_milliseconds(self, data_dir):
+        """Verify numeric epoch timestamps are interpreted as milliseconds, not seconds."""
         dates = pd.bdate_range("2020-01-01", periods=10)
         _write_csv(data_dir / "s_1d.csv", ts=_ts(dates), close=_rising(10))
         df = S._read("s", "1d")
@@ -1152,6 +1226,7 @@ class TestDataLoading:
         )
 
     def test_date_string_column_is_accepted(self, data_dir):
+        """Verify date-string columns load into the expected daily index."""
         dates = pd.bdate_range("2020-01-01", periods=10)
         _write_csv(data_dir / "s_1d.csv",
                    date=[d.strftime("%Y-%m-%d") for d in dates], close=_rising(10))
@@ -1160,6 +1235,7 @@ class TestDataLoading:
         assert df.index[0] == pd.Timestamp("2020-01-01")
 
     def test_datetime_and_timestamp_column_aliases(self, data_dir):
+        """Verify both supported datetime column aliases are recognized."""
         dates = pd.bdate_range("2020-01-01", periods=5)
         for col in ("datetime", "timestamp"):
             _write_csv(data_dir / f"{col}_1d.csv", **{col: [str(d.date()) for d in dates]},
@@ -1167,17 +1243,20 @@ class TestDataLoading:
             assert len(S._read(col, "1d")) == 5, col
 
     def test_missing_date_column_raises_a_named_error(self, data_dir):
+        """Verify CSVs without a recognized date column raise a named error."""
         _write_csv(data_dir / "s_1d.csv", px=[1.0, 2.0, 3.0])
         with pytest.raises(KeyError, match="no date column"):
             S._read("s", "1d")
 
     def test_missing_close_column_raises_a_named_error(self, data_dir):
+        """Verify CSVs without close prices raise a named error."""
         _write_csv(data_dir / "s_1d.csv", ts=_ts(pd.bdate_range("2020-01-01", periods=3)),
                    volume=[1.0] * 3)
         with pytest.raises(KeyError, match="no close column"):
             S._read("s", "1d")
 
     def test_duplicate_timestamps_are_collapsed_keeping_the_last(self, data_dir):
+        """Verify duplicate timestamps keep the final row's close value."""
         dates = pd.bdate_range("2020-01-01", periods=4)
         ts = _ts(list(dates) + [dates[1]])
         # 99.0 is the *second* copy of day 2; keep=last must win over the original.
@@ -1187,6 +1266,7 @@ class TestDataLoading:
         assert df["close"].tolist()[1] == 99.0, "keep=last must win"
 
     def test_duplicate_timestamps_do_not_break_the_window_slices(self, data_dir):
+        """Verify duplicate removal occurs before TRAIN and TEST window slicing."""
         dates = pd.bdate_range("2024-01-01", periods=6)
         ts = _ts(list(dates) * 3)
         _write_csv(data_dir / "s_1d.csv", ts=ts, close=_rising(len(ts)))
@@ -1194,6 +1274,7 @@ class TestDataLoading:
         assert len(S.test_bars("s")) == 6
 
     def test_single_row_file_loads(self, data_dir):
+        """Verify a one-row symbol file works through raw and full-panel accessors."""
         _write_csv(data_dir / "s_1d.csv", ts=_ts(["2020-06-01"]), close=[123.0])
         df = S._read("s", "1d")
         assert len(df) == 1
@@ -1201,20 +1282,24 @@ class TestDataLoading:
         assert S.bars("s", S.FULL, "1d").shape[0] == 1
 
     def test_empty_csv_loads_as_empty(self, data_dir):
+        """Verify a CSV with empty date and close columns produces an empty frame."""
         _write_csv(data_dir / "s_1d.csv", ts=[], close=[])
         assert S._read("s", "1d").empty
 
     def test_headers_only_csv_loads_as_empty(self, data_dir):
+        """Verify a header-only CSV is treated as an empty data frame."""
         (data_dir / "s_1d.csv").write_text("ts,close\n", encoding="utf-8")
         assert S._read("s", "1d").empty
 
     def test_entirely_non_positive_prices_are_dropped(self, data_dir):
+        """Verify a file of only non-positive closes yields no loaded prices."""
         dates = pd.bdate_range("2020-01-01", periods=6)
         _write_csv(data_dir / "s_1d.csv", ts=_ts(dates), close=[0.0, -5.0] * 3)
         df = S._read("s", "1d")
         assert df.empty, "non-positive closes must never be forward-filled back in"
 
     def test_a_mix_of_good_and_non_positive_keeps_only_the_good(self, data_dir):
+        """Verify positive closes survive while non-positive rows are removed."""
         dates = pd.bdate_range("2020-01-01", periods=5)
         _write_csv(data_dir / "s_1d.csv", ts=_ts(dates),
                    close=[100.0, 0.0, -1.0, 103.0, 104.0])
@@ -1222,11 +1307,13 @@ class TestDataLoading:
         assert df["close"].tolist() == [100.0, 103.0, 104.0]
 
     def test_pre_2008_rows_are_dropped(self, data_dir):
+        """Verify the splitter excludes observations before the 2008 clean-history start."""
         dates = pd.to_datetime(["2005-06-01", "2007-06-01", "2009-06-01"])
         _write_csv(data_dir / "s_1d.csv", ts=_ts(dates), close=[1.0, 2.0, 3.0])
         assert len(S._read("s", "1d")) == 1
 
     def test_a_vendor_freeze_run_is_dropped(self, data_dir):
+        """Verify a six-bar repeated-close vendor freeze is removed from the series."""
         dates = pd.bdate_range("2020-01-01", periods=10)
         close = [100.0] * 6 + [101.0, 102.0, 103.0, 104.0]
         _write_csv(data_dir / "s_1d.csv", ts=_ts(dates), close=close)
@@ -1234,17 +1321,20 @@ class TestDataLoading:
         assert len(df) == 4, "the 6-bar identical run is a frozen feed"
 
     def test_vol_column_is_renamed_to_volume(self, data_dir):
+        """Verify the vendor's ``vol`` column is normalized to ``volume``."""
         dates = pd.bdate_range("2020-01-01", periods=4)
         _write_csv(data_dir / "s_1d.csv", ts=_ts(dates), close=_rising(4), vol=[10.0] * 4)
         df = S._read("s", "1d")
         assert "volume" in df.columns and "vol" not in df.columns
 
     def test_column_names_are_case_insensitive(self, data_dir):
+        """Verify uppercase date and close headers are accepted."""
         dates = pd.bdate_range("2020-01-01", periods=4)
         _write_csv(data_dir / "s_1d.csv", TS=_ts(dates), Close=_rising(4))
         assert len(S._read("s", "1d")) == 4
 
     def test_unparseable_numeric_coerces_to_nan_and_the_row_is_dropped(self, data_dir):
+        """Verify an invalid numeric close is dropped while valid rows remain."""
         dates = pd.bdate_range("2020-01-01", periods=4)
         _write_csv(data_dir / "s_1d.csv", ts=_ts(dates),
                    close=["100", "n/a", "102", "103"])
@@ -1252,6 +1342,7 @@ class TestDataLoading:
         assert df["close"].tolist() == [100.0, 102.0, 103.0]
 
     def test_slices_are_disjoint_and_ordered(self, data_dir):
+        """Verify TRAIN and TEST contain ordered, non-overlapping date ranges."""
         dates = pd.bdate_range("2023-12-20", periods=40)
         _write_csv(data_dir / "s_1d.csv", ts=_ts(dates), close=_rising(40))
         tr, te = S.train_bars("s"), S.test_bars("s")
@@ -1283,6 +1374,7 @@ class TestDataLoading:
         assert hourly["close"].iloc[0] == 500.0
 
     def test_available_symbols_ignores_other_timeframes(self, data_dir):
+        """Verify daily symbol discovery ignores files available only at other timeframes."""
         _write_csv(data_dir / "a_1d.csv", ts=[1], close=[1.0])
         _write_csv(data_dir / "a_5m.csv", ts=[1], close=[1.0])
         _write_csv(data_dir / "a_1h.csv", ts=[1], close=[1.0])
@@ -1329,6 +1421,7 @@ class TestExcludedSymbols:
         assert not (set(S.EXCLUDED_SYMBOLS) & set(symbols)), "an excluded symbol leaked"
 
     def test_available_symbols_and_load_universe_agree(self, production_universe):
+        """Verify splitter symbol discovery matches the production loader's universe."""
         _, symbols, _ = production_universe
         available = set(S.available_symbols("1d"))
         assert available == set(symbols), (
@@ -1338,6 +1431,7 @@ class TestExcludedSymbols:
         assert len(available) == 47, "50 minus adanient, jiofin and tmpv"
 
     def test_the_exclusion_list_is_non_empty_and_documented(self):
+        """Verify exclusions exist and are described in both source and README."""
         assert S.EXCLUDED_SYMBOLS
         doc = (OPTIMIZE_DIR / "splitter.py").read_text(encoding="utf-8")
         assert "nsealgo.data.loader" in doc, "the source must name what it mirrors"
@@ -1346,9 +1440,11 @@ class TestExcludedSymbols:
             assert sym in readme, f"{sym} is excluded but the README does not say so"
 
     def test_available_symbols_filters_the_excluded(self):
+        """Verify default symbol discovery omits every excluded instrument."""
         assert not (set(S.available_symbols("1d")) & S.EXCLUDED_SYMBOLS)
 
     def test_include_excluded_reveals_them(self, tmp_path, monkeypatch):
+        """Verify the explicit override reveals excluded files without changing defaults."""
         d = tmp_path / "nse"
         d.mkdir()
         for sym in ("good", "adanient", "jiofin"):
@@ -1447,6 +1543,7 @@ class TestCandidateDedup:
         assert summary is not None
 
     def test_a_normal_sampler_still_reaches_the_full_budget(self, outdir, fake_engine, cfg):
+        """Verify a sampler with distinct candidates still fills the configured budget."""
         row, _ = E.optimise_pair(FakeSpec("ok"), "tcs", cfg)
         assert row["n_candidates"] == cfg.budget, (
             "the bail-out must not shorten a healthy search"
@@ -1486,13 +1583,16 @@ class TestPairSeed:
         assert E.pair_seed("rsi_strategy", "tcs", 20261013) == want
 
     def test_pair_seed_separates_neighbouring_pairs(self):
+        """Verify different strategy-symbol pairs receive distinct deterministic seeds."""
         seeds = {E.pair_seed(s, st, 1) for s in ("a", "b") for st in ("x", "y")}
         assert len(seeds) == 4
 
     def test_pair_seed_changes_with_the_master_seed(self):
+        """Verify changing the master seed changes the derived pair seed."""
         assert E.pair_seed("a", "tcs", 1) != E.pair_seed("a", "tcs", 2)
 
     def test_pair_seed_is_a_valid_rng_seed(self):
+        """Verify the derived seed fits NumPy's accepted range and initializes a generator."""
         s = E.pair_seed("rsi_strategy", "tcs", 20261013)
         assert 0 <= s < 2**64
         assert np.random.default_rng(s).random() >= 0.0
@@ -1501,11 +1601,13 @@ class TestPairSeed:
 class TestPairDeterminism:
     def test_the_same_pair_replayed_twice_gives_the_same_row(self, outdir, fake_engine,
                                                                cfg):
+        """Verify rerunning one strategy-symbol pair yields an identical result row."""
         row1, _ = E.optimise_pair(FakeSpec("det"), "tcs", cfg)
         row2, _ = E.optimise_pair(FakeSpec("det"), "tcs", cfg)
         assert row1 == row2, "a pair must be reproducible in isolation"
 
     def test_different_pairs_get_different_seeds(self, outdir, fake_engine, cfg):
+        """Verify changing strategy or symbol produces a distinct pair seed."""
         r1, _ = E.optimise_pair(FakeSpec("a"), "tcs", cfg)
         r2, _ = E.optimise_pair(FakeSpec("b"), "tcs", cfg)
         r3, _ = E.optimise_pair(FakeSpec("a"), "infy", cfg)
@@ -1513,6 +1615,7 @@ class TestPairDeterminism:
 
     def test_an_empty_train_slice_fails_the_pair_loudly(self, outdir, fake_engine, cfg,
                                                         monkeypatch):
+        """Verify an empty TRAIN window creates a failed pair row without a summary."""
         monkeypatch.setattr(S, "train_bars", lambda sym, tf="1d": pd.DataFrame())
         row, summary = E.optimise_pair(FakeSpec("a"), "tcs", cfg)
         assert row["ok"] is False
@@ -1521,16 +1624,19 @@ class TestPairDeterminism:
 
     def test_an_empty_test_slice_fails_the_pair_loudly(self, outdir, fake_engine, cfg,
                                                        monkeypatch):
+        """Verify an empty TEST window is attributed to TEST in the failed pair result."""
         monkeypatch.setattr(S, "test_bars", lambda sym, tf="1d": pd.DataFrame())
         row, _ = E.optimise_pair(FakeSpec("a"), "tcs", cfg)
         assert row["ok"] is False and "TEST" in row["error"]
 
     def test_a_test_side_backtest_error_is_attributed_to_TEST(self, outdir, fake_engine,
                                                               cfg, monkeypatch):
+        """Verify final evaluation failures name TEST and retain the best TRAIN result."""
         real = _fake_backtest
         state = {"n": 0}
 
         def fail_on_test(bars, spec, params, **kw):
+            """Allow the configured TRAIN candidates, then fail the TEST evaluation."""
             state["n"] += 1
             if state["n"] > cfg.budget:
                 raise ValueError("test-side explosion")
@@ -1544,7 +1650,9 @@ class TestPairDeterminism:
 
     def test_a_fully_failing_search_reports_the_failure_count(self, outdir, fake_engine,
                                                               cfg, monkeypatch):
+        """Verify an all-failing candidate search records its failure count and no summary."""
         def always_bad(bars, spec, params, **kw):
+            """Raise for every candidate to exercise the all-failed search path."""
             raise RuntimeError("nope")
 
         monkeypatch.setattr(E, "run_single_stock", always_bad)
@@ -1554,6 +1662,7 @@ class TestPairDeterminism:
         assert summary is None
 
     def test_a_successful_row_carries_every_auditable_field(self, outdir, fake_engine, cfg):
+        """Verify a successful result contains the fields needed to audit train and test."""
         row, summary = E.optimise_pair(FakeSpec("a"), "tcs", cfg)
         for key in ("strategy", "stock", "stage", "seed", "capital", "tax_enabled",
                     "rebalance", "budget", "best_label", "params", "n_candidates",
@@ -1574,6 +1683,7 @@ class TestPairDeterminism:
         real = _fake_backtest
 
         def spy(bars, sp, params, **kw):
+            """Record each candidate passed to the backtester and return its result."""
             seen.append(dict(params))
             return real(bars, sp, params, **kw)
 
@@ -1595,6 +1705,7 @@ class TestPairDeterminism:
 class TestCatalogRobustness:
     def test_a_nonexistent_module_raises_rather_than_returning_a_stub(self, tmp_path,
                                                                      monkeypatch):
+        """Verify requesting a nonexistent strategy module raises instead of returning a stub."""
         from research.optimize import catalog as CAT
 
         monkeypatch.setattr(CAT, "CATALOG_DIR", tmp_path)
@@ -1603,11 +1714,13 @@ class TestCatalogRobustness:
 
     def test_discover_skips_a_broken_module_and_keeps_the_good_one(self, monkeypatch,
                                                                    caplog):
+        """Verify catalog discovery logs and skips one broken module while keeping valid specs."""
         import importlib as real_importlib
 
         from research.optimize import catalog as CAT
 
         def flaky_import(name):
+            """Fail the selected module import and delegate all other imports normally."""
             if name.endswith(".rsi_strategy"):
                 raise RuntimeError("broken module")
             return real_importlib.import_module(name)
@@ -1625,11 +1738,13 @@ class TestCatalogRobustness:
         )
 
     def test_every_discovered_spec_builds_its_shipped_default(self):
+        """Verify representative discovered strategies instantiate from shipped defaults."""
         for name in ("rsi_strategy", "absolute_momentum"):
             spec = load_strategy(name)
             assert spec.build(dict(spec.default)) is not None, name
 
     def test_unknown_type_fields_are_held_fixed_not_guessed(self):
+        """Verify parameterized and fixed fields together cover the complete config schema."""
         import dataclasses
 
         spec = load_strategy("rsi_strategy")
@@ -1637,9 +1752,11 @@ class TestCatalogRobustness:
         assert names == {f.name for f in dataclasses.fields(spec.config_cls)}
 
     def test_discover_of_an_unknown_name_is_empty_not_an_error(self):
+        """Verify discovery with only an unknown name returns an empty list."""
         assert discover(("definitely_not_a_strategy",)) == []
 
     def test_partial_name_filter_drops_the_rest(self):
+        """Verify discovery retains known requested names and ignores unknown filters."""
         specs = discover(("rsi_strategy", "not_a_strategy"))
         assert [s.name for s in specs] == ["rsi_strategy"]
 

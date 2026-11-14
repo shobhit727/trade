@@ -63,6 +63,7 @@ class TestNoLookahead:
     """Weights decided at date t must not use information from t+1 onward."""
 
     def test_factors_are_trailing_only(self) -> None:
+        """Verify truncating future observations leaves prior factor values unchanged."""
         p = make_panel()
         mom = momentum_12_1(p)          # DataFrame: dates x symbols
         # Truncating the panel must not change any *past* factor value.
@@ -71,6 +72,7 @@ class TestNoLookahead:
         pd.testing.assert_frame_equal(mom.loc[:cut], mom_trunc.loc[:cut])
 
     def test_future_prices_cannot_change_past_signals(self) -> None:
+        """Verify corrupting future prices cannot alter already-computed signals."""
         p = make_panel()
         cut = p.index[700]
         before = build_composite_score(p.loc[:cut])
@@ -83,6 +85,7 @@ class TestNoLookahead:
         pd.testing.assert_frame_equal(before, after)
 
     def test_regime_exposure_is_lagged(self) -> None:
+        """Verify regime exposure at each date excludes subsequent prices."""
         p = make_panel()
         e = exposure_series(p, lookback=126, threshold=0.0)
         # exposure[t] may only use data through t-1, so poisoning t+1.. must not
@@ -94,6 +97,7 @@ class TestNoLookahead:
         pd.testing.assert_series_equal(e.loc[:cutoff], e2.loc[:cutoff])
 
     def test_zscore_is_cross_sectional_per_day(self) -> None:
+        """Verify cross-sectional z-scores are invariant to a day's scale."""
         f = pd.DataFrame(
             [[1.0, 2.0, 3.0], [100.0, 200.0, 300.0]],
             index=pd.to_datetime(["2020-01-01", "2020-01-02"]),
@@ -106,6 +110,7 @@ class TestNoLookahead:
 
 class TestCostRealism:
     def test_costs_reduce_return_monotonically(self) -> None:
+        """Verify higher slippage lowers returns and increases annual cost drag."""
         p = make_panel()
         sc = build_composite_score(p)
         cfg = PortfolioConfig()
@@ -134,18 +139,21 @@ class TestCostRealism:
 
 class TestConstraints:
     def test_position_count_respected(self) -> None:
+        """Verify the backtest holds no more than the configured target count."""
         p = make_panel(n_sym=40)
         sc = build_composite_score(p)
         res = run_backtest(p, sc, CM, PortfolioConfig(n_positions=12), "M")
         assert res.diag["avg_names"] <= 13  # +1 for a partial rebalance leg
 
     def test_single_name_cap_respected(self) -> None:
+        """Verify no stock weight exceeds the configured per-name cap."""
         p = make_panel(n_sym=40)
         sc = build_composite_score(p)
         res = run_backtest(p, sc, CM, PortfolioConfig(max_weight=0.12), "M")
         assert res.weights.max().max() <= 0.1201
 
     def test_weights_sum_below_one_for_cash_buffer(self) -> None:
+        """Verify the configured cash buffer remains uninvested."""
         p = make_panel(n_sym=40)
         sc = build_composite_score(p)
         cfg = PortfolioConfig(cash_buffer=0.15)
@@ -153,12 +161,14 @@ class TestConstraints:
         assert res.weights.sum(axis=1).max() <= 0.851
 
     def test_weights_never_negative(self) -> None:
+        """Verify long-only portfolio weights never become negative."""
         p = make_panel()
         sc = build_composite_score(p)
         res = run_backtest(p, sc, CM, PortfolioConfig(), "M")
         assert res.weights.min().min() >= 0.0
 
     def test_sector_map_is_total(self) -> None:
+        """Verify known and unknown symbols both resolve to a sector label."""
         assert all(isinstance(sector_of(s), str) for s in ["tcs", "hdfcbank", "zzz"])
 
 
@@ -208,16 +218,19 @@ class TestCapsHoldSimultaneously:
 
     @pytest.mark.parametrize("n_positions", [5, 8, 10, 12, 15, 22, 30])
     def test_single_name_cap_holds_under_concentration(self, n_positions: int) -> None:
+        """Verify a highly concentrated score cannot breach the single-name cap."""
         cfg = PortfolioConfig(n_positions=n_positions)
         w = concentrated_weights(cfg)
         assert w.max(axis=1).max() <= cfg.max_weight + 1e-9
 
     def test_sector_cap_holds_under_concentration(self) -> None:
+        """Verify concentrated scores cannot push a sector above its cap."""
         cfg = PortfolioConfig(n_positions=12)
         w = concentrated_weights(cfg)
         assert sector_sums(w).max() <= cfg.max_sector_weight + 1e-9
 
     def test_all_invariants_hold_under_concentration(self) -> None:
+        """Verify name, sector, cash, and non-negativity constraints hold together."""
         cfg = PortfolioConfig(n_positions=12)
         w = concentrated_weights(cfg)
         assert w.max(axis=1).max() <= cfg.max_weight + 1e-9
@@ -252,6 +265,7 @@ class TestPositionCountDoesNotAccumulate:
     weights accreted until 48 names held a non-zero position against a limit of 30."""
 
     def test_blend_drops_dead_weights(self) -> None:
+        """Verify names removed from the target do not retain residual weight."""
         cur = pd.Series({"a": 0.10, "b": 0.09, "c": 0.08})
         tgt = pd.Series({"a": 0.10, "b": 0.09, "d": 0.08})
         out = apply_turnover_budget(tgt, cur, budget=0.35, max_names=30)
@@ -287,6 +301,7 @@ class TestPositionCountDoesNotAccumulate:
             prev = out
 
     def test_backtest_held_weights_respect_max_names(self) -> None:
+        """Verify realized holdings obey the maximum-name limit across rebalances."""
         p = make_panel(n_sym=40)
         sc = build_composite_score(p)
         res = run_backtest(p, sc, CM, PortfolioConfig(n_positions=40), "M")
@@ -393,6 +408,7 @@ def sparse(sector_panel: pd.DataFrame) -> pd.DataFrame:
 
 
 def rebalance_books(panel: pd.DataFrame, weights: pd.DataFrame) -> pd.DataFrame:
+    """Return weight rows for completed monthly rebalance dates, excluding the initial row."""
     return weights.loc[
         [d for d in _rebalance_dates(panel.index, "M") if d in weights.index][1:]
     ]
@@ -544,12 +560,14 @@ class TestMetrics:
         assert abs(compute_metrics(flat, rf_annual=rf).sharpe) < 1e-6
 
     def test_zero_volatility_gives_zero_sharpe_not_nan(self) -> None:
+        """Verify a constant return series produces finite zero risk metrics."""
         flat = pd.Series([0.0] * 300)
         m = compute_metrics(flat)
         assert m.sharpe == 0.0
         assert m.volatility == 0.0
 
     def test_max_drawdown_on_equity_curve(self) -> None:
+        """Verify maximum drawdown uses the equity curve's peak-to-trough path."""
         eq = pd.Series([1.0, 1.5, 0.75, 1.2, 0.9])
         dd, days = max_drawdown(eq)
         assert dd == pytest.approx(-0.5)
@@ -557,6 +575,7 @@ class TestMetrics:
         assert drawdown_series(eq).min() == pytest.approx(-0.5)
 
     def test_monotonic_equity_has_no_drawdown(self) -> None:
+        """Verify an equity curve that only rises has zero maximum drawdown."""
         eq = pd.Series([1.0, 1.1, 1.2, 1.3])
         dd, _ = max_drawdown(eq)
         assert dd == pytest.approx(0.0)
@@ -573,6 +592,7 @@ class TestMetrics:
         assert y[2021] == pytest.approx(0.21)
 
     def test_empty_input_is_safe(self) -> None:
+        """Verify empty returns produce a valid zero-valued metric result."""
         m = compute_metrics(pd.Series(dtype=float))
         assert m.n_periods == 0
         assert m.cagr == 0.0
@@ -580,6 +600,7 @@ class TestMetrics:
 
 class TestOverlay:
     def test_blend_keeps_shares_summed_to_one(self) -> None:
+        """Verify cash blending returns one finite strategy return per input date."""
         p = make_panel()
         r = pd.Series(0.001, index=p.index)
         e = pd.Series(0.5, index=p.index)
@@ -588,6 +609,7 @@ class TestOverlay:
         assert (out > -1).all()
 
     def test_full_exposure_reproduces_strategy(self) -> None:
+        """Verify full market exposure leaves strategy returns unchanged."""
         p = make_panel()
         r = pd.Series(0.001, index=p.index)
         e = pd.Series(1.0, index=p.index)
@@ -595,6 +617,7 @@ class TestOverlay:
         np.testing.assert_allclose(out.values, 0.001, atol=1e-9)
 
     def test_zero_exposure_earns_risk_free(self) -> None:
+        """Verify zero exposure earns the cash return rather than strategy losses."""
         p = make_panel()
         r = pd.Series(-0.05, index=p.index)  # catastrophic strategy day
         e = pd.Series(0.0, index=p.index)   # fully de-risked
@@ -604,6 +627,7 @@ class TestOverlay:
 
 class TestWalkForwardSafety:
     def test_insufficient_data_raises(self) -> None:
+        """Verify walk-forward validation rejects windows longer than available history."""
         from nsealgo.backtest.walkforward import walk_forward
 
         p = make_panel(n_days=300, n_sym=10)
@@ -612,6 +636,7 @@ class TestWalkForwardSafety:
                          train_years=6, test_years=2)
 
     def test_rejects_unknown_rebalance_freq(self) -> None:
+        """Verify unsupported rebalance frequencies fail with a useful error."""
         from nsealgo.backtest.engine import _rebalance_dates
 
         with pytest.raises(ValueError, match="W.*M.*Q"):
@@ -627,6 +652,7 @@ class TestProvenance:
     """
 
     def test_result_carries_all_four_fingerprints(self) -> None:
+        """Verify each result records engine, loader, cost, and panel fingerprints."""
         from nsealgo.backtest.engine import run_backtest
         from nsealgo.provenance import provenance
 
@@ -659,6 +685,7 @@ class TestProvenance:
         assert "engine=" in r.summary()
 
     def test_summary_reports_loader_and_panel(self) -> None:
+        """Verify the human-readable result summary includes loader and panel identity."""
         from nsealgo.backtest.engine import BacktestResult
         from nsealgo.provenance import PANEL_SHA
 
@@ -696,6 +723,7 @@ class TestProvenance:
         assert _sha(src) == before, "restoring the file restores the hash"
 
     def test_code_edits_do_invalidate_the_fingerprint(self) -> None:
+        """Verify changing executable source changes its provenance fingerprint."""
         from nsealgo.provenance import _sha
 
         src = Path(__file__).resolve().parents[2] / "src" / "nsealgo" / "costs.py"

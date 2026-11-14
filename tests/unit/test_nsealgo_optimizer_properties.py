@@ -88,6 +88,7 @@ class Scripted:
     """
 
     def __init__(self, config=None):
+        """Initialize the scheduled fake strategy and its observed-call state."""
         self._pos: dict[str, int] = {}
         self.config = config
         self._schedule = list(getattr(config, "schedule", None) or [1, 0])
@@ -98,6 +99,7 @@ class Scripted:
         self.ts_seen: list[int] = []
 
     def feed(self, symbol, close, high=None, low=None, volume=None, ts=None):
+        """Advance the schedule and record the requested position and bar timestamp."""
         i = self.i
         self.i += 1
         self._pos[symbol] = int(self._schedule[i % len(self._schedule)])
@@ -110,6 +112,7 @@ class _Cfg:
     """Bag-of-attributes Config; the engine only ever reaches ``spec.build(params)``."""
 
     def __init__(self, **kw):
+        """Apply the default schedule and expose supplied values as config attributes."""
         self.schedule = kw.get("schedule", [1, 0])
         for k, v in kw.items():
             setattr(self, k, v)
@@ -118,6 +121,7 @@ class _Cfg:
 def spec_for(cls=Scripted, name: str = "probe", *, instrument: list | None = None):
     """Duck-typed StrategySpec. ``build`` is the only member the engine touches."""
     def build(values):
+        """Create the configured fake strategy and optionally record the instance."""
         inst = cls(_Cfg(**values))
         if instrument is not None:
             instrument.append(inst)
@@ -155,6 +159,7 @@ def price_path(kind: str, n: int, rng) -> np.ndarray:
 
 
 def bars_for(close: np.ndarray, start: str = "2016-01-04") -> pd.DataFrame:
+    """Build business-day OHLCV bars around the supplied close series."""
     idx = pd.bdate_range(start, periods=len(close))
     return pd.DataFrame({"close": close, "high": close * 1.02, "low": close * 0.98,
                          "volume": 1e6}, index=idx)
@@ -246,6 +251,7 @@ def _pristine_fastpath():
     fast path cannot leak into the rest of the session.
     """
     def _unwrap_all(ids: set[int]) -> None:
+        """Restore module aliases that still reference one of the wrapped functions."""
         for mod in list(sys.modules.values()):
             d = getattr(mod, "__dict__", None)
             if not d:
@@ -319,6 +325,7 @@ class TestCashConservation:
     """
 
     def test_ledger_replayed_from_the_trade_tape_reproduces_final_equity(self, books):
+        """Verify independent trade-tape replay matches final marked equity."""
         for i, (bars, _sched, res) in enumerate(books):
             r = replay(res.trades)
             expected = r["cash"] + r["open_shares"] * float(bars["close"].iloc[-1])
@@ -381,6 +388,7 @@ class TestCashConservation:
 # --------------------------------------------------------------------------- #
 class TestEquitySafety:
     def test_equity_is_strictly_positive_on_every_bar_of_every_path(self):
+        """Verify randomized walks, crashes, flat paths, and trends never bankrupt equity."""
         rng = np.random.default_rng(20260111)
         bars_checked = 0
         for i in range(PRICE_PATH_FUZZ):
@@ -406,6 +414,7 @@ class TestEquitySafety:
         assert bars_checked > PRICE_PATH_FUZZ * 25
 
     def test_equity_never_decreases_while_flat(self):
+        """Verify marked equity stays constant across consecutive bars with no position."""
         rng = np.random.default_rng(20260112)
         pairs = 0
         for _ in range(100):
@@ -469,6 +478,7 @@ class TestEquitySafety:
                 f"{value + value * bps / 10_000.0:.6f} > budget {budget:.6f}")
 
     def test_non_positive_or_non_finite_close_is_rejected_loudly(self):
+        """Verify zero, negative, NaN, and infinite closes raise a backtest error."""
         rng = np.random.default_rng(20260114)
         for bad in (0.0, -1.0, float("nan"), float("inf"), float("-inf")):
             close = 100.0 * np.exp(np.cumsum(rng.normal(0, 0.01, 40)))
@@ -521,6 +531,7 @@ class TestTaxBounds:
     """
 
     def test_tax_never_exceeds_the_statutory_rate_on_positive_gains(self):
+        """Verify randomized FIFO settlements never tax gains above the applicable rate."""
         rng = np.random.default_rng(20260121)
         sell_ts = datetime(2024, 6, 1)
         both_regimes = 0
@@ -606,6 +617,7 @@ class TestTaxBounds:
         assert paid > 200
 
     def test_day_365_is_short_term_and_day_366_is_long_term(self):
+        """Verify day 365 uses STCG and day 366 uses LTCG."""
         sell_ts = datetime(2024, 6, 1)
         d366 = sell_ts - timedelta(days=366)
         d365 = sell_ts - timedelta(days=365)
@@ -617,6 +629,7 @@ class TestTaxBounds:
         assert abs(tax - 100.0 * STCG) < 1e-9, f"365-day lot taxed at {tax}, want STCG"
 
     def test_disabling_tax_pays_exactly_zero_and_still_books_the_pnl(self):
+        """Verify disabling tax preserves settlement P&L while charging no tax."""
         rng = np.random.default_rng(20260124)
         for _ in range(500):
             spec = [(float(rng.uniform(1, 100)), float(rng.uniform(1, 1e4)),
@@ -656,6 +669,7 @@ class TestTaxBounds:
 # --------------------------------------------------------------------------- #
 class TestFifoLedger:
     def test_ledger_holds_exactly_the_unsold_shares_after_random_buys_and_sells(self):
+        """Verify randomized FIFO trades leave exactly the unsold shares and basis."""
         rng = np.random.default_rng(20260131)
         base = datetime(2015, 1, 1)
         for trial in range(1500):
@@ -713,6 +727,7 @@ class TestFifoLedger:
             assert len(lots) == 0, "fully consumed lot left behind"
 
     def test_ledger_never_consumes_more_than_it_holds(self):
+        """Verify an oversized sell empties the FIFO ledger without non-finite P&L."""
         rng = np.random.default_rng(20260133)
         for _ in range(600):
             shares = float(rng.uniform(1, 100))
@@ -735,6 +750,7 @@ class TestNoLookahead:
     """
 
     def test_truncation_preserves_every_past_trade_and_equity_value(self):
+        """Verify cutting future bars does not rewrite earlier trades or equity."""
         rng = np.random.default_rng(20260201)
         checked = 0
         for _ in range(14):
@@ -762,6 +778,7 @@ class TestNoLookahead:
         assert checked > 60
 
     def test_truncation_holds_for_real_catalog_strategies(self):
+        """Verify sampled production strategies preserve history when future bars are cut."""
         rng = np.random.default_rng(20260202)
         names = ("momentum_factor_strategy", "dual_momentum_strategy",
                  "trend_momentum_strategy", "trend_mean_reversion",
@@ -815,6 +832,7 @@ class TestNoLookahead:
                     f"{freq}: mask disagrees with to_period({freq})")
 
     def test_daily_rebalance_is_every_bar(self):
+        """Verify daily frequency marks every input date as actionable."""
         idx = pd.bdate_range("2020-01-01", periods=50)
         assert rebalance_dates(idx, "D") == frozenset(idx)
 
@@ -859,6 +877,7 @@ class TestNoLookahead:
 class TestMetricConsistency:
     @staticmethod
     def _curve(rng):
+        """Generate a seeded positive equity curve in one of six return shapes."""
         m = int(rng.integers(3, 400))
         kind = int(rng.integers(0, 6))
         if kind == 0:
@@ -979,6 +998,7 @@ class TestMetricConsistency:
                 f"a curve whose gains are entirely in one year reported share {got}")
 
     def test_sharpe_of_a_constant_curve_is_zero_at_any_level(self):
+        """Verify a flat curve reports zero volatility and risk-adjusted metrics at any scale."""
         for value in (1.0, 100.0, 1e7):
             eq = pd.Series(np.full(120, value),
                            index=pd.bdate_range("2018-01-01", periods=120))
@@ -987,6 +1007,7 @@ class TestMetricConsistency:
                 0.0, 0.0, 0.0, 0.0, 0.0), f"constant curve at {value} reported {m}"
 
     def test_max_single_year_share_never_exceeds_one(self):
+        """Verify randomized equity paths keep positive-year concentration within zero and one."""
         rng = np.random.default_rng(20260214)
         worst = 0.0
         for _ in range(110):
@@ -1001,6 +1022,7 @@ class TestMetricConsistency:
             "being checked against unconcentrated curves")
 
     def test_max_single_year_share_is_one_when_all_gains_land_in_one_year(self):
+        """Verify concentration is one when a single calendar year contains all gains."""
         # flat through 2020, gains only during 2021 -> 2021 holds 100% of them
         idx = pd.bdate_range("2020-01-01", periods=522)
         e = np.concatenate([np.full(261, 100.0), np.linspace(100.0, 160.0, 261)])
@@ -1009,6 +1031,7 @@ class TestMetricConsistency:
         assert MET.max_single_year_share(eq) == pytest.approx(1.0, abs=1e-6)
 
     def test_degenerate_curve_lengths_do_not_raise(self):
+        """Verify metric calculation handles equity curves from zero through three bars."""
         for n in (0, 1, 2, 3):
             eq = pd.Series(np.full(n, 100.0),
                            index=pd.bdate_range("2020-01-01", periods=n))
@@ -1039,6 +1062,7 @@ class _Spy:
     """
 
     def __init__(self, inner, record, index, actionable):
+        """Initialize a wrapped strategy and the state used to observe its signals."""
         self._pos: dict[str, int] = {}
         self._inner = inner
         self._record = record
@@ -1047,6 +1071,7 @@ class _Spy:
         self._i = 0
 
     def feed(self, symbol, close, high=None, low=None, volume=None, ts=None):
+        """Forward one bar and record a long signal on an actionable date."""
         i = self._i
         self._i += 1
         self._inner.feed(symbol, close, high, low, volume, ts)
@@ -1076,6 +1101,7 @@ def config_sweep(specs):
         holder: dict = {}
 
         def build(values, _s=s, _h=holder, _rec=rec):
+            """Wrap the configured strategy in a spy and retain it for assertions."""
             spy = _Spy(_s.build(values), _rec, bars.index, actionable)
             _h["spy"] = spy
             return spy
@@ -1102,6 +1128,7 @@ def config_sweep(specs):
 
 class TestConfigSpaceFuzz:
     def test_no_unhandled_exception_escapes(self, config_sweep):
+        """Verify random configurations either succeed or fail through recognized paths."""
         outcomes, _, _ = config_sweep
         bad = [o for o in outcomes if o.error and o.error.startswith("UNHANDLED")]
         assert not bad, "uncaught exceptions escaped run_single_stock:\n" + "\n".join(
@@ -1112,6 +1139,7 @@ class TestConfigSpaceFuzz:
             "mostly hitting rejections and proves little")
 
     def test_every_rejection_reason_is_a_legitimate_one(self, config_sweep):
+        """Verify every rejected random configuration has an explicitly allowed reason."""
         outcomes, _, _ = config_sweep
         rejected = [o for o in outcomes if o.error]
         bad = [o for o in rejected
@@ -1174,6 +1202,7 @@ class TestConfigSpaceFuzz:
         print(f"\nstrategies that bought at least once: {len(traded)}")
 
     def test_successful_runs_return_a_well_formed_positive_result(self, config_sweep):
+        """Verify successful fuzz runs return finite aligned equity and consistent trade counts."""
         outcomes, bars, _ = config_sweep
         ran = 0
         for o in outcomes:
@@ -1229,6 +1258,7 @@ def panel(tmp_path):
 
 class TestSplitter:
     def test_epoch_millisecond_column_is_parsed_as_milliseconds(self, panel):
+        """Verify epoch-millisecond timestamps load into the expected modern calendar."""
         df = SPL.bars("probe", SPL.FULL)
         assert len(df) > 1000, f"only {len(df)} rows loaded -- the panel was rejected"
         assert df.index.min() >= pd.Timestamp("2010-01-01"), (
@@ -1237,6 +1267,7 @@ class TestSplitter:
         assert df.index.max() <= pd.Timestamp("2026-12-31")
 
     def test_index_is_a_clean_increasing_calendar(self, panel):
+        """Verify loaded bars have a unique sorted index and valid positive OHLC values."""
         df = SPL.bars("probe", SPL.FULL)
         assert df.index.is_monotonic_increasing, "bars are out of order"
         assert df.index.is_unique, "duplicate timestamps survived de-duplication"
@@ -1246,6 +1277,7 @@ class TestSplitter:
         assert (df["high"] >= df["low"]).all(), "high < low survived cleaning"
 
     def test_train_and_test_are_disjoint_and_exhaustive(self, panel):
+        """Verify TRAIN and TEST are ordered, disjoint, and cover their configured span."""
         train, test, full = SPL.train_bars("probe"), SPL.test_bars("probe"), SPL.bars("probe")
         assert not train.index.intersection(test.index).size, "TRAIN and TEST overlap"
         assert train.index.max() < test.index.min(), (
@@ -1261,6 +1293,7 @@ class TestSplitter:
             "the walk-forward range belongs to neither window")
 
     def test_window_slices_are_stable_regardless_of_call_order(self, panel):
+        """Verify loading TRAIN and TEST does not mutate a later FULL-panel read."""
         full_first = SPL.bars("probe", SPL.FULL)
         SPL.test_bars("probe")
         SPL.train_bars("probe")
@@ -1269,9 +1302,11 @@ class TestSplitter:
         assert np.array_equal(full_first["close"].to_numpy(), again["close"].to_numpy())
 
     def test_missing_symbol_yields_an_empty_frame_not_an_exception(self, panel):
+        """Verify a missing symbol returns an empty frame from the splitter."""
         assert SPL.bars("does_not_exist").empty
 
     def test_cold_read_and_cached_read_agree(self, panel):
+        """Verify cache hits return the same panel as an uncached read."""
         SPL._CACHE.clear()
         cold = SPL.bars("probe", SPL.FULL)
         warm = SPL.bars("probe", SPL.FULL)
@@ -1283,6 +1318,7 @@ class TestSplitter:
 # --------------------------------------------------------------------------- #
 class TestDeterminism:
     def test_identical_inputs_give_bit_identical_output_in_process(self, specs):
+        """Verify repeated in-process runs produce identical equity and trade totals."""
         rng = np.random.default_rng(20260401)
         bars = bars_for(price_path("walk", 300, rng))
         compared = 0
@@ -1354,6 +1390,7 @@ class TestDeterminism:
             [str(REPO), str(REPO / "src"), base_env.get("PYTHONPATH", "")])
 
         def _spawn(hashseed: str):
+            """Start a child interpreter with the requested hash seed."""
             env = dict(base_env, PYTHONHASHSEED=hashseed)
             return subprocess.Popen([sys.executable, "-c", script],
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -1407,6 +1444,7 @@ class TestKnownDefects:
 
     # (was @pytest.mark.xfail(strict=True) -- defect fixed)
     def test_strategy_receives_epoch_milliseconds(self):
+        """Verify strategies receive bar timestamps in epoch milliseconds."""
         s = CAT.discover(include=("absolute_momentum",))[0]
         inst = Scripted(_Cfg(schedule=[0]))
         s.build = lambda values: inst
@@ -1421,6 +1459,7 @@ class TestKnownDefects:
 
     # (was @pytest.mark.xfail(strict=True) -- defect fixed)
     def test_realised_pnl_reconciles_with_equity_fees_and_tax(self):
+        """Verify realized trade P&L, fees, tax, remaining holdings, and equity reconcile."""
         rng = np.random.default_rng(20260501)
         bars, sched = alternating_bars(rng, n=900)
         res = run_single_stock(bars, spec_for(), {"schedule": sched}, rebalance="M")
@@ -1451,6 +1490,7 @@ class TestKnownDefects:
 
     # (was @pytest.mark.xfail(strict=True) -- defect fixed)
     def test_fastpath_rebind_leaves_unrelated_names_alone(self):
+        """Verify fast-path installation does not rewrite unrelated indicator aliases."""
         proxy = types.ModuleType("_nsealgo_fastpath_probe")
         proxy.saved = IND.roc        # deliberately aliased
         proxy.also_saved = IND.sma
@@ -1467,6 +1507,7 @@ class TestKnownDefects:
 
     # (was @pytest.mark.xfail(strict=True) -- defect fixed)
     def test_bankrupt_curve_reports_its_drawdown(self):
+        """Verify drawdown remains negative for an equity curve that falls below zero."""
         eq = pd.Series([-100.0, -50.0, -200.0, -300.0],
                        index=pd.bdate_range("2020-01-01", periods=4))
         m = MET.compute(eq)
@@ -1476,6 +1517,7 @@ class TestKnownDefects:
 
     # (was @pytest.mark.xfail(strict=True) -- defect fixed)
     def test_affordable_shares_is_a_whole_number_of_shares(self):
+        """Verify the affordability helper returns an integer share count."""
         s = _affordable_shares(1017.37, CAPITAL, C.FeeSchedule())
         assert s == int(s), f"_affordable_shares returned the fractional value {s}"
 
@@ -1496,6 +1538,7 @@ class TestKnownDefects:
                 "the two indices must collide on the cache key for this to mean anything")
 
             def truth(idx):
+                """Compute monthly rebalance dates directly from adjacent index periods."""
                 keys = idx.to_period("M")
                 return frozenset(idx[i] for i in range(len(idx))
                                  if i == 0 or keys[i] != keys[i - 1])

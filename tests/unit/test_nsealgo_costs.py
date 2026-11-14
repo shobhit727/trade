@@ -17,6 +17,7 @@ class TestPublishedCalibration:
     round trips, which converge on ~11.65 bps of turnover."""
 
     def test_reproduces_published_itemisation(self) -> None:
+        """Verify rupee charges and round-trip basis points match the published calibration."""
         # Rs 1,40,000 buy + Rs 1,47,000 sell -> Rs 334.33 total charges = 11.65 bps.
         cm = CostModel(segment="delivery", slippage_bps=D(0))
         b = cm.cost("BUY", D(1), D(140_000))
@@ -29,11 +30,13 @@ class TestPublishedCalibration:
         assert D("11.6") <= bps <= D("11.7"), f"expected ~11.66 bps, got {bps}"
 
     def test_round_trip_bps_matches_reference(self) -> None:
+        """Verify a Rs 100,000 delivery round trip matches the reference cost rate."""
         cm = CostModel(segment="delivery", slippage_bps=D(0))
         # At Rs 1L/side the flat DP charge is well amortised -> ~11.9 bps.
         assert cm.round_trip_bps(D(100_000)) == D("11.92")
 
     def test_slippage_adds_two_sides(self) -> None:
+        """Verify per-side slippage contributes twice to round-trip basis points."""
         cm = CostModel(segment="delivery", slippage_bps=D(5))
         assert cm.all_in_round_trip_bps(D(100_000)) == D("11.92") + D(10)
 
@@ -49,11 +52,13 @@ class TestStatutoryCharges:
         assert sell.stt == D("100.00")
 
     def test_stamp_duty_buy_side_only(self) -> None:
+        """Verify stamp duty is charged on purchases and not sales."""
         cm = CostModel(segment="delivery", slippage_bps=D(0))
         assert cm.cost("BUY", D(1), D(100_000)).stamp_duty == D("15.00")
         assert cm.cost("SELL", D(1), D(100_000)).stamp_duty == D("0")
 
     def test_dp_charge_sell_only_and_flat(self) -> None:
+        """Verify the flat per-scrip DP charge applies only to sell orders."""
         cm = CostModel(segment="delivery", slippage_bps=D(0))
         assert cm.cost("BUY", D(1), D(100_000)).dp_charges == D("0")
         small = cm.cost("SELL", D(1), D(10_000))
@@ -70,6 +75,7 @@ class TestStatutoryCharges:
         assert c.gst < c.stt
 
     def test_intraday_stt_is_lower_than_delivery(self) -> None:
+        """Verify intraday sell-side STT uses the lower statutory rate."""
         deliv = CostModel(segment="delivery", slippage_bps=D(0)).cost(
             "SELL", D(1), D(100_000))
         intra = CostModel(segment="intraday", slippage_bps=D(0)).cost(
@@ -78,23 +84,27 @@ class TestStatutoryCharges:
         assert intra.stt < deliv.stt
 
     def test_unknown_segment_rejected(self) -> None:
+        """Verify the cost model rejects unsupported market segments."""
         with pytest.raises(ValueError, match="unknown segment"):
             CostModel(segment="crypto")
 
 
 class TestSlippage:
     def test_buys_fill_worse_sells_fill_worse(self) -> None:
+        """Verify slippage worsens fills in the direction of each trade."""
         cm = CostModel(slippage_bps=D(10))
         ref = D("1000")
         assert cm.fill_price(ref, "BUY") > ref
         assert cm.fill_price(ref, "SELL") < ref
 
     def test_zero_slippage_is_exact(self) -> None:
+        """Verify zero slippage preserves the exact reference fill price."""
         cm = CostModel(slippage_bps=D(0))
         assert cm.fill_price(D("123.45"), "BUY") == D("123.450")
         assert cm.fill_price(D("123.45"), "SELL") == D("123.450")
 
     def test_negative_slippage_rejected(self) -> None:
+        """Verify negative slippage is rejected during model construction."""
         with pytest.raises(ValueError, match="slippage_bps"):
             CostModel(slippage_bps=D(-1))
 
@@ -120,23 +130,28 @@ class TestSlippage:
         assert CostModel(slippage_bps=0.1).slippage_bps == D("0.1")
 
     def test_int_slippage_is_coerced(self) -> None:
+        """Verify integer slippage is normalized and yields the statutory baseline."""
         assert CostModel(slippage_bps=0).all_in_round_trip_bps(D("100000")) == D("11.92")
 
     def test_bad_side_rejected(self) -> None:
+        """Verify fill pricing rejects unsupported order sides."""
         with pytest.raises(ValueError, match="BUY or SELL"):
             CostModel().fill_price(D("100"), "HOLD")
 
 
 class TestValidation:
     def test_negative_quantity_rejected(self) -> None:
+        """Verify trade costing rejects negative quantities."""
         with pytest.raises(ValueError, match="non-negative"):
             CostModel().cost("BUY", D(-1), D("100"))
 
     def test_negative_price_rejected(self) -> None:
+        """Verify trade costing rejects negative prices."""
         with pytest.raises(ValueError, match="non-negative"):
             CostModel().cost("BUY", D("1"), D("-100"))
 
     def test_zero_notional_rejected_in_bps(self) -> None:
+        """Verify basis-point conversion rejects zero notional."""
         with pytest.raises(ValueError, match="positive"):
             CostModel().round_trip_bps(D(0))
 
@@ -158,6 +173,7 @@ class TestStressModels:
 
 class TestRoundTrip:
     def test_gross_pnl_and_cost_are_separate(self) -> None:
+        """Verify round-trip gross P&L is reported separately from transaction costs."""
         cm = CostModel(slippage_bps=D(0))
         cost, gross = cm.round_trip(D(100), D("100"), D("110"))
         assert gross == D("1000")
@@ -187,6 +203,7 @@ class TestEngineChargesFullCostStack:
     """
 
     def test_full_rotation_costs_exactly_two_round_trips(self) -> None:
+        """Verify a full book rotation is charged on both the buy and sell turnover."""
         from nsealgo.backtest.engine import REF_POSITION_NOTIONAL
 
         cm = CostModel(segment="delivery", slippage_bps=D(5))
