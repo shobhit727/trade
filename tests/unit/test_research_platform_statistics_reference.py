@@ -7,8 +7,9 @@ never called to produce its own expectations. Synthetic data only; numpy/scipy o
 Fixtures and constants:
 * PSR reference values were independently computed from Bailey & Lopez de Prado
   (2012), "The Sharpe Ratio Efficient Frontier", Journal of Risk 15(2), equations
-  (6)-(7), with the (T - 1) variance convention, and cross-checked against a
-  Monte Carlo replication of the PSR integral.
+  (6)-(7), with the (T - 1) variance convention; the in-file _reference_psr
+  re-implementation reproduces them digit-for-digit, and the identity-point test
+  pins PSR(SR = SR*) at exactly 0.5.
 * DSR expected-maximum reference values use the Euler-gamma approximation of the
   expected maximum of N independent standard Gaussians (Bailey & Lopez de Prado
   2014, "The Deflated Sharpe Ratio", Journal of Portfolio Management 40(5),
@@ -292,11 +293,11 @@ def test_pbo_cscv_hand_computed_crossing_pair() -> None:
     # splits, so PBO lives on a 1/70 grid). Candidates 0 and 1 are the two
     # leaders with complementary edges: 0 leads the early half, 1 the late
     # half. Split-level enumeration (independent CSCV re-implementation below)
-    # gives 12 under-median reversals: candidate 0 is train-selected whenever
-    # the train half contains early blocks and then tests below the OOS median
-    # on late-dominated test halves (8 splits with three early train blocks,
-    # 3 with two, 1 with all four); candidate 5 is noise-picked in the 2
-    # remaining cases. Expected: 12/70 = 0.1714285714... .
+    # gives 12 under-median reversals out of 70: candidate 0 is under-median
+    # in 10 (the unique all-early train split, 8 of the 16 train splits with
+    # three early blocks, 1 of the 36 with two); noise candidate 5 wins the
+    # 2 remaining two-early train splits and is under-median in both.
+    # Expected: 12/70 = 0.1714285714... .
     rng = np.random.default_rng(11)
     noise = rng.normal(0.0, 0.004, size=(16, 48))
     matrix = np.full((16, 48), 0.001) + noise
@@ -313,9 +314,9 @@ def test_pbo_cscv_hand_computed_crossing_pair() -> None:
 def test_pbo_cscv_adversarial_persistent_edge_is_near_zero() -> None:
     # Adversarial fixture: candidate 0 carries a persistent positive edge in
     # every block. Split-level enumeration: candidate 0 is train-selected in
-    # 69 of 70 splits (noise candidate 6 wins the remaining all-late train
-    # split) and never falls below the OOS median; candidate 6 falls below it
-    # exactly once. Measured on this seeded fixture: 1/70.
+    # exactly 69 of the 70 splits and never falls below the OOS median; noise
+    # candidate 6 wins the remaining split (train blocks 2,3,6,7) and falls
+    # below the OOS median in it. Total: 1/70.
     rng = np.random.default_rng(21)
     noise = rng.normal(0.0, 0.004, size=(16, 48))
     matrix = np.full((16, 48), 0.001) + noise
@@ -367,10 +368,11 @@ def test_pbo_subset_stability_even_vs_random_vs_full() -> None:
     # Measured on this fixture: |even128 - full| = 0.0143 (one grid cell).
     assert abs(even_pbo - full_pbo) == pytest.approx(0.0143, abs=1e-3)
     # Measured on this fixture over 40 seeded random-128 subsets (stream
-    # above): mean 0.0211, max |deviation from full| 0.0429 (three grid
-    # cells), min 0.0000. Subset SIZE, not the selection policy, dominates
-    # the spread; tolerances are pinned from these measurements, not asserted
-    # as universal constants.
+    # above): mean PBO 0.0211 (~1.5/70), min 0.0000, max |deviation from
+    # full| 0.0429 (three grid cells). The two statistics differ because
+    # subset PBOs scatter on BOTH sides of full. Subset SIZE, not the
+    # selection policy, dominates the spread; tolerances are pinned from
+    # these measurements, not asserted as universal constants.
     assert random_mean == pytest.approx(0.0211, abs=0.01)
     assert random_max_deviation <= 0.0429 + 1e-9
     # The full-candidate calculation is itself one draw on the 1/70 grid: the
