@@ -5,9 +5,11 @@ research platform:
 
 - per-symbol FIFO lot queues (quantity, cost price, acquisition date);
 - sells realised strictly FIFO into STCG/LTCG records: a holding period of
-  more than 365 days is long-term, matching the repository's ground-truth
-  engine ``src/cryptobot/core/tax_equity.py`` (dated holding-period rules are a
-  documented extension candidate under audit section 7.11);
+  more than 365 days is long-term, mirroring the repository's ground-truth
+  engine ``src/cryptobot/core/tax_equity.py`` (its exact path contains a session-token
+  segment; its float lots are the one deliberate divergence here — this module
+  is Decimal-exact). Dated holding-period rules are a documented extension
+  candidate under audit section 7.11;
 - corporate actions applied ONLY from an explicit event list — there is no
   auto-detection anywhere in this module (audit F-013 requirement).
 
@@ -26,6 +28,14 @@ capital gains use trade prices exactly like the ground-truth tax engine, while
 the cash ledger's fee-inclusive average entry remains the account-level view.
 With zero-fee fills the two aggregates coincide (asserted by the invariant
 loop in ``tests/unit/test_research_platform_dated_costs.py``).
+
+Price panels are assumed UNADJUSTED (repo convention: ``research/verify_corporate_actions.py``
+documents NSE EOD as unadjusted — a 1:1 bonus shows as a ~-50% ex-date drop).
+The explicit event list is the mechanism that corrects an unadjusted panel:
+quantity adjustment plus the unadjusted price is consistent equity, and no
+price adjustment is applied in code. Corporate-action dates are treated as
+event metadata: split/bonus mutations here are date-agnostic (no wall-clock
+ordering enforcement inside this module).
 
 All money is ``Decimal`` (repo rule). Basis conservation under non-terminating
 ratios (for example a 1:3 split of an odd-paise price) holds to the default

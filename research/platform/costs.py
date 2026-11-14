@@ -23,8 +23,9 @@ date — extend windows only with verified references):
   0.00325% of turnover until 2024-09-30; NSE/FA/64232 (2024-09-27) replaced
   the slab-wise structure with a uniform flat 0.00297% (₹297/crore) from
   2024-10-01. The current window is modelled at the repository's conservative
-  nsealgo floor 0.00307% (``P_EXCHANGE_TXN``), never weaker than the real
-  post-2024 slab rate. The three numbers in play: 0.00325% (real pre-2024 rate
+  nsealgo floor 0.00307% (``P_EXCHANGE_TXN``) — exactly the real all-in
+  composition 0.00297% NSE flat slab + 0.0001% IPFT turnover charge — never
+  weaker than the real post-2024 slab rate. The three numbers in play: 0.00325% (real pre-2024 rate
   and the pre-window value below), 0.00307% (nsealgo code constant, current
   window), 0.00297% (real new flat slab rate, unused because it would weaken
   the modelled floor).
@@ -41,6 +42,11 @@ date — extend windows only with verified references):
   15% ceiling until 2017-06-30; GST 18% from 2017-07-01 (GST rollout).
 - DP charges ₹15.93 per scrip per sell and zero delivery brokerage are flat
   documented simplifications over the modelled era (floor 2013-06-01).
+  Zero delivery brokerage follows the repository's nsealgo calibration for all
+  eras; historical pre-discount-era delivery brokerage (Zerodha-class brokers
+  charged for delivery before their zero-delivery pricing move) is a documented
+  broker-tier extension candidate under audit 7.13, not a silently assumed-away
+  charge.
 """
 
 from __future__ import annotations
@@ -305,7 +311,8 @@ class NSEDatedFeeSchedule:
                         start_date=date(2024, 10, 1),
                         source=(
                             "NSE/FA/64232 (2024-09-27): uniform flat 0.00297% (Rs 297/crore) "
-                            "eff. 2024-10-01; modelled at the conservative nsealgo floor 0.00307%"
+                            "eff. 2024-10-01; modelled at the nsealgo all-in floor 0.00307% "
+                            "(0.00297% NSE + 0.0001% IPFT)"
                         ),
                     ),
                 ),
@@ -417,8 +424,19 @@ class NSEDeliveryFeeCalculator:
 
     @property
     def schedule_version(self) -> str:
-        """Dated schedule version recorded with every experiment (audit 7.13)."""
+        """Dated schedule version recorded with every experiment (audit 7.13).
+
+        Empty when an injected custom model replaces the built-in statutory
+        schedule, so provenance never claims date windows it cannot resolve.
+        """
+        if self.model is not None:
+            return ""
         return self.schedule.schedule_id
+
+    @property
+    def supports_dated_fees(self) -> bool:
+        """True only when ``fee_asof`` can resolve the built-in dated schedule."""
+        return self.model is None
 
     def _get_model(self):
         # Import lazily to keep the generic platform independent from NSE package setup.

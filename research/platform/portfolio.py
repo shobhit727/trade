@@ -161,6 +161,8 @@ class PortfolioSimulator:
         self._fee_schedule_version = getattr(
             config.fee_calculator, "schedule_version", None
         ) or config.cost_model_id
+        # The fee-inclusive ledger average and the trade-price tax-lot basis
+        # are separate layers; they are never reconciled (see lots.py docs).
 
     def _normalise_order_quantity(self, quantity: Decimal) -> Decimal:
         # NSE shares are indivisible; crypto spot quantities retain decimal precision.

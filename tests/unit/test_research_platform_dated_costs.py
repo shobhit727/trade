@@ -194,6 +194,12 @@ class TestDateEffectiveSchedules:
         )
         with pytest.raises(ValueError, match="built-in statutory schedule"):
             calculator.fee_asof(BOUNDARY_POST, Side.BUY, D(1), LAKH)
+        # Provenance must never claim date windows the injected model lacks.
+        assert calculator.schedule_version == ""
+        assert calculator.supports_dated_fees is False
+        built_in = NSEDeliveryFeeCalculator()
+        assert built_in.schedule_version == "nse-delivery-dated-v1"
+        assert built_in.supports_dated_fees is True
 
     def test_schedule_validation_rejects_gaps_and_open_penultimate(self) -> None:
         window = lambda start, end=None: __import__(
@@ -305,9 +311,6 @@ class TestFifoRealization:
         ledger.apply_fill(_dated(0, Side.BUY, D(100), D(10)))
         ledger.apply_fill(_dated(1, Side.BUY, D(100), D(20)))
         ledger.apply_fill(_dated(2, Side.SELL, D(150), D(25)))
-        ledger.apply_fill(
-            _dated(3, Side.SELL, D(0), D(25))
-        ) if False else None  # keep the 50-lot open
         lots = TaxLotLedger()
         # Reconstruct the same queue to exercise realize() directly:
         lots.open_lot("LOT", D(100), D(10), date(2013, 6, 1))
@@ -434,11 +437,19 @@ class TestCorporateActions:
             )
         assert lots.total_quantity("LOT") == D(100)  # untouched after refusal
 
-        # An event for a symbol with no lots anywhere is refused too.
+        # An event for a symbol with no lots anywhere is refused too —
+        # pinned to the position-less branch specifically (held == 0 AND no
+        # lots: the guards agree, so the open-position check fires).
         ghost_lots = TaxLotLedger()
-        with pytest.raises(ValueError, match="disagree|without an open position"):
+        with pytest.raises(ValueError, match="without an open position"):
             apply_corporate_action(
                 empty_ledger, ghost_lots, CorporateAction("split", "GHOST", date(2013, 6, 5), D(2))
+            )
+        # ...and the disagreement branch is pinned separately (held == 0 but
+        # lots exist: quantity guard fires before the open-position check).
+        with pytest.raises(ValueError, match="disagree"):
+            apply_corporate_action(
+                empty_ledger, lots, CorporateAction("split", "LOT", date(2013, 6, 6), D(2))
             )
 
     def test_consolidation_sub_unit_ratio(self) -> None:
@@ -540,7 +551,22 @@ def test_cr013_invariant_loop_cash_and_positions_stay_correct() -> None:
                         return True
                 return False
 
-            if position_qty > 0 and not _had_non_cash_event(check_symbol):
+            def _sold_since_last_buy(symbol: str) -> bool:
+                for item in reversed(event_log):
+                    parts = item.split()
+                    if len(parts) == 4 and parts[3] == symbol:
+                        if parts[1] in ("split", "bonus"):
+                            return True
+                        if parts[1] == "sell":
+                            return True
+                        return False
+                return False
+
+            # Seed-robust: only assert when the symbol has had no split/bonus
+            # AND no sell since its last buy (a sell leaves a partial lot whose
+            # remaining-basis per-share equals the trade price, not the blended
+            # fee-inclusive average across consumed lots).
+            if position_qty > 0 and not _had_non_cash_event(check_symbol) and not _sold_since_last_buy(check_symbol):
                 # Zero-fee fills keep the fee-inclusive average entry equal to
                 # the lot-queue cost basis per share (basis conservation).
                 # Bonus issues dilute the ledger average at zero marginal cost,
