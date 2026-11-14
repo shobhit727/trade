@@ -1,64 +1,60 @@
-# Cryptobot Backtesting - Quick Start
+# Quick Start
 
-## CLI Usage
+This repo has two real execution layers, and the docs should reflect both of them:
+
+- the generic `cryptobot` CLI for the trading framework
+- the active `nsealgo` NSE research workflow
+
+## 1. Set up the environment
 
 ```bash
-# Basic backtest with synthetic data
-python -m cryptobot.cli.main backtest \
-  --strategy trend_following \
-  --bars 500 \
-  --timeframe 1h
-
-# With CSV data
-python -m cryptobot.cli.main backtest \
-  --strategy mean_reversion \
-  --bars 1000 \
-  --source csv \
-  --path ./data/btcusdt_1m.csv
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -U pip
+make install-test
 ```
 
-### CLI Options
+## 2. Run the checks
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--strategy` | mean_reversion | One of: mean_reversion, trend_following, stat_arb |
-| `--bars` | 200 | Number of synthetic bars (capped at 10M) |
-| `--source` | synthetic | Data source: synthetic, csv, parquet, timescale |
-| `--path` | - | Path to data file (csv/parquet) |
-| `--timeframe` | 1h | Synthetic bar spacing (e.g. 1m, 5s) |
-| `--capital` | 10000 | Initial capital |
-| `--seed` / `--vol` | 42 / 0.01 | Synthetic generator knobs |
-| `--json` | false | Output as JSON (logs to stderr) |
-| `--show-trades` | false | Include per-trade list |
-| `--algorithms` / `--workers` | - | Parallel sweep of strategy/param jobs |
+```bash
+# unit tests
+.venv/bin/python -m pytest tests/unit -q
 
-> Note: the backtest CLI has no `--symbol`, `--initial-capital`, `--commission-bps`, or
-> `--slippage-bps` flags (older docs listed them). Symbol is fixed to BTCUSDT; capital is
-> `--capital`; commission/slippage are set programmatically via `run_backtest(...)` kwargs.
-
-## Programmatic Usage
-
-```python
-import asyncio
-from cryptobot.backtest.data import load_bars
-from cryptobot.backtest.runner import run_backtest
-from cryptobot.strategies.trend_following import TrendFollowingStrategy, TrendFollowingConfig
-
-async def run():
-    config = TrendFollowingConfig(ema_fast=12, ema_slow=26, adx_threshold=25)
-    strategy = TrendFollowingStrategy(config)
-    
-    ds = load_bars(source="synthetic", symbol="BTCUSDT", timeframe="1h", n_bars=500)
-    result = await run_backtest(
-        ds.bars,
-        strategy=strategy,
-        symbol=ds.symbol,
-        initial_capital=10000,
-    )
-    
-    print(f"Return: {result.total_return * 100:.2f}%")
-    print(f"Final equity: {result.final_equity}")
-    print(f"Trades: {result.n_trades}")
-
-asyncio.run(run())
+# lint
+.venv/bin/ruff check src tests
 ```
+
+## 3. Shared framework command
+
+```bash
+python -m cryptobot.cli.main backtest --strategy trend_following --source synthetic --bars 200 --json
+```
+
+## 4. NSE validation flow
+
+```bash
+# audit the data source
+.venv/bin/python research/audit_data.py
+
+# run the real validation entrypoint used by the NSE work
+.venv/bin/python -m nsealgo.cli validate --folds 6
+```
+
+This is the main evidence path for the current research mission.
+
+## 5. Paper path for the active NSE mission
+
+```bash
+docker compose -f docker-compose.nse.yml up -d --build
+docker compose -f docker-compose.nse.yml run --rm nsealgo paper --duration 1w
+```
+
+## 6. Key references
+
+- `GOAL.md` — hard constraints and current validation rules
+- `AGENTS.md` — repo operating standards
+- `src/cryptobot/cli/main.py` — generic CLI implementation
+- `src/nsealgo/cli.py` — NSE CLI implementation
+- `reports/VALIDATION_v1.md` — current validation evidence and caveats
+
+> The default policy remains research-only. No capital deployment should occur until the mission gates in `GOAL.md` are met.

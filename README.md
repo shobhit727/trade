@@ -1,158 +1,102 @@
-# Cryptobot
+# trade
 
-Elite Quantitative Trading System — Python + Rust
+This repository contains both the shared quantitative trading backbone and the current NSE research mission.
 
-**Latest Release**: v0.1.0 (multi-arch Docker images on GHCR) · package version 0.2.0
+## Repo shape
 
-## Quick Start
+- `src/cryptobot/` — the generic trading system: CLI, backtests, execution, risk, monitoring, and shared Python/Rust framework code.
+- `src/nsealgo/` — the active NSE NIFTY-50 systematic research package with walk-forward validation and live/paper simulation logic.
 
-```bash
-# Prereqs: Docker 24+, Docker Compose v2
-git clone git@github.com:shobhit727/trade.git cryptobot
-cd cryptobot
+The current active mission is the NSE work under `GOAL.md`. That mission is still research-only; no deployment is allowed until the gating rules are satisfied.
 
-# Run test suite (validates build + logic)
-docker compose --profile test run --rm --build cryptobot-test
+## Actual CLI entrypoints in code
 
-# Start paper trading + observability stack
-docker compose up -d cryptobot-paper
+The code exposes two real command surfaces:
 
-# Health check
-curl http://localhost:8080/health
+1. `cryptobot` CLI from `pyproject.toml` and `src/cryptobot/cli/main.py`
+2. `nsealgo` CLI from `src/nsealgo/cli.py`
 
-# View logs
-docker compose logs -f cryptobot-paper
-```
-
-## Architecture
-
-| Layer | Tech |
-|-------|------|
-| Core  | Python 3.14 (async), Rust workspace (7 crates: core, features, risk, stats, orderbook, backtest, py) |
-| Exchange | Binance (REST + WebSocket) |
-| Risk  | Real-time position/portfolio limits |
-| Strategies | Trend following, market making, stat arb |
-| Backtest | Event-driven, synthetic or CSV data |
-| Observability | Prometheus, Grafana, Loki, Alertmanager |
-| Storage | TimescaleDB, Redis, Parquet |
-
-## Profiles (Docker Compose)
+Examples from the code:
 
 ```bash
-docker compose --profile <name> up -d
+# installed script
+cryptobot --help
+cryptobot backtest --strategy trend_following --source synthetic --bars 200 --json
+
+# module entrypoint
+python -m cryptobot.cli.main --help
+python -m nsealgo.cli --help
+python -m nsealgo.cli validate --folds 6
+python -m nsealgo.cli paper --cycles 5
+python -m nsealgo.cli limits
 ```
 
-| Profile | Services | Purpose |
-|---------|----------|---------|
-| (default) | full stack | Paper trading + monitoring |
-| `test` | test runner | Unit/integration tests |
-| `backtest` | backtest engine | Historical simulation |
-| `paper` | paper trading | Debug-level paper trading |
+## Working setup
 
-## Configuration
-
-Settings in `configs/base.yaml`. Override via env:
+Use the host venv for Python work and Docker only for the app/runtime path.
 
 ```bash
-# Risk
-RISK_MAX_DAILY_LOSS_PCT=0.02 \
-RISK_KILL_SWITCH_DAILY_LOSS_PCT=0.05
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -U pip
+make install-test
 
-# Live trading (requires Binance keys)
-EXECUTION_MODE=binance \
-BINANCE_API_KEY=$KEY \
-BINANCE_API_SECRET=$SECRET
+# unit tests
+.venv/bin/python -m pytest tests/unit -q
+
+# lint
+.venv/bin/ruff check src tests
 ```
 
-Prefixes: `APP_`, `RISK_`, `EXECUTION_`, `BINANCE_`, `MARKET_DATA_`, `MONITORING_`, `DB_`, `ML_`, `BACKTEST_`.
-
-## Testing
+## Core commands
 
 ```bash
-# Local (needs pyproject.toml deps)
-pip install -e . -r requirements/test.txt
-pytest -q
+# shared crypto stack
+python -m cryptobot.cli.main backtest --strategy trend_following --source synthetic --bars 200 --json
 
-# In Docker (CI-like)
-docker compose --profile test run --rm --build cryptobot-test
+# active NSE strategy workflow
+python -m nsealgo.cli audit
+python -m nsealgo.cli costs --json
+python -m nsealgo.cli limits
+python -m nsealgo.cli backtest --positions 22
+python -m nsealgo.cli validate --folds 6
+python -m nsealgo.cli paper --cycles 5
 ```
 
-## CI Pipeline (`.github/workflows/ci.yml`)
+## NSE mission status
 
-| Job | Runs |
-|-----|------|
-| `lint` | ruff (pinned) |
-| `unit` | pytest + coverage gate 70% (matrix: Python 3.13 + 3.14) |
-| `cargo-lint` | cargo fmt + clippy `-D warnings` |
-| `cargo-test` | cargo test --workspace |
-| `docker-test` | build test image + run tests inside + trivy scan |
-| `docker-build` | buildx (amd64 on PRs; amd64+arm64 on push) |
-| `compose-validate` | compose config validation |
+The governing document is `GOAL.md`. The current state is intentionally conservative:
 
-Independent jobs: `security-review` (gitleaks), `security-audit` (pip-audit), `pyo3` (maturin import smoke test, on core changes).
+- daily-bar research only
+- full Indian cost stack required
+- walk-forward validation as the evidence standard
+- no capital deployment until the §5 gates pass
+- current recorded result is research-only band D, not a deployable strategy
 
-> ⚠️ CI never *runs* the production image target (only builds/scans it) — a known gap; see #22.
-
-**Release** (`.github/workflows/release.yml`): Tag-driven `v*` → multi-arch build + SBOM + provenance + GHCR push (`latest`, `vX.Y.Z`, `vX.Y.Z-multiarch`). Note: release images currently build on the Dockerfile default Python 3.13-slim (#38).
-
-## Project Structure
-
-```
-src/cryptobot/
-├── backtest/      # Engine, runner, metrics, reporting
-├── cli/           # CLI entrypoint (main.py)
-├── core/          # Events, bus, clock, portfolio, state
-├── data/          # Ingestion, cleaning, storage (Timescale/Parquet)
-├── execution/     # Router, algorithms, venues (Binance/Simulated)
-├── market_data/   # WebSocket manager, Binance client
-├── monitoring/    # Metrics, alerting, health, dashboard
-├── risk/          # Correlation, position limits, kill switch
-├── strategies/    # Base, trend, market_making, stat_arb
-└── utils/         # Logging, decorators, types
-
-crates/                        # Rust workspace (root Cargo.toml): core, features,
-│                              # risk, stats, orderbook, backtest, py (PyO3 bindings)
-```
-
-## Documentation
-
-| File | Description |
-|------|-------------|
-| `docs/RUNBOOK.md` | Operations guide (compose, profiles, troubleshooting) |
-| `plan.md` | Master plan with phases & status |
-| `PROJECT_MEMORY/` | Architecture, configs, bugs, features, API refs |
-| `deploy/k8s/` | Kubernetes manifests |
-
-## Development
+## Docker and research workflow
 
 ```bash
-# Install dev deps
-pip install -e . -r requirements/test.txt
+# start the NSE stack
+docker compose -f docker-compose.nse.yml up -d --build
 
-# Lint
-ruff check src tests
-pyflakes src tests
+# run a short paper session
+docker compose -f docker-compose.nse.yml run --rm nsealgo paper --duration 1w
 
-# Format
-ruff format src tests
-
-# Type check (if mypy added)
-mypy src
+# audit the data source used by the NSE research pipeline
+.venv/bin/python research/audit_data.py
 ```
 
-## Known Issues
+## Important references
 
-Tracked on GitHub (2026-08-22 audit, issues #20–#53). Headline items:
+| File | Purpose |
+|------|---------|
+| `GOAL.md` | Binding mission, risk limits, and no-go gates |
+| `AGENTS.md` | Repo working rules |
+| `src/cryptobot/cli/main.py` | Shared crypto CLI implementation |
+| `src/nsealgo/cli.py` | NSE research CLI implementation |
+| `reports/VALIDATION_v1.md` | Current validation narrative and evidence |
+| `docs/RUNBOOK.md` | Local operating guide |
 
-- **Production Docker image cannot start** — CMD duplicates `-m` under ENTRYPOINT (#22)
-- **Backtest Sharpe/drawdown unreliable** — wall-clock equity stamps (#20), no per-bar mark-to-market (#32), Sortino formula (#39/#40)
-- **Catalog strategies are effectively long-only** — flip signals close instead of reversing (#25)
-- **ML training labels leak features** — `future_returns` is backward-looking (#21); optimizer layer non-functional (#27)
-- In-memory SQLite fallback when `_sqlite3` missing (`B024`)
-- Prometheus metrics optional dependency handled via lazy imports (`B051`)
+## Current caution
 
-Full index: [`PROJECT_MEMORY/13_Bug_Tracker.md`](PROJECT_MEMORY/13_Bug_Tracker.md)
-
-## License
-
-MIT# CI trigger
+This is not a single “bot is ready” repo narrative. It is a combined system: a reusable trading framework and an active NSE research programme. The safer and more accurate description is that the repo contains both a production-like framework and a research-only deployment gate.
