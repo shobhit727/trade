@@ -140,7 +140,7 @@ def main() -> None:
     data = load_all()
     print(f"{len(data)} stocks loaded")
     rows = []
-    for cap in (10_000, 100_000, 10_000_000, 1_000_000_00_000 / 100):  # 10k, 1L, 1cr, 100cr
+    for cap in (10_000, 100_000, 10_000_000, 1_000_000_00_000):  # 10k, 1L, 1cr, 100cr
         r = simulate(data, float(cap))
         rows.append(r)
         print(f"Rs {cap:>14,.0f}: final Rs {r['final']:>16,.0f} "
