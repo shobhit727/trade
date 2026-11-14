@@ -42,6 +42,7 @@ class KiteBroker(BrokerBase):
         api_secret: str | None = None,
         timeout: float = 10.0,
     ) -> None:
+        """Configure Kite credentials from arguments or environment variables."""
         self.api_key = api_key or os.environ.get("KITE_API_KEY", "")
         self.access_token = access_token or os.environ.get("KITE_ACCESS_TOKEN", "")
         self.api_secret = api_secret or os.environ.get("KITE_API_SECRET", "")
@@ -52,9 +53,11 @@ class KiteBroker(BrokerBase):
     # ------------------------------------------------------------------ #
     @property
     def configured(self) -> bool:
+        """Report whether the API key and access token needed for requests exist."""
         return bool(self.api_key and self.access_token)
 
     def _client(self):
+        """Return the cached Kite client or create it after validating configuration."""
         if self._k is not None:
             return self._k
         if not self.configured:
@@ -94,6 +97,7 @@ class KiteBroker(BrokerBase):
 
     # ------------------------------------------------------------------ #
     def get_quote(self, symbol: str) -> Quote:
+        """Fetch and normalize the latest NSE quote for ``symbol``."""
         k = self._client()
         token = self._instrument_token(symbol)
         try:
@@ -112,6 +116,7 @@ class KiteBroker(BrokerBase):
         )
 
     def get_positions(self) -> list[Position]:
+        """Convert non-zero Kite net positions into broker-neutral records."""
         k = self._client()
         try:
             net = k.positions()
@@ -158,6 +163,7 @@ class KiteBroker(BrokerBase):
 
     # ------------------------------------------------------------------ #
     def place_market_order(self, symbol: str, quantity: D, side: str) -> OrderResult:
+        """Validate and submit an NSE market order, then normalize its response."""
         side = self._check_side(side)
         quantity = self._check_qty(quantity)
         k = self._client()
@@ -190,6 +196,7 @@ class KiteBroker(BrokerBase):
         )
 
     def cancel_all(self) -> None:
+        """Attempt to cancel each pending Kite order, continuing after individual errors."""
         k = self._client()
         try:
             orders = k.orders()
@@ -202,6 +209,7 @@ class KiteBroker(BrokerBase):
                 pass
 
     def is_connected(self) -> bool:
+        """Probe the Kite profile endpoint and return whether it responds."""
         try:
             self._client().profile()
             return True

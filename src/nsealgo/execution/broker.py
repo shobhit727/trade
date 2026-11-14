@@ -23,6 +23,7 @@ class Quote:
 
     @property
     def mid(self) -> D:
+        """Return the bid-ask midpoint, falling back to the last traded price."""
         if self.bid is not None and self.ask is not None:
             return (self.bid + self.ask) / 2
         return self.last
@@ -37,11 +38,13 @@ class Position:
 
     @property
     def market_value(self) -> D:
+        """Value the position at its latest mark, or its average price if unmarked."""
         px = self.last_price if self.last_price is not None else self.average_price
         return self.quantity * px
 
     @property
     def unrealised_pnl(self) -> D:
+        """Calculate open profit or loss using the latest available position mark."""
         px = self.last_price if self.last_price is not None else self.average_price
         return (px - self.average_price) * self.quantity
 
@@ -59,16 +62,30 @@ class OrderResult:
 class Broker(Protocol):
     """The entire surface the strategy engine is allowed to use."""
 
-    def get_quote(self, symbol: str) -> Quote: ...
-    def get_positions(self) -> list[Position]: ...
+    def get_quote(self, symbol: str) -> Quote:
+        """Return the current quote for one exchange symbol."""
+        ...
+
+    def get_positions(self) -> list[Position]:
+        """Return all currently open positions."""
+        ...
+
     def account_value(self) -> D:
         """**Total** account value: cash + market value of all positions.
 
         Not just positions. A book that is 30% invested in equities is not down 70%.
         """
-    def place_market_order(self, symbol: str, quantity: D, side: str) -> OrderResult: ...
-    def cancel_all(self) -> None: ...
-    def is_connected(self) -> bool: ...
+    def place_market_order(self, symbol: str, quantity: D, side: str) -> OrderResult:
+        """Submit a long-only market order and return its normalized status."""
+        ...
+
+    def cancel_all(self) -> None:
+        """Cancel every pending order managed by the adapter."""
+        ...
+
+    def is_connected(self) -> bool:
+        """Report whether the adapter can currently reach its broker."""
+        ...
 
 
 class BrokerBase(abc.ABC):
@@ -76,6 +93,7 @@ class BrokerBase(abc.ABC):
 
     @staticmethod
     def _check_side(side: str) -> str:
+        """Normalize and validate a long-only order side."""
         s = side.upper().strip()
         if s not in ("BUY", "SELL"):
             raise ValueError(f"side must be BUY or SELL, got {side!r}")
@@ -83,25 +101,36 @@ class BrokerBase(abc.ABC):
 
     @staticmethod
     def _check_qty(quantity: D) -> D:
+        """Reject negative quantities while allowing zero for adapter-level handling."""
         if quantity < 0:
             raise ValueError("quantity must be non-negative (long-only account)")
         return quantity
 
     @abc.abstractmethod
-    def get_quote(self, symbol: str) -> Quote: ...
+    def get_quote(self, symbol: str) -> Quote:
+        """Fetch one quote using the adapter's underlying venue."""
+        ...
 
     @abc.abstractmethod
-    def get_positions(self) -> list[Position]: ...
+    def get_positions(self) -> list[Position]:
+        """Fetch the account's non-zero open positions."""
+        ...
 
     @abc.abstractmethod
     def account_value(self) -> D:
         """Cash + positions. Must include cash."""
 
     @abc.abstractmethod
-    def place_market_order(self, symbol: str, quantity: D, side: str) -> OrderResult: ...
+    def place_market_order(self, symbol: str, quantity: D, side: str) -> OrderResult:
+        """Validate and submit a market order, returning the adapter-neutral result."""
+        ...
 
     @abc.abstractmethod
-    def cancel_all(self) -> None: ...
+    def cancel_all(self) -> None:
+        """Request cancellation of all pending orders."""
+        ...
 
     @abc.abstractmethod
-    def is_connected(self) -> bool: ...
+    def is_connected(self) -> bool:
+        """Check whether the underlying broker is reachable."""
+        ...

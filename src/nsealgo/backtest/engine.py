@@ -173,6 +173,7 @@ SECTORS: dict[str, str] = {
 
 
 def sector_of(symbol: str) -> str:
+    """Map a symbol to its configured sector, defaulting unknown names to ``other``."""
     return SECTORS.get(symbol, "other")
 
 
@@ -208,6 +209,7 @@ class BacktestResult:
     provenance: dict[str, str] = field(default_factory=provenance)
 
     def summary(self) -> str:
+        """Render the performance metrics alongside fingerprints for this run."""
         tags = " ".join(f"{k}={v}" for k, v in sorted(self.provenance.items()))
         return f"[{tags}]\n" + self.metrics.fmt()
 
@@ -698,6 +700,7 @@ def run_backtest(
 
 
 def _d(x):
+    """Convert a numeric-like value to Decimal through its string representation."""
     from decimal import Decimal
 
     return Decimal(str(x))

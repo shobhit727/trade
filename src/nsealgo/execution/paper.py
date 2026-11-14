@@ -29,6 +29,7 @@ class PaperBroker(BrokerBase):
         cost_model: CostModel | None = None,
         price_source=None,
     ) -> None:
+        """Initialize simulated cash, pricing, positions, and Indian transaction costs."""
         self.capital = capital
         self.cash = capital
         self.cost_model = cost_model or CostModel(segment="delivery")
@@ -51,6 +52,7 @@ class PaperBroker(BrokerBase):
             )
 
     def _price(self, symbol: str) -> D:
+        """Resolve a fill reference price from the shared source or stored quote."""
         if self.price_source is not None:
             return D(str(self.price_source(symbol)))
         q = self._quotes.get(symbol)
@@ -60,6 +62,7 @@ class PaperBroker(BrokerBase):
 
     # ------------------------------------------------------------------ #
     def get_quote(self, symbol: str) -> Quote:
+        """Return the stored quote or synthesize one from the shared price source."""
         q = self._quotes.get(symbol)
         if q is not None:
             return q
@@ -68,13 +71,16 @@ class PaperBroker(BrokerBase):
         return Quote(symbol, self._price(symbol))
 
     def get_positions(self) -> list[Position]:
+        """Return a snapshot of all simulated open positions."""
         return list(self._positions.values())
 
     def is_connected(self) -> bool:
+        """Always report connected because the paper adapter has no remote service."""
         return True
 
     # ------------------------------------------------------------------ #
     def place_market_order(self, symbol: str, quantity: D, side: str) -> OrderResult:
+        """Simulate a costed long-only fill and update cash and position state."""
         side = self._check_side(side)
         quantity = self._check_qty(quantity)
         order_id = f"P{next(self._ids):08d}"

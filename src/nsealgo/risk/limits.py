@@ -93,16 +93,19 @@ class RiskState:
     week_start_equity: D = D("0")
 
     def drawdown(self) -> D:
+        """Return equity's fractional change from its recorded peak."""
         if self.equity_peak <= 0:
             return D("0")
         return (self.equity / self.equity_peak) - D("1")
 
     def day_pnl(self) -> D:
+        """Return fractional P&L relative to the equity recorded at day start."""
         if self.day_start_equity <= 0:
             return D("0")
         return (self.equity / self.day_start_equity) - D("1")
 
     def week_pnl(self) -> D:
+        """Return fractional P&L relative to the equity recorded at week start."""
         if self.week_start_equity <= 0:
             return D("0")
         return (self.equity / self.week_start_equity) - D("1")
@@ -112,6 +115,7 @@ class RiskManager:
     """Pre-trade and post-trade risk enforcement."""
 
     def __init__(self, limits: RiskLimits = LIMITS) -> None:
+        """Initialize risk state from the fixed capital baseline and supplied limits."""
         self.limits = limits
         self.state = RiskState(
             equity_peak=limits.initial_capital,
@@ -132,9 +136,11 @@ class RiskManager:
         self._check_switches()
 
     def start_day(self, equity: D) -> None:
+        """Set the equity baseline used to calculate daily loss."""
         self.state.day_start_equity = equity
 
     def start_week(self, equity: D) -> None:
+        """Set the equity baseline used to calculate weekly loss."""
         self.state.week_start_equity = equity
 
     # ------------------------------------------------------------------ #
@@ -174,6 +180,7 @@ class RiskManager:
 
     @property
     def is_halted(self) -> bool:
+        """Report whether any risk limit has engaged the kill switch."""
         return self.kill_switch_reason is not None
 
     def assert_tradable(self) -> None:

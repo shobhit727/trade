@@ -40,6 +40,7 @@ class FoldResult:
     test_metrics: Metrics
 
     def __str__(self) -> str:
+        """Format this fold's date windows, OOS metrics, and selected parameters."""
         return (
             f"Fold {self.fold}: train {self.train_start.date()}->{self.train_end.date()} "
             f"| test {self.test_start.date()}->{self.test_end.date()} "
@@ -59,6 +60,7 @@ class WalkForwardResult:
     benchmark_returns: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
 
     def summary(self) -> str:
+        """Summarize each fold and the metrics for concatenated out-of-sample returns."""
         lines = ["WALK-FORWARD VALIDATION", "=" * 100]
         for f in self.folds:
             lines.append(str(f))

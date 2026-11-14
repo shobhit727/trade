@@ -49,9 +49,11 @@ class Metrics:
     trades_per_year: float = 0.0
 
     def as_dict(self) -> dict[str, float | int]:
+        """Return every metric as a plain dictionary for serialization."""
         return asdict(self)
 
     def fmt(self) -> str:
+        """Format the performance and trading-cost metrics as a compact report."""
         return (
             f"CAGR {self.cagr * 100:>7.2f}%   Vol {self.volatility * 100:>6.2f}%\n"
             f"Sharpe {self.sharpe:>7.2f}    Sortino {self.sortino:>6.2f}\n"

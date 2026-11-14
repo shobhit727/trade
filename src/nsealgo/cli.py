@@ -44,6 +44,7 @@ def _load(data_dir: str):
 
 
 def cmd_audit(args: argparse.Namespace) -> int:
+    """Load the configured universe and print its cleaning and date-range audit."""
     panel, symbols, report = _load(args.data_dir)
     print(report.describe())
     print(f"{len(symbols)} symbols | {panel.index[0].date()} -> {panel.index[-1].date()}")
@@ -51,6 +52,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
 
 
 def cmd_costs(args: argparse.Namespace) -> int:
+    """Print calibrated delivery round-trip costs, optionally as JSON."""
     cm = CostModel(segment="delivery", slippage_bps=5)
     print("Indian delivery cost model (slippage 5bps/side):")
     print(f"{'notional/side':>14} {'round-trip bps':>16}")
@@ -66,6 +68,7 @@ def cmd_costs(args: argparse.Namespace) -> int:
 
 
 def cmd_limits(args: argparse.Namespace) -> int:
+    """Print the hard-coded risk limits from the binding project constitution."""
     print("GOAL.md §3.3 hard risk limits (NOT configurable):")
     for k, v in limits_as_dict().items():
         print(f"  {k:<26} {v}")
@@ -73,6 +76,7 @@ def cmd_limits(args: argparse.Namespace) -> int:
 
 
 def cmd_backtest(args: argparse.Namespace) -> int:
+    """Run and print one in-sample backtest beside its equal-weight benchmark."""
     panel, symbols, _ = _load(args.data_dir)
     score = build_composite_score(panel)
     res = run_backtest(
@@ -118,6 +122,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 
 def cmd_paper(args: argparse.Namespace) -> int:
+    """Run the requested paper-trading cycles and report simulated equity and costs."""
     from .live.engine import build_paper_engine
 
     panel, symbols, report = _load(args.data_dir)
@@ -142,6 +147,7 @@ def cmd_paper(args: argparse.Namespace) -> int:
 
 
 def cmd_flatten(args: argparse.Namespace) -> int:
+    """Flatten live positions through Kite, refusing to proceed without credentials."""
     from .execution.kite import KiteBroker
     from .live.engine import Engine
 
@@ -159,6 +165,7 @@ def cmd_flatten(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Construct the command parser and register all NSE CLI subcommands."""
     p = argparse.ArgumentParser("nsealgo", description="NSE NIFTY-50 systematic trading")
     p.add_argument("--data-dir", default="data/nse")
     p.add_argument("-v", "--verbose", action="store_true")
@@ -191,6 +198,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Parse command-line arguments, configure logging, and dispatch the selected command."""
     args = build_parser().parse_args(argv)
     _setup_logging(args.verbose)
     return int(args.fn(args) or 0)

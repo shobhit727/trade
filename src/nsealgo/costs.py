@@ -71,6 +71,7 @@ class CostBreakdown:
 
     @property
     def total(self) -> Decimal:
+        """Return the itemized fill charges summed and rounded to paise."""
         return _round2(
             self.brokerage
             + self.stt
@@ -89,6 +90,7 @@ class CostBreakdown:
         return (self.total / self.turnover * D("10000")).quantize(D("0.01"))
 
     def as_dict(self) -> dict[str, Decimal | str]:
+        """Return every charge component plus total cost and turnover basis points."""
         return {
             "side": self.side,
             "turnover": self.turnover,
@@ -127,6 +129,7 @@ class CostModel:
     _enabled: bool = field(default=True, repr=False)
 
     def __post_init__(self) -> None:
+        """Validate the segment and normalize non-Decimal fee inputs at construction."""
         if self.segment not in ("delivery", "intraday"):
             raise ValueError(f"unknown segment: {self.segment!r}")
         # Coerce at the boundary. The dataclass is annotated ``Decimal``, but the

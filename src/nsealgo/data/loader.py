@@ -168,6 +168,7 @@ class CleaningReport:
     unresolved_actions: list[tuple[str, str, float, float]] = field(default_factory=list)
 
     def merge(self, other: CleaningReport) -> None:
+        """Accumulate row counts and audit events from another cleaning report."""
         self.rows_in += other.rows_in
         self.rows_out += other.rows_out
         self.dropped_pre_2008 += other.dropped_pre_2008
@@ -183,13 +184,16 @@ class CleaningReport:
 
     @property
     def rows_dropped(self) -> int:
+        """Return the number of input rows removed by cleaning."""
         return self.rows_in - self.rows_out
 
     @property
     def frozen_symbols(self) -> list[str]:
+        """Return the sorted symbols with at least one frozen-price run."""
         return sorted({sym for sym, *_ in self.frozen_log})
 
     def summary(self) -> dict[str, object]:
+        """Return machine-readable cleaning totals and anomaly counts."""
         return {
             "rows_in": self.rows_in,
             "rows_out": self.rows_out,
@@ -206,6 +210,7 @@ class CleaningReport:
         }
 
     def describe(self) -> str:
+        """Format cleaning totals and detected anomalies for a human-readable log."""
         s = self.summary()
         return (
             f"CLEANING REPORT\n"

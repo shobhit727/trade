@@ -39,7 +39,9 @@ log = logging.getLogger("nsealgo.engine")
 class Clock(Protocol):
     """Explicit time source. Never call datetime.now() in logic."""
 
-    def today(self) -> pd.Timestamp: ...
+    def today(self) -> pd.Timestamp:
+        """Return the current decision date from the injected time source."""
+        ...
 
 
 @dataclass
@@ -74,6 +76,7 @@ class CycleReport:
     halt_reason: str = ""
 
     def summary(self) -> str:
+        """Format cycle counts, equity, and any halt reason for audit output."""
         return (
             f"{self.date.date()} target={self.n_target} orders={self.n_orders} "
             f"rejected={self.n_rejected} equity=Rs {self.equity:,.0f}"
@@ -91,6 +94,7 @@ class Engine:
         cost_model: CostModel | None = None,
         limits: RiskLimits = LIMITS,
     ) -> None:
+        """Wire the broker, strategy settings, cost model, and fixed risk manager."""
         self.broker = broker
         self.cfg = config or EngineConfig()
         self.cost_model = cost_model or CostModel(segment="delivery")
