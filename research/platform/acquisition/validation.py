@@ -138,12 +138,15 @@ def _validate_timestamped_rows(
 
 
 def validate_funding_rows(rows: list[Any], url: str) -> list[dict[str, Any]]:
-    """Validate funding-rate rows: symbol, fundingTime, fundingRate.
+    """Validate funding-rate rows on a consumed-fields basis.
 
-    The documented ``/fapi/v1/fundingRate`` schema is
-    ``symbol``/``fundingTime``/``fundingRate``; optional provider fields such
-    as ``markPrice``, ``rateType`` or legacy ``markupRate`` are tolerated but
-    never required, so both current and older provider deployments parse.
+    Hard-required are exactly the fields the funding frame consumes:
+    ``symbol``, ``fundingTime`` and ``fundingRate``. Every other field the
+    provider includes is optional per Binance changelog field additions (the
+    endpoint's payload has grown over time — mark-price and rate-type
+    annotations, and historically a ``markupRate``): such fields are
+    tolerated and ignored, never required, so a new provider field can never
+    break ingestion of the consumed fields.
     """
     return _validate_timestamped_rows(
         rows,
