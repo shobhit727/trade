@@ -153,25 +153,64 @@ def test_settlement_only_on_eight_hour_utc_boundaries() -> None:
 
 
 def test_two_funding_payments_in_a_twenty_four_hour_hold() -> None:
+    # 24h hold: open AT the 08:00 boundary, close AT the next-day 08:00
+    # boundary before its settlement. Exactly two payments (16:00 and 00:00)
+    # fall inside the hold; the open and close boundaries themselves charge
+    # nothing. The half-open (prev < b <= cur) window still enumerates all
+    # three boundaries; the final one is a no-op because the position is flat.
     ledger = make_ledger()
-    ledger.open_position(open_order(PerpSide.LONG, D("1"), D("50000"), D("20")), D("0"))
-    start = datetime(2024, 3, 1, 5, 0, tzinfo=UTC)
-    end = datetime(2024, 3, 2, 5, 0, tzinfo=UTC)
+    order = replace(
+        open_order(PerpSide.LONG, D("1"), D("50000"), D("20")),
+        timestamp=datetime(2024, 3, 1, 8, 0, tzinfo=UTC),
+    )
+    ledger.open_position(order, D("0"))
+    start = datetime(2024, 3, 1, 8, 0, tzinfo=UTC)
+    end = datetime(2024, 3, 2, 8, 0, tzinfo=UTC)
     boundaries = ledger.funding_boundaries_between(start, end)
     assert boundaries == (
-        datetime(2024, 3, 1, 8, 0, tzinfo=UTC),
         datetime(2024, 3, 1, 16, 0, tzinfo=UTC),
         datetime(2024, 3, 2, 0, 0, tzinfo=UTC),
+        datetime(2024, 3, 2, 8, 0, tzinfo=UTC),
     )
     ledger.mark_to_market(D("50000"))
-    payments = [ledger.settle_funding(D("0.0001"), b) for b in boundaries]
-    assert all(p is not None for p in payments)
-    # 24h hold crossing 08:00, 16:00 and 00:00 -> exactly three payments,
-    # each 50000 * 0.0001 * 80 = 400 INR debited from the long.
-    assert [p.payment_inr for p in payments] == [D("-400")] * 3  # type: ignore[union-attr]
-    assert ledger.balance_inr == D("1_000_000") - D("400") * 3
-    assert ledger.funding_paid_inr == D("400") * 3
-    assert ledger.snapshot(D("50000")).funding_event_count == 3
+    paid = ledger.settle_funding(D("0.0001"), datetime(2024, 3, 1, 16, 0, tzinfo=UTC))
+    assert paid is not None and paid.payment_inr == D("-400")
+    paid = ledger.settle_funding(D("0.0001"), datetime(2024, 3, 2, 0, 0, tzinfo=UTC))
+    assert paid is not None and paid.payment_inr == D("-400")
+    assert ledger.balance_inr == D("1_000_000") - D("400") * 2
+    assert ledger.funding_paid_inr == D("400") * 2
+    # Close exactly at the final 08:00 boundary, then settle it: the position
+    # is already flat, so the closing boundary is a no-op (returns None).
+    ledger.close_position(close_order(order, D("50000")), D("0"))
+    closing = ledger.settle_funding(D("0.0001"), datetime(2024, 3, 2, 8, 0, tzinfo=UTC))
+    assert closing is None
+    snap = ledger.snapshot()
+    assert snap.funding_event_count == 2
+
+
+def test_no_retroactive_funding_for_boundary_before_open() -> None:
+    # Venue rule: only positions held at the funding instant pay. A position
+    # opened at 20:00 must not be charged for the 16:00 boundary that already
+    # passed, even if the caller replays it; the skipped boundary is consumed
+    # for monotonicity and the next one pays normally.
+    ledger = make_ledger()
+    order = replace(
+        open_order(PerpSide.LONG, D("1"), D("50000"), D("20")),
+        timestamp=datetime(2024, 3, 1, 20, 0, tzinfo=UTC),
+    )
+    ledger.open_position(order, D("0"))
+    ledger.mark_to_market(D("50000"))
+    skipped = ledger.settle_funding(D("0.0001"), datetime(2024, 3, 1, 16, 0, tzinfo=UTC))
+    assert skipped is None
+    assert ledger.funding_events == []
+    assert ledger.balance_inr == D("1_000_000")
+    # The skipped boundary is consumed: replaying it or going back is refused.
+    with pytest.raises(ValueError, match="strictly after"):
+        ledger.settle_funding(D("0.0001"), datetime(2024, 3, 1, 16, 0, tzinfo=UTC))
+    # The next boundary after the open pays in full.
+    paid = ledger.settle_funding(D("0.0001"), datetime(2024, 3, 2, 0, 0, tzinfo=UTC))
+    assert paid is not None and paid.payment_inr == D("-400")
+    assert ledger.funding_paid_inr == D("400")
 
 
 def test_funding_boundary_monotonic_no_double_settlement() -> None:

@@ -164,13 +164,18 @@ class LiquidationEvent:
 
 @dataclass(slots=True)
 class PerpPosition:
-    """Open perpetual position with weighted-average entry accounting."""
+    """Open perpetual position with weighted-average entry accounting.
+
+    ``opened_at`` is the fill timestamp; funding applies only to settlement
+    boundaries at or after it (positions held at the funding instant pay).
+    """
 
     side: PerpSide
     quantity: Decimal
     entry_price_usd: Decimal
     leverage: Decimal
     margin_inr: Decimal
+    opened_at: datetime
 
     @property
     def notional_usd(self) -> Decimal:
@@ -311,6 +316,7 @@ class PerpetualLedger:
             entry_price_usd=order.price_usd,
             leverage=order.leverage,
             margin_inr=initial_margin,
+            opened_at=order.timestamp,
         )
         fill = DerivativesFill(
             order=order,
@@ -377,8 +383,9 @@ class PerpetualLedger:
         Boundary enforcement mirrors the backtest engine: settlement happens
         at 00/08/16 UTC, monotonic in time, and never twice for the same
         boundary. The rate must be the settled rate for the exact boundary
-        (no lookahead). ``None`` means no open position existed, so nothing
-        was paid.
+        (no lookahead). ``None`` means nothing was paid: either no position
+        was open, or the position was opened after this boundary and must not
+        be charged retroactively.
         """
         if boundary.tzinfo is None or boundary.utcoffset() is None:
             raise ValueError("funding boundary timestamp must be timezone-aware")
@@ -395,6 +402,11 @@ class PerpetualLedger:
             return None
         # open_position stamps the entry price as the initial mark, so an open
         # position always has a valuation mark here.
+        if position.opened_at > b:
+            # Venue rule: only positions held at the funding instant pay.
+            # A position opened after this boundary must not be charged
+            # retroactively for an interval it did not hold.
+            return None
         payment_usd = funding_payment_usd(
             position.side,
             position.quantity,
