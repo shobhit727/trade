@@ -138,7 +138,13 @@ def _validate_timestamped_rows(
 
 
 def validate_funding_rows(rows: list[Any], url: str) -> list[dict[str, Any]]:
-    """Validate funding-rate rows: symbol, fundingTime, fundingRate (and markup)."""
+    """Validate funding-rate rows: symbol, fundingTime, fundingRate.
+
+    The documented ``/fapi/v1/fundingRate`` schema is
+    ``symbol``/``fundingTime``/``fundingRate``; optional provider fields such
+    as ``markPrice``, ``rateType`` or legacy ``markupRate`` are tolerated but
+    never required, so both current and older provider deployments parse.
+    """
     return _validate_timestamped_rows(
         rows,
         url,
@@ -146,7 +152,6 @@ def validate_funding_rows(rows: list[Any], url: str) -> list[dict[str, Any]]:
         (
             ("symbol", "text"),
             ("fundingRate", "number"),
-            ("markupRate", "number"),
         ),
     )
 

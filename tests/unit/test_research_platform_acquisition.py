@@ -76,8 +76,8 @@ KLINES_NON_MONOTONIC = [
     [1700000000000, "1.0", "2.0", "0.5", "1.5", "1.0", "0", "0", "0", "0", "0", "0"],
 ]
 FUNDING_OK = [
-    {"symbol": "BTCUSDT", "fundingTime": 1700006400000, "fundingRate": "0.0001", "markupRate": "0.00005"},
-    {"symbol": "BTCUSDT", "fundingTime": 1700035200000, "fundingRate": "-0.0002", "markupRate": "0.00005"},
+    {"symbol": "BTCUSDT", "fundingTime": 1700006400000, "fundingRate": "0.0001"},
+    {"symbol": "BTCUSDT", "fundingTime": 1700035200000, "fundingRate": "-0.0002"},
 ]
 OPEN_INTEREST_OK = [
     {"symbol": "BTCUSDT", "sumOpenInterest": "100.5", "sumOpenInterestValue": "2000.25", "timestamp": 1700000000000},
@@ -190,8 +190,8 @@ def test_fetch_rejects_non_monotonic_kline_timestamps(http) -> None:
 def test_fetch_rejects_non_monotonic_funding_timestamps(http) -> None:
     """The same monotonicity guard protects the object-row endpoints."""
     http.respond([
-        {"symbol": "BTCUSDT", "fundingTime": 1700035200000, "fundingRate": "0.0001", "markupRate": "0.0"},
-        {"symbol": "BTCUSDT", "fundingTime": 1700006400000, "fundingRate": "0.0002", "markupRate": "0.0"},
+        {"symbol": "BTCUSDT", "fundingTime": 1700035200000, "fundingRate": "0.0001"},
+        {"symbol": "BTCUSDT", "fundingTime": 1700006400000, "fundingRate": "0.0002"},
     ])
     with pytest.raises(AcquisitionError, match="strictly increasing"):
         BinancePublicClient().fetch_funding_rate("BTCUSDT", clock=_NoSleepClock())
@@ -216,9 +216,19 @@ def test_fetch_rejects_malformed_response_shapes(http) -> None:
     http.respond([{"fundingTime": 1700006400000}])
     with pytest.raises(AcquisitionError, match="missing field: symbol"):
         BinancePublicClient().fetch_funding_rate("BTCUSDT", clock=_NoSleepClock())
-    http.respond([{"symbol": "BTCUSDT", "fundingTime": "not-a-number", "fundingRate": "0.0001", "markupRate": "0.0"}])
+    http.respond([{"symbol": "BTCUSDT", "fundingTime": 1700006400000}])
+    with pytest.raises(AcquisitionError, match="missing field: fundingRate"):
+        BinancePublicClient().fetch_funding_rate("BTCUSDT", clock=_NoSleepClock())
+    http.respond([{"symbol": "BTCUSDT", "fundingTime": "not-a-number", "fundingRate": "0.0001"}])
     with pytest.raises(AcquisitionError, match="not an integer epoch millisecond"):
         BinancePublicClient().fetch_funding_rate("BTCUSDT", clock=_NoSleepClock())
+    # Legacy rows carrying optional extra fields still parse.
+    http.respond([
+        {"symbol": "BTCUSDT", "fundingTime": 1700006400000, "fundingRate": "0.0001",
+         "markupRate": "0.00005", "markPrice": "42000.5", "rateType": "Regular"},
+    ])
+    parsed = BinancePublicClient().fetch_funding_rate("BTCUSDT", clock=_NoSleepClock())
+    assert float(parsed.frame.iloc[0]["funding_rate"]) == 0.0001
 
 
 def test_rate_limit_responses_trigger_sleep_based_backoff(http) -> None:
