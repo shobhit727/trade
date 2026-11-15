@@ -385,10 +385,10 @@ def assert_train_window_purged(
         utc(value, "label_end") for value in label_end_times
     ) + (missing_end,) * (len(decision_times) - len(label_end_times))
 
-    # The embargo expands the forbidden zone on both sides: a label may not
-    # even touch ``protected_start - embargo`` (mirrors the >= purge rule used
-    # by ``purged_walk_forward_split``, so an interval ending exactly at the
-    # edge with an embargo counts as purged, never silently accepted).
+    # The embargo expands the forbidden zone on both sides. The predicate is
+    # STRICT (``label_end > forbidden_from``), matching ``purged_walk_forward_split``:
+    # an interval ending exactly at ``protected_start - embargo`` is accepted
+    # (half-open boundary); anything strictly beyond it counts as purged.
     forbidden_from = protected_from - embargo
     for index, decision in enumerate(decisions):
         if protected_from <= decision < protected_to:

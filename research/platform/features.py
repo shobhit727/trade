@@ -209,10 +209,16 @@ class PointInTimeFeatureEngine:
             for item in catalog
         }
         output.attrs["availability_benchmark"] = {
+            # Under the platform's open-time-stamp convention the index holds the
+            # bar's open stamp and its close is the NEXT stamp; the values here are
+            # stamped at the close (index position i+1 of the information), i.e.
+            # strictly after the open and never before it.
             "bar_open": index,
+            "close_stamps": index,
             "note": (
                 "availability_timestamps[feature] must be >= bar_open at every row; "
-                "close-derived values are stamped at the close, never the open"
+                "close-derived values are stamped at the close (the row's close "
+                "instant), never earlier than the open"
             ),
         }
         if symbol is not None:
