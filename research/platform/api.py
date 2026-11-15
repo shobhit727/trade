@@ -107,6 +107,23 @@ pre { overflow:auto; white-space:pre-wrap; word-break:break-word; color:#c4d3e4;
 <table><thead><tr><th>Experiment</th><th>Candidate</th><th>Family</th><th>TRAIN Sharpe</th><th>VALIDATION Sharpe</th><th>OOS Sharpe</th></tr></thead><tbody id="comparison-rows"></tbody></table>
 </section>
 <section style="margin-top:16px">
+<h2>Evolution monitor</h2>
+<p>Population and generation state aggregated from stored candidates and events; workers need not be alive.</p>
+<label>Experiment ID</label><input id="evolution-experiment-id" placeholder="experiment-id">
+<button type="button" id="evolution-button">Show evolution state</button>
+<p id="evolution-status" class="status"></p>
+<table><thead><tr><th>Generation</th><th>Population</th><th>Best</th><th>Median</th><th>Worst</th><th>Diversity</th><th>Failed</th></tr></thead><tbody id="evolution-rows"></tbody></table>
+<pre id="evolution-detail"></pre>
+</section>
+<section style="margin-top:16px">
+<h2>Experiment artefact export</h2>
+<p>Download one JSON bundle containing the spec, environment record, candidates with lineage, lifecycle events, OOS acceptance records and classification reports.</p>
+<label>Experiment ID</label><input id="export-experiment-id" placeholder="experiment-id">
+<button type="button" id="export-button">Export experiment bundle</button>
+<p id="export-status" class="status"></p>
+<pre id="export-detail"></pre>
+</section>
+<section style="margin-top:16px">
 <h2>Research jobs</h2>
 <p>Persisted worker status and cooperative cancellation between partitions.</p>
 <table><thead><tr><th>Job</th><th>Experiment</th><th>Runner</th><th>Status</th><th>Created</th><th>Action</th></tr></thead><tbody id="job-rows"></tbody></table>
@@ -358,6 +375,61 @@ $("compare-button").addEventListener("click", async () => {
       " experiments; no cross-market aggregation.";
   } catch (error) {
     $("compare-status").textContent = "Comparison error: " + error.message;
+  }
+});
+$("evolution-button").addEventListener("click", async () => {
+  // Generation monitoring reads the stored candidate/event aggregate only.
+  const experimentId = $("evolution-experiment-id").value.trim();
+  $("evolution-status").textContent = "Loading evolution state…";
+  const body = $("evolution-rows");
+  body.replaceChildren();
+  try {
+    const result = await api("/api/evolution/" + encodeURIComponent(experimentId));
+    const evolution = result.evolution;
+    evolution.generations.forEach(row => {
+      const values = [
+        row.generation,
+        row.population_size,
+        row.best_fitness === null ? "null" : row.best_fitness,
+        row.median_fitness === null ? "null" : row.median_fitness,
+        row.worst_fitness === null ? "null" : row.worst_fitness,
+        row.diversity === null ? "null" : Number(row.diversity).toFixed(3),
+        row.failed_count
+      ];
+      const tableRow = document.createElement("tr");
+      values.forEach(value => {
+        const cell = document.createElement("td");
+        cell.textContent = String(value);
+        tableRow.appendChild(cell);
+      });
+      body.appendChild(tableRow);
+    });
+    $("evolution-detail").textContent = JSON.stringify({
+      experiment_id: evolution.experiment_id,
+      candidate_count: evolution.candidate_count,
+      mutation_count: evolution.mutation_count,
+      crossover_count: evolution.crossover_count,
+      latest_freeze_event: evolution.latest_freeze_event
+    }, null, 2);
+    $("evolution-status").textContent =
+      "Generation " + evolution.generation_count + " stored; mutations=" +
+      evolution.mutation_count + " crossovers=" + evolution.crossover_count;
+  } catch (error) {
+    $("evolution-status").textContent = "Evolution monitor error: " + error.message;
+  }
+});
+$("export-button").addEventListener("click", async () => {
+  // Export renders the stored bundle verbatim; nothing is recomputed client-side.
+  const experimentId = $("export-experiment-id").value.trim();
+  $("export-status").textContent = "Exporting…";
+  try {
+    const result = await api("/api/experiments/" + encodeURIComponent(experimentId) + "/export");
+    const bundle = result.export;
+    $("export-detail").textContent = JSON.stringify(bundle, null, 2);
+    $("export-status").textContent =
+      "Exported " + bundle.candidate_count + " candidates and " + bundle.event_count + " events";
+  } catch (error) {
+    $("export-status").textContent = "Export error: " + error.message;
   }
 });
 $("create-form").addEventListener("submit", async event => {
@@ -1065,8 +1137,13 @@ class ResearchAPI:
                 if method == "GET":
                     if not suffix or "/" in suffix:
                         raise KeyError(suffix)
+                    job = self.store.get_job(suffix)
+                    # F-032: recorded resource snapshots ride along with the job
+                    # detail so the dashboard can chart RSS/threads/wall-time.
+                    snapshots = self.store.job_resource_snapshots(suffix)
+                    job["resource_snapshots"] = list(snapshots)
                     return self._response(
-                        start_response, HTTPStatus.OK, {"job": self.store.get_job(suffix)}
+                        start_response, HTTPStatus.OK, {"job": job}
                     )
                 if method == "POST" and suffix.endswith("/cancel"):
                     job_id = suffix.removesuffix("/cancel").strip("/")
@@ -1124,6 +1201,95 @@ class ResearchAPI:
                 limit_values = query.get("limit", ["100"])
                 rows = self.store.list_experiments(market=market, limit=int(limit_values[0]))
                 return self._response(start_response, HTTPStatus.OK, {"experiments": rows})
+            if method == "GET" and path == "/api/experiments/compare":
+                # F-030: comparable per-experiment records from one stored record
+                # type each; missing fields stay explicit nulls, never dropped.
+                query = parse_qs(environ.get("QUERY_STRING", ""))
+                raw_ids = query.get("ids", [""])
+                experiment_ids = [
+                    value.strip() for value in raw_ids[0].split(",") if value.strip()
+                ]
+                if not 2 <= len(experiment_ids) <= 10:
+                    raise ValueError("comparison requires between 2 and 10 comma-separated ids")
+                if len(set(experiment_ids)) != len(experiment_ids):
+                    raise ValueError("comparison experiment IDs must be unique")
+                records = []
+                markets = set()
+                for experiment_id in experiment_ids:
+                    experiment = self.store.get_experiment(experiment_id)
+                    markets.add(experiment["market"])
+                    events = self.store.events(experiment_id)
+                    candidates = self.store.candidates(experiment_id)
+                    environments = [
+                        event["payload"] for event in events
+                        if event["event_type"] == "environment_recorded"
+                    ]
+                    # Same collection rule as export_experiment: any event payload
+                    # carrying "oos_acceptance" is a verdict, whatever event type
+                    # recorded it (the existing-strategy path uses
+                    # existing_strategy_evaluated, not a *_oos_recorded suffix).
+                    oos_acceptance = None
+                    for event in events:
+                        if (
+                            isinstance(event["payload"], dict)
+                            and "oos_acceptance" in event["payload"]
+                        ):
+                            oos_acceptance = {
+                                "event_type": event["event_type"],
+                                "payload": event["payload"],
+                            }
+                    classifications: dict[str, int] = {}
+                    for event in events:
+                        label = event["payload"].get("classification")
+                        if isinstance(label, str):
+                            classifications[label] = classifications.get(label, 0) + 1
+                    records.append({
+                        "experiment_id": experiment_id,
+                        "market": experiment["market"],
+                        "track": experiment["track"],
+                        "fingerprint": experiment["fingerprint"],
+                        "created_at": experiment["created_at"],
+                        "spec": experiment["spec"],
+                        "candidate_count": len(candidates),
+                        "classification_distribution": classifications,
+                        "oos_acceptance": oos_acceptance,
+                        "environment": environments[-1] if environments else None,
+                        "generation_count": (
+                            max((int(candidate["generation"]) for candidate in candidates), default=None)
+                        ),
+                        "families": sorted({str(candidate["family"]) for candidate in candidates}),
+                        "source_record_types": [
+                            "experiments", "experiment_events", "candidates",
+                        ],
+                    })
+                if len(markets) != 1:
+                    raise ValueError("NSE and crypto experiments cannot be compared in one financial view")
+                return self._response(start_response, HTTPStatus.OK, {
+                    "experiment_ids": experiment_ids,
+                    "market": next(iter(markets)),
+                    "comparisons": records,
+                    "aggregation": "none; every field comes from one stored record type",
+                })
+            if method == "GET" and path.startswith("/api/evolution/"):
+                # F-031: live worker state is aggregated from stored candidates and
+                # events, so monitoring keeps working after workers exit.
+                experiment_id = path.removeprefix("/api/evolution/").strip("/")
+                if not experiment_id or "/" in experiment_id:
+                    raise KeyError(experiment_id)
+                return self._response(
+                    start_response, HTTPStatus.OK,
+                    {"evolution": self.store.evolution_snapshot(experiment_id)},
+                )
+            if method == "GET" and path.startswith("/api/experiments/") and path.endswith("/export"):
+                # F-033: one JSON bundle with every stored record type for the
+                # experiment; sufficient to re-analyse without the database.
+                experiment_id = path.removeprefix("/api/experiments/").removesuffix("/export").strip("/")
+                if not experiment_id or "/" in experiment_id:
+                    raise KeyError(experiment_id)
+                return self._response(
+                    start_response, HTTPStatus.OK,
+                    {"export": self.store.export_experiment(experiment_id)},
+                )
             if method == "POST" and path == "/api/datasets":
                 # Register immutable provenance only; the local source file is not uploaded.
                 if environ.get("CONTENT_TYPE", "").split(";")[0].strip() != "application/json":

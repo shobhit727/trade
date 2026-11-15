@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import statistics
+import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -230,8 +232,13 @@ class ExperimentStore:
                     completed_at TEXT,
                     parameters_json TEXT NOT NULL,
                     result_json TEXT,
-                    error_message TEXT
+                    error_message TEXT,
+                    lease_owner TEXT,
+                    lease_expires_at TEXT,
+                    lease_token TEXT
                 );
+                CREATE INDEX IF NOT EXISTS idx_jobs_lease_expiry
+                    ON jobs(lease_expires_at);
                 CREATE INDEX IF NOT EXISTS idx_jobs_experiment
                     ON jobs(experiment_id, created_at);
                 CREATE TABLE IF NOT EXISTS job_events (
@@ -243,6 +250,26 @@ class ExperimentStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_job_events_job
                     ON job_events(job_id, event_id);
+                CREATE TABLE IF NOT EXISTS job_checkpoints (
+                    checkpoint_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    job_id TEXT NOT NULL REFERENCES jobs(job_id),
+                    created_at TEXT NOT NULL,
+                    progress_json TEXT NOT NULL,
+                    random_state_json TEXT,
+                    candidates_json TEXT NOT NULL,
+                    environment_json TEXT,
+                    integrity_digest TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_job_checkpoints_job
+                    ON job_checkpoints(job_id, checkpoint_id);
+                CREATE TRIGGER IF NOT EXISTS immutable_job_checkpoints_update
+                BEFORE UPDATE ON job_checkpoints BEGIN
+                    SELECT RAISE(ABORT, 'job checkpoints are append-only');
+                END;
+                CREATE TRIGGER IF NOT EXISTS immutable_job_checkpoints_delete
+                BEFORE DELETE ON job_checkpoints BEGIN
+                    SELECT RAISE(ABORT, 'job checkpoints are append-only');
+                END;
                 CREATE TRIGGER IF NOT EXISTS immutable_job_events_update
                 BEFORE UPDATE ON job_events BEGIN
                     SELECT RAISE(ABORT, 'job events are append-only');
@@ -787,3 +814,499 @@ class ExperimentStore:
                     (experiment_id, limit),
                 ).fetchall()
         return tuple(dict(row) for row in rows)
+
+    def export_experiment(self, experiment_id: str) -> dict[str, Any]:
+        """Assemble the complete offline-analysis bundle for one experiment (audit F-033)."""
+        # Every record type comes from the same stored rows the API serves; nothing
+        # is recomputed, so an offline consumer sees exactly what the platform saw.
+        experiment = self.get_experiment(experiment_id)
+        events = self.events(experiment_id)
+        candidates = self.candidates(experiment_id)
+        environments = [
+            {**event["payload"], "_occurred_at": event["occurred_at"]}
+            for event in events
+            if event["event_type"] == "environment_recorded"
+        ]
+        # Any event payload may carry an OOS acceptance verdict under the approved
+        # policy; collecting by key keeps verdicts auditable regardless of which
+        # runner event type recorded them (suffix-based collection would drop the
+        # existing-strategy path's existing_strategy_evaluated records).
+        oos_acceptances = [
+            {**event["payload"], "_occurred_at": event["occurred_at"]}
+            for event in events
+            if isinstance(event["payload"], dict) and "oos_acceptance" in event["payload"]
+        ]
+        classification_reports = [
+            {
+                "event_id": event["event_id"],
+                "classification": event["payload"].get("classification"),
+                "classification_evidence": event["payload"].get("classification_evidence"),
+            }
+            for event in events
+            if "classification" in event["payload"]
+        ]
+        return {
+            "experiment_id": experiment_id,
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "experiment": experiment,
+            "environment": environments[-1] if environments else None,
+            "events": list(events),
+            "candidates": list(candidates),
+            "oos_acceptances": oos_acceptances,
+            "classification_reports": classification_reports,
+            "candidate_count": len(candidates),
+            "event_count": len(events),
+        }
+
+    def evolution_snapshot(self, experiment_id: str) -> dict[str, Any]:
+        """Aggregate population/generation monitoring state from stored rows (audit F-031)."""
+        # Workers need not be alive: every generation statistic is derived from the
+        # immutable candidate rows and lifecycle events the GP/neuro runners persist.
+        self.get_experiment(experiment_id)
+        candidates = self.candidates(experiment_id)
+        per_generation: dict[int, dict[str, Any]] = {}
+        mutation_count = 0
+        crossover_count = 0
+        for candidate in candidates:
+            generation = int(candidate["generation"])
+            bucket = per_generation.setdefault(generation, {
+                "generation": generation,
+                "population_size": 0,
+                "fitnesses": [],
+                "genome_keys": [],
+            })
+            bucket["population_size"] += 1
+            metrics = candidate["metrics"]
+            fitness = None
+            if isinstance(metrics, dict) and isinstance(metrics.get("train_fitness"), (int, float)):
+                fitness = float(metrics["train_fitness"])
+            bucket["fitnesses"].append(fitness)
+            parameters = candidate["parameters"]
+            # Diversity compares stored genomes (expression trees or weight vectors)
+            # as canonical JSON; identical stored genomes collapse to one distinct key.
+            bucket["genome_keys"].append(json.dumps(
+                parameters, sort_keys=True, separators=(",", ":"), allow_nan=False,
+                default=str,
+            ))
+            lineage = candidate["lineage"]
+            operator = lineage.get("operator") if isinstance(lineage, dict) else None
+            operator_text = str(operator) if operator is not None else ""
+            if "mutation" in operator_text:
+                mutation_count += 1
+            if "crossover" in operator_text:
+                crossover_count += 1
+        generations: list[dict[str, Any]] = []
+        for bucket in sorted(per_generation.values(), key=lambda item: item["generation"]):
+            fitnesses = [value for value in bucket["fitnesses"] if value is not None]
+            distinct = set(bucket["genome_keys"])
+            count = bucket["population_size"]
+            generations.append({
+                "generation": bucket["generation"],
+                "population_size": count,
+                "best_fitness": max(fitnesses) if fitnesses else None,
+                "median_fitness": (
+                    float(statistics.median(fitnesses)) if fitnesses else None
+                ),
+                "worst_fitness": min(fitnesses) if fitnesses else None,
+                "diversity": len(distinct) / count,
+                "evaluated_count": len(fitnesses),
+                "failed_count": count - len(fitnesses),
+            })
+        events = self.events(experiment_id)
+        latest_freeze: dict[str, Any] | None = None
+        oos_events: list[dict[str, Any]] = []
+        for event in events:
+            if event["event_type"].endswith("_candidate_frozen"):
+                latest_freeze = {
+                    "event_type": event["event_type"],
+                    "occurred_at": event["occurred_at"],
+                    "payload": event["payload"],
+                }
+            elif event["event_type"].endswith("_oos_recorded"):
+                oos_events.append({
+                    "event_type": event["event_type"],
+                    "occurred_at": event["occurred_at"],
+                    "payload": event["payload"],
+                })
+        return {
+            "experiment_id": experiment_id,
+            "candidate_count": len(candidates),
+            "generation_count": len(generations),
+            "generations": generations,
+            "mutation_count": mutation_count,
+            "crossover_count": crossover_count,
+            "latest_freeze_event": latest_freeze,
+            "oos_events": oos_events,
+            "source": "stored_candidates_and_events; workers need not be alive",
+        }
+
+    def job_resource_snapshots(self, job_id: str) -> tuple[dict[str, Any], ...]:
+        """Return recorded resource snapshots for one job in append order (audit F-032)."""
+        # Snapshots are plain job events, so this query works whether the worker
+        # recorded them at start, at checkpoints or at job end.
+        with self._connection() as connection:
+            rows = connection.execute(
+                """SELECT event_id, job_id, event_type, occurred_at, payload_json
+                   FROM job_events
+                   WHERE job_id = ? AND event_type = 'resource_snapshot'
+                   ORDER BY event_id""",
+                (job_id,),
+            ).fetchall()
+        return tuple(
+            {**dict(row), "payload": json.loads(row["payload_json"])}
+            for row in rows
+        )
+
+
+    # ------------------------------------------------------------------
+    # Worker leases and resumable checkpoints (audit F-026 / F-027).
+    # Lease ownership is stored as nullable columns on the jobs row so a
+    # claim/renew/expire decision is one atomic UPDATE under SQLite's write
+    # lock, while every transition is also appended to job_events for audit.
+    # Checkpoints are an append-only table: each row's integrity digest is
+    # re-derived on load, so a truncated or tampered checkpoint is refused.
+    # ------------------------------------------------------------------
+
+    def acquire_job_lease(
+        self, job_id: str, worker_id: str, *, ttl_seconds: int
+    ) -> bool:
+        """Atomically claim a claimable job for this worker; False when taken."""
+        # A lease is claimable when the row is unleased or its expiry has passed.
+        if not worker_id.strip() or ttl_seconds < 1:
+            raise ValueError("worker_id must be non-empty and ttl_seconds positive")
+        now = datetime.now(timezone.utc)
+        expiry = (now + timedelta(seconds=ttl_seconds)).isoformat()
+        token = uuid.uuid4().hex
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT status, lease_owner, lease_expires_at FROM jobs WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(job_id)
+            if row["status"] not in {"queued", "running"}:
+                return False
+            current_expiry = row["lease_expires_at"]
+            actively_leased = (
+                row["lease_owner"] is not None
+                and current_expiry is not None
+                and datetime.fromisoformat(current_expiry) > now
+            )
+            if actively_leased:
+                connection.execute(
+                    """INSERT INTO job_events
+                       (job_id, event_type, occurred_at, payload_json)
+                       VALUES (?, 'lease_rejected', ?, ?)""",
+                    (
+                        job_id,
+                        now.isoformat(),
+                        json.dumps(
+                            {
+                                "requested_by": worker_id,
+                                "lease_owner": row["lease_owner"],
+                                "lease_expires_at": current_expiry,
+                                "reason": "job is actively leased by another worker",
+                            },
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                    ),
+                )
+                return False
+            updated = connection.execute(
+                """UPDATE jobs
+                   SET lease_owner = ?, lease_expires_at = ?, lease_token = ?
+                   WHERE job_id = ? AND (
+                       lease_owner IS NULL
+                       OR lease_expires_at IS NULL
+                       OR lease_expires_at <= ?
+                   )""",
+                (worker_id, expiry, token, job_id, now.isoformat()),
+            )
+            if updated.rowcount != 1:
+                return False
+            connection.execute(
+                """INSERT INTO job_events
+                   (job_id, event_type, occurred_at, payload_json)
+                   VALUES (?, 'lease_acquired', ?, ?)""",
+                (
+                    job_id,
+                    now.isoformat(),
+                    json.dumps(
+                        {
+                            "worker_id": worker_id,
+                            "lease_token": token,
+                            "expires_at": expiry,
+                            "ttl_seconds": ttl_seconds,
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                ),
+            )
+            return True
+
+    def renew_job_lease(
+        self, job_id: str, worker_id: str, *, ttl_seconds: int
+    ) -> bool:
+        """Heartbeat-renew a live lease held by this worker."""
+        if not worker_id.strip() or ttl_seconds < 1:
+            raise ValueError("worker_id must be non-empty and ttl_seconds positive")
+        now = datetime.now(timezone.utc)
+        expiry = (now + timedelta(seconds=ttl_seconds)).isoformat()
+        with self._connection() as connection:
+            updated = connection.execute(
+                """UPDATE jobs
+                   SET lease_expires_at = ?
+                   WHERE job_id = ? AND lease_owner = ? AND lease_expires_at > ?""",
+                (expiry, job_id, worker_id, now.isoformat()),
+            )
+            renewed = updated.rowcount == 1
+            if renewed:
+                connection.execute(
+                    """INSERT INTO job_events
+                       (job_id, event_type, occurred_at, payload_json)
+                       VALUES (?, 'lease_renewed', ?, ?)""",
+                    (
+                        job_id,
+                        now.isoformat(),
+                        json.dumps(
+                            {"worker_id": worker_id, "expires_at": expiry},
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                    ),
+                )
+            return renewed
+
+    def release_job_lease(self, job_id: str, worker_id: str) -> bool:
+        """Release this worker's lease and record the transition."""
+        now = datetime.now(timezone.utc)
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT lease_owner FROM jobs WHERE job_id = ?", (job_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(job_id)
+            if row["lease_owner"] != worker_id:
+                return False
+            connection.execute(
+                """UPDATE jobs
+                   SET lease_owner = NULL, lease_expires_at = NULL, lease_token = NULL
+                   WHERE job_id = ? AND lease_owner = ?""",
+                (job_id, worker_id),
+            )
+            connection.execute(
+                """INSERT INTO job_events
+                   (job_id, event_type, occurred_at, payload_json)
+                   VALUES (?, 'lease_released', ?, ?)""",
+                (
+                    job_id,
+                    now.isoformat(),
+                    json.dumps({"worker_id": worker_id}, sort_keys=True,
+                               separators=(",", ":")),
+                ),
+            )
+            return True
+
+    def expire_stale_job_leases(self) -> int:
+        """Expire every lapsed lease and mark each expired transition auditable."""
+        now = datetime.now(timezone.utc)
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                """SELECT job_id, lease_owner FROM jobs
+                   WHERE lease_owner IS NOT NULL AND lease_expires_at <= ?""",
+                (now.isoformat(),),
+            ).fetchall()
+            for row in rows:
+                connection.execute(
+                    """UPDATE jobs
+                       SET lease_owner = NULL, lease_expires_at = NULL, lease_token = NULL
+                       WHERE job_id = ?""",
+                    (row["job_id"],),
+                )
+                connection.execute(
+                    """INSERT INTO job_events
+                       (job_id, event_type, occurred_at, payload_json)
+                       VALUES (?, 'lease_expired', ?, ?)""",
+                    (
+                        row["job_id"],
+                        now.isoformat(),
+                        json.dumps(
+                            {
+                                "worker_id": row["lease_owner"],
+                                "expired_at": now.isoformat(),
+                            },
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                    ),
+                )
+            return len(rows)
+
+    def job_lease(self, job_id: str) -> dict[str, Any] | None:
+        """Return the live lease on a job, or None when unleased or expired."""
+        with self._connection() as connection:
+            row = connection.execute(
+                """SELECT lease_owner, lease_expires_at, lease_token
+                   FROM jobs WHERE job_id = ?""",
+                (job_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(job_id)
+        if row["lease_owner"] is None or row["lease_expires_at"] is None:
+            return None
+        if datetime.fromisoformat(row["lease_expires_at"]) <= datetime.now(timezone.utc):
+            return None
+        return {
+            "job_id": job_id,
+            "worker_id": row["lease_owner"],
+            "expires_at": row["lease_expires_at"],
+            "lease_token": row["lease_token"],
+        }
+
+    @staticmethod
+    def _checkpoint_digest(
+        *,
+        job_id: str,
+        created_at: str,
+        progress: dict[str, Any],
+        random_state: dict[str, Any] | None,
+        candidates: list[dict[str, Any]],
+        environment: dict[str, Any] | None,
+    ) -> str:
+        """Hash the checkpoint content so truncation or tampering is detectable."""
+        payload = json.dumps(
+            {
+                "job_id": job_id,
+                "created_at": created_at,
+                "progress": progress,
+                "random_state": random_state,
+                "candidates": candidates,
+                "environment": environment,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def append_job_checkpoint(
+        self,
+        job_id: str,
+        *,
+        progress: dict[str, Any] | None = None,
+        random_state: dict[str, Any] | None = None,
+        candidates_so_far: list[dict[str, Any]] | None = None,
+        environment: dict[str, Any] | None = None,
+    ) -> int:
+        """Persist one verified resumable checkpoint for a job (audit F-026)."""
+        # Checkpoints capture progress state, the candidate set so far, the RNG
+        # state and the environment record; the integrity digest is re-derived
+        # on load, so a resumed worker never trusts a truncated row.
+        progress = dict(progress or {})
+        candidates = list(candidates_so_far or [])
+        for entry in candidates:
+            if not isinstance(entry, dict) or not str(entry.get("candidate_digest", "")).strip():
+                raise ValueError(
+                    "checkpoint candidates_so_far entries require a candidate_digest"
+                )
+        if environment is not None and not isinstance(environment, dict):
+            raise TypeError("checkpoint environment must be a record dictionary or None")
+        now = datetime.now(timezone.utc).isoformat()
+        digest = self._checkpoint_digest(
+            job_id=job_id,
+            created_at=now,
+            progress=progress,
+            random_state=random_state,
+            candidates=candidates,
+            environment=environment,
+        )
+        encoded = lambda value: json.dumps(  # noqa: E731 - local narrow helper
+            value, sort_keys=True, separators=(",", ":"), allow_nan=False
+        )
+        with self._connection() as connection:
+            cursor = connection.execute(
+                """INSERT INTO job_checkpoints
+                   (job_id, created_at, progress_json, random_state_json,
+                    candidates_json, environment_json, integrity_digest)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    job_id,
+                    now,
+                    encoded(progress),
+                    None if random_state is None else encoded(random_state),
+                    encoded(candidates),
+                    None if environment is None else encoded(environment),
+                    digest,
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def load_validated_checkpoint(self, job_id: str) -> dict[str, Any] | None:
+        """Return the newest integrity-verified checkpoint, or None when absent."""
+        with self._connection() as connection:
+            row = connection.execute(
+                """SELECT * FROM job_checkpoints WHERE job_id = ?
+                   ORDER BY checkpoint_id DESC LIMIT 1""",
+                (job_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        progress = json.loads(row["progress_json"])
+        random_state = (
+            None if row["random_state_json"] is None
+            else json.loads(row["random_state_json"])
+        )
+        candidates = json.loads(row["candidates_json"])
+        environment = (
+            None if row["environment_json"] is None
+            else json.loads(row["environment_json"])
+        )
+        expected = self._checkpoint_digest(
+            job_id=row["job_id"],
+            created_at=row["created_at"],
+            progress=progress,
+            random_state=random_state,
+            candidates=candidates,
+            environment=environment,
+        )
+        if expected != row["integrity_digest"]:
+            # A truncated or tampered checkpoint is refused, never partially trusted.
+            raise RuntimeError(
+                f"checkpoint {row['checkpoint_id']} for job {job_id} failed its "
+                "integrity digest; refusing to resume from unverified state"
+            )
+        return {
+            "checkpoint_id": int(row["checkpoint_id"]),
+            "job_id": row["job_id"],
+            "created_at": row["created_at"],
+            "progress": progress,
+            "random_state": random_state,
+            "candidates_so_far": candidates,
+            "environment": environment,
+            "integrity_digest": expected,
+        }
+
+    def reset_job_for_resume(self, job_id: str) -> None:
+        """Move a failed/interrupted job back to queued for checkpointed resumption."""
+        # Only a failed record may re-enter the queue; running jobs must be
+        # cancelled or expired first so a single job never runs twice.
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT status FROM jobs WHERE job_id = ?", (job_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(job_id)
+            if row["status"] != "failed":
+                raise ValueError(
+                    f"only failed jobs may be reset for resume; status is {row['status']!r}"
+                )
+            connection.execute(
+                """UPDATE jobs
+                   SET status = 'queued', completed_at = NULL, error_message = NULL
+                   WHERE job_id = ?""",
+                (job_id,),
+            )

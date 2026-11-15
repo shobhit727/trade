@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 
 from research.platform.api import DASHBOARD_HTML, ResearchAPI
 from research.platform.storage import ExperimentStore
+from tests.unit.test_research_platform import make_experiment
 
 
 def _payload(**updates: object) -> dict[str, object]:
@@ -674,3 +675,324 @@ def test_api_rejects_hybrid_de_budget_mismatch(tmp_path) -> None:
     )
     assert status == 400
     assert "must equal budget_per_method" in json.loads(body)["error"]
+
+
+def test_f030_experiment_compare_returns_complete_comparable_records(tmp_path) -> None:
+    # F-030: the comparison endpoint returns every comparable field from the same
+    # stored record types, with explicit nulls where a record was never stored.
+    store = ExperimentStore(tmp_path / "f030-compare.sqlite3")
+    app = ResearchAPI(store)
+    assert _request(app, "POST", "/api/datasets", _dataset_payload())[0] == 201
+
+    first = _payload(experiment_id="f030-nse-one", random_seed=42)
+    second = _payload(experiment_id="f030-nse-two", random_seed=43)
+    assert _request(app, "POST", "/api/experiments", first)[0] == 201
+    assert _request(app, "POST", "/api/experiments", second)[0] == 201
+
+    # Candidate rows in two generations with one failure and a mixed family set.
+    for experiment_id, digest_prefix in (
+        (first["experiment_id"], "1"),
+        (second["experiment_id"], "2"),
+    ):
+        for generation in range(2):
+            for index in range(2):
+                if (generation + index) % 2 == 0:
+                    metrics = {"train_fitness": 0.25 * (generation + 1), "train": {"sharpe": 0.1}}
+                else:
+                    metrics = {"status": "failed"}
+                store.append_candidate(
+                    candidate_id=f"{experiment_id}-g{generation}-{index}",
+                    experiment_id=experiment_id,
+                    candidate_digest=f"{digest_prefix}{generation}{index}".ljust(16, "0") * 4,
+                    family="genetic_programming",
+                    generation=generation,
+                    parameters={"expression": {"op": f"tree-{index}"}, "feature_windows": [5]},
+                    metrics=metrics,
+                    lineage={
+                        "operator": "subtree_crossover_then_mutation" if index == 0 else "elitism",
+                        "parent_candidate_ids": [],
+                    },
+                )
+        store.append_event(
+            experiment_id,
+            "genetic_programming_oos_recorded",
+            {"oos_metrics": {"sharpe": 0.2}, "final_holdout_accessed": False},
+        )
+
+    status, _, body = _request(
+        app,
+        "GET",
+        "/api/experiments/compare?ids=f030-nse-one,f030-nse-two",
+    )
+    assert status == 200
+    result = json.loads(body)
+    assert result["market"] == "nse"
+    assert result["experiment_ids"] == ["f030-nse-one", "f030-nse-two"]
+    assert len(result["comparisons"]) == 2
+
+    for comparison in result["comparisons"]:
+        # Every comparison field comes from one stored record type; the provenance
+        # list names those record types explicitly.
+        assert comparison["source_record_types"] == [
+            "experiments", "experiment_events", "candidates",
+        ]
+        assert comparison["spec"]["experiment_id"] == comparison["experiment_id"]
+        assert comparison["candidate_count"] == 4
+        assert comparison["generation_count"] == 1
+        assert comparison["families"] == ["genetic_programming"]
+        # No OOS acceptance policy event was stored, so the field is an explicit
+        # null rather than a fabricated pass/fail.
+        assert comparison["oos_acceptance"] is None
+        assert comparison["environment"] is None
+        assert comparison["classification_distribution"] == {}
+
+    first_record = result["comparisons"][0]
+    second_record = result["comparisons"][1]
+    assert first_record["fingerprint"] != second_record["fingerprint"]
+    assert first_record["market"] == second_record["market"] == "nse"
+
+    # Validation: fewer than two ids, duplicate ids, and mixed markets all fail.
+    status, _, body = _request(app, "GET", "/api/experiments/compare?ids=f030-nse-one")
+    assert status == 400
+    assert "between 2 and 10" in json.loads(body)["error"]
+
+    status, _, body = _request(
+        app, "GET", "/api/experiments/compare?ids=f030-nse-one,f030-nse-one",
+    )
+    assert status == 400
+    assert "must be unique" in json.loads(body)["error"]
+
+
+def test_f030_experiment_compare_environment_record_surfaces_when_stored(tmp_path) -> None:
+    # A stored environment record flows into the comparison instead of staying null.
+    store = ExperimentStore(tmp_path / "f030-env.sqlite3")
+    app = ResearchAPI(store)
+    assert _request(app, "POST", "/api/datasets", _dataset_payload())[0] == 201
+    assert _request(app, "POST", "/api/experiments", _payload(experiment_id="f030-env-a"))[0] == 201
+    assert _request(app, "POST", "/api/experiments", _payload(experiment_id="f030-env-b"))[0] == 201
+    environment = {"python_version": "3.13.0", "platform": "linux", "numpy_version": "2.0.0"}
+    store.append_event("f030-env-a", "environment_recorded", environment)
+
+    status, _, body = _request(
+        app, "GET", "/api/experiments/compare?ids=f030-env-a,f030-env-b",
+    )
+    assert status == 200
+    comparisons = json.loads(body)["comparisons"]
+    assert comparisons[0]["environment"] == environment
+    # The record was never stored for the second experiment: explicit null.
+    assert comparisons[1]["environment"] is None
+
+
+def test_f031_evolution_endpoint_aggregates_stored_generation_state(tmp_path) -> None:
+    # F-031: live worker state is aggregated from stored candidates and events,
+    # so the monitor works even when no worker is running.
+    store = ExperimentStore(tmp_path / "f031-evolution.sqlite3")
+    app = ResearchAPI(store)
+    assert _request(app, "POST", "/api/datasets", _dataset_payload())[0] == 201
+    assert _request(app, "POST", "/api/experiments", _payload(experiment_id="f031-gp"))[0] == 201
+
+    rows = [
+        (0, "random_initialisation", {"train_fitness": 0.5}),
+        (0, "subtree_crossover", {"train_fitness": 0.3}),
+        (1, "subtree_crossover_then_mutation", {"train_fitness": 0.9}),
+        (1, "subtree_crossover", {"status": "failed"}),
+    ]
+    for index, (generation, operator, metrics) in enumerate(rows):
+        store.append_candidate(
+            candidate_id=f"f031-candidate-{index}",
+            experiment_id="f031-gp",
+            candidate_digest=f"{index:016d}" * 4,
+            family="genetic_programming",
+            generation=generation,
+            parameters={"expression": {"op": f"tree-{index}"}, "feature_windows": [5]},
+            metrics=metrics,
+            lineage={"operator": operator, "parent_candidate_ids": []},
+        )
+    store.append_event(
+        "f031-gp",
+        "genetic_programming_candidate_frozen",
+        {"selected_candidate_id": "f031-candidate-2", "population_size": 2},
+    )
+    store.append_event(
+        "f031-gp",
+        "genetic_programming_oos_recorded",
+        {"oos_metrics": {"sharpe": 0.4}, "final_holdout_accessed": False},
+    )
+
+    status, _, body = _request(app, "GET", "/api/evolution/f031-gp")
+    assert status == 200
+    evolution = json.loads(body)["evolution"]
+    assert evolution["experiment_id"] == "f031-gp"
+    assert evolution["candidate_count"] == 4
+    assert evolution["generation_count"] == 2
+    assert evolution["mutation_count"] == 1
+    assert evolution["crossover_count"] == 3
+    assert evolution["latest_freeze_event"]["event_type"] == "genetic_programming_candidate_frozen"
+    assert evolution["latest_freeze_event"]["payload"]["selected_candidate_id"] == "f031-candidate-2"
+    assert [event["event_type"] for event in evolution["oos_events"]] == [
+        "genetic_programming_oos_recorded",
+    ]
+
+    generation_zero = evolution["generations"][0]
+    assert generation_zero == {
+        "generation": 0,
+        "population_size": 2,
+        "best_fitness": 0.5,
+        # statistics.median midpoint of [0.3, 0.5], not an upper-mid element pick.
+        "median_fitness": 0.4,
+        "worst_fitness": 0.3,
+        "diversity": 1.0,
+        "evaluated_count": 2,
+        "failed_count": 0,
+    }
+    generation_one = evolution["generations"][1]
+    assert generation_one["population_size"] == 2
+    assert generation_one["best_fitness"] == 0.9
+    assert generation_one["median_fitness"] == 0.9
+    assert generation_one["worst_fitness"] == 0.9
+    assert generation_one["evaluated_count"] == 1
+    assert generation_one["failed_count"] == 1
+
+    status, _, body = _request(app, "GET", "/api/evolution/unknown-experiment")
+    assert status == 404
+    assert "not found" in json.loads(body)["error"]
+
+
+def test_f032_job_detail_exposes_recorded_resource_snapshots(tmp_path) -> None:
+    # F-032: resource snapshots recorded as job events are queryable through the
+    # job detail endpoint in append order, alongside the ordinary event stream.
+    store = ExperimentStore(tmp_path / "f032-telemetry.sqlite3")
+    spec = make_experiment(experiment_id="f032-telemetry-experiment")
+    store.create_experiment(spec)
+    store.create_job(
+        job_id="f032-job",
+        experiment_id=spec.experiment_id,
+        runner_name="existing_strategy_evaluation",
+        parameters={},
+    )
+    store.append_job_event("f032-job", "job_started", {})
+    store.append_job_event("f032-job", "resource_snapshot", {
+        "phase": "job_start",
+        "rss_bytes": 84_500_992,
+        "user_cpu_seconds": 1.25,
+        "system_cpu_seconds": 0.5,
+        "thread_count": 4,
+        "elapsed_seconds": 0.0,
+    })
+    store.append_job_event("f032-job", "log", {"level": "info", "message": "checkpoint"})
+    store.append_job_event("f032-job", "resource_snapshot", {
+        "phase": "job_end",
+        "rss_bytes": 91_880_448,
+        "user_cpu_seconds": 4.75,
+        "system_cpu_seconds": 1.25,
+        "thread_count": 4,
+        "elapsed_seconds": 12.5,
+    })
+
+    app = ResearchAPI(store)
+    status, _, body = _request(app, "GET", "/api/jobs/f032-job")
+    assert status == 200
+    job = json.loads(body)["job"]
+    snapshots = job["resource_snapshots"]
+    assert [snapshot["payload"]["phase"] for snapshot in snapshots] == ["job_start", "job_end"]
+    assert snapshots[0]["payload"]["rss_bytes"] == 84_500_992
+    assert snapshots[0]["payload"]["user_cpu_seconds"] == 1.25
+    assert snapshots[0]["payload"]["thread_count"] == 4
+    assert snapshots[1]["payload"]["rss_bytes"] == 91_880_448
+    assert snapshots[1]["payload"]["elapsed_seconds"] == 12.5
+    # The ordinary event stream is unchanged: snapshots are events, not a side table.
+    event_types = [event["event_type"] for event in job["events"]]
+    assert event_types.count("resource_snapshot") == 2
+    assert "log" in event_types
+
+    status, _, body = _request(app, "GET", "/api/jobs/unknown-job")
+    assert status == 404
+
+
+def test_f033_experiment_export_returns_roundtrippable_bundle(tmp_path) -> None:
+    # F-033: one JSON bundle contains every stored record type for the experiment;
+    # a nonexistent id yields the standard explicit 404 error payload.
+    store = ExperimentStore(tmp_path / "f033-export.sqlite3")
+    app = ResearchAPI(store)
+    assert _request(app, "POST", "/api/datasets", _dataset_payload())[0] == 201
+    assert _request(app, "POST", "/api/experiments", _payload(experiment_id="f033-export"))[0] == 201
+
+    store.append_event("f033-export", "environment_recorded", {
+        "python_version": "3.13.0",
+        "platform": "linux",
+        "numpy_version": "2.0.0",
+    })
+    # Real GP runner payload shape (runners.py genetic_programming_oos_recorded):
+    # selected ids + oos_metrics + final_holdout_accessed; no oos_acceptance key.
+    store.append_event("f033-export", "genetic_programming_oos_recorded", {
+        "selected_candidate_id": "f033-candidate-0",
+        "selected_candidate_digest": "a" * 64,
+        "oos_metrics": {"sharpe": 0.35},
+        "final_holdout_accessed": False,
+    })
+    # The existing_strategy_evaluated event is the production carrier of the
+    # versioned OOS acceptance verdict plus the classification report
+    # (evaluation.py evaluate_existing_strategy persistence).
+    store.append_event("f033-export", "existing_strategy_evaluated", {
+        "classification": "requires_independent_confirmation",
+        "classification_evidence": {"train_evaluated": True, "oos_evaluated": True},
+        "oos_acceptance": {"outcome": "fail", "policy_version": "v1-2026-11-10",
+                           "reasons": ["oos_sharpe=-0.1 is below the required minimum 0.0"]},
+        "oos_policy_version": "v1-2026-11-10",
+    })
+    store.append_candidate(
+        candidate_id="f033-candidate-0",
+        experiment_id="f033-export",
+        candidate_digest="a" * 64,
+        family="genetic_programming",
+        generation=0,
+        parameters={"expression": {"op": "tree"}, "feature_windows": [5]},
+        metrics={"train_fitness": 0.6},
+        lineage={"operator": "random_initialisation", "parent_candidate_ids": []},
+    )
+
+    status, _, body = _request(app, "GET", "/api/experiments/f033-export/export")
+    assert status == 200
+    bundle = json.loads(body)["export"]
+    assert bundle["experiment_id"] == "f033-export"
+    assert bundle["experiment"]["fingerprint"]
+    assert bundle["experiment"]["spec"]["experiment_id"] == "f033-export"
+    # Environment record: the latest stored one is surfaced at the top level too.
+    assert bundle["environment"]["python_version"] == "3.13.0"
+    # Every lifecycle event roundtrips with its payload decoded.
+    event_types = [event["event_type"] for event in bundle["events"]]
+    assert event_types == [
+        "experiment_created",
+        "environment_recorded",
+        "genetic_programming_oos_recorded",
+        "existing_strategy_evaluated",
+    ]
+    environment_events = [event for event in bundle["events"] if event["event_type"] == "environment_recorded"]
+    assert environment_events[0]["payload"]["numpy_version"] == "2.0.0"
+    # Candidates keep lineage and fitness.
+    assert bundle["candidate_count"] == 1
+    assert bundle["candidates"][0]["lineage"]["operator"] == "random_initialisation"
+    assert bundle["candidates"][0]["metrics"]["train_fitness"] == 0.6
+    # OOS acceptance records are collected by payload key, not event-type suffix:
+    # the GP oos_recorded event carries no verdict (matching the real runner), while
+    # existing_strategy_evaluated — the production F-001 carrier for the
+    # existing-strategy/optimizer/DE/bayesian/hybrid families — does and must roundtrip.
+    assert len(bundle["oos_acceptances"]) == 1
+    verdict = bundle["oos_acceptances"][0]
+    assert verdict["oos_acceptance"]["outcome"] == "fail"
+    assert verdict["oos_acceptance"]["policy_version"] == "v1-2026-11-10"
+    assert verdict["oos_acceptance"]["reasons"] == [
+        "oos_sharpe=-0.1 is below the required minimum 0.0",
+    ]
+    assert verdict["_occurred_at"]
+    # Classification reports keep the label and the evidence.
+    assert bundle["classification_reports"][0]["classification"] == "requires_independent_confirmation"
+    assert bundle["classification_reports"][0]["classification_evidence"]["train_evaluated"] is True
+    assert bundle["event_count"] == 4
+
+    status, _, body = _request(app, "GET", "/api/experiments/ghost-experiment/export")
+    assert status == 404
+    assert "not found" in json.loads(body)["error"]
+
+    status, _, body = _request(app, "GET", "/api/experiments//export")
+    assert status == 404
