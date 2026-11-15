@@ -5,8 +5,9 @@ provenance. This client only calls Binance's public market-data REST
 endpoints with ``urllib.request`` (standard library only):
 
 - Spot klines:            ``https://api.binance.com/api/v3/klines``
-- Funding rate history:   ``https://fapi.binance.com/fundingRate``
+- Funding rate history:   ``https://fapi.binance.com/fapi/v1/fundingRate``
 - Open interest history:  ``https://fapi.binance.com/futures/data/openInterestHist``
+  (this endpoint serves only the most recent ~30 days of statistics)
 
 No API key is sent, no signature is computed, and no trading or account
 endpoint exists in this module. HTTP 418/429 responses trigger sleep-based
@@ -24,6 +25,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -32,6 +34,7 @@ import pandas as pd
 
 from ..adapters import normalise_acquired_ohlcv
 from ..data_catalog import (
+    RESOLUTION_PERIOD_SECONDS,
     DatasetManifest,
     LicenseStatus,
     ValueOrigin,
@@ -42,7 +45,7 @@ from ..domain import DataResolution, Market
 SPOT_BASE_URL = "https://api.binance.com"
 FUTURES_BASE_URL = "https://fapi.binance.com"
 KLINES_ENDPOINT = "/api/v3/klines"
-FUNDING_RATE_ENDPOINT = "/fundingRate"
+FUNDING_RATE_ENDPOINT = "/fapi/v1/fundingRate"
 OPEN_INTEREST_ENDPOINT = "/futures/data/openInterestHist"
 
 PROVIDER = "binance"
@@ -379,8 +382,6 @@ def write_csv(dataset: AcquiredDataset, path: str) -> str:
     ``ingest_acquired_ohlcv`` can re-apply the platform gate after a
     round-trip through disk. Returns the written path.
     """
-    import os
-
     if dataset.frame.index.name != "timestamp":
         raise ValueError("acquired frames must carry a 'timestamp' DatetimeIndex before persistence")
     temporary = f"{path}.tmp"
@@ -415,6 +416,16 @@ def build_ohlcv_manifest(
     if frame.empty:
         raise ValueError("cannot manifest an empty acquisition")
     utc_index = pd.DatetimeIndex(frame.index).tz_convert("UTC")
+    # Half-open coverage convention (matches gap_audit): a bar stamped at open
+    # time T covers [T, T + one period), so declared coverage ends one period
+    # after the last observation.
+    period_seconds = RESOLUTION_PERIOD_SECONDS.get(resolution.value)
+    if period_seconds is None:
+        raise ValueError(
+            f"acquired OHLCV manifests support fixed-cadence resolutions only; "
+            f"{resolution.value} has no uniform bar period"
+        )
+    coverage_end = (utc_index[-1] + pd.Timedelta(seconds=period_seconds)).to_pydatetime()
     extra = dict(dataset.provenance)
     extra["quality_report_json"] = json.dumps(
         frame.attrs.get("quality_report", {}),
@@ -440,7 +451,7 @@ def build_ohlcv_manifest(
         category="ohlcv",
         resolution=resolution,
         coverage_start=utc_index[0].to_pydatetime(),
-        coverage_end=utc_index[-1].to_pydatetime(),
+        coverage_end=coverage_end,
         timezone=timezone_name,
         timestamp_convention="Binance bar-open time (UTC, epoch ms)",
         acquired_at=utc_timestamp(now.now(timezone.utc)),

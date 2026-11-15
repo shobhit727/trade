@@ -188,9 +188,11 @@ class DataAvailabilityCatalog:
 
 _GAP_AUDIT_SCHEMA = "gap-audit-v1"
 
-# Canonical observation cadence in seconds for resolutions the gap audit accepts.
-# Weekly and monthly cadences are calendar-anchored rather than fixed-length, so
-# an expected-bar count derived from a constant period would be a fabrication.
+# Canonical observation cadence in seconds for resolutions the gap audit
+# accepts. Weekly bars are fixed-length in UTC (7 x 86400s), so they audit
+# against a constant period; monthly bars are calendar-anchored (28-31 days)
+# and tick/order-book resolutions are irregular, so neither yields an honest
+# constant-period expected-bar count.
 RESOLUTION_PERIOD_SECONDS: dict[str, int] = {
     DataResolution.ONE_SECOND.value: 1,
     DataResolution.ONE_MINUTE.value: 60,
@@ -200,6 +202,7 @@ RESOLUTION_PERIOD_SECONDS: dict[str, int] = {
     DataResolution.ONE_HOUR.value: 3600,
     DataResolution.FOUR_HOURS.value: 14400,
     DataResolution.ONE_DAY.value: 86400,
+    DataResolution.ONE_WEEK.value: 604800,
 }
 
 
@@ -239,9 +242,14 @@ def gap_audit(manifest: DatasetManifest, frame: "pd.DataFrame") -> dict[str, obj
 
     period_seconds = RESOLUTION_PERIOD_SECONDS.get(manifest.resolution.value)
     if period_seconds is None:
+        refusal = (
+            "calendar-anchored and cannot yield an honest expected-bar count"
+            if manifest.resolution is DataResolution.ONE_MONTH
+            else "has no uniform bar period to measure gaps against"
+        )
         raise ValueError(
-            f"gap audit supports fixed-cadence resolutions only; {manifest.resolution.value} "
-            "is calendar-anchored and cannot yield an honest expected-bar count"
+            f"gap audit supports fixed-cadence resolutions only; "
+            f"{manifest.resolution.value} is {refusal}"
         )
     period = pd.Timedelta(seconds=period_seconds)
 

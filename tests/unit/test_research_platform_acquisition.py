@@ -88,8 +88,14 @@ OPEN_INTEREST_OK = [
 class _HttpStub:
     """Queued fake-urlopen helper: enqueue payloads or errors, inspect calls."""
 
-    def __init__(self, calls: list[dict[str, Any]], queue: list[_FakeResponse | Exception]) -> None:
+    def __init__(
+        self,
+        calls: list[dict[str, Any]],
+        queue: list[_FakeResponse | Exception],
+        headers: list[dict[str, str]],
+    ) -> None:
         self.calls = calls
+        self.sent_headers = headers
         self._queue = queue
 
     def respond(self, payload: Any, status: int = 200) -> None:
@@ -103,17 +109,19 @@ class _HttpStub:
 def http(monkeypatch: pytest.MonkeyPatch) -> _HttpStub:
     """Install a queued-responding fake urlopen and record every request."""
     calls: list[dict[str, Any]] = []
+    headers: list[dict[str, str]] = []
     queue: list[_FakeResponse | Exception] = []
 
     def fake_urlopen(request: urllib.request.Request, timeout: float | None = None):
         calls.append({"url": request.full_url, "method": request.get_method()})
+        headers.append(dict(request.header_items()))
         response = queue.pop(0)
         if isinstance(response, Exception):
             raise response
         return response
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
-    return _HttpStub(calls, queue)
+    return _HttpStub(calls, queue, headers)
 
 
 def _fetched_klines(http, clock: _NoSleepClock | None = None):
@@ -135,6 +143,16 @@ def test_fetch_klines_parses_documented_schema_into_ohlcv_frame(http) -> None:
     assert frame.attrs["quality_report"]["bars_checked"] == 3
     assert dataset.rows[0]["open_time"] == 1700000000000
     assert len(dataset.rows) == 3
+
+
+def test_requests_carry_no_authentication(http) -> None:
+    """Public-endpoint fetches send no API key or signature headers."""
+    _fetched_klines(http)
+    sent = http.sent_headers[0]
+    assert not any(
+        key.lower() in {"authorization", "x-mbx-apikey", "api-key", "signature"}
+        for key in sent
+    )
 
 
 def test_fetch_records_provider_endpoint_params_and_fetch_time(http) -> None:
@@ -160,7 +178,7 @@ def test_fetch_funding_rate_parses_object_rows(http) -> None:
     dataset = BinancePublicClient().fetch_funding_rate("BTCUSDT", clock=_NoSleepClock(), now=_FrozenClock)
     frame = dataset.frame
     assert list(frame.columns) == ["symbol", "funding_rate"]
-    assert dataset.provenance["acquisition_endpoint"] == "/fundingRate"
+    assert dataset.provenance["acquisition_endpoint"] == "/fapi/v1/fundingRate"
     assert frame.iloc[0]["funding_rate"] == 0.0001
     assert frame.iloc[1]["funding_rate"] == -0.0002
     assert [ts.isoformat() for ts in frame.index] == [
@@ -350,7 +368,9 @@ def test_build_ohlcv_manifest_carries_provenance_and_quality(http) -> None:
     assert manifest.provider == "binance"
     assert manifest.license_status is LicenseStatus.REVIEW_REQUIRED
     assert manifest.coverage_start == datetime(2023, 11, 14, 22, 13, 20, tzinfo=timezone.utc)
-    assert manifest.coverage_end == datetime(2023, 11, 14, 22, 15, 20, tzinfo=timezone.utc)
+    # Half-open convention: the last bar (open 22:15:20) covers [T, T+1m).
+    assert manifest.coverage_end == datetime(2023, 11, 14, 22, 16, 20, tzinfo=timezone.utc)
+    assert http.calls[0]["url"].startswith("https://api.binance.com/api/v3/klines")
     assert manifest.extra_metadata["acquisition_provider"] == "binance"
     assert json.loads(manifest.extra_metadata["acquisition_params_json"])["symbol"] == "BTCUSDT"
     assert json.loads(manifest.extra_metadata["quality_report_json"])["bars_checked"] == 3
@@ -360,7 +380,11 @@ def test_build_ohlcv_manifest_carries_provenance_and_quality(http) -> None:
 
     audited = manifest_with_gap_audit(manifest, dataset.frame)
     gap_record = json.loads(audited.extra_metadata["gap_audit_json"])
+    # Complete 1m data over the manifest's declared half-open window audits clean.
+    assert gap_record["expected_bars"] == 3
     assert gap_record["actual_bars"] == 3
+    assert gap_record["gap_count"] == 0
+    assert gap_record["missing_bars_total"] == 0
     assert audited.extra_metadata["acquisition_endpoint"] == "/api/v3/klines"
 
 

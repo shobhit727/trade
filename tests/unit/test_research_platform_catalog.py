@@ -161,6 +161,31 @@ def test_gap_audit_single_slot_hole_at_hourly_resolution() -> None:
     ]
 
 
+def test_gap_audit_weekly_resolution_is_fixed_length() -> None:
+    """Weekly bars are exactly 7 days apart in UTC, so they audit normally."""
+    manifest = make_gap_manifest(
+        dataset_id="gap-audit-weekly",
+        resolution=DataResolution.ONE_WEEK,
+        coverage_start=datetime(2026, 1, 5, tzinfo=UTC),
+        coverage_end=datetime(2026, 2, 2, tzinfo=UTC),
+    )
+    index = pd.DatetimeIndex(
+        [datetime(2026, 1, d, tzinfo=UTC) for d in (5, 12, 26)]
+    )
+    frame = pd.DataFrame({"close": [1.0] * len(index)}, index=index)
+    record = gap_audit(manifest, frame)
+    assert record["period_seconds"] == 604800
+    assert record["expected_bars"] == 4
+    assert record["actual_bars"] == 3
+    assert record["gaps"] == [{
+        "start": "2026-01-12T00:00:00+00:00",
+        "end": "2026-01-26T00:00:00+00:00",
+        "length_seconds": 1209600.0,
+        "missing_bars": 1,
+    }]
+    assert record["actual_bars"] + record["missing_bars_total"] == record["expected_bars"]
+
+
 def test_gap_audit_spacing_equal_to_period_is_not_a_gap() -> None:
     """Adjacent observations one declared period apart are the cadence itself."""
     manifest = make_gap_manifest()
@@ -212,11 +237,19 @@ def test_gap_audit_rejects_broken_frames_and_undated_resolutions() -> None:
         with pytest.raises(ValueError, match=message):
             gap_audit(manifest, frame)
 
+    # Monthly is calendar-anchored (no honest constant-period expectation).
     with pytest.raises(ValueError, match="calendar-anchored"):
         gap_audit(
-            make_gap_manifest(resolution=DataResolution.ONE_WEEK, dataset_id="gap-weekly"),
+            make_gap_manifest(resolution=DataResolution.ONE_MONTH, dataset_id="gap-monthly"),
             pd.DataFrame({"close": [1.0, 1.0]}, index=pd.DatetimeIndex(
-                [datetime(2026, 1, 5, tzinfo=UTC), datetime(2026, 1, 12, tzinfo=UTC)])),
+                [datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 2, 1, tzinfo=UTC)])),
+        )
+    # Tick and order-book resolutions have no uniform bar period.
+    with pytest.raises(ValueError, match="no uniform bar period"):
+        gap_audit(
+            make_gap_manifest(resolution=DataResolution.TICK, dataset_id="gap-tick"),
+            pd.DataFrame({"close": [1.0, 1.0]}, index=pd.DatetimeIndex(
+                [datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 1, 2, tzinfo=UTC)])),
         )
 
 
