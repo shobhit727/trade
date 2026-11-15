@@ -306,6 +306,11 @@ def evaluate_existing_strategy(
         ("validation", spec.validation_start, spec.validation_end),
         ("out_of_sample", spec.oos_start, spec.oos_end),
     )
+    # F-016 note: this evaluator fits nothing — it scores a frozen strategy on
+    # declared partitions. Purge compliance for FITTING paths (parameter
+    # search, GP, neuroevolution, composition, Pareto) is asserted in the
+    # runners through ``assert_train_window_purged``; the immutable spec
+    # itself enforces training_end + embargo <= validation_start.
     evaluations_list: list[PartitionEvaluation] = []
     for index, (name, start, end) in enumerate(windows, start=1):
         # Give cooperative workers cancellation points between the isolated stages.

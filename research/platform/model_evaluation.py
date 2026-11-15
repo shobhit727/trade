@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
-from typing import Mapping
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from datetime import date, datetime
 
 import numpy as np
 import pandas as pd
@@ -13,6 +13,7 @@ from .domain import ResearchTrack
 from .features import PointInTimeFeatureEngine
 from .metrics import compute_portfolio_metrics
 from .portfolio import PortfolioConfig, PortfolioResult, PortfolioSimulator
+from .universe import PITUniverse
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +47,7 @@ class ModelFeaturePanel:
     index: pd.DatetimeIndex
     start_position: int
     track: ResearchTrack
+    attrs: dict[str, object] = field(default_factory=dict)
 
     def targets_from_scores(self, scores: np.ndarray) -> pd.DataFrame:
         """Convert model scores to long/flat target weights without using future values."""
@@ -75,6 +77,37 @@ class ModelFeaturePanel:
         return targets
 
 
+def pit_membership_for_window(
+    start: datetime,
+    end: datetime,
+    *,
+    universe: PITUniverse | None = None,
+) -> dict[pd.Timestamp, frozenset[str]]:
+    """Month-end membership pairs covering ``[start, end]`` (F-017, NSE track).
+
+    Uses the shared point-in-time universe (audit F-009) so callers never query
+    today's member list for a historical date. The query starts at the last
+    month-end BEFORE ``start``: a row early in a month resolves membership to
+    the prior month-end, so that pair must exist in the map. Dates entirely
+    before the recorded coverage window return an empty mapping: no membership
+    record exists to rely on, so no symbol may claim pre-2008 features.
+    Coverage limits are clamped (a window ending after 2026-10-31 keeps the
+    recorded history it overlaps instead of raising).
+    """
+    first_day, last_day = pd.Timestamp(start).date(), pd.Timestamp(end).date()
+    coverage_start, coverage_end = date(2008, 1, 31), date(2026, 10, 31)
+    if last_day < coverage_start:
+        return {}
+    if universe is None:
+        from .universe import _default_universe
+        universe = _default_universe()
+    # Walk back to the month-end at or before the first covered day.
+    prior = pd.Timestamp(max(first_day, coverage_start)) - pd.offsets.MonthEnd(1)
+    query_start = max(prior.date(), coverage_start)
+    query_end = min(last_day, coverage_end)
+    return dict(universe.members_range(query_start, query_end))
+
+
 def build_model_feature_panel(
     bars_by_symbol: Mapping[str, pd.DataFrame],
     engine: PointInTimeFeatureEngine,
@@ -82,8 +115,18 @@ def build_model_feature_panel(
     *,
     start: datetime,
     end: datetime,
+    point_in_time: bool = False,
+    pit_membership: Mapping[pd.Timestamp, frozenset[str]] | None = None,
 ) -> ModelFeaturePanel:
-    """Build trailing features for rows inside [start, end), retaining pre-window warm-up."""
+    """Build trailing features for rows inside [start, end), retaining pre-window warm-up.
+
+    With ``pit_membership`` supplied (or ``point_in_time=True`` on the NSE
+    track), features are masked against the historical index membership at
+    each date (audit F-017): a symbol that had not yet joined, or one whose
+    membership ended before a row (delisting), contributes only NaN warm-up —
+    never a feature value — even when its CSV rows exist. Without membership
+    the legacy synthetic-universe behaviour is preserved.
+    """
     # The data map is clipped at end before the model receives any observations.
     if not bars_by_symbol:
         raise ValueError("bars_by_symbol cannot be empty")
@@ -114,11 +157,29 @@ def build_model_feature_panel(
     if start_position >= len(common_index):
         raise ValueError("no bars are available inside the requested model partition")
 
+    # Point-in-time membership is resolved once per partition and shared by all
+    # NSE symbols; crypto tracks have no index-membership semantics.
+    membership: Mapping[pd.Timestamp, frozenset[str]] | None = pit_membership
+    if point_in_time and membership is None and track in {
+        ResearchTrack.NSE_INDIVIDUAL, ResearchTrack.NSE_PORTFOLIO,
+    }:
+        if track is ResearchTrack.NSE_INDIVIDUAL and len(ordered) != 1:
+            raise ValueError("individual-asset NSE track requires exactly one dataset/instrument")
+        membership = pit_membership_for_window(start, end)
+
     feature_blocks: list[np.ndarray] = []
     segments: list[FeatureSegment] = []
+    panel_availability: dict[str, object] = {}
     for column_position, symbol in enumerate(ordered):
         # Features use all available history before start but stop strictly before end.
-        features = engine.build(truncated[symbol])
+        if membership is not None and track in {ResearchTrack.NSE_INDIVIDUAL, ResearchTrack.NSE_PORTFOLIO}:
+            features = engine.build(
+                truncated[symbol], symbol=symbol, membership=membership
+            )
+        else:
+            features = engine.build(truncated[symbol])
+        if not panel_availability:
+            panel_availability = dict(features.attrs)
         matrix = features.to_numpy(dtype=np.float64)
         finite = np.isfinite(matrix).all(axis=1)
         in_window = (utc_common >= start) & (utc_common < end)
@@ -133,6 +194,15 @@ def build_model_feature_panel(
     combined = np.concatenate(feature_blocks, axis=0)
     if not np.isfinite(combined).all():
         raise ValueError("combined model feature matrix contains non-finite values")
+    panel_attrs: dict[str, object] = dict(panel_availability)
+    panel_attrs["point_in_time"] = bool(
+        membership is not None
+        and track in {ResearchTrack.NSE_INDIVIDUAL, ResearchTrack.NSE_PORTFOLIO}
+    )
+    panel_attrs["pit_membership_months"] = (
+        [pd.Timestamp(month).isoformat() for month in sorted(membership)]
+        if membership is not None else []
+    )
     return ModelFeaturePanel(
         bars=truncated,
         features=combined,
@@ -140,6 +210,7 @@ def build_model_feature_panel(
         index=common_index,
         start_position=start_position,
         track=track,
+        attrs=panel_attrs,
     )
 
 

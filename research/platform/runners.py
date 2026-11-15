@@ -65,10 +65,68 @@ from .portfolio import PortfolioConfig
 from .storage import ExperimentStore
 from .statistics import candidate_family_report_from_returns
 from .strategy_catalog import ExistingStrategyRegistry
-from .validation import AccessRole, Partition
+from .validation import AccessRole, Partition, PurgeDecision, assert_train_window_purged
 
 
 D = Decimal
+
+
+def _bar_decisions(bars_by_symbol: Mapping[str, pd.DataFrame]) -> list[datetime]:
+    """Decision timestamps for every loaded bar: the bar's close time.
+
+    Bars are stored under their open-time stamps; a one-bar forward label
+    formed on bar ``t`` is decided at ``t``'s close and spans
+    ``[close_t, close_{t+1})``. Raw stamps are exposed so the purge assertion
+    can mirror the exact half-open truncation used by every fitter.
+    """
+    first = bars_by_symbol[next(iter(sorted(bars_by_symbol)))]
+    return [stamp.to_pydatetime() for stamp in pd.DatetimeIndex(first.index)]
+
+
+def _bar_label_ends(bars_by_symbol: Mapping[str, pd.DataFrame]) -> list[datetime]:
+    """Label-end timestamps for one-bar forward returns; the last row is open-ended.
+
+    The final bar has no successor close, so its label interval is not fully
+    formed; the guard treats that missing end conservatively as extending to
+    the protected boundary.
+    """
+    first = bars_by_symbol[next(iter(sorted(bars_by_symbol)))]
+    stamps = pd.DatetimeIndex(first.index)
+    return [stamp.to_pydatetime() for stamp in stamps[1:]]
+
+
+def _purge_guard_for_spec(
+    bars_by_symbol: Mapping[str, pd.DataFrame],
+    spec: ExperimentSpec,
+    *,
+    trainer: str,
+) -> PurgeDecision:
+    """F-016: verify TRAIN rows carry no protected-window label information.
+
+    Decisions are filtered to the exact half-open TRAIN window
+    ``[training_start, training_end)`` every fitter uses, then checked against
+    the validation window expanded by the experiment embargo. Returns the
+    :class:`PurgeDecision` audit record (``purged_count == 0`` proves the fit
+    saw no protected labels); a TRAIN decision inside the protected window
+    raises because the partitions themselves overlap.
+    """
+    decisions = _bar_decisions(bars_by_symbol)
+    utc_decisions = pd.DatetimeIndex(decisions).tz_convert("UTC")
+    keep = (
+        (utc_decisions >= pd.Timestamp(spec.training_start))
+        & (utc_decisions < pd.Timestamp(spec.training_end))
+    )
+    kept = [decision for decision, flag in zip(decisions, keep, strict=True) if flag]
+    ends = _bar_label_ends(bars_by_symbol)
+    kept_ends = [end for end, flag in zip(ends, keep[:len(ends)], strict=False) if flag]
+    return assert_train_window_purged(
+        kept,
+        kept_ends,
+        spec.validation_start,
+        spec.validation_end,
+        trainer=trainer,
+        embargo=timedelta(seconds=spec.embargo_seconds),
+    )
 
 
 def _parse_timestamp(value: str) -> datetime:
@@ -849,6 +907,13 @@ class ExistingStrategyOptimizerJobRunner:
         ]
         bars = self.bar_loader(context.store, spec)
         config, periods_per_year = _build_portfolio_config(spec, manifests)
+        # F-016: assert TRAIN carries no validation-window labels; record it.
+        purge_decision = _purge_guard_for_spec(
+            bars, spec, trainer=f"existing_strategy_{spec.algorithm_family.value}",
+        )
+        context.store.append_event(
+            spec.experiment_id, "train_purge_parameters", purge_decision.to_dict()
+        )
         space = self._search_parameters(descriptor)
         shipped_defaults = dict(descriptor.defaults)
         defaults = dict(shipped_defaults)
@@ -1414,6 +1479,13 @@ class GeneticProgrammingJobRunner:
         ]
         bars = self.bar_loader(context.store, spec)
         config, periods_per_year = _build_portfolio_config(spec, manifests)
+        # F-016: the TRAIN rows fitted here may not carry label information
+        # from the validation window plus embargo (audit 6.8/7.15); the
+        # decision record is persisted with the experiment (split parameters).
+        purge_decision = _purge_guard_for_spec(bars, spec, trainer="genetic_programming")
+        context.store.append_event(
+            spec.experiment_id, "train_purge_parameters", purge_decision.to_dict()
+        )
         feature_engine = PointInTimeFeatureEngine(windows=tuple(windows))
         train_panel = build_model_feature_panel(
             bars, feature_engine, spec.track,
@@ -1867,6 +1939,11 @@ class NeuroevolutionJobRunner:
         ]
         bars = self.bar_loader(context.store, spec)
         config, periods_per_year = _build_portfolio_config(spec, manifests)
+        # F-016: assert TRAIN carries no validation-window labels; record it.
+        purge_decision = _purge_guard_for_spec(bars, spec, trainer="neuroevolution")
+        context.store.append_event(
+            spec.experiment_id, "train_purge_parameters", purge_decision.to_dict()
+        )
         feature_engine = PointInTimeFeatureEngine(windows=tuple(windows))
         train_panel = build_model_feature_panel(
             bars, feature_engine, spec.track,
@@ -2409,6 +2486,11 @@ class StrategyCompositionJobRunner:
         ]
         bars = self.bar_loader(context.store, spec)
         config, periods_per_year = _build_portfolio_config(spec, manifests)
+        # F-016: assert TRAIN carries no validation-window labels; record it.
+        purge_decision = _purge_guard_for_spec(bars, spec, trainer="strategy_composition")
+        context.store.append_event(
+            spec.experiment_id, "train_purge_parameters", purge_decision.to_dict()
+        )
         engine = PointInTimeFeatureEngine(windows=tuple(windows))
         train_panel = build_model_feature_panel(
             bars, engine, spec.track,
@@ -2877,6 +2959,11 @@ class ParetoStrategySearchJobRunner:
         ]
         bars = self.bar_loader(context.store, spec)
         config, periods_per_year = _build_portfolio_config(spec, manifests)
+        # F-016: assert TRAIN carries no validation-window labels; record it.
+        purge_decision = _purge_guard_for_spec(bars, spec, trainer="pareto_search")
+        context.store.append_event(
+            spec.experiment_id, "train_purge_parameters", purge_decision.to_dict()
+        )
         defaults = dict(descriptor.defaults)
         defaults.update(base_parameters)
         bars_digest = _bars_fingerprint(bars)

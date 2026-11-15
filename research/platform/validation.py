@@ -92,6 +92,33 @@ class PurgedWalkForwardSplit:
     embargo: timedelta
 
 
+@dataclass(frozen=True, slots=True)
+class PurgeDecision:
+    """Recorded audit evidence for one trainer's embargo assertion (F-016).
+
+    ``protected_start``/``protected_end`` delimit the half-open window whose
+    label information may never reach a fitted model (the validation window
+    expanded by the embargo on both sides); ``purged_count`` counts the
+    training rows removed by that rule.
+    """
+
+    trainer: str
+    protected_start: datetime
+    protected_end: datetime
+    embargo: timedelta
+    purged_count: int
+
+    def to_dict(self) -> dict[str, object]:
+        """Return the JSON-safe record persisted with every candidate freeze."""
+        return {
+            "trainer": self.trainer,
+            "protected_start": self.protected_start.isoformat(),
+            "protected_end": self.protected_end.isoformat(),
+            "embargo_seconds": int(self.embargo.total_seconds()),
+            "purged_count": self.purged_count,
+        }
+
+
 def purged_walk_forward_split(
     decision_times: Sequence[datetime],
     label_start_times: Sequence[datetime],
@@ -301,3 +328,85 @@ class ValidationLifecycle:
         self._persist("completed", {"passed": bool(passed)})
         self.state = EvaluationState.COMPLETED
         self.events.append({"event": "completed", "passed": bool(passed)})
+
+def assert_train_window_purged(
+    decision_times: Sequence[datetime],
+    label_end_times: Sequence[datetime],
+    protected_start: datetime,
+    protected_end: datetime,
+    *,
+    trainer: str,
+    embargo: timedelta = timedelta(0),
+) -> PurgeDecision:
+    """Verify a TRAIN partition carries no label information from the protected zone.
+
+    Every trainer whose fitted model is later scored inside ``[protected_start,
+    protected_end)`` (the evaluation window expanded by the embargo on both
+    sides) MUST route its TRAIN rows through this check before fitting (F-016).
+
+    Semantics mirror ``purged_walk_forward_split``:
+
+    * a row DECIDED inside the protected zone means TRAIN and the evaluation
+      window overlap — an unrecoverable partition error, raised;
+    * a pre-window row whose forward label interval reaches into the protected
+      zone (``label_end > protected_start - embargo``) is leakage unless it is
+      excluded from the fit, so it is counted as purged and recorded;
+    * callers MUST drop every purged row from the fitted sample. The returned
+      :class:`PurgeDecision` is the audit record persisted with the candidate
+      freeze; ``purged_count == 0`` proves the fit saw no protected labels.
+
+    ``label_end_times`` may be shorter than ``decision_times`` only when the
+    final rows have no fully formed label yet; missing ends are treated as
+    extending to the protected boundary so an unknown interval can never
+    silently pass as clean.
+    """
+    def utc(value: datetime, name: str) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError(f"{name} timestamps must be timezone-aware")
+        return value.astimezone(timezone.utc)
+
+    if len(decision_times) == 0:
+        raise ValueError("decision_times cannot be empty")
+    if len(label_end_times) > len(decision_times):
+        raise ValueError("label_end_times cannot exceed decision_times")
+    if embargo < timedelta(0):
+        raise ValueError("embargo cannot be negative")
+
+    decisions = tuple(utc(value, "decision") for value in decision_times)
+    protected_from = utc(protected_start, "protected_start")
+    protected_to = utc(protected_end, "protected_end")
+    if protected_to <= protected_from:
+        raise ValueError("protected interval must have positive duration")
+
+    # A row without a formed label is treated as leaking up to the protected
+    # boundary; purging it is conservative and never wrong.
+    missing_end = protected_to
+    ends = tuple(
+        utc(value, "label_end") for value in label_end_times
+    ) + (missing_end,) * (len(decision_times) - len(label_end_times))
+
+    # The embargo expands the forbidden zone on both sides: a label may not
+    # even touch ``protected_start - embargo`` (mirrors the >= purge rule used
+    # by ``purged_walk_forward_split``, so an interval ending exactly at the
+    # edge with an embargo counts as purged, never silently accepted).
+    forbidden_from = protected_from - embargo
+    for index, decision in enumerate(decisions):
+        if protected_from <= decision < protected_to:
+            raise ValueError(
+                f"{trainer}: TRAIN row {index} is decided inside the protected "
+                f"interval [{protected_from.isoformat()}, {protected_to.isoformat()}): "
+                f"decision={decision.isoformat()}; TRAIN overlaps the evaluation window"
+            )
+
+    purged_indices = tuple(
+        index for index, (decision, label_end) in enumerate(zip(decisions, ends, strict=True))
+        if decision < protected_from and label_end > forbidden_from
+    )
+    return PurgeDecision(
+        trainer=trainer,
+        protected_start=protected_from,
+        protected_end=protected_to,
+        embargo=embargo,
+        purged_count=len(purged_indices),
+    )
+
