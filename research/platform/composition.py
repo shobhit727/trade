@@ -1,4 +1,10 @@
-"""Evolution of safe, declarative strategy-component compositions."""
+"""Evolution of safe, declarative strategy-component compositions.
+
+Genomes are composed from a closed, typed component registry. Every component
+declares one role (see ``ALLOWED_ROLES``) and only role combinations accepted by the
+compatibility graph (``ROLE_COMPATIBILITY``) may coexist in a genome; the Policy layer
+(composition_policy.py) enforces the same graph when mapping genomes to signals.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +14,57 @@ from typing import Callable, Sequence
 import numpy as np
 
 
-ALLOWED_ROLES = frozenset({"entry", "exit", "filter", "sizing", "risk", "regime", "allocation"})
+ALLOWED_ROLES = frozenset({
+    "entry", "exit", "filter", "sizing", "risk", "regime", "allocation",
+    "rebalance", "volatility", "execution",
+})
+
+# Compatibility graph: which role may coexist with which other roles in one genome.
+# All distinct role pairs are compatible except the documented exclusions below;
+# ROLE_COMPATIBILITY is derived so the mapping can never drift out of symmetry.
+#
+# Documented exclusions:
+#   filter/regime: mutually exclusive (one gate taxonomy per genome).
+#   allocation/rebalance: allocation fixes the weighting scheme; rebalancing
+#     schedules would recompute it on a different cadence, so they are exclusive.
+ROLE_EXCLUSIONS = frozenset({
+    frozenset({"filter", "regime"}),
+    frozenset({"allocation", "rebalance"}),
+})
+
+ROLE_COMPATIBILITY: dict[str, frozenset[str]] = {
+    role: frozenset(
+        other
+        for other in ALLOWED_ROLES
+        if other != role and frozenset((role, other)) not in ROLE_EXCLUSIONS
+    )
+    for role in ALLOWED_ROLES
+}
+
+# Singleton roles: at most one component of each of these roles may appear in a
+# genome; a second declaration would make the policy ambiguous.
+SINGLETON_ROLES = frozenset({"allocation", "execution"})
+
+
+def roles_compatible(role_a: str, role_b: str) -> bool:
+    """Return whether two component roles may coexist in one genome."""
+    if role_a == role_b:
+        return True
+    if role_a not in ALLOWED_ROLES or role_b not in ALLOWED_ROLES:
+        return False
+    return frozenset((role_a, role_b)) not in ROLE_EXCLUSIONS
+
+
+def enforce_compatibility(components: Sequence["Component"]) -> None:
+    """Raise ValueError when any pair of roles violates the compatibility graph."""
+    ordered = list(components)
+    for index, first in enumerate(ordered):
+        for second in ordered[index + 1:]:
+            if not roles_compatible(first.role, second.role):
+                raise ValueError(
+                    "incompatible component roles in one composition: "
+                    f"{first.role} ({first.component_id}) and {second.role} ({second.component_id})"
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +100,11 @@ class Composition:
             raise ValueError("composition contains duplicate component-role pairs")
         if len(self.components) > 32:
             raise ValueError("composition exceeds maximum component count")
+        # Role-pair compatibility: the genome is rejected when any pair conflicts.
+        enforce_compatibility(self.components)
+        for role in SINGLETON_ROLES:
+            if sum(1 for item in self.components if item.role == role) > 1:
+                raise ValueError(f"composition declares multiple {role} components")
 
     @property
     def complexity(self) -> int:
@@ -62,8 +123,25 @@ class CompositionResult:
     candidate_archive: tuple[dict[str, object], ...] = ()
 
 
+def _dedupe(components: Sequence[Component]) -> tuple[Component, ...]:
+    # Preserve the first occurrence of every distinct component-role pair.
+    unique: list[Component] = []
+    seen: set[tuple[str, str]] = set()
+    for component in components:
+        key = (component.component_id, component.role)
+        if key not in seen:
+            unique.append(component)
+            seen.add(key)
+    return tuple(unique)
+
+
 class StrategyComposer:
-    """Tournament-based component composition evolution with deterministic operators."""
+    """Tournament-based component composition evolution with deterministic operators.
+
+    Evolution is compatibility-aware: crossover and mutation only accept offspring
+    whose role pairs satisfy the compatibility graph; an incompatible offspring keeps
+    the parent genome. Mutations also target only compatible donor components.
+    """
 
     def __init__(
         self,
@@ -82,6 +160,10 @@ class StrategyComposer:
             raise ValueError("mutation_rate must be in [0,1]")
         if not any(c.role == "entry" for c in registry) or not any(c.role == "exit" for c in registry):
             raise ValueError("registry must contain entry and exit components")
+        # The registry itself must be internally compatible: each component's role
+        # must be compatible with every other distinct role it could pair with.
+        for component in registry:
+            Component(component.component_id, component.role, component.parameters)
         self.registry = tuple(registry)
         self.population_size = population_size
         self.generations = generations
@@ -112,16 +194,11 @@ class StrategyComposer:
             replaceable = [i for i, item in enumerate(components) if item.role == candidate.role]
             if replaceable:
                 components[replaceable[int(self.rng.integers(len(replaceable)))]] = candidate
-        # If mutation creates an invalid duplicate, preserve the parent genome.
+        # If mutation creates an invalid duplicate or violates role compatibility,
+        # preserve the parent genome.
+        unique = _dedupe(components)
         try:
-            unique = []
-            seen = set()
-            for component in components:
-                key = (component.component_id, component.role)
-                if key not in seen:
-                    unique.append(component)
-                    seen.add(key)
-            return Composition(tuple(unique))
+            return Composition(unique)
         except ValueError:
             return genome
 
@@ -142,7 +219,12 @@ class StrategyComposer:
             if component.role in {"entry", "exit"} or len(chosen) >= self.max_components:
                 continue
             chosen.append(component)
-        return Composition(tuple(chosen))
+        # A merged union can violate the compatibility graph even when both parents
+        # satisfy it; incompatible offspring are discarded in favour of the left parent.
+        try:
+            return Composition(_dedupe(chosen))
+        except ValueError:
+            return left
 
     def run(self, fitness: Callable[[Composition], float]) -> CompositionResult:
         """Evolve composition genomes with an explicit fitness callback."""

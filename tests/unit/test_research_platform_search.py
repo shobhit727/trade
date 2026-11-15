@@ -1069,3 +1069,239 @@ def test_non_holdout_partition_reader_rejects_coverage_metadata_drift(tmp_path: 
             final_holdout_start=cutoff,
             end=cutoff,
         )
+
+
+# ---------------------------------------------------------------------------
+# Audit F-018: typed Boolean / control-flow GP grammar
+# ---------------------------------------------------------------------------
+
+
+def test_gp_grammar_rejects_boolean_node_in_numeric_slot() -> None:
+    # Type safety is structural: a Boolean subtree can never occupy a numeric slot.
+    from research.platform.genetic_programming import Node
+
+    boolean_leaf = Node("gt", (Node("feature", feature_index=0), Node("constant", constant=0.0)))
+    with pytest.raises(ValueError, match="numeric operators require numeric children"):
+        Node("add", (boolean_leaf, Node("feature", feature_index=1)))
+    with pytest.raises(ValueError, match="numeric operators require numeric children"):
+        Node("abs", (boolean_leaf,))
+    with pytest.raises(ValueError, match="numeric child"):
+        Node("lag", (boolean_leaf,), lag=1)
+    # And the reverse direction: numeric leaves cannot feed Boolean operators.
+    with pytest.raises(ValueError, match="boolean operators require boolean children"):
+        Node("and", (Node("feature", feature_index=0), Node("feature", feature_index=1)))
+    with pytest.raises(ValueError, match="boolean operators require boolean children"):
+        Node("not", (Node("feature", feature_index=0),))
+    with pytest.raises(ValueError, match="comparison operators require numeric children"):
+        Node("gt", (Node("constant_true",), Node("feature", feature_index=0)))
+    with pytest.raises(ValueError, match="boolean condition"):
+        Node(
+            "cond",
+            (
+                Node("feature", feature_index=0),
+                Node("constant", constant=1.0),
+                Node("constant", constant=0.0),
+            ),
+        )
+
+
+def test_gp_grammar_rejects_unbounded_or_invalid_state_nodes() -> None:
+    # The loop-free state node has a documented hard lookback bound.
+    from research.platform.genetic_programming import MAX_LAG, Node
+
+    with pytest.raises(ValueError, match="1 <= lag"):
+        Node("lag", (Node("feature", feature_index=0),), lag=MAX_LAG + 1)
+    with pytest.raises(ValueError, match="1 <= lag"):
+        Node("lag", (Node("feature", feature_index=0),), lag=0)
+    with pytest.raises(ValueError, match="1 child"):
+        Node("lag", (Node("feature", feature_index=0), Node("feature", feature_index=1)), lag=1)
+
+
+def test_gp_state_node_is_causal_and_clamps_warmup() -> None:
+    # Every output row t reads child rows <= t only: t >= lag reads t - lag, warm-up
+    # rows clamp to the earliest observation, and later rows never change earlier ones.
+    from research.platform.genetic_programming import Node
+
+    features = np.column_stack((np.arange(10, dtype=float), np.ones(10)))
+    lagged = Node("lag", (Node("feature", feature_index=0),), lag=3).evaluate(features)
+    assert np.isfinite(lagged).all()
+    np.testing.assert_allclose(lagged[3:], features[:-3, 0])
+    np.testing.assert_allclose(lagged[:3], features[0, 0])
+    # No-future-information: appending rows must not alter earlier outputs.
+    extended = np.vstack((features, np.full((3, 2), 99.0)))
+    np.testing.assert_allclose(
+        Node("lag", (Node("feature", feature_index=0),), lag=3).evaluate(extended)[:10],
+        lagged,
+    )
+
+
+def test_gp_boolean_evaluation_and_conditional_control_flow() -> None:
+    # Boolean operators, comparisons and if-then-else evaluate deterministically.
+    from research.platform.genetic_programming import Node
+
+    features = np.column_stack((np.array([-1.0, 1.0, 0.5, -0.5]), np.arange(4, dtype=float)))
+    positive = Node("gt", (Node("feature", feature_index=0), Node("constant", constant=0.0)))
+    increasing = Node("ge", (Node("feature", feature_index=1), Node("constant", constant=2.0)))
+    combined = Node("and", (positive, Node("not", (increasing,))))
+    np.testing.assert_array_equal(combined.evaluate_bool(features), np.array([False, True, False, False]))
+    np.testing.assert_array_equal(
+        Node("or", (positive, increasing)).evaluate_bool(features),
+        np.array([False, True, True, True]),
+    )
+    # Conditional: pick branch_true where condition holds, branch_false elsewhere.
+    conditional = Node(
+        "cond",
+        (positive, Node("constant", constant=10.0), Node("constant", constant=-10.0)),
+    )
+    np.testing.assert_allclose(conditional.evaluate(features), np.array([-10.0, 10.0, 10.0, -10.0]))
+    # Cross-type evaluation is refused at the expression root.
+    with pytest.raises(ValueError, match="evaluate_bool"):
+        positive.evaluate(features)
+    with pytest.raises(ValueError, match="evaluate"):
+        Node("add", (Node("feature", feature_index=0), Node("feature", feature_index=1))).evaluate_bool(features)
+
+
+def test_gp_evolution_is_deterministic_for_same_seed() -> None:
+    # Same seed -> identical expressions, fitness sequence and lineage records.
+    from research.platform.genetic_programming import GeneticProgrammer
+
+    features = np.column_stack((np.linspace(-1, 1, 24), np.ones(24)))
+    fitness = lambda output: -float(np.mean((output - features[:, 0]) ** 2))
+    first = GeneticProgrammer(
+        feature_count=2, population_size=10, generations=4, max_depth=4, max_nodes=31, seed=13
+    ).run(features, fitness)
+    second = GeneticProgrammer(
+        feature_count=2, population_size=10, generations=4, max_depth=4, max_nodes=31, seed=13
+    ).run(features, fitness)
+    assert repr(first["best_expression"]) == repr(second["best_expression"])
+    assert first["fitness"] == second["fitness"]
+    assert [item["fitness"] for item in first["candidate_archive"]] == [
+        item["fitness"] for item in second["candidate_archive"]
+    ]
+    # The expression itself must contain only typed grammar operations.
+    assert first["best_expression"].infer_type() == "numeric"
+
+
+def test_gp_complexity_bounds_are_enforced_during_evolution() -> None:
+    # Complexity limits reject invalid configurations and bound every sampled tree.
+    from research.platform.genetic_programming import GeneticProgrammer
+
+    with pytest.raises(ValueError, match="complexity"):
+        GeneticProgrammer(feature_count=2, max_nodes=2)
+    with pytest.raises(ValueError, match="complexity"):
+        GeneticProgrammer(feature_count=2, max_depth=0)
+    features = np.column_stack((np.linspace(-1, 1, 16), np.ones(16)))
+    result = GeneticProgrammer(
+        feature_count=2, population_size=12, generations=3, max_depth=3, max_nodes=15, seed=5
+    ).run(features, lambda output: -float(np.std(output)))
+    for item in result["candidate_archive"]:
+        tree = item["tree"]
+        assert tree.depth <= 3
+        assert tree.size <= 15
+
+
+# ---------------------------------------------------------------------------
+# Audit F-019: bounded neural topology evolution
+# ---------------------------------------------------------------------------
+
+
+def test_neuro_topology_mutation_reproducible_from_seed_and_log() -> None:
+    # Replaying the recorded mutation log reproduces the exact topology without rng.
+    from research.platform.neuroevolution import (
+        TopologyNetwork,
+        TopologyEvolutionStrategy,
+        TOPOLOGY_MUTATIONS,
+    )
+
+    root = TopologyNetwork(input_size=4, hidden_sizes=(16,), activations=("tanh",))
+    rng = np.random.default_rng(21)
+    for _ in range(10):
+        log = [root.sample_mutation(rng) for _ in range(int(rng.integers(1, 5)))]
+        mutated = root
+        for entry in log:
+            mutated = mutated.with_mutation(entry)
+        replay = root
+        for entry in log:
+            replay = replay.with_mutation(entry)
+        assert replay == mutated
+        assert all(entry["op"] in TOPOLOGY_MUTATIONS for entry in log)
+    # A full run's best candidate is reproducible the same way.
+    features = np.random.default_rng(6).normal(size=(24, 4))
+    fitness = lambda predictions: -float(np.mean((predictions[:, 0] - np.tanh(features[:, 0])) ** 2))
+    run = TopologyEvolutionStrategy(
+        input_size=4, population_size=4, generations=2, weight_steps=1, seed=8
+    ).run(features, fitness)
+    replayed = TopologyNetwork(input_size=4, hidden_sizes=(16,), activations=("tanh",))
+    for entry in run["best_mutation_log"]:
+        replayed = replayed.with_mutation(entry)
+    assert replayed == run["best_network"]
+
+
+def test_neuro_topology_bounds_and_parameter_cap_enforced() -> None:
+    # Layer count, hidden width, skip adjacency and the parameter cap are hard bounds.
+    from research.platform.neuroevolution import (
+        MAX_HIDDEN_LAYERS,
+        MAX_HIDDEN_WIDTH,
+        TOPOLOGY_MAX_PARAMETERS,
+        TopologyNetwork,
+    )
+
+    with pytest.raises(ValueError, match=r"\[1, 4\]"):
+        TopologyNetwork(input_size=3, hidden_sizes=(16,) * (MAX_HIDDEN_LAYERS + 1), activations=("tanh",) * 5)
+    with pytest.raises(ValueError, match=r"\[4, 128\]"):
+        TopologyNetwork(input_size=3, hidden_sizes=(MAX_HIDDEN_WIDTH + 1,), activations=("tanh",))
+    with pytest.raises(ValueError, match="adjacent"):
+        TopologyNetwork(
+            input_size=3, hidden_sizes=(8, 8, 8), activations=("tanh",) * 3, skips=((0, 2),)
+        )
+    # A mutation that would violate the cap keeps the parent topology instead of raising.
+    big = TopologyNetwork(input_size=600, hidden_sizes=(120,) * 4, activations=("tanh",) * 4)
+    assert big.parameter_count <= TOPOLOGY_MAX_PARAMETERS
+    assert big.with_mutation({"op": "add_layer", "index": 0, "width": 128, "activation": "relu"}) == big
+
+
+def test_neuro_topology_evolution_evaluates_through_shared_fitness_path() -> None:
+    # Topology candidates flow through the same fitness callable as weight evolution.
+    from research.platform.neuroevolution import TOPOLOGY_MAX_PARAMETERS, TopologyEvolutionStrategy
+
+    features = np.random.default_rng(7).normal(size=(30, 3))
+    calls = []
+
+    def fitness(predictions: np.ndarray) -> float:
+        assert predictions.ndim == 2 and predictions.shape[1] == 1
+        assert np.isfinite(predictions).all()
+        calls.append(predictions.shape[0])
+        return -float(np.mean((predictions[:, 0] - np.tanh(features[:, 0])) ** 2))
+
+    result = TopologyEvolutionStrategy(
+        input_size=3, population_size=4, generations=2, weight_steps=2, seed=3
+    ).run(features, fitness)
+    assert np.isfinite(result["best_fitness"])
+    assert result["evaluations"] == len(calls)
+    assert len(result["candidate_archive"]) == 4 * 2
+    for item in result["candidate_archive"]:
+        assert item["topology"].parameter_count <= TOPOLOGY_MAX_PARAMETERS
+        assert item["lineage"]["operator"] == "bounded_topology_evolution"
+        # Generation zero starts from the deterministic root topology (empty log);
+        # every later candidate carries at least one recorded mutation.
+        if item["generation"] > 0:
+            assert len(item["mutation_log"]) >= 1
+        # Larger is not assumed better: topology travels with the candidate.
+        assert item["hidden_layers"] == len(item["topology"].hidden_sizes)
+
+
+def test_neuro_skip_connection_and_activations_change_outputs() -> None:
+    # Skip wiring and the activation set materially change the network mapping.
+    from research.platform.neuroevolution import TopologyNetwork
+
+    features = np.random.default_rng(4).normal(size=(16, 3))
+    plain = TopologyNetwork(input_size=3, hidden_sizes=(8,), activations=("tanh",))
+    skip = TopologyNetwork(input_size=3, hidden_sizes=(8,), activations=("tanh",), skips=((0, 1),))
+    weights_plain = plain.initial_parameters(np.random.default_rng(2))
+    weights_skip = skip.initial_parameters(np.random.default_rng(2))
+    weights_skip[-8:] = 0.5  # last block is the 8x1 output skip
+    assert not np.allclose(plain.predict(features, weights_plain), skip.predict(features, weights_skip))
+    for activation in ("relu", "sigmoid"):
+        variant = TopologyNetwork(input_size=3, hidden_sizes=(8,), activations=(activation,))
+        output = variant.predict(features, variant.initial_parameters(np.random.default_rng(2)))
+        assert output.shape == (16, 1) and np.isfinite(output).all()
