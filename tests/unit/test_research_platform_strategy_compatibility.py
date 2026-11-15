@@ -102,6 +102,27 @@ def test_catalog_registry_is_discoverable_and_bounded() -> None:
     assert len(set(names)) == len(names)
 
 
+def test_discover_skips_no_strategy_module_silently() -> None:
+    # discover() drops failed modules with only a log warning (audit 7.10 item 11:
+    # record unsupported strategies). The register must surface every skip.
+    from research.optimize import catalog as optimize_catalog
+
+    import importlib
+
+    module_names = sorted(
+        path.stem
+        for path in optimize_catalog.CATALOG_DIR.glob("*.py")
+        if path.stem != "__init__"
+    )
+    loaded = {spec.name for spec in optimize_catalog.discover()}
+    skipped = sorted(set(module_names) - loaded)
+    # A broken strategy module is a compatibility-register finding, not silence.
+    assert not skipped, (
+        "catalog modules failed to load and are missing from the register: "
+        f"{skipped}"
+    )
+
+
 @pytest.mark.parametrize("strategy_name", ExistingStrategyRegistry().names())
 def test_existing_strategy_signal_compat(strategy_name: str) -> None:
     """Compatibility register row: run one catalogue strategy end to end."""
@@ -120,8 +141,10 @@ def test_existing_strategy_signal_compat(strategy_name: str) -> None:
     assert first.strategy_name == strategy_name
     assert first.parameters == {}
     assert first.decision_time == "bar_close"
-    # The platform's direction policy never invents a short position.
+    # The platform's direction policy never invents a short position, and the
+    # mapping is declared on the result rather than applied silently.
     assert set(np.unique(signal.to_numpy())).issubset({0.0, 1.0})
+    assert first.direction_policy == "long_flat"
 
     # Determinism: an identical re-run under the fixed panel reproduces the stream.
     second = adapter.build_signals(strategy_name, _synthetic_bars(), parameters={})

@@ -303,6 +303,77 @@ def spec_market(track: ResearchTrack) -> Market:
     return ResearchTrack_track_market(track)
 
 
+def test_track_oos_fail_verdict_is_recorded_not_hidden(tmp_path) -> None:
+    """Audit 7.22: the report must not select only successful strategies.
+
+    The NSE individual track with OOS bars that crash after a long run of
+    rising prices makes the frozen momentum candidate lose money out of
+    sample; the persisted OOS verdict MUST be a genuine, recorded 'fail'.
+    """
+    spec = _track_spec(ResearchTrack.NSE_INDIVIDUAL)
+    setup = TRACK_SETUP[ResearchTrack.NSE_INDIVIDUAL]
+    store = ExperimentStore(tmp_path / "oos-fail.sqlite3")
+    store.create_experiment(spec)
+    _register_datasets(store, spec)
+
+    # Rising bars through TRAIN/VALIDATION flip the momentum candidate long;
+    # the OOS window then collapses the price, so its long position loses.
+    rising_index = pd.date_range("2015-01-01", "2026-10-01", freq="D", tz="Asia/Kolkata")
+    oos_index = pd.date_range("2026-10-02", "2026-10-16", freq="D", tz="Asia/Kolkata")
+    holdout_index = pd.date_range("2026-10-17", "2026-11-09", freq="D", tz="Asia/Kolkata")
+    rising_close = 100.0 + 0.05 * np.arange(len(rising_index))
+    crash_close = np.linspace(max(rising_close[-1], 101.0), 10.0, len(oos_index))
+    holdout_close = np.full(len(holdout_index), 10.0)
+    close = np.concatenate((rising_close, crash_close, holdout_close))
+    index = rising_index.append([oos_index, holdout_index])
+    bars = {
+        "TCS": pd.DataFrame(
+            {
+                "open": close - 0.05,
+                "high": close + 0.5,
+                "low": close - 0.5,
+                "close": close,
+                "volume": np.full(len(index), 50000.0),
+            },
+            index=index,
+        )
+    }
+
+    manager = ResearchJobManager(store, max_workers=1, max_queued=1)
+    runner = ExistingStrategyJobRunner(bar_loader=lambda current_store, current_spec: bars)
+    manager.register_runner("existing_strategy_evaluation", runner)
+    try:
+        job = manager.wait(
+            manager.submit(spec.experiment_id, "existing_strategy_evaluation"), timeout=40
+        )
+        assert job["status"] == "succeeded", job["error_message"]
+        result = job["result"]
+        oos_metrics = next(
+            item["metrics"] for item in result["partitions"]
+            if item["partition"] == "out_of_sample"
+        )
+        # A losing OOS window produces a negative return...
+        assert float(oos_metrics["total_return"]) < 0.0
+        # ...and the policy records a genuine fail verdict, never a silent pass.
+        assert result["oos_acceptance"]["outcome"] == "fail"
+        assert result["oos_acceptance"]["policy_version"] == "v1-2026-11-10"
+        lifecycle_events = [
+            event for event in store.events(spec.experiment_id)
+            if event["event_type"].startswith("validation_lifecycle_")
+        ]
+        oos_recorded = [
+            event for event in lifecycle_events
+            if event["event_type"] == "validation_lifecycle_oos_recorded"
+        ]
+        assert oos_recorded, "the fail verdict must be persisted in the lifecycle"
+        assert oos_recorded[-1]["payload"]["passed"] is False
+        print("=== NEGATIVE TRACK REPORT: nse_individual OOS fail ===")
+        print("oos_metrics:", oos_metrics)
+        print("oos_acceptance:", result["oos_acceptance"])
+    finally:
+        manager.shutdown(wait=True, cancel_pending=True)
+
+
 def test_nse_spec_rejects_crypto_dataset_reference(tmp_path) -> None:
     """An NSE experiment cannot validate against a crypto-registered catalog."""
     from research.platform.data_catalog import DataAvailabilityCatalog
