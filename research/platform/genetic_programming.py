@@ -10,9 +10,11 @@ children. Type violations are rejected structurally by ``Node.__post_init__``, s
 Boolean subtree can never occupy a numeric slot and vice versa.
 
 The bounded loop-free state node (``lag``) references the value of its own child
-expression from exactly ``lag`` observations in the past (documented bound:
-``MAX_LAG``; ``0 < lag <= MAX_LAG``). Evaluation at time ``t`` reads child inputs from
-times ``<= t - lag``, so future information can never leak into any node.
+expression from ``lag`` observations in the past (documented bound: ``MAX_LAG``;
+``0 < lag <= MAX_LAG``). Evaluation at time ``t`` reads child rows ``<= t`` only:
+rows with ``t >= lag`` read exactly ``t - lag``, and warm-up rows (``t < lag``)
+clamp to the earliest available observation (index 0). Future information can
+never leak into any node.
 """
 
 from __future__ import annotations
@@ -162,15 +164,14 @@ class Node:
         if self.operation == "constant":
             return np.full(matrix.shape[0], self.constant, dtype=np.float64)
         if self.operation == STATE_OPERATION:
-            # The only temporal node: shift the child exactly ``lag`` rows back.
-            # Vectorised single-segment evaluation leaves rows before the shift NaN;
-            # segmented panel evaluation re-shifts per segment instead (see
-            # model_evaluation / runners) so no value can cross a segment boundary.
+            # The only temporal node: read the child ``lag`` rows back, clamping the
+            # warm-up rows (t < lag) to the earliest observation. Every output row t
+            # therefore depends only on child rows <= t: causal, never future-looking.
             lagged = self.children[0]._evaluate(matrix)
             shift = int(self.lag)
-            output = np.full_like(lagged, np.nan)
-            if shift < len(lagged):
-                output[shift:] = lagged[:-shift]
+            output = np.empty_like(lagged)
+            output[shift:] = lagged[:-shift] if shift < len(lagged) else lagged[:0]
+            output[:shift] = lagged[0]
             return output
         if self.operation in NUMERIC_TERNARY:
             condition = self.children[0]._evaluate_bool(matrix)
@@ -440,8 +441,8 @@ class GeneticProgrammer:
             try:
                 output = tree._evaluate(matrix)
                 if not np.isfinite(output).all():
-                    # A lag node early in the evaluation window yields NaN; the vectorised
-                    # runner treats that as an unevaluable candidate rather than a signal.
+                    # Guard against any non-finite numeric result; such candidates are
+                    # recorded as failures rather than signals.
                     raise ValueError("expression produced non-finite values")
                 value = float(fitness(output)) - 1e-4 * tree.size
                 if not np.isfinite(value):
