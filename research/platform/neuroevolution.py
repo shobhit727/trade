@@ -282,3 +282,449 @@ def evolve_network(
         generations=generations,
         seed=seed,
     ).run(matrix, fitness)
+
+
+# ---------------------------------------------------------------------------
+# Bounded topology evolution (audit F-019)
+# ---------------------------------------------------------------------------
+
+TOPOLOGY_ACTIVATIONS = ("tanh", "relu", "sigmoid")
+# Hard bounds for the bounded architecture search space.
+MIN_HIDDEN_LAYERS = 1
+MAX_HIDDEN_LAYERS = 4
+MIN_HIDDEN_WIDTH = 4
+MAX_HIDDEN_WIDTH = 128
+# Documented parameter cap for any evolved topology (weights + biases).
+TOPOLOGY_MAX_PARAMETERS = 120_000
+# Topology mutations are recorded per candidate and replayed from (seed, log).
+TOPOLOGY_MUTATIONS = ("widen", "narrow", "add_layer", "remove_layer", "add_skip", "remove_skip")
+
+
+@dataclass(frozen=True, slots=True)
+class TopologyNetwork:
+    """Bounded multi-layer dense network with optional adjacent-layer skips.
+
+    Layout: input -> hidden_0 -> ... -> hidden_{n-1} -> output, where each hidden
+    layer has its own activation and any adjacent pair (hidden_i, hidden_{i+1})
+    may carry a residual skip connection. One shared skip may also bridge the last
+    hidden layer to the output.
+    """
+
+    input_size: int
+    hidden_sizes: tuple[int, ...]
+    activations: tuple[str, ...]
+    skips: tuple[tuple[int, int], ...] = ()
+    output_size: int = 1
+
+    def __post_init__(self) -> None:
+        if min(self.input_size, self.output_size) < 1:
+            raise ValueError("network dimensions must be positive")
+        if not MIN_HIDDEN_LAYERS <= len(self.hidden_sizes) <= MAX_HIDDEN_LAYERS:
+            raise ValueError(
+                f"hidden layer count must be within [{MIN_HIDDEN_LAYERS}, {MAX_HIDDEN_LAYERS}]"
+            )
+        if any(not MIN_HIDDEN_WIDTH <= width <= MAX_HIDDEN_WIDTH for width in self.hidden_sizes):
+            raise ValueError(
+                f"hidden width must be within [{MIN_HIDDEN_WIDTH}, {MAX_HIDDEN_WIDTH}]"
+            )
+        if len(self.activations) != len(self.hidden_sizes) or any(
+            activation not in TOPOLOGY_ACTIVATIONS for activation in self.activations
+        ):
+            raise ValueError("every hidden layer needs one known activation")
+        # A skip (source, target) feeds hidden layer ``source``'s output into layer
+        # ``target``'s pre-activation input; ``target`` may be the output layer.
+        for source, target in self.skips:
+            if not 0 <= source < len(self.hidden_sizes) or target != source + 1:
+                raise ValueError("skip connections must link adjacent layers")
+        if self.parameter_count > TOPOLOGY_MAX_PARAMETERS:
+            raise ValueError("topology parameter count exceeds the documented cap")
+
+    @property
+    def parameter_count(self) -> int:
+        # Dense weights and biases for every adjacent pair, plus one row per skip.
+        previous = self.input_size
+        total = 0
+        for width in self.hidden_sizes:
+            total += previous * width + width
+            previous = width
+        total += previous * self.output_size + self.output_size
+        for source, _target in self.skips:
+            # Adjacent skips are square: layer ``source`` output width feeds the next
+            # layer input of identical width.
+            total += self.hidden_sizes[source] ** 2
+        return total
+
+    def parameter_layout(self) -> tuple[tuple[str, int, int, int], ...]:
+        """Return the deterministic flat-parameter layout as named segments.
+
+        Each segment is (name, offset, shape_rows, shape_cols); biases are (rows, 1).
+        """
+        segments: list[tuple[str, int, int, int]] = []
+        offset = 0
+        previous = self.input_size
+        for index, width in enumerate(self.hidden_sizes):
+            segments.append((f"W{index}", offset, previous, width))
+            offset += previous * width
+            segments.append((f"b{index}", offset, width, 1))
+            offset += width
+            previous = width
+        output_index = len(self.hidden_sizes)
+        segments.append((f"W{output_index}", offset, previous, self.output_size))
+        offset += previous * self.output_size
+        segments.append((f"b{output_index}", offset, self.output_size, 1))
+        offset += self.output_size
+        for source, target in self.skips:
+            width = self.hidden_sizes[source]
+            segments.append((f"S{source}-{target}", offset, width, width))
+            offset += width * width
+        return tuple(segments)
+
+    def initial_parameters(self, rng: np.random.Generator) -> np.ndarray:
+        # Deterministic, activation-aware initialisation from the supplied generator.
+        parameters = np.zeros(self.parameter_count, dtype=np.float64)
+        for name, offset, rows, columns in self.parameter_layout():
+            count = rows * columns
+            if name.startswith("W"):
+                bound = np.sqrt(1.0 / rows)
+                parameters[offset:offset + count] = rng.uniform(-bound, bound, size=count)
+            elif name.startswith("S"):
+                # Skips start at zero so a new skip is a no-op until evolution uses it.
+                parameters[offset:offset + count] = 0.0
+            else:
+                parameters[offset:offset + count] = 0.0
+        return parameters
+
+    def predict(self, features: np.ndarray, parameters: np.ndarray) -> np.ndarray:
+        """Forward finite feature rows through this topology."""
+        x = np.asarray(features, dtype=np.float64)
+        theta = np.asarray(parameters, dtype=np.float64)
+        if x.ndim != 2 or x.shape[1] != self.input_size or not np.isfinite(x).all():
+            raise ValueError("features must be finite and match input_size")
+        if theta.shape != (self.parameter_count,) or not np.isfinite(theta).all():
+            raise ValueError("parameter vector has incorrect shape or non-finite values")
+        layout = {name: (offset, rows, columns) for name, offset, rows, columns in self.parameter_layout()}
+
+        def block(name: str) -> np.ndarray:
+            offset, rows, columns = layout[name]
+            return theta[offset:offset + rows * columns].reshape(rows, columns)
+
+        skip_set = set(self.skips)
+        hidden = x
+        # Hidden layers apply W, b, an optional incoming skip, then their activation.
+        for index in range(len(self.hidden_sizes)):
+            z = hidden @ block(f"W{index}") + block(f"b{index}")[:, 0]
+            if (index - 1, index) in skip_set:
+                z = z + hidden @ block(f"S{index - 1}-{index}")
+            if self.activations[index] == "relu":
+                hidden = np.maximum(z, 0.0)
+            elif self.activations[index] == "sigmoid":
+                hidden = 1.0 / (1.0 + np.exp(-z))
+            else:
+                hidden = np.tanh(z)
+        # Output layer keeps the bounded tanh policy score of DenseMLP.
+        z_out = hidden @ block(f"W{len(self.hidden_sizes)}") + block(f"b{len(self.hidden_sizes)}")[:, 0]
+        output_index = len(self.hidden_sizes)
+        if (output_index - 1, output_index) in skip_set:
+            z_out = z_out + hidden @ block(f"S{output_index - 1}-{output_index}")
+        return np.tanh(z_out)
+
+    def with_mutation(self, mutation: str, rng: np.random.Generator) -> "TopologyNetwork":
+        """Apply one bounded topology mutation drawn deterministically from ``rng``."""
+        if mutation not in TOPOLOGY_MUTATIONS:
+            raise ValueError(f"unknown topology mutation: {mutation}")
+        sizes = list(self.hidden_sizes)
+        activations = list(self.activations)
+        skips = list(self.skips)
+        if mutation == "widen":
+            index = int(rng.integers(len(sizes)))
+            sizes[index] = min(sizes[index] * 2, MAX_HIDDEN_WIDTH)
+        elif mutation == "narrow":
+            index = int(rng.integers(len(sizes)))
+            sizes[index] = max(sizes[index] // 2, MIN_HIDDEN_WIDTH)
+        elif mutation == "add_layer" and len(sizes) < MAX_HIDDEN_LAYERS:
+            index = int(rng.integers(len(sizes) + 1))
+            sizes.insert(index, int(rng.integers(MIN_HIDDEN_WIDTH, MAX_HIDDEN_WIDTH + 1)))
+            activations.insert(index, TOPOLOGY_ACTIVATIONS[int(rng.integers(len(TOPOLOGY_ACTIVATIONS)))])
+        elif mutation == "remove_layer" and len(sizes) > MIN_HIDDEN_LAYERS:
+            index = int(rng.integers(len(sizes)))
+            sizes.pop(index)
+            activations.pop(index)
+            skips = [
+                (
+                    source - 1 if source > index else source,
+                    target - 1 if target > index else target,
+                )
+                for source, target in skips
+                if source != index and target != index
+            ]
+        elif mutation == "add_skip":
+            pairs = [
+                (index, index + 1)
+                for index in range(len(sizes))
+                if (index, index + 1) not in skips
+            ]
+            if pairs:
+                skips.append(pairs[int(rng.integers(len(pairs)))])
+                skips.sort()
+        elif mutation == "remove_skip" and skips:
+            skips.pop(int(rng.integers(len(skips))))
+        else:
+            # Bound already reached; the mutation is a structural no-op.
+            pass
+        return TopologyNetwork(
+            input_size=self.input_size,
+            hidden_sizes=tuple(sizes),
+            activations=tuple(activations),
+            skips=tuple(skips),
+            output_size=self.output_size,
+        )
+
+
+class TopologyEvolutionStrategy:
+    """Evolve bounded network topologies and weights under one shared fitness path.
+
+    Every topology change is recorded as a named mutation in the candidate lineage and
+    is reproducible by replaying the recorded mutation log from the same seed. There is
+    no preference for larger networks: fitness alone selects candidates, and every
+    topology travels with the candidate in the archive.
+    """
+
+    def __init__(
+        self,
+        *,
+        input_size: int,
+        output_size: int = 1,
+        population_size: int = 8,
+        generations: int = 10,
+        weight_steps: int = 3,
+        learning_rate: float = 0.05,
+        noise_std: float = 0.1,
+        weight_limit: float = 8.0,
+        seed: int = 42,
+    ) -> None:
+        if input_size < 1 or output_size < 1:
+            raise ValueError("network dimensions must be positive")
+        if population_size < 2 or generations < 1 or weight_steps < 1:
+            raise ValueError("invalid topology evolution bounds")
+        if learning_rate <= 0 or noise_std <= 0 or weight_limit <= 0:
+            raise ValueError("invalid topology evolution hyperparameters")
+        self.input_size = input_size
+        self.output_size = output_size
+        self.population_size = population_size
+        self.generations = generations
+        self.weight_steps = weight_steps
+        self.learning_rate = learning_rate
+        self.noise_std = noise_std
+        self.weight_limit = weight_limit
+        self.seed = seed
+        # Total fitness evaluations; incremented inside _fitness_of.
+        self.fitness_calls = 0
+
+    def _fitness_of(
+        self,
+        network: TopologyNetwork,
+        parameters: np.ndarray,
+        matrix: np.ndarray,
+        fitness: Callable[[np.ndarray], float],
+        batch_predictor: Callable[[np.ndarray, np.ndarray, "TopologyNetwork"], np.ndarray] | None,
+    ) -> float:
+        # Every fitness call is counted, including mirrored weight-perturbation probes.
+        self.fitness_calls += 1
+        if batch_predictor is not None:
+            predictions = np.asarray(batch_predictor(matrix, parameters, network), dtype=np.float64)
+            expected = (len(matrix), self.output_size)
+            if predictions.shape != expected or not np.isfinite(predictions).all():
+                raise ValueError(
+                    f"batch_predictor must return finite scores with shape {expected}"
+                )
+        else:
+            predictions = network.predict(matrix, parameters)
+        score = float(fitness(predictions))
+        if not np.isfinite(score):
+            raise ValueError("fitness returned a non-finite score")
+        return score
+
+    def run(
+        self,
+        features: np.ndarray,
+        fitness: Callable[[np.ndarray], float],
+        *,
+        batch_predictor: Callable[[np.ndarray, np.ndarray, "TopologyNetwork"], np.ndarray] | None = None,
+    ) -> dict[str, object]:
+        """Search bounded topologies with the same train-only fitness contract as ES."""
+        matrix = np.asarray(features, dtype=np.float64)
+        if matrix.ndim != 2 or matrix.shape[1] != self.input_size:
+            raise ValueError("feature shape does not match input_size")
+        if not np.isfinite(matrix).all():
+            raise ValueError("features must be finite")
+        rng = np.random.default_rng(self.seed)
+        root = TopologyNetwork(
+            input_size=self.input_size,
+            hidden_sizes=(16,),
+            activations=("tanh",),
+        )
+        root_parameters = root.initial_parameters(rng)
+        best = {
+            "fitness": -np.inf,
+            "network": root,
+            "parameters": root_parameters,
+            "mutation_log": (),
+            "candidate_id": "topo-root",
+        }
+        archive: list[dict[str, object]] = []
+        history: list[dict[str, float]] = []
+        failures: list[str] = []
+        candidate_ids = [f"topo-g0000-c{index:06d}" for index in range(self.population_size)]
+
+        def evaluate(
+            network: TopologyNetwork,
+            parameters: np.ndarray,
+            mutations: tuple[str, ...],
+            candidate_id: str,
+            generation: int,
+            parent_ids: list[str],
+        ) -> float:
+            try:
+                score = self._fitness_of(network, parameters, matrix, fitness, batch_predictor)
+                archive.append({
+                    "candidate_id": candidate_id,
+                    "generation": generation,
+                    "topology": network,
+                    "parameters": parameters.copy(),
+                    "mutation_log": list(mutations),
+                    "parameter_count": network.parameter_count,
+                    "hidden_layers": len(network.hidden_sizes),
+                    "hidden_widths": tuple(network.hidden_sizes),
+                    "activations": tuple(network.activations),
+                    "skips": list(network.skips),
+                    "fitness": score,
+                    "status": "succeeded",
+                    "lineage": {
+                        "operator": "bounded_topology_evolution",
+                        "generation": generation,
+                        "parent_candidate_ids": list(parent_ids),
+                        "mutation_log": list(mutations),
+                        "seed": self.seed,
+                    },
+                })
+                return score
+            except Exception as exc:  # noqa: BLE001 - retain failed topology evaluations.
+                failures.append(
+                    f"generation={generation},candidate={candidate_id}: {type(exc).__name__}: {exc}"
+                )
+                archive.append({
+                    "candidate_id": candidate_id,
+                    "generation": generation,
+                    "topology": network,
+                    "parameters": np.zeros(0),
+                    "mutation_log": list(mutations),
+                    "parameter_count": network.parameter_count,
+                    "hidden_layers": len(network.hidden_sizes),
+                    "hidden_widths": tuple(network.hidden_sizes),
+                    "activations": tuple(network.activations),
+                    "skips": list(network.skips),
+                    "fitness": -np.inf,
+                    "status": "failed",
+                    "failure_reason": failures[-1],
+                    "lineage": {
+                        "operator": "bounded_topology_evolution",
+                        "generation": generation,
+                        "parent_candidate_ids": list(parent_ids),
+                        "mutation_log": list(mutations),
+                        "seed": self.seed,
+                    },
+                })
+                return -np.inf
+
+        parent_ids: list[str] = []
+        for generation in range(self.generations):
+            scores = []
+            for index in range(self.population_size):
+                candidate_id = (
+                    candidate_ids[index] if generation == 0 else f"topo-g{generation:04d}-c{index:06d}"
+                )
+                if generation == 0 and index == 0:
+                    # Generation zero starts from the deterministic root topology.
+                    network = root
+                    parameters = root_parameters
+                    mutations: tuple[str, ...] = ()
+                else:
+                    # Each candidate is one deterministic mutation of the root lineage.
+                    network = root
+                    mutations = tuple(
+                        TOPOLOGY_MUTATIONS[int(rng.integers(len(TOPOLOGY_MUTATIONS)))]
+                        for _ in range(int(rng.integers(1, 4)))
+                    )
+                    for mutation in mutations:
+                        network = network.with_mutation(mutation, rng)
+                    parameters = network.initial_parameters(rng)
+                    for _ in range(self.weight_steps):
+                        noise = rng.normal(0.0, self.noise_std, size=parameters.shape)
+                        # Mirrored pair: evaluate plus/minus perturbations, keep the better.
+                        plus = np.clip(parameters + noise, -self.weight_limit, self.weight_limit)
+                        minus = np.clip(parameters - noise, -self.weight_limit, self.weight_limit)
+                        try:
+                            plus_score = self._fitness_of(network, plus, matrix, fitness, batch_predictor)
+                            minus_score = self._fitness_of(network, minus, matrix, fitness, batch_predictor)
+                        except Exception:  # noqa: BLE001 - fall back to unperturbed weights.
+                            continue
+                        parameters = plus if plus_score >= minus_score else minus
+                score = evaluate(
+                    network, parameters, mutations, candidate_id, generation, list(parent_ids)
+                )
+                scores.append(score)
+                if score > best["fitness"]:
+                    best = {
+                        "fitness": score,
+                        "network": network,
+                        "parameters": parameters.copy(),
+                        "mutation_log": mutations,
+                        "candidate_id": candidate_id,
+                    }
+            valid = [value for value in scores if np.isfinite(value)]
+            history.append({
+                "generation": float(generation),
+                "best_fitness": float(max(valid)) if valid else -np.inf,
+                "median_fitness": float(np.median(valid)) if valid else -np.inf,
+                "mean_parameter_count": float(
+                    np.mean([item["parameter_count"] for item in archive if item["generation"] == generation])
+                ),
+            })
+            # Elitist lineage: next generation descends from the current best candidate.
+            parent_ids = [best["candidate_id"]]
+            candidate_ids = [
+                f"topo-g{generation + 1:04d}-c{index:06d}" for index in range(self.population_size)
+            ]
+        if not np.isfinite(best["fitness"]):
+            raise RuntimeError("topology evolution produced no valid candidate")
+        return {
+            "seed": self.seed,
+            "best_network": best["network"],
+            "best_parameters": best["parameters"],
+            "best_fitness": float(best["fitness"]),
+            "best_mutation_log": tuple(best["mutation_log"]),
+            "candidate_archive": tuple(archive),
+            "history": tuple(history),
+            "failures": tuple(failures),
+            "evaluations": self.fitness_calls,
+        }
+
+
+def evolve_topology(
+    features: np.ndarray,
+    fitness: Callable[[np.ndarray], float],
+    *,
+    population_size: int = 8,
+    generations: int = 10,
+    seed: int = 42,
+) -> dict[str, object]:
+    """Convenience wrapper for a bounded topology-evolution experiment."""
+    matrix = np.asarray(features, dtype=np.float64)
+    if matrix.ndim != 2:
+        raise ValueError("features must be a 2D matrix")
+    return TopologyEvolutionStrategy(
+        input_size=matrix.shape[1],
+        population_size=population_size,
+        generations=generations,
+        seed=seed,
+    ).run(matrix, fitness)
