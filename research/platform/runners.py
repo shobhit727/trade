@@ -494,6 +494,11 @@ class ExistingStrategyJobRunner:
                 raise RuntimeError(
                     f"reproducibility check failed for {spec.experiment_id}: {exc}"
                 ) from exc
+        # The record is persisted before evaluation so even a crashed attempt
+        # leaves the environment it ran under in the immutable event stream.
+        context.store.append_event(
+            spec.experiment_id, "environment_recorded", environment
+        )
         manifests = [context.store.get_dataset(dataset_id)["manifest"] for dataset_id in spec.dataset_ids]
         bars = self.bar_loader(context.store, spec)
         context.log(f"loaded {len(bars)} registered instruments for {spec.market.value}")
@@ -532,11 +537,8 @@ class ExistingStrategyJobRunner:
             result.oos_metrics(), OOS_ACCEPTANCE_POLICY_V1.policy_version
         )
         validation_lifecycle.record_oos(spec.fingerprint, passed=result.evidence_oos_passed())
-        # Persist the environment record as an immutable experiment event and
-        # return it inside the result so every candidate bundle carries provenance.
-        context.store.append_event(
-            spec.experiment_id, "environment_recorded", environment
-        )
+        # Return the environment inside the result so every candidate bundle
+        # carries provenance (the record itself was persisted pre-evaluation).
         result_payload = result.to_dict()
         result_payload["environment"] = environment
         context.log("evaluation completed; final holdout was not accessed")
