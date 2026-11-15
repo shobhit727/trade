@@ -40,6 +40,11 @@ from .evaluation import (
     evaluate_existing_strategy,
 )
 from .experiments import ExperimentSpec
+from .reproducibility import (
+    ReproducibilityMismatch,
+    capture_environment_record,
+    reproduce_check,
+)
 from .fx import FXRateSeries, convert_ohlcv_to_inr
 from .features import PointInTimeFeatureEngine
 from .genetic_programming import GeneticProgrammer, Node
@@ -467,6 +472,28 @@ class ExistingStrategyJobRunner:
         spec = experiment_spec_from_record(experiment_record)
         if spec.algorithm_family is not AlgorithmFamily.EXISTING_STRATEGY:
             raise ValueError("existing_strategy_evaluation runner requires existing_strategy family")
+        # Full reproducibility (audit F-023): re-derive the machine/software
+        # environment and compare it against the record persisted by the first
+        # job of this experiment before any result is accepted as a reproduction.
+        environment = capture_environment_record(
+            seed=spec.random_seed, compute_backend=spec.compute_backend
+        )
+        prior_environments = [
+            event["payload"]
+            for event in context.store.events(spec.experiment_id)
+            if event["event_type"] == "environment_recorded"
+        ]
+        if prior_environments:
+            try:
+                reproduce_check(
+                    prior_environments[-1],
+                    seed=spec.random_seed,
+                    compute_backend=spec.compute_backend,
+                )
+            except ReproducibilityMismatch as exc:
+                raise RuntimeError(
+                    f"reproducibility check failed for {spec.experiment_id}: {exc}"
+                ) from exc
         manifests = [context.store.get_dataset(dataset_id)["manifest"] for dataset_id in spec.dataset_ids]
         bars = self.bar_loader(context.store, spec)
         context.log(f"loaded {len(bars)} registered instruments for {spec.market.value}")
@@ -505,8 +532,15 @@ class ExistingStrategyJobRunner:
             result.oos_metrics(), OOS_ACCEPTANCE_POLICY_V1.policy_version
         )
         validation_lifecycle.record_oos(spec.fingerprint, passed=result.evidence_oos_passed())
+        # Persist the environment record as an immutable experiment event and
+        # return it inside the result so every candidate bundle carries provenance.
+        context.store.append_event(
+            spec.experiment_id, "environment_recorded", environment
+        )
+        result_payload = result.to_dict()
+        result_payload["environment"] = environment
         context.log("evaluation completed; final holdout was not accessed")
-        return result.to_dict()
+        return result_payload
 
 
 class ExistingStrategyOptimizerJobRunner:
