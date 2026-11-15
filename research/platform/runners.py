@@ -1252,6 +1252,7 @@ def _node_to_payload(node: Node) -> dict[str, Any]:
         "operation": node.operation,
         "feature_index": node.feature_index,
         "constant": node.constant,
+        "lag": node.lag,
         "children": [_node_to_payload(child) for child in node.children],
     }
 
