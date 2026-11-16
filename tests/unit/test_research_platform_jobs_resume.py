@@ -292,6 +292,40 @@ def test_crash_mid_evaluation_resumes_without_duplicate_candidates(tmp_path) -> 
     resumed_manager.shutdown(wait=True)
 
 
+def test_startup_recovery_then_resume_completes_with_checkpoint(tmp_path) -> None:
+    # api startup force-fails live jobs (recover_interrupted_jobs); a job with a
+    # verified checkpoint must still resume cleanly afterwards (7.18 rows 3+8).
+    path = tmp_path / "recovery.sqlite3"
+    store = _store(path)
+    store.create_job(
+        job_id="recovered", experiment_id="resume-test",
+        runner_name="worker", parameters={},
+    )
+    store.update_job_status("recovered", "running")
+    payload = _checkpoint_payload()
+    store.append_job_checkpoint(
+        "recovered",
+        progress=payload["progress"],
+        random_state=payload["random_state"],
+        candidates_so_far=payload["candidates_so_far"],
+        environment=payload["environment"],
+    )
+    assert store.recover_interrupted_jobs() == 1
+    assert store.get_job("recovered")["status"] == "failed"
+
+    def runner(context, experiment, parameters):
+        resumed = parameters.get("resumed_state") or {}
+        return {"resumed_candidates": len(resumed.get("candidates_so_far", []))}
+
+    manager = ResearchJobManager(store, leases_enabled=False)
+    manager.register_runner("worker", runner)
+    manager.resume("recovered")
+    job = manager.wait("recovered", timeout=10)
+    assert job["status"] == "succeeded", job.get("error_message")
+    assert job["result"]["resumed_candidates"] == 3
+    manager.shutdown(wait=True)
+
+
 def test_lease_transitions_persist_as_queryable_events(tmp_path) -> None:
     # acquire/renew/expire/reject/release all appear in the append-only history.
     path = tmp_path / "lease.sqlite3"
