@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # Research/analysis image. pandas/numpy/scipy/pyarrow all ship manylinux wheels,
 # so no compiler toolchain is required (keeps the image small and the build fast).
-FROM python:3.14-slim AS research
+FROM python:3.15-slim AS research
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
