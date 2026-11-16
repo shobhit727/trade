@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import statistics
@@ -313,6 +314,24 @@ class ExperimentStore:
                 END;
                 """
             )
+            self._migrate_job_lease_columns(connection)
+
+    def _migrate_job_lease_columns(self, connection: sqlite3.Connection) -> None:
+        """Add lease columns to jobs rows created before worker leases existed."""
+        # Additive migration: existing databases gain nullable lease columns;
+        # fresh databases already carry them from the DDL above.
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(jobs)").fetchall()
+        }
+        for column, definition in (
+            ("lease_owner", "TEXT"),
+            ("lease_expires_at", "TEXT"),
+            ("lease_token", "TEXT"),
+        ):
+            if column not in columns:
+                connection.execute(
+                    f"ALTER TABLE jobs ADD COLUMN {column} {definition}"
+                )
 
     def create_experiment(self, spec: ExperimentSpec) -> None:
         """Persist an immutable, market-scoped experiment definition."""
@@ -1046,7 +1065,9 @@ class ExperimentStore:
             ).fetchone()
             if row is None:
                 raise KeyError(job_id)
-            if row["status"] not in {"queued", "running"}:
+            if row["status"] not in {"queued", "running", "failed"}:
+                # failed/running jobs are interruptible and claimable; only
+                # terminal succeeded/cancelled outcomes are never re-leased.
                 return False
             current_expiry = row["lease_expires_at"]
             actively_leased = (
@@ -1352,19 +1373,37 @@ class ExperimentStore:
         }
 
     def reset_job_for_resume(self, job_id: str) -> None:
-        """Move a failed/interrupted job back to queued for checkpointed resumption."""
-        # Only a failed record may re-enter the queue; running jobs must be
-        # cancelled or expired first so a single job never runs twice.
+        """Move an interrupted/failed job back to queued for checkpointed resumption."""
+        # A crashed worker leaves its job 'failed' or still marked 'running'
+        # (its lease expired); both may re-enter the queue. A live lease is
+        # refused so a single job never runs in two workers at once.
         with self._connection() as connection:
             row = connection.execute(
                 "SELECT status FROM jobs WHERE job_id = ?", (job_id,)
             ).fetchone()
             if row is None:
                 raise KeyError(job_id)
-            if row["status"] != "failed":
+            if row["status"] not in {"failed", "running"}:
                 raise ValueError(
-                    f"only failed jobs may be reset for resume; status is {row['status']!r}"
+                    f"only interrupted or failed jobs may be reset for resume; "
+                    f"status is {row['status']!r}"
                 )
+            if row["status"] == "running":
+                live_lease = connection.execute(
+                    "SELECT lease_owner, lease_expires_at FROM jobs WHERE job_id = ?",
+                    (job_id,),
+                ).fetchone()
+                still_leased = (
+                    live_lease["lease_owner"] is not None
+                    and live_lease["lease_expires_at"] is not None
+                    and datetime.fromisoformat(live_lease["lease_expires_at"])
+                    > datetime.now(timezone.utc)
+                )
+                if still_leased:
+                    raise RuntimeError(
+                        f"job {job_id} is actively leased by worker "
+                        f"{live_lease['lease_owner']!r}; resume refused"
+                    )
             connection.execute(
                 """UPDATE jobs
                    SET status = 'queued', completed_at = NULL, error_message = NULL
