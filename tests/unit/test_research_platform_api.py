@@ -751,6 +751,36 @@ def test_f030_experiment_compare_returns_complete_comparable_records(tmp_path) -
     assert first_record["fingerprint"] != second_record["fingerprint"]
     assert first_record["market"] == second_record["market"] == "nse"
 
+    # F-030 fallback: GP-family verdicts live only in job result_json, so the
+    # compare record falls back to the latest stored job result for both the
+    # classification distribution and the OOS acceptance, and names the source.
+    assert _request(app, "POST", "/api/experiments", _payload(experiment_id="f030-gp"))[0] == 201
+    store.create_job(
+        job_id="f030-gp-job",
+        experiment_id="f030-gp",
+        runner_name="genetic_programming",
+        parameters={},
+    )
+    store.update_job_status("f030-gp-job", "running")
+    store.update_job_status("f030-gp-job", "succeeded", result={
+        "classification": "requires_independent_confirmation",
+        "oos_acceptance": {"outcome": "pass", "policy_version": "v1-2026-11-10", "reasons": []},
+    })
+    status, _, body = _request(app, "GET", "/api/experiments/compare?ids=f030-gp,f030-nse-one")
+    assert status == 200
+    comparisons = json.loads(body)["comparisons"]
+    gp_record = next(item for item in comparisons if item["experiment_id"] == "f030-gp")
+    assert gp_record["classification_distribution"] == {"requires_independent_confirmation": 1}
+    assert gp_record["oos_acceptance"]["source"] == "job_result"
+    assert gp_record["oos_acceptance"]["payload"]["outcome"] == "pass"
+    assert "jobs.result_json" in gp_record["source_record_types"]
+    # The event-backed record keeps its event-sourced values and stays null-free
+    # in the fields the events never stored (environment: no jobs ran either).
+    event_record = next(item for item in comparisons if item["experiment_id"] == "f030-nse-one")
+    assert event_record["oos_acceptance"] is None
+    assert event_record["classification_distribution"] == {}
+    assert "jobs.result_json" not in event_record["source_record_types"]
+
     # Validation: fewer than two ids, duplicate ids, and mixed markets all fail.
     status, _, body = _request(app, "GET", "/api/experiments/compare?ids=f030-nse-one")
     assert status == 400
@@ -761,6 +791,29 @@ def test_f030_experiment_compare_returns_complete_comparable_records(tmp_path) -
     )
     assert status == 400
     assert "must be unique" in json.loads(body)["error"]
+
+    status, _, body = _request(app, "GET", "/api/experiments/compare?ids=f030-gp,f030-nse-one")
+    assert status == 200  # same-market sanity before the mixed-market check below
+
+    # Mixed-market comparison must fail on the new route too (the legacy
+    # /api/compare guard has its own test; this one is route-specific).
+    assert _request(app, "POST", "/api/datasets", _dataset_payload(
+        dataset_id="f030-crypto-fixture-v1",
+        market="crypto",
+        exchange="BINANCE",
+        instrument="BTCINR",
+    ))[0] == 201
+    assert _request(app, "POST", "/api/experiments", _payload(
+        experiment_id="f030-crypto",
+        market="crypto",
+        track="crypto_individual",
+        dataset_ids=["f030-crypto-fixture-v1"],
+    ))[0] == 201
+    status, _, body = _request(
+        app, "GET", "/api/experiments/compare?ids=f030-nse-one,f030-crypto",
+    )
+    assert status == 400
+    assert "cannot be compared in one financial view" in json.loads(body)["error"]
 
 
 def test_f030_experiment_compare_environment_record_surfaces_when_stored(tmp_path) -> None:
@@ -940,6 +993,21 @@ def test_f033_experiment_export_returns_roundtrippable_bundle(tmp_path) -> None:
                            "reasons": ["oos_sharpe=-0.1 is below the required minimum 0.0"]},
         "oos_policy_version": "v1-2026-11-10",
     })
+    store.create_job(
+        job_id="f033-gp-job",
+        experiment_id="f033-export",
+        runner_name="genetic_programming",
+        parameters={},
+    )
+    store.update_job_status("f033-gp-job", "running")
+    store.update_job_status("f033-gp-job", "succeeded", result={
+        "classification": "requires_independent_confirmation",
+        "oos_acceptance": {"outcome": "fail", "policy_version": "v1-2026-11-10",
+                           "reasons": ["oos_sharpe=-0.1 is below the required minimum 0.0"]},
+    })
+    store.append_job_event("f033-gp-job", "job_started", {})
+    store.append_job_event("f033-gp-job", "log", {"level": "info", "message": "checkpoint"})
+    store.append_job_event("f033-gp-job", "job_succeeded", {"result_keys": ["classification"]})
     store.append_candidate(
         candidate_id="f033-candidate-0",
         experiment_id="f033-export",
@@ -989,6 +1057,17 @@ def test_f033_experiment_export_returns_roundtrippable_bundle(tmp_path) -> None:
     assert bundle["classification_reports"][0]["classification"] == "requires_independent_confirmation"
     assert bundle["classification_reports"][0]["classification_evidence"]["train_evaluated"] is True
     assert bundle["event_count"] == 4
+    # Job records roundtrip with results and logs so the bundle is complete
+    # enough to re-analyse offline (audit F-033: specification, candidates,
+    # results, and logs).
+    assert bundle["job_count"] == 1
+    job_record = bundle["jobs"][0]
+    assert job_record["job_id"] == "f033-gp-job"
+    assert job_record["result"]["classification"] == "requires_independent_confirmation"
+    assert job_record["result"]["oos_acceptance"]["policy_version"] == "v1-2026-11-10"
+    assert [event["event_type"] for event in job_record["events"]] == [
+        "job_started", "log", "job_succeeded",
+    ]
 
     status, _, body = _request(app, "GET", "/api/experiments/ghost-experiment/export")
     assert status == 404

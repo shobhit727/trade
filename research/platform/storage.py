@@ -845,6 +845,37 @@ class ExperimentStore:
             for event in events
             if "classification" in event["payload"]
         ]
+        # Job records carry the worker-returned classification/OOS verdicts for the
+        # families that persist them only in result_json (GP, neuroevolution,
+        # strategy composition, pareto). Including the job records (results plus
+        # logs) is what makes this bundle complete enough to re-analyse offline.
+        with self._connection() as connection:
+            job_rows = connection.execute(
+                "SELECT * FROM jobs WHERE experiment_id = ? ORDER BY created_at",
+                (experiment_id,),
+            ).fetchall()
+            job_event_rows = connection.execute(
+                """SELECT job_events.* FROM job_events
+                   JOIN jobs ON jobs.job_id = job_events.job_id
+                   WHERE jobs.experiment_id = ? ORDER BY job_events.event_id""",
+                (experiment_id,),
+            ).fetchall()
+        events_by_job: dict[str, list[dict[str, Any]]] = {}
+        for event in job_event_rows:
+            events_by_job.setdefault(event["job_id"], []).append(
+                {**dict(event), "payload": json.loads(event["payload_json"])}
+            )
+        jobs: list[dict[str, Any]] = []
+        for row in job_rows:
+            item = dict(row)
+            item["parameters"] = json.loads(item.pop("parameters_json"))
+            if item["result_json"] is not None:
+                item["result"] = json.loads(item.pop("result_json"))
+            else:
+                item.pop("result_json")
+                item["result"] = None
+            item["events"] = events_by_job.get(item["job_id"], [])
+            jobs.append(item)
         return {
             "experiment_id": experiment_id,
             "exported_at": datetime.now(timezone.utc).isoformat(),
@@ -854,8 +885,10 @@ class ExperimentStore:
             "candidates": list(candidates),
             "oos_acceptances": oos_acceptances,
             "classification_reports": classification_reports,
+            "jobs": jobs,
             "candidate_count": len(candidates),
             "event_count": len(events),
+            "job_count": len(jobs),
         }
 
     def evolution_snapshot(self, experiment_id: str) -> dict[str, Any]:
@@ -956,6 +989,34 @@ class ExperimentStore:
             {**dict(row), "payload": json.loads(row["payload_json"])}
             for row in rows
         )
+
+    def list_job_results(
+        self, experiment_id: str, *, limit: int = 100
+    ) -> tuple[dict[str, Any], ...]:
+        """Return one row per job for an experiment with its decoded result (F-030)."""
+        # Job results carry classification/OOS verdicts for runner families that
+        # persist them only in result_json; reading them stays market-scoped and
+        # bounded like every other listing query.
+        if not 1 <= limit <= 1000:
+            raise ValueError("limit must be between 1 and 1000")
+        with self._connection() as connection:
+            rows = connection.execute(
+                """SELECT job_id, experiment_id, runner_name, status,
+                          created_at, started_at, completed_at, result_json
+                   FROM jobs WHERE experiment_id = ?
+                   ORDER BY created_at LIMIT ?""",
+                (experiment_id, limit),
+            ).fetchall()
+        output = []
+        for row in rows:
+            item = dict(row)
+            if item["result_json"] is not None:
+                item["result"] = json.loads(item.pop("result_json"))
+            else:
+                item.pop("result_json")
+                item["result"] = None
+            output.append(item)
+        return tuple(output)
 
 
     # ------------------------------------------------------------------

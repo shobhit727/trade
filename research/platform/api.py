@@ -1243,6 +1243,42 @@ class ResearchAPI:
                         label = event["payload"].get("classification")
                         if isinstance(label, str):
                             classifications[label] = classifications.get(label, 0) + 1
+                    # GP/neuroevolution/composition/pareto runners persist their
+                    # classification and OOS verdict only inside the job result
+                    # (result_json), not as experiment events. Fall back to the
+                    # latest stored job record for those families; all values are
+                    # read from stored records, never recomputed.
+                    job_results = [
+                        job["result"]
+                        for job in self.store.list_job_results(experiment_id)
+                        if job["result"] is not None
+                    ]
+                    oos_acceptance_fallback = None
+                    for result in reversed(job_results):
+                        if isinstance(result.get("oos_acceptance"), dict):
+                            oos_acceptance_fallback = {
+                                "source": "job_result",
+                                "payload": result["oos_acceptance"],
+                            }
+                            break
+                    if oos_acceptance is None:
+                        oos_acceptance = oos_acceptance_fallback
+                    classification_fallback: dict[str, int] = {}
+                    for result in reversed(job_results):
+                        label = result.get("classification")
+                        if isinstance(label, str):
+                            classification_fallback[label] = (
+                                classification_fallback.get(label, 0) + 1
+                            )
+                    if not classifications:
+                        classifications = classification_fallback
+                    source_record_types = [
+                        "experiments", "experiment_events", "candidates",
+                    ]
+                    if oos_acceptance is not None and oos_acceptance.get("source") == "job_result":
+                        source_record_types.append("jobs.result_json")
+                    if not classifications and classification_fallback:
+                        source_record_types.append("jobs.result_json")
                     records.append({
                         "experiment_id": experiment_id,
                         "market": experiment["market"],
@@ -1258,9 +1294,7 @@ class ResearchAPI:
                             max((int(candidate["generation"]) for candidate in candidates), default=None)
                         ),
                         "families": sorted({str(candidate["family"]) for candidate in candidates}),
-                        "source_record_types": [
-                            "experiments", "experiment_events", "candidates",
-                        ],
+                        "source_record_types": source_record_types,
                     })
                 if len(markets) != 1:
                     raise ValueError("NSE and crypto experiments cannot be compared in one financial view")
