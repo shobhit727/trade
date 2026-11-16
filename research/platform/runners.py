@@ -3322,9 +3322,24 @@ def build_default_job_manager(
 ):
     """Create a bounded manager with allow-listed existing-strategy evaluation and search runners."""
     # One worker is the conservative default until local GPU/RAM throughput is measured.
-    from .jobs import ResearchJobManager
+    from .jobs import DEFAULT_LEASE_TTL_SECONDS, WORKER_LEASE_ENV, ResearchJobManager
 
-    manager = ResearchJobManager(store, max_workers=max_workers, max_queued=max_queued)
+    # Distributed execution is opt-in (audit F-027): without RESEARCH_WORKER_LEASE=1
+    # the platform keeps its single-process default and requires no lease; the TTL
+    # is tunable via RESEARCH_WORKER_LEASE_TTL for deployments that enable leasing.
+    leases_enabled = os.getenv(WORKER_LEASE_ENV, "0").strip().lower() == "1"
+    lease_ttl = DEFAULT_LEASE_TTL_SECONDS
+    raw_ttl = os.getenv("RESEARCH_WORKER_LEASE_TTL", "").strip()
+    if raw_ttl:
+        lease_ttl = int(raw_ttl)
+
+    manager = ResearchJobManager(
+        store,
+        max_workers=max_workers,
+        max_queued=max_queued,
+        leases_enabled=leases_enabled,
+        lease_ttl_seconds=lease_ttl,
+    )
     manager.register_runner(
         "existing_strategy_evaluation",
         ExistingStrategyJobRunner(crypto_data_root=crypto_data_root),

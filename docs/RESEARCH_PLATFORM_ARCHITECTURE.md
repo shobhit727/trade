@@ -114,7 +114,7 @@ The feature branch now contains the following additive modules:
 | Candidate classification | Evidence-driven failed, inconclusive, overfit, training-only, validation, historical OOS, robust research and independent-confirmation labels in result reports | No numeric v2 performance thresholds are defined; current OOS status is inconclusive until a protocol-approved gate exists |
 | Population compute | Batched linear, long/flat and dense-neural inference, NumPy / optional CuPy, runtime fallback and scalar/batch parity tests | CuPy path has not been exercised on the target GPU; simulator/ledger fitness remains CPU and end-to-end GPU acceleration is not claimed |
 | API and dashboard | Local WSGI API, experiment/data catalogue, strategy explorer, queue/inspect/cancel controls for existing-strategy, search, GP, neural, composition and Pareto workers | GPU telemetry, experiment comparison and full evolution monitoring remain incomplete |
-| Job lifecycle | Bounded local thread pool, SQLite job status/events/results, cooperative cancellation, plus append-only per-job candidate-freeze/OOS/holdout lifecycle transitions | Worker execution is not resumable after process death; interrupted jobs are marked failed and must be resubmitted. Lifecycle records survive restart but do not provide filesystem isolation |
+| Job lifecycle | Bounded local thread pool, SQLite job status/events/results, cooperative cancellation, append-only per-job candidate-freeze/OOS/holdout lifecycle transitions, resumable checkpoints (progress, candidate digests, RNG state, environment record with integrity digest; resume validates the environment against the immutable spec before re-queueing), and opt-in worker leases (RESEARCH_WORKER_LEASE=1, TTL via RESEARCH_WORKER_LEASE_TTL) with every acquire/renew/expire/reject/release transition appended to job_events | A resumed job must supply runner-side continuation from resumed_state; the single-process default needs no lease. Lifecycle records survive restart but do not provide filesystem isolation |
 
 ## Execution and accounting limitations
 
@@ -129,9 +129,15 @@ The local crypto adapter imports CSV/Parquet and records source-file hashes, but
 Run `python -m research.platform.app --host 127.0.0.1 --port 8765`. The server binds to loopback by default and refuses a non-loopback host unless `--allow-remote` is supplied. Do not enable remote binding without adding authentication and transport security. The dashboard can create experiment records and queue the allow-listed existing-strategy evaluator,
 parameter-search/hybrid, genetic-programming, neuroevolution, strategy-composition and Pareto
 workers, then list, inspect and cooperatively cancel jobs. Job state, logs and per-job validation
-lifecycle transitions persist in SQLite. Worker execution itself is a local thread pool; an
-interrupted job is marked failed after restart and must be resubmitted. Its prior lifecycle event
-history remains available for audit but does not resume the computation.
+lifecycle transitions persist in SQLite. Worker execution itself is a local thread pool. Long-running
+workers checkpoint progress, the candidate set so far, RNG state and the environment record into an
+append-only checkpoint table; an interrupted job is marked failed after restart and can be resumed
+from its newest verified checkpoint (`ResearchJobManager.resume`), which refuses checkpoints whose
+environment record diverges from the immutable experiment spec and continues without duplicating
+persisted candidates. Set `RESEARCH_WORKER_LEASE=1` to opt into controlled worker leases (TTL via
+`RESEARCH_WORKER_LEASE_TTL`, default 300 s): an actively-leased job explicitly rejects a second
+worker, expired leases become claimable again, and every lease transition is appended to the job's
+event history. The single-process default requires no lease.
 
 ## Validation and statistical interpretation
 
